@@ -1,3 +1,2524 @@
+2022-10-10  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.40.
+	+ commit 2e9f8a511dc01ef9ffc59c90f1cb5082e052da06
+
+
+	gpg: For de-vs use AES-128 instead of 3DES as implicit preference.
+	+ commit 5df1c247be5223343668f9a56eb5f8290c954b6e
+	* g10/pkclist.c (select_algo_from_prefs): Change implicit cipher
+	algorithm.
+
+2022-10-10  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	sm: Fix reporting of bad passphrase error.
+	+ commit 94092793f6a23bbd93c7a26add4d1a23a6f9acb7
+	* sm/minip12.c (p12_parse): Set badpass flag to result in ctx.
+
+2022-10-07  Werner Koch  <wk@gnupg.org>
+
+	wkd: Implement --blacklist option for gpg-wks-client.
+	+ commit cd020284c9cf352e02e85c52884fc7d56b0f4ec9
+	* tools/gpg-wks-client.c (blacklist_array, blacklist_array_len): New.
+	(parse_arguments): Install blacklist.
+	(read_file): New.
+	(cmp_blacklist, add_blacklist, is_in_blacklist): New.
+	(mirror_one_key): Check list.
+	* tools/gpg-wks.h (opt): Remove field blacklist.
+
+	wkd: Restrict gpg-wks-client --mirror to the given domains.
+	+ commit 88042821d81b93b793ddf67546bb6697d8a6881f
+	* tools/gpg-wks-client.c (domain_matches_mbox): New.
+	(mirror_one_key): Skip non-matching domains.
+	(command_mirror): Change args to allow for several domains.
+
+	wkd: Silence gpg-wks-client diagnostics from gpg.
+	+ commit b18b9b972e2da2fd30c4bfd64c2c6b09213bd1cf
+	* tools/gpg-wks-client.c (add_user_id): PAss --quiet to gpg unless we
+	are running in double verbose mode.
+	(decrypt_stream): Ditto
+	(encrypt_response): Ditto.
+	(mirror_one_keys_userid): Ditto.
+	* tools/wks-util.c (wks_get_key): Ditto.
+	(wks_list_key): Ditto.
+	(wks_filter_uid): Ditto.
+
+	(cherry picked from commit 4364283f757fceab454d48d461a9f88c31247a07)
+
+	wkd: New command --mirror for gpg-wks-client.
+	+ commit a946343f14752ab06f1a62762e4a5a9203d38d55
+	* tools/gpg-wks-client.c (aMirror,oBlacklist,oNoAutostart): New.
+	(opts): Add --mirror, --no-autostart, and --blacklist.
+	(parse_arguments): Parse new options.
+	(main): Implement aMirror.
+	(mirror_one_key_parm): New.
+	(mirror_one_keys_userid, mirror_one_key): New.
+	(command_mirror): New.
+
+	* tools/gpg-wks.h (struct uidinfo_list_s): Add fields flags.
+	* tools/wks-util.c (wks_cmd_install_key): Factor some code out to ...
+	(wks_install_key_core): new.
+
+	* tools/call-dirmngr.c (wkd_dirmngr_ks_get): New.
+
+	common: Protect against a theoretical integer overflow in tlv.c.
+	+ commit c300253181cfc591cbcae9251eda5296ed29591b
+	* common/tlv.c (parse_ber_header): Protect agains integer overflow.
+
+	dirmngr: Support paged LDAP mode for KS_GET.
+	+ commit a70a3204c24a00e688224ee24575be6e523d42ce
+	* dirmngr/ks-engine-ldap.c (PAGE_SIZE): New.
+	(struct ks_engine_ldap_local_s): Add several new fields.
+	(ks_ldap_clear_state): Release them.
+	(search_and_parse): Factored out from ks_ldap_get and extended to
+	support the paged mode.
+	(ks_ldap_get):  Implement the pages mode for --first and --next.
+	* dirmngr/server.c (cmd_ks_get): Provide a dummy passphrase in --first
+	mode.
+	* dirmngr/Makefile.am (dirmngr_LDADD): Add LBER_LIBS.
+
+	dirmngr: New options --first and --next for KS_GET.
+	+ commit 20cb9319d998fb4eb3c096ca7d534706d4afc10a
+	* dirmngr/server.c (cmd_ks_get): Add option --first and --next.
+	(start_command_handler): Free that new ldap state.
+	* dirmngr/ks-engine-ldap.c (struct ks_engine_ldap_local_s): New.
+	(ks_ldap_new_state, ks_ldap_clear_state): New.
+	(ks_ldap_free_state): New.
+	(return_one_keyblock): New.  Mostly factored out from ....
+	(ks_ldap_get): here.  Implement --first/--next feature.
+
+	* dirmngr/ks-action.c (ks_action_get): Rename arg ldap_only to
+	ks_get_flags.
+	* dirmngr/ks-engine.h (KS_GET_FLAG_ONLY_LDAP): New.
+	(KS_GET_FLAG_FIRST): New.
+	(KS_GET_FLAG_NEXT): New.
+
+	* dirmngr/dirmngr.h (struct server_control_s): Add member
+	ks_get_state.
+	(struct ks_engine_ldap_local_s): New forward reference.
+
+	gpg: Show just keyserver and port with --send-keys.
+	+ commit 2b2f8a1a0ca12e9903df3f20955f16e206a0c976
+	* g10/call-dirmngr.c (ks_status_cb): Mangle the keyserver url
+
+	dirmngr: Minor fix for baseDN fallback.
+	+ commit 4cf8dc2d968f966d99ec3db4ee40a1ff5321d5a7
+	* dirmngr/ks-engine-ldap.c (my_ldap_connect): Avoid passing data
+	behind the EOS.
+	(interrogate_ldap_dn): Stylistic change.
+
+2022-10-07  NIIBE Yutaka  <gniibe@fsij.org>
+
+	dirnmgr: Fix the function prototype.
+	+ commit 73cc5e073ce9e153cacdb020b15b2abc5e2cf8b2
+	* dirmngr/ldap-wrapper.c (ldap_wrapper_wait_connections): It's with
+	no arguments.
+
+	dirmngr: Change interrogate_ldap_dn for better memory semantics.
+	+ commit 98fbac614105b5690d57b4268c6792f4f3538bd5
+	* dirmngr/ks-engine-ldap.c (interrogate_ldap_dn): Return BASEDN found,
+	memory allocated.
+	(my_ldap_connect): Follow the change, removing needless allocation.
+
+2022-10-07  Joey Berkovitz  <joeyberkovitz@gmail.com>
+
+	dirmngr: Interrogate LDAP server when base DN specified.
+	+ commit 5516f92224b6baf6d100d58fc273018bdac173f8
+	* dirmngr/ks-engine-ldap.c (my_ldap_connect): interrogate LDAP
+	server when basedn specified.
+
+2022-10-07  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Support gpgMailbox for mode MAILSUB and MAILEND.
+	+ commit 615c9717c15a541b212117bfaa88d41ff724127a
+	* dirmngr/ks-engine-ldap.c (keyspec_to_ldap_filter): Use gpgMailbox if
+	server supports this.
+
+	dirmngr: Factor out interrogate_ldap_dn function.
+	+ commit 44960e702ee3e806331ee63c373c3f7e0931364b
+	* dirmngr/ks-engine-ldap.c (interrogate_ldap_dn): New.
+
+2022-09-29  Werner Koch  <wk@gnupg.org>
+
+	gpg: Avoid to emit a compliance mode line if libgcrypt is non-compliant.
+	+ commit 07c6743148d4abd30fb8bf08b07eb9755fdfff2d
+	* g10/encrypt.c (check_encryption_compliance): Check gcrypt compliance
+	before emitting an ENCRYPTION_COMPLIANCE_MODE status.
+
+2022-09-28  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Fix lost flags during LDAP upload.
+	+ commit 32ce7ac0c67489e206544dce93a2364c2f7d9410
+	* dirmngr/ldapserver.c (ldapserver_parse_one): Turn LINE into a const.
+	Use strtokenize instead of strtok style parsing.
+
+	dirmngr: New server flag "areconly" (A-record-only)
+	+ commit 6300035ba17b4115df7139926ba55556362038ed
+	* dirmngr/dirmngr.h (struct ldap_server_s): Add field areconly.
+	* dirmngr/ldapserver.c (ldapserver_parse_one): Parse "areconly"
+	* dirmngr/ks-engine-ldap.c (my_ldap_connect): Implement this flag.
+	* dirmngr/dirmngr_ldap.c: Add option --areconly
+	(connect_ldap): Implement option.
+	* dirmngr/ldap.c (run_ldap_wrapper): Add and pass that option.
+
+2022-09-22  Werner Koch  <wk@gnupg.org>
+
+	gpg: Don't consider unknown keys as non-compliant while decrypting.
+	+ commit 05b7e4a405c84da14e5f7ee04cfd3de4b0cb8290
+	* g10/mainproc.c (proc_encrypted):  Change compliance logic.
+
+2022-09-16  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Fix CRL DP error fallback to other schemes.
+	+ commit 289fbc550d18a7f9b26c794a2409ba820811f6b3
+	* dirmngr/crlcache.c (crl_cache_reload_crl): Rework the double loop.
+	Remove the unused issuername_uri stuff.
+
+2022-09-15  NIIBE Yutaka  <gniibe@fsij.org>
+
+	build: Update gpg-error.m4.
+	+ commit ed1264e74b11c4ba7d17e6209ecf55655e2a6027
+	* m4/gpg-error.m4: Update from libgpg-error.
+
+2022-09-02  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.39.
+	+ commit 7c2078a680dde2eaef30a8a6dc49de4540498736
+
+
+2022-09-01  Werner Koch  <wk@gnupg.org>
+
+	common: Make nvc_lookup more robust.
+	+ commit 8c22b00268bf5b2374cf7af69465a902b91946aa
+	* common/name-value.c (nvc_first): Allow for NULL arg.
+	(nvc_lookup): Allow for PK being NULL.
+
+	Release 2.2.38.
+	+ commit 0b786fde775588413e5c9842bca3a3d8ea06fad5
+
+
+2022-08-31  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: New option --debug-cache-expired-certs.
+	+ commit ea34325c54a2746bdc2d667a1c98ab07b051cf75
+	* dirmngr/dirmngr.h (opt): Add debug_cache_expired_certs:
+	* dirmngr/dirmngr.c (oDebugCacheExpiredCerts): New.
+	(opts): Add option.
+	(parse_rereadable_options): Set option.
+	* dirmngr/certcache.c (put_cert): Handle the option.
+
+	common,w32: Fix an encoding problem of the printed timezone.
+	+ commit 0b91fa0f13fd3644d0be137ed02e006aa05b9501
+	* common/gettime.c (w32_strftime) [W32]: New function.
+	(strftime) [W32]: New refinition macro.
+
+	gpg: Emit STATUS_FAILURE for --require-compliance errors.
+	+ commit e05fb5ca3711f02eb562868dc38d30e3cccda270
+	* g10/misc.c (compliance_failure): Do not fallback to CO_GNUPG.  Print
+	compliance failure error and status for CO_DE_VS.
+	* g10/mainproc.c (proc_encrypted): Call compliance_failure in the
+	require-compliance error case.
+	* g10/encrypt.c (check_encryption_compliance): Ditto.
+
+2022-08-31  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Add npth_unprotect/npth_protect for blocking operations.
+	+ commit e1169e8f8ac75ad32fccb7743ffd06803bd50f93
+	* scd/ccid-driver.c (ccid_open_usb_reader): Name the thread.
+	(ccid_vendor_specific_setup, ccid_open_usb_reader): Wrap
+	blocking operations by npth_unprotect/npth_protect.
+
+	dirmngr: Reject certificate which is not valid into cache.
+	+ commit 14ccabe7f82f64bbf84b8a880cd8b4a34cea9061
+	* dirmngr/certcache.c (put_cert): When PERMANENT, reject the
+	certificate which is obviously invalid.
+
+2022-08-31  Werner Koch  <wk@gnupg.org>
+
+	gpg: Fix assertion failure due to errors in encrypt_filter.
+	+ commit aa0c942521d89f4f0aac90bacaf8a7a7cefc88d8
+	* common/iobuf.c (iobuf_copy): Use log_assert.  Explicitly cast error
+	return value.
+	* g10/build-packet.c (do_plaintext): Check for iobuf_copy error.
+
+	* g10/encrypt.c (encrypt_filter): Immediately set header_okay.
+
+2022-08-30  Werner Koch  <wk@gnupg.org>
+
+	gpg: Make --require-compliance work for -se.
+	+ commit f88cb12f8e3c1234a094d09e2505d3a3eec4cbfe
+	* g10/encrypt.c (encrypt_crypt, encrypt_filter): Factor common code
+	out to ...
+	(create_dek_with_warnings): new
+	(check_encryption_compliance): and new.
+
+	* g10/encrypt.c (encrypt_filter): Add the compliance check.
+
+2022-08-29  Werner Koch  <wk@gnupg.org>
+
+	gpg: Rename a function.
+	+ commit 15cf36f6a84deb739bef9944819c5f79f8de3334
+	* g10/cipher.c (cipher_filter): Rename to cipher_file_cfb.
+
+	gpg: Very minor cleanup in decrypt_data.
+	+ commit 5b24c41ba72c2d06f6acc7c2ad51cf6f384d41d8
+	* g10/decrypt-data.c (decrypt_data): Show also the aead algo with
+	--show-session-key.  Remove meanwhile superfluous NULL-ptr test.
+
+2022-08-29  Jussi Kivilinna  <jussi.kivilinna@iki.fi>
+
+	g10/decrypt-data: disable output estream buffering to reduce overhead.
+	+ commit e92812a4752e56977286f96f7b5064db1e22936d
+	* g10/decrypt-data.c (decrypt_data): Disable estream buffering for
+	output file.
+
+2022-08-24  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.37.
+	+ commit 8e60f885713b833dfd8cef7f5b0272df0e48d62f
+
+
+2022-08-19  Werner Koch  <wk@gnupg.org>
+
+	gpgsm: New option --compatibility-flags.
+	+ commit 77b6896f7a85a4b1c9cdd731e1d68d59a0e09950
+	* sm/gpgsm.c (oCompatibilityFlags): New option.
+	(compatibility_flags): new.
+	(main): Parse and print them in verbose mode.
+	* sm/gpgsm.h (opt): Add field compat_glags.:
+	(COMPAT_ALLOW_KA_TO_ENCR): New.
+	* sm/keylist.c (print_capabilities): Take care of the new flag.
+	* sm/certlist.c (cert_usage_p): Ditto.
+
+	* common/miscellaneous.c (parse_compatibility_flags): New.
+	* common/util.h (struct compatibility_flags_s): New.
+
+2022-08-17  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Make --auto-key-import and --include-key-block visible again.
+	+ commit b356eddf3d7a1ed0fae808b9277134d50f4974af
+	* tools/gpgconf-comp.c: Add options.
+
+2022-08-16  Werner Koch  <wk@gnupg.org>
+
+	agent: Fix bug introduced earlier today.
+	+ commit 3591112fdb013dee1a1a668c9f777d0890520311
+	* agent/findkey.c (agent_write_private_key): Fix condition.
+
+	gpg: Fix "generate" command in --card-edit.
+	+ commit 914ee7247562dc8f1e4b8503b3b574a5d2749bde
+	* g10/card-util.c (get_info_for_key_operation): Get the APPTYPE before
+	testing for it.
+
+	* g10/card-util.c (current_card_status): Always try to update the
+	shadow keys.
+	* g10/call-agent.c (agent_scd_getattr): Handle $AUTHKEYID.
+
+	gpg: Update shadow-keys with --card-status also for non-openpgp cards.
+	+ commit 2d23a72690b44528783264a93e170585a99cc774
+	* agent/command.c (cmd_readkey): Also allow for $AUTHKEYID in card
+	mode.
+	* g10/call-agent.c (agent_update_shadow_keys): new.
+	* g10/card-util.c (current_card_status): Call it.
+
+	agent: Let READKEY update the display-s/n of the Token entry.
+	+ commit 755920d4335730fbf25e24342dc9c8a8a772dac3
+	* agent/findkey.c (agent_write_private_key): Factor file name
+	generation out to ...
+	(fname_from_keygrip): new.
+	(write_extended_private_key): Add and implement new arg MAYBE_UPDATE.
+	(agent_write_shadow_key): Ditto.
+
+	* agent/command.c (cmd_readkey): Update the shadow-key in card mode.
+
+	gpg: Fix --card-status to handle lowercase APPTYPEs.
+	+ commit 8e393e2592646f7d2a11ec32232b8f29eacdce13
+	* g10/card-util.c (current_card_status): Use ascii_strcasecmp.
+
+2022-08-16  NIIBE Yutaka  <gniibe@fsij.org>
+
+	gpg: Fix detecting OpenPGP card by serialno.
+	+ commit 27ae89db6e6901a8fd6f1dce50a25c1a4b845086
+	* g10/card-util.c (get_info_for_key_operation): Use ->apptype to
+	determine card's APP.
+	(current_card_status): Even if its SERIALNO is not like OpenPGP card,
+	it's OpenPGP card when app says so.
+
+2022-08-16  Werner Koch  <wk@gnupg.org>
+
+	common: In private key mode write "Key:" always last in name-value.
+	+ commit 12ad9529782df1eecf628281b8db62cafd775c4f
+	* common/name-value.c (nvc_write): Take care of Key. Factor some code
+	out to ...
+	(write_one_entry): new.
+
+2022-08-15  Werner Koch  <wk@gnupg.org>
+
+	agent: Create and use Token entries to track the display s/n.
+	+ commit dc9b2426288e4eb6ab42aa7f731a35bc8d383b46
+	* agent/divert-scd.c (linefeed_to_percent0A): New.
+	(ask_for_card): Add arg grip.  Read Token and Label items and use
+	them.
+	(divert_pksign, divert_pkdecrypt): Pass down grip.
+	* agent/findkey.c (write_extended_private_key): Add args serialno,
+	keyref, and dispserialno.  Writen Token item.
+	(agent_write_private_key): Add args serialno, keyref, and
+	dispserialno.
+	(read_key_file): Add arg r_keymeta.
+	(agent_keymeta_from_file): New.
+	(agent_write_shadow_key): Remove leading spaces from serialno and keyid.
+	* agent/protect-tool.c (agent_write_private_key): Ditto.
+	* agent/learncard.c (agent_handle_learn): Get DISPSERIALNO and pass to
+	agent_write_shadow_key.
+	* agent/command-ssh.c (card_key_available): Ditto.
+
+	common: New function nve_set.
+	+ commit 706adf669173ec604158e4a2f4337e3da6cb1e45
+	* common/name-value.c (nve_set): New.
+	(nvc_set): Use nve_set.
+	(nvc_delete_named): New.
+	(nvc_get_string): New.
+	(nvc_get_boolean): New.
+
+2022-08-04  Werner Koch  <wk@gnupg.org>
+
+	gpg: Fix wrong error message for keytocard.
+	+ commit f2a81e3745017072585c9999a129ee5dd0bdc6e6
+	* g10/call-agent.c (agent_keytocard): Emit SC_OP_FAILURE.
+
+2022-08-03  Werner Koch  <wk@gnupg.org>
+
+	common: Silence warnings from AllowSetForegroundWindow.
+	+ commit 6583abedf3f0ffe5cc8283fe683144fc1d5add40
+	* common/sysutils.c (gnupg_allow_set_foregound_window): Print warning
+	only with debug flag set.
+
+	dirmngr: Fix failed malloc error message.
+	+ commit 94908857e1f54a3550a3704a5de6bd10b7902169
+	* dirmngr/ocsp.c (check_signature): Fix error printing of xtrymalloc.
+
+	gpgconf: Add config file for Windows Registry dumps.
+	+ commit ebb736b2c310c8736d1165be9c8e2de413dd0ac6
+	* tools/gpgconf.c (show_registry_entries_from_file): New.
+	(show_configs): Call it.
+	* doc/examples/gpgconf.rnames: New.
+	* doc/Makefile.am (examples): Add it.
+
+2022-08-02  Werner Koch  <wk@gnupg.org>
+
+	gpg: Make symmetric + pubkey encryption de-vs compliant.
+	+ commit e8011a7ceca7d5d9fd703f227e56931a7ea151d6
+	* g10/mainproc.c (proc_encrypted): Make symmetric + pubkey encryption
+	de-vs compliant.
+
+	* g10/mainproc.c (struct symlist_item): New.
+	(struct mainproc_context): Add field symenc_list.
+	(release_list): Free that list.
+	(proc_symkey_enc): Record infos from symmetric session packet.
+	(proc_encrypted): Check symkey packet algos
+
+	gpgconf: Improve registry dumping.
+	+ commit 6bc959231802d60694b7677d3537261d9cda1e1d
+	* common/w32-reg.c (read_w32_registry_string): Map REG_DWORD to a
+	string.
+	(read_w32_reg_string): Add arg r_hklm_fallback and change all callers.
+	(show_configs): Indicate whether the HKLM fallback was used.
+	* tools/gpgconf.c (show_other_registry_entries): Fix the Outlook Addin
+	Registry key.  Indicate whether the HKLM fallback was used.
+
+2022-07-28  Werner Koch  <wk@gnupg.org>
+
+	gpg: For de-vs use SHA-256 instead of SHA-1 as implicit preference.
+	+ commit 890e616593af5d1e0f2eb932768205ef90928e5e
+	* g10/pkclist.c (select_algo_from_prefs): Change implicit hash
+	algorithm.
+
+2022-07-27  Werner Koch  <wk@gnupg.org>
+
+	agent: New option --no-user-trustlist and --sys-trustlist-name.
+	+ commit d0bd91ba73a7e333e9b5007875c9bd475fb9581e
+	* agent/gpg-agent.c (oNoUserTrustlist,oSysTrustlistName): New.
+	(opts): Add new option names.
+	(parse_rereadable_options): Parse options.
+	(finalize_rereadable_options): Reset allow-mark-trusted for the new
+	option.
+	* agent/agent.h (opt): Add fields no_user_trustlist and
+	sys_trustlist_name.
+	* agent/trustlist.c (make_sys_trustlist_name): New.
+	(read_one_trustfile): Use here.
+	(read_trustfiles): Use here.  Implement --no-user-trustlist.  Also
+	repalce "allow_include" by "systrust" and adjust callers.
+
+2022-07-27  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	gpg: Look up user ID to revoke by UID hash.
+	+ commit abe69b2094dd749fc2f285b672d30a4f1e3f12a7
+	* g10/keyedit.c (find_userid_by_namehash, find_userid): New.
+	(keyedit_quick_revuid): Use find_userid() instead of iterating over the
+	nodes of the keyblock.
+	* tests/openpgp/quick-key-manipulation.scm: Add test for revoking a
+	user ID specified by its hash.
+
+2022-07-27  Werner Koch  <wk@gnupg.org>
+
+	wkd: Bind the address to the nonce.
+	+ commit 73a98c13969169fee6bf5eaa71507a409eb17caf
+	* tools/gpg-wks-server.c (make_pending_fname): New.
+	(store_key_as_pending, check_and_publish): Use here.
+	(process_new_key): Pass addrspec to store_key_as_pending.
+	(expire_one_domain): Expire also the new files.
+
+2022-07-26  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	dirmngr: Ask keyservers to provide the key fingerprints.
+	+ commit 22e8dc792702cd485408b5a8212d34a3917851ca
+	* dirmngr/ks-engine-hkp.c (ks_hkp_search): Add "fingerprint=on" to
+	request URL.
+
+2022-07-25  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	gpg: Request keygrip of key to add via command interface.
+	+ commit ee8f1c10a7a54714fb2a9ca141d38e666b9a424d
+	* g10/keygen.c (ask_algo): Request keygrip via cpr_get.
+	* doc/help.txt (gpg.keygen.keygrip): New help text.
+
+2022-07-25  Werner Koch  <wk@gnupg.org>
+
+	wkd: Fix path traversal attack on gpg-wks-server.
+	+ commit c1489ca0e101a81df6f8b1ba8d8a9afd9ebc6412
+	* tools/gpg-wks-server.c (check_and_publish): Check for invalid
+	characters in sender controlled data.
+	* tools/wks-util.c (wks_fname_from_userid): Ditto.
+	(wks_compute_hu_fname): Ditto.
+	(ensure_policy_file): Ditto.
+
+2022-07-13  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd:openpgp: Fix workaround for Yubikey heuristics.
+	+ commit 8c9f879d4aa01ad96320869fb3da83a843292504
+	* scd/app-openpgp.c (parse_algorithm_attribute): Handle the case
+	of firmware 5.4, too.
+
+	scd: Fail when no good algorithm attribute.
+	+ commit 225c66f13b8700d9d283367705b31070a3d38d93
+	* scd/app-openpgp.c (parse_algorithm_attribute): Return the error.
+	(change_keyattr): Follow the change.
+	(app_select_openpgp): Handle the error of parse_algorithm_attribute.
+
+2022-07-12  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Don't inhibit SSH authentication for larger data if it can.
+	+ commit 07e43eda8dc69cecc385a6b3723e155afbc59257
+	* scd/app-openpgp.c (do_auth): Use command chaining if available.
+
+2022-07-06  Werner Koch  <wk@gnupg.org>
+
+	Release 2.3.36.
+	+ commit 491645b50ec97db12520483d347291d660db209c
+
+
+2022-06-29  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: New short options -V and -X.
+	+ commit f357a5f239919de976b86a666410f504682973e4
+	* tools/gpgconf.c: Assign short options -X and -V
+	(show_version_gnupg): Print the vsd version if available.
+
+2022-06-24  NIIBE Yutaka  <gniibe@fsij.org>
+
+	agent: Flush before calling ftruncate.
+	+ commit 9e2307ddf0c2608e9cfb435f870b75cbb35791d7
+	* agent/findkey.c (write_extended_private_key): Make sure
+	it is flushed out.
+
+2022-06-21  Werner Koch  <wk@gnupg.org>
+
+	sm: Update pkcs#12 module from master.
+	+ commit 4c14bbf56fb544541bd65f9d6e6e0b81779dcab6
+	* sm/minip12.c: Update from master.
+	* sm/import.c (parse_p12): Pass NULL for curve.
+
+2022-06-20  Werner Koch  <wk@gnupg.org>
+
+	common: Add an easy to use DER builder.
+	+ commit d21ced1e3596dc9e4fa53995286b4cbbd6e94195
+	* common/tlv-builder.c: New.
+	* common/tlv.c: Remove stuff only used by GnuPG 1.
+	(put_tlv_to_membuf, get_tlv_length): Move to ...
+	* common/tlv-builder.c: here.
+	* common/tlv.h (tlv_builder_t): New.
+
+2022-06-14  Werner Koch  <wk@gnupg.org>
+
+	g10: Fix garbled status messages in NOTATION_DATA.
+	+ commit 7b1db7192e6e4d0cfc439b23b13831837c85bc21
+	* g10/cpr.c (write_status_text_and_buffer): Fix off-by-one
+
+2022-06-09  NIIBE Yutaka  <gniibe@fsij.org>
+
+	agent,scd: Make sure to set CONFIDENTIAL flag in Assuan.
+	+ commit aeee62593ae9147a38fd79f0782f3fa0e4ac5c4a
+	* agent/call-scd.c (inq_needpin): Call assuan_begin_confidential
+	and assuan_end_confidential, and wipe the memory after use.
+	* agent/command.c (cmd_preset_passphrase): Likewise.
+	* scd/command.c (pin_cb): Likewise.
+
+2022-06-03  Werner Koch  <wk@gnupg.org>
+
+	w32: Avoid warning about not including winsock2.h after windows.h.
+	+ commit dfc01118ce0707c2d920fb31f7731f3a383df761
+	* common/dynload.h: Include winsock2.h first.
+
+	w32: Allow Unicode filenames for iobuf_cancel.
+	+ commit 10db566489880acd510f8e07dc52a38dd82feafe
+	* common/iobuf.c (iobuf_cancel): Use gnupg_remove
+	* common/mischelp.c (same_file_p): Allow for Unicode names.
+
+2022-06-01  Werner Koch  <wk@gnupg.org>
+
+	scd:p15: Fix accidental commit of debug code.
+	+ commit e3db6c74a6305e86eaefb0ca8d49d4d9754104ff
+	* scd/app-p15.c (do_sign): Revert MSE setting.
+
+	scd: Shorten cardio debug output for all zeroes.
+	+ commit 62becf599eb861936faf88b6ec5e0f7b1658b54e
+	* scd/apdu.c (all_zero_p): New.
+	(send_le): Use it.
+
+	(cherry picked from commit 9b6f574928546e6905a92c3e74d72478f1585c66)
+
+2022-05-17  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Fix use of SCardListReaders for PC/SC.
+	+ commit 7bc794c3113400af082b26610d9d1305826be54e
+	* scd/apdu.c (open_pcsc_reader): Initialize NREADER.
+
+2022-05-10  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Add workaround for ECC attribute on Yubikey.
+	+ commit a5217c90003c2e1b9bfb06b58ffc2d0d9164f22a
+	* scd/app-openpgp.c (parse_algorithm_attribute): Skip possibly bogus
+	octet in a key attribute.
+
+2022-05-06  Werner Koch  <wk@gnupg.org>
+
+	scd:p15: Improve the displayed S/N for Technology Nexus cards.
+	+ commit 91acbdc93c8a6ae06b483a27c8bb7c33a978108d
+	* scd/app-p15.c (any_control_or_space_mem): New.
+	(get_dispserialno): Add new code.
+
+	scd:p15: Fix the the sanity check of the displayed S/N.
+	+ commit 8efe738c4a090f523461fa3055da668467715105
+	* scd/app-p15.c (any_control_or_space): Fix loop.
+
+2022-05-05  Werner Koch  <wk@gnupg.org>
+
+	scd:p15: Fix reading certificates without length info.
+	+ commit 7f029eef6ce15be4167f56e7fc07755d189e5e27
+	* scd/app-p15.c (readcert_by_cdf): Do not use extended mode if the CDF
+	object has no length info.  Add debug output when reading a cert.
+	(read_p15_info): No more need to disable extended mode for GeNUA cards.
+
+	scd: New debug flags "card".
+	+ commit d60f930d9b000e802dc61c8e8d494a3091dc0437
+	* scd/scdaemon.c (debug_flags): Add "card".
+	* scd/scdaemon.h (DBG_CARD_VALUE, DBG_CARD): New.
+
+	gpg: Minor robustness fix.
+	+ commit 36a5509e11c81305c4ded93982fa594bd52555a6
+	* g10/parse-packet.c (mpi_read_detect_0_removal): Protect agains
+	failed gcry_mpi_scan.
+
+2022-05-02  NIIBE Yutaka  <gniibe@fsij.org>
+
+	tests: Add a test for Ed25519 keys for non-protected secret.
+	+ commit 06e82e997a56406e04113a7f6c1d083e0cc04172
+	* tests/openpgp/issue5120.scm: New.
+
+2022-04-28  NIIBE Yutaka  <gniibe@fsij.org>
+
+	gpg: Handle leading-zeros private key for Ed25519.
+	+ commit 3fcef7371480cce392d690897d42955f1b19c12a
+	* g10/parse-packet.c (mpi_read_detect_0_removal): New.
+	(parse_key): Use mpi_read_detect_0_removal for PUBKEY_ALGO_EDDSA
+	to tweak the checksum.
+
+	Revert "gpg: Accept Ed25519 private key in SOS which reserves leading zeros."
+	+ commit 3192939a10df17cb9666773ed8888627f6d16b8d
+	This reverts commit 14de7b1e5904e78fcbe413a82d0f19b750bd8830.
+
+2022-04-25  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.35.
+	+ commit f7bc6f50496bffc3c377cb4e3e844242a590b5e1
+
+
+	gpg: Avoid NULL ptr access due to corrupted packets.
+	+ commit 86d84464ae11666b1556e876a41a65cec8daaf18
+	* g10/parse-packet.c (parse_signature): Do not create an opaque MPI
+	with NULL and length > 0
+	(parse_key): Ditto.
+
+2022-04-25  NIIBE Yutaka  <gniibe@fsij.org>
+
+	agent: Not writing password into file.
+	+ commit 9c0a24b4a55edff3d54cc5e98ba8112714f583e3
+	* agent/genkey.c (do_check_passphrase_pattern): Use stream to invoke
+	pattern check program.
+
+2022-04-25  Werner Koch  <wk@gnupg.org>
+
+	gpg: Emit an ERROR status as hint for a bad passphrase.
+	+ commit f021ecd57624f09430731f5deee2c4d0712150c8
+	* g10/mainproc.c (proc_symkey_enc): Issue new error code.
+	(proc_encrypted): Ditto.
+
+2022-04-20  Werner Koch  <wk@gnupg.org>
+
+	w32: Do no use Registry item DefaultLogFile for the main tools.
+	+ commit a5faaf8bee43e1e8d99cf3c08fad8ccce047fc28
+	* g10/gpg.c (main): Set LOG_NO_REGISTRY.
+	* sm/gpgsm.c (main): Ditto.
+	* tools/gpg-connect-agent.c (main): Ditto.
+	* tools/gpgconf.c (main): Ditto.
+	(show_other_registry_entries): Print "DefaultLogFile".
+
+2022-04-14  Werner Koch  <wk@gnupg.org>
+
+	gpg: Replace an assert by a log_fatal.
+	+ commit c8c71fc7161bf6b553bc5b45b2f7a06f8a1a4639
+	* g10/build-packet.c (do_signature): Use log_fatal.
+
+	scd: Minor code reorganization.
+	+ commit 58532fe56c334d0edc589311e6601fb9da70d9a1
+	* scd/ccid-driver.c: Move struct defines to the top.
+	(MAX_DEVICE): Rename to CCID_MAX_DEVICE.
+
+	scd: Fix memory leak in ccid-driver.
+	+ commit c4b14be48fe9b0f52bca9840375eb0eac3cc2432
+	* scd/ccid-driver.c (ccid_dev_scan): Use loop var and not the count.
+
+2022-04-13  Werner Koch  <wk@gnupg.org>
+
+	scd:p15: Improve the PIN prompt for Genua cards.
+	+ commit e99670f944bc613d258d0810c5831a2099718d4e
+	* scd/app-p15.c (CARD_PRODUCT_GENUA): New.
+	(cardproduct2str): Add it.
+	(read_p15_info): Detect and set GENUA
+	(make_pin_prompt): Take holder string from the AODF.
+
+	scd:p15: Support for GeNUA cards.
+	+ commit 44ec383cdec06ee4ac8dbe7b913990bbeeb3d3a3
+	* scd/app-p15.c (read_p15_info): Disable extended mode for Genua
+	cards.
+
+	scd:p15: Prepare AODF parsing for other authentication types.
+	+ commit 29fd80581867beeec068b49e8587762394e7d4d1
+	* scd/app-p15.c (auth_type_t): New.
+	(struct aodf_object_s): Add field auth_type.
+	(read_ef_aodf): Distinguish between pin and authkey types.  Include
+	the authtype in the verbose mode diags.
+
+	scd:p15: Add basic support for AET JCOP cards.
+	+ commit 80cf64c65155f718ed7dcee0e6a2aedbd9a2a5b0
+	* scd/app-p15.c (CARD_TYPE_AET): New.
+	(cardtype2str): Add string.
+	(card_atr_list): Add corresponding ATR.
+	(app_local_s): New flag no_extended_mode.  Turn two other flags into
+	bit flags.
+	(select_ef_by_path): Hack to handle the 3FFF thing.
+	(readcert_by_cdf): Do not use extended mode for AET.
+	(app_select_p15): Set no_extended_mode.
+	---
+	(cherry picked from commit 544ec7872aed24c296ea34fac777eca287f7bb47)
+
+2022-03-29  NIIBE Yutaka  <gniibe@fsij.org>
+
+	common,unix: Backport dotlock changes from GnuPG 2.3.
+	+ commit d9a8d3353afd669252e25b56ed92f9fb7c0dcc3d
+	* common/dotlock.c (read_lockfile): Return FD in R_FD.
+	(dotlock_take_unix): Fix a race condition by new read_lockfile and
+	checking with fstat.  Describe one race condition in comment.
+	(dotlock_release_unix): Follow the change of read_lockfile.
+
+2022-03-28  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Escape more characters in WKD requests.
+	+ commit 3b251c8366cf7ddf5b82fc2331a8009fa1f2de23
+	* dirmngr/server.c (proc_wkd_get): Also escape '#' and '+'
+
+2022-03-22  Werner Koch  <wk@gnupg.org>
+
+	gpgtar: New option --with-log.
+	+ commit ce69d55f70a18cfe5cf91353efc00ab43ba8fd8b
+	* tools/gpgtar.c: New option --with-log.
+	* tools/gpgtar.h (opt): Add field with_log.
+	* tools/gpgtar-extract.c (gpgtar_extract): Move directory string
+	building up.  Add option --log-file if needed.
+	* tools/gpgtar-create.c (gpgtar_create): Make tmpbuf static becuase it
+	is used outside of its scope.
+	* tools/gpgtar-list.c (gpgtar_list): Ditto.
+
+2022-03-21  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Make WKD_GET work even for servers not handling SRV RRs.
+	+ commit 6d30fb6940d57237392f9196a4de5c7246ffefdf
+	* dirmngr/server.c (proc_wkd_get): Take care of DNS server failures
+
+	gpgtar: Finally use a pipe for decryption.
+	+ commit d431feb3077f763e37f824026988a10d87c8a5aa
+	* tools/gpgtar.h (opt): Add new flags.
+	* tools/gpgtar.c: new options --batch, --yes, --no, --status-fd, and
+	--require-compliance.
+	(main): Init signals.
+	* tools/gpgtar-create.c: Add new header files.
+	(gpgtar_create): Rework to use a pipe for encryption and signing.
+	* tools/gpgtar-list.c: Add new header files.
+	(gpgtar_list): Rework to use a pipe for decryption.
+	* tools/gpgtar-extract.c: Add new header files.
+	(gpgtar_extract): Rework to use a pipe for decryption.
+
+2022-03-18  Werner Koch  <wk@gnupg.org>
+
+	gpg: Print info about the used AEAD algorithm.
+	+ commit 15eda7ce783a81d2f5911028a4c8c3ce5649edca
+	* g10/misc.c (openpgp_cipher_algo_mode_name): New.
+	* g10/decrypt-data.c (decrypt_data): Use function here.
+
+	common: New function map_static_strings.
+	+ commit c1453665491fb6a16883ee5e1828cfb0c28b466a
+	* common/mapstrings.c (struct intmapping_s): New.
+	(map_static_strings): New.
+	* common/stringhelp.c (do_strconcat): Rename to ...
+	(vstrconcat): this and make global.
+
+	* common/t-mapstrings.c (test_map_static_strings): New test.
+
+	gpg: Allow decryption of symencr even for non-compliant cipher.
+	+ commit e081a601f7b31fa278e46de7c6834a756b63cec2
+	* g10/decrypt-data.c (decrypt_data): Add arg compliance_error.  Adjust
+	all callers.  Fail on compliance error only in --require-compliance
+	mode.  Make sure to return an error if the buffer is missing; actually
+	that should be an assert.
+	* g10/mainproc.c (proc_encrypted): Delay printing of the compliance
+	mode status.  Consult the compliance error now returned by
+	decrypt_data.
+
+2022-03-15  Werner Koch  <wk@gnupg.org>
+
+	common: New flags for gnupg_spawn_process.
+	+ commit 7ba44d15ca2f800c402a56eb71bb524f91ea2ffa
+	* common/exechelp.h (GNUPG_SPAWN_KEEP_STDIN): New.
+	(GNUPG_SPAWN_KEEP_STDOUT): New.
+	(GNUPG_SPAWN_KEEP_STDERR): New.
+	* common/exechelp-posix.c (do_exec): Add arg flags and implement new
+	flags.
+	* common/exechelp-w32.c (gnupg_spawn_process): Implement new flags.
+
+2022-03-09  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Silence warnings from parsing the options files.
+	+ commit e8b1ab1d2d22f938b3e5991343b7e089d96606a0
+	* tools/gpgconf-comp.c (retrieve_options_from_program): Set verbose
+	flag for the arg parser only in --verbose mode.
+
+2022-03-09  NIIBE Yutaka  <gniibe@fsij.org>
+
+	sm: Fix parsing encrypted data.
+	+ commit 0c7dffe99d3fded41df87512063515b5ca2da820
+	* sm/minip12.c (cram_octet_string): Finish when N==0.
+	(parse_bag_encrypted_data): Support constructed data with multiple
+	octet strings.
+
+2022-03-08  Werner Koch  <wk@gnupg.org>
+
+	gpgsm: New option --require-compliance.
+	+ commit 847d618454e6f8418b169132dbdd0307d9b4d7e0
+	* sm/gpgsm.c (oRequireCompliance): New.
+	(opts): Add --require-compliance.
+	(main): Set option.
+	* sm/gpgsm.h (opt): Add field require_compliance.
+	(gpgsm_errors_seen): Declare.
+	* sm/verify.c (gpgsm_verify): Emit error if non de-vs compliant.
+	* sm/encrypt.c (gpgsm_encrypt): Ditto.
+	* sm/decrypt.c (gpgsm_decrypt): Ditto.
+
+	gpg: New option --require-compliance.
+	+ commit 17890d43187384d049d80af28a5baea8613ff6ea
+	* g10/options.h (opt): Add field flags.require_compliance.
+	* g10/gpg.c (oRequireCompliance): New.
+	(opts): Add --require-compliance.
+	(main): Set option.
+	* g10/mainproc.c (proc_encrypted): Emit error if non de-vs compliant.
+	(check_sig_and_print): Ditto.
+	* g10/encrypt.c (encrypt_crypt): Ditto.
+
+	gpg: Give Libgcrypt CFLAGS a higher priority than SQlite.
+	+ commit c11292fe736db6e61fad17d74f65b0b5ad9c2808
+	* g10/Makefile.am (AM_CFLAGS): Reorder.
+
+2022-03-04  Werner Koch  <wk@gnupg.org>
+
+	gpgtar,w32: Support file names longer than MAX_PATH.
+	+ commit 5492079defab85b1ba2c583e32a8feb752314b2e
+	* tools/gpgtar.c: Replace assert by log_assert.
+	* tools/gpgtar-extract.c: Ditto.
+	(extract_regular): Create files with sysopen flag.
+	* tools/gpgtar-create.c (scan_directory): Use gpgrt_fname_to_wchar.
+
+	common,w32: Support file names longer than MAX_PATH in iobuf.
+	+ commit 4122896a39b7ac5dc071bf4d2e9be0ac8a3e21d7
+	* common/iobuf.c (direct_open): Use gpgrt_fname_to_wchar.
+	(any8bitchar): Remove.
+
+2022-02-24  Jussi Kivilinna  <jussi.kivilinna@iki.fi>
+
+	g10: Avoid extra hash contexts when decrypting MDC input.
+	+ commit 9116fd1e9a2da9c83f94acfe41fb6e5c6f03e8d1
+	* g10/mainproc.c (mainproc_context): New member
+	'seen_pkt_encrypted_mdc'.
+	(release_list): Clear 'seen_pkt_encrypted_mdc'.
+	(proc_encrypted): Set 'seen_pkt_encrypted_mdc'.
+	(have_seen_pkt_encrypted_aead): Rename to...
+	(have_seen_pkt_encrypted_aead_or_mdc): ...this and add check for
+	'seen_pkt_encrypted_mdc'.
+	(proc_plaintext): Do not enable extra hash contexts when decrypting
+	MDC input.
+
+2022-02-21  Werner Koch  <wk@gnupg.org>
+
+	scd:p15: Used extended mode already for RSA 2048.
+	+ commit a2db490de5473af42d7b5a99398c48befe294394
+	* scd/app-p15.c (do_sign, do_decipher): Replace GT by GE.
+
+2022-02-17  NIIBE Yutaka  <gniibe@fsij.org>
+
+	tests: Remove a test case with "quiet" option with gpgconf.
+	+ commit f064d972e38863358a2dd53de43acd66572830c2
+	* tests/openpgp/gpgconf.scm: Remove "quiet" test.
+
+	scd: Use lock_slot for apdu_send_direct.
+	+ commit 3c3765405de02b9a57fdc9a3cf901f6e3aca8586
+	* scd/apdu.c (apdu_send_direct): Use lock_slot.
+
+2022-02-09  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Do not show "quiet" as option.
+	+ commit 2f2130ff24faf4507fa5949e834c155b4a8e1525
+	* tools/gpgconf-comp.c: Remove "quiet" and two unsupported options
+
+2022-02-07  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.34.
+	+ commit 04d40a680baa43f9803d0981b1da49144021d723
+
+
+	dirmngr: Changes to the linking order.
+	+ commit 3c79ff34c417bfc392008eca1970b86bec54d6c3
+	* dirmngr/Makefile.am: Tweak library order.
+
+	gpgconf: Make gpgconf --launch dirmngr work again.
+	+ commit 5a7ed6dd8f1b4e3c2e8f6e82700a86bd886c5f50
+	* tools/gpgconf.h (gc_component_id_t): Fix the order.
+
+	gpgconf: Print the used code pages on Windows with --show-configs.
+	+ commit 32b364b99b492c580330591640cdaa7407016733
+	* tools/gpgconf.c (show_configs): Add some code
+
+	common: Fix creation of Windows socket directories.
+	+ commit 7d1215cb9cba258102b91c92e6973783e8d53b07
+	* common/homedir.c (w32_try_mkdir): Remove.
+	(standard_homedir): Use gnupg_mkdir instead of w32_try_mkdir.
+	(_gnupg_socketdir_internal): Ditto.
+
+2022-02-04  Werner Koch  <wk@gnupg.org>
+
+	m4: Update our library m4 files from master.
+	+ commit c8cd66ae7e609f221c7dad905e88a206a285ab1c
+	* m4/gpg-error.m4: Updated
+	* m4/ksba.m4: Updated
+	* m4/libassuan.m4: Updated
+	* m4/libgcrypt.m4: Updated
+	* m4/npth.m4: Updated
+	* m4/ntbtls.m4: Updated
+
+2022-02-03  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Allow building with non-standard ntbtls location.
+	+ commit 137590fd8614a69cc60da3226cefc4495502ec26
+	* dirmngr/Makefile.am: Add missing -L and -I
+
+	dirmngr: Simplify --gpgconf-list output.
+	+ commit 0b76ef48e1df4c210d57f3bf4bc1fe1fa3762408
+	* dirmngr/dirmngr.c (main): Keep only values with the default flag.
+
+	sm: New option --ignore-cert-with-oid.
+	+ commit bcf446b70ca58ac1497269f047fba9ddb3d62e96
+	* sm/gpgsm.c (oIgnoreCertWithOID): New.
+	(opts): Add option.
+	(main): Store its value.
+	* sm/call-agent.c (learn_cb): Test against that list.
+
+2022-02-02  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Return the compliance_de_vs item.
+	+ commit e058d15d2d56dfed2723e1a55c75e52db87b2dc2
+	* tools/gpgconf-comp.c (known_options_gpg): Add missing pseudo option.
+
+2022-02-01  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Avoid initial delay on the first keyserver access.
+	+ commit dde88897e2c5851aab32370ee6c8ace150debb77
+	* dirmngr/dirmngr.c (dirmngr_never_use_tor_p): New.
+	* dirmngr/server.c (ensure_keyserver): Don't even test for the Tor
+	proxy in never-use-tor Mode.
+
+	* tools/gpgtar-create.c: Include unistd.h to avoid a warning on
+	Windows.
+
+	gpg: Set --verbose and clear --quiet in debug mode.
+	+ commit d426ed66ac043e442649a8a2bc7eac6753a5bf58
+	* g10/gpg.c (set_debug): Tweak options.
+
+2022-01-28  Werner Koch  <wk@gnupg.org>
+
+	ssh: Fix adding an ed25519 key with a zero length comment.
+	+ commit 2331900d1cc022c04177272a51c00690229bb989
+	* agent/command-ssh.c (sexp_key_construct): Do not put an empty string
+	into an S-expression.
+	(stream_read_string): Do not not try to a read a zero length block.
+
+2022-01-27  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Tweak the use of ldapserver.
+	+ commit e1fc053dc1ad260922428cf864071e829e6c30f2
+	* tools/gpgconf-comp.c (known_options_gpgsm): Make "keyserver"
+	invisible.
+	(known_options_dirmngr): Add "ldapserver".
+	* sm/gpgsm.c (oKeyServer_deprecated): New.
+	(opts): Assign "ldapserver" to the new option and makr it as obsolete.
+
+2022-01-26  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Some more fixes for the backported stuff.
+	+ commit eefa2d19ee3f359435f0e5324cb5f10f2d8940a5
+	* agent/gpg-agent.c (main) <gpgconf_list>: Keep only those option which
+	have a default.  Remove runtime flag.
+	* common/gc-opt-flags.h (GC_OPT_FLAG_RUNTIME): Move to ...
+	* tools/gpgconf-comp.c: here because it is now inetrnal to gpgconf.
+	(known_options_gpg_agent): Add a few missing runtime flags.  Remove
+	"options".  Add "check-sym-passphrase-pattern".
+	(known_options_scdaemon, known_options_gpgsm): Remove "options".
+	(dirmngr): Ditto.
+
+	* tools/gpgconf-comp.c (is_known_option): Return only options having a
+	value for name.  Thus we list list options from the known_options
+	tables.
+
+	gpgconf: Fix --list-options for forced options.
+	+ commit 85300587cc8a115c96e812850762090f937ade9b
+	* tools/gpgconf-comp.c: Remove assert.h and replace all assert calls
+	by log_assert.
+	(known_options_gpg): Add "keyserver" as invisible.  Remove "options".
+	(known_pseudo_options_gpg, known_pseudo_options_gpgsm): New.
+	(gc_component): Add field known_pseudo_options.
+	(struct read_line_wrapper_parm_s): New.
+	(read_line_wrapper): New.
+	(retrieve_options_from_program): Use read_line_wrapper to handle
+	pseudo options.
+	(retrieve_options_from_program): Ignore to be ignored options.  Add
+	failsafe code to avoid calling percent_escape with NULL.
+
+2022-01-25  Werner Koch  <wk@gnupg.org>
+
+	common: Fix returning of option attributes for options with args.
+	+ commit d8e6d1e9ed7d181f546426269ab7b04e184bb9a1
+	* common/argparse.c (gnupg_argparse): Set attribute flags
+
+	scd: Also prefer Yubikeys if no reader port is given.
+	+ commit 38c666ec3fdb0e3a8762889ae99faca4adb68b68
+	* scd/apdu.c (select_a_reader): Extend the white list.
+
+2022-01-17  NIIBE Yutaka  <gniibe@fsij.org>
+
+	gpg: Fix adding the list of ultimate trusted keys.
+	+ commit 4cc724639c012215f59648cbb4b7631b9d352e36
+	* g10/keygen.c (do_generate_keypair): Remove call to
+	register_trusted_keyid for updating user_utk_list.
+	* g10/trust.c (register_trusted_keyid): Remove.
+	(update_ownertrust): Add call to tdb_update_utk.
+	* g10/trustdb.c (tdb_register_trusted_keyid): Make it internal
+	function by adding "static" qualifier.
+	Replace calls of register_trusted_keyid to tdb_register_trusted_keyid.
+	(tdb_update_utk): New.
+	* g10/trustdb.h (tdb_update_utk): New.
+
+2022-01-12  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Add command aliases -L -K -R.
+	+ commit f16c535eee912224a44b5999df7915c69f2d41bc
+	* tools/gpgconf.c (enum cmd_and_opt_values): Assign shortcuts.
+
+	common,w32: Improve HKCU->HKLM fallback.
+	+ commit 96db487a4da5903b71c64edf7a0ee9c2e01a8762
+	* common/w32-reg.c (read_w32_registry_string): Add another fallback.
+
+2022-01-10  Werner Koch  <wk@gnupg.org>
+
+	gpgtar: List and extract using extended headers.
+	+ commit bf4cf04a54bb2aa34afdf1d3c814ca4e185bacc8
+	* tools/gpgtar.h (TF_EXTHDR, TF_GEXTHDR): New.
+	* tools/gpgtar-list.c (parse_header): Set the new type flags.
+	(parse_extended_header): New.
+	(read_header): Add arg r_extheader and parse extended header.
+	(print_header): Consult the extended header.
+	(gpgtar_list): Pass an extended header object.
+	(gpgtar_read_header): Ditto.
+	(gpgtar_print_header): Ditto.
+	* tools/gpgtar-extract.c (extract): New arg exthdr and factor name
+	checking out to ...
+	(check_suspicious_name): new.
+	(extract_regular): Add arg exthdr and consult it.
+	(extract_directory): Likewise.
+	(gpgtar_extract): Provide extheader object.
+
+	gpgtar: Create extended header for long file names.
+	+ commit ec69ceab2615758e88c52a1d30c4731b3e71b105
+	* tools/gpgtar-create.c (global_header_count): new.
+	(myreadlink): New.
+	(build_header): New arg r_exthdr.  Detect and store long file and link
+	names.  Factor checkum computation out to ...
+	(compute_checksum): new.
+	(add_extended_header_record): New.
+	(write_extended_header): New.
+	(write_file): Write extended header.
+
+2021-12-30  Werner Koch  <wk@gnupg.org>
+
+	build: Fixes recent commits to still build with gpgrt 1.27.
+	+ commit c4153f7021afafe9ce4459aa08857136b394cce7
+	* agent/gpg-agent.c (main): Use gnupg_argparse.
+	* tools/gpgconf-comp.c: Use gnupg_opt_t.
+	* tools/gpgconf.c (show_version_gnupg): Use strusage.
+
+	gpgconf: Do not list ignored options and mark forced options as r/o.
+	+ commit c69c51bce0f07bf1becdb944a422bdc563705dae
+	* tools/gpgconf-comp.c (list_one_option): Skip ignored options and set
+	the no_change flag for forced options.
+	(retrieve_options_from_program): Put the attributes into the option
+	table.
+
+2021-12-29  Werner Koch  <wk@gnupg.org>
+
+	gpg: Re-group the options in the --help output.
+	+ commit f7bde071ccc8583b58ddaafa42e997e9202b041f
+	* g10/gpg.c (opts): Change oLoadExtensions, oStrict, and oNoStrict to
+	use ARGPARSE_ignore and remove the code in the option switch.
+
+	agent: Re-group the options in the --help output.
+	+ commit 7e535503a9c637007a933a77e4bc674c8fb6dfea
+	* agent/gpg-agent.c (oGreeting): Remove non existant dummy option.
+
+	gpgconf: Take care of --homedir when reading/updating options.
+	+ commit 5934027115239cb7b39659f14f7a1dfecada6b76
+	* tools/gpgconf-comp.c (gpg_agent_runtime_change): Remove unused var.
+	(scdaemon_runtime_change): Ditto.
+	(dirmngr_runtime_change): Ditto.
+	(gc_component_check_options): Pass --homedir if needed.
+	(retrieve_options_from_program): Take care of --homedir.
+
+	gpgconf: Rewrite the gpgconf-comp module.
+	+ commit 7a3a1ef3707194e1086c452d005319c519905d3e
+	* tools/gpgconf.h (gc_component_t): Change type to ...
+	(gc_component_id_t): this.
+	(GC_COMPONENT_ANY): New, so that we can use that in gpgconf-comp.c
+	directly.
+	* tools/gpgconf-comp.c: Major rework.
+
+	gpgconf: Support reading global options (part 2).
+	+ commit 5f890f417f135e237074c8a454e6a73e66d7b78d
+	* tools/gpgconf-comp.c: Remove all regular option descriptions.  They
+	are now read in from the component.  Also remove a few meanwhile
+	obsolete options.
+	* agent/gpg-agent.c: Add option description which were only set in
+	gpgconf-comp.c.
+	* dirmngr/dirmngr.c: Ditto.
+	* scd/scdaemon.c: Ditto.
+	* sm/gpgsm.c: Ditto.
+	* g10/gpg.c: Ditto.
+
+	gpgconf: Support reading global options (part 1).
+	+ commit 7397872445d6d2b8c9ef25e0108e603baa5478de
+	* tools/gpgconf.c (main): Set the config directories.
+	* tools/gpgconf-comp.c (gc_backend): Change the name of the config
+	files.
+	(struct gc_option): Add new field 'attr'.
+	(retrieve_options_from_program): Rewrite to use gpgrt_argparser.
+
+	common: New function xreallocarray.
+	+ commit f0d034ebf4fc299c2a6097248f51c329e65d2976
+	* common/miscellaneous.c (gnupg_reallocarray): New.
+	(xreallocarray): New.
+
+2021-12-13  Werner Koch  <wk@gnupg.org>
+
+	common,w32: Sync read_w32_registry_string with the gpgrt version.
+	+ commit 1af559a9a24fd930094ab7b466ed051cdbc66f99
+	* common/w32-reg.c (get_root_key): Add short version of the root
+	classes.
+
+2021-12-07  NIIBE Yutaka  <gniibe@fsij.org>
+
+	gpg: Accept Ed25519 private key in SOS which reserves leading zeros.
+	+ commit 14de7b1e5904e78fcbe413a82d0f19b750bd8830
+	* g10/parse-packet.c (sos_read): Backport from 2.3.
+	(parse_key): Use sos_read for Ed25519 private key.
+
+2021-11-23  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.33.
+	+ commit 457f6ac1ef6d61ffcc336683a85ffeed3114ae63
+
+
+2021-11-23  Ineiev  <ineiev@gnu.org>
+
+	po: Update Russian translation.
+	+ commit 007fea8ce9af97f36b48253c6be764dcd35fdd9e
+
+
+2021-11-22  Werner Koch  <wk@gnupg.org>
+
+	gpg: New option --forbid-gen-key.
+	+ commit 985fb25c46eafc811e7a07597591ede0cf89a921
+	* g10/gpg.c (oForbidGenKey, opts): New option.
+	(mopt): New local struct
+	(gen_key_forbidden): New.
+	(main): Set and handle the option.
+
+2021-11-19  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Include output of --list-dirs in --show-configs.
+	+ commit 40d2c931652777509aba35d48b5d193a7e208780
+	* tools/gpgconf.c (list_dirs): Add arg special.
+	(show_other_registry_entries): Print the Homedir.
+	(show_configs): List directories.
+
+2021-11-18  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: --show-configs now prints a bunch of Registry entries.
+	+ commit 7f31891ab1e51c00dd42232d3c286df519c2cdb8
+	* tools/gpgconf.c (show_other_registry_entries): New.
+	(show_configs): Call it.  Minor reformatting.
+
+	gpgconf: Extend --show-config to show envvars.
+	+ commit 58652f4c0b3a5e9fb6de54d802173bc52c798134
+	* tools/gpgconf.c (my_copy_file): Add arg LISTP and record certain
+	things.
+	(show_configs_one_file): New arg LISTP to be passed thru.
+	(show_configs): Show envars and regisiry values.
+
+	common,w32: New function read_w32_reg_string.
+	+ commit 6c6c404883e52545ed38293384c95fdacb7227c4
+	* common/w32-reg.c (read_w32_reg_string): New.
+
+	* common/t-w32-reg.c (test_read_registry): Add another test.
+
+	gpg,gpgsm: Add option --min-rsa-length.
+	+ commit 6ee01c1d26cae0415a3eec7f067cff7c324cb9c1
+	* common/compliance.c (min_compliant_rsa_length): New.
+	(gnupg_pk_is_compliant): Take in account.
+	(gnupg_pk_is_allowed): Ditto.
+	(gnupg_set_compliance_extra_info): New.
+	* g10/gpg.c (oMinRSALength): New.
+	(opts): Add --min-rsa-length.
+	(main): Set value.
+	* g10/options.h (opt): Add field min_rsa_length.
+	* sm/gpgsm.c (oMinRSALength): New.
+	(opts): Add --min-rsa-length.
+	(main): Set value.
+	* sm/gpgsm.h (opt): Add field min_rsa_length.
+
+2021-11-15  Werner Koch  <wk@gnupg.org>
+
+	sm: Detect circular chains in --list-chain.
+	+ commit c9343bec83e2c2a14b564b8a13998806eab1ae9f
+	* sm/keylist.c (list_cert_chain): Break loop for a too long chain.
+
+2021-11-15  NIIBE Yutaka  <gniibe@fsij.org>
+	    Klas Lindfors
+
+	scd:openpgp: Support longer data for INTERNAL_AUTHENTICATE.
+	+ commit b6b735edab036e4992872ef3d44b357fb9281ca8
+	* scd/app-openpgp.c (do_auth): Use extended Lc, when supported.
+
+2021-11-14  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	build: Fix several "include file not found" problems.
+	+ commit 027e34235bc576e1523566bf98b2b795d3dc7967
+	* dirmngr/Makefile.am (t_ldap_parse_uri_CFLAGS): Add KSBA_CFLAGS.
+	* kbx/Makefile.am (libkeybox_a_CFLAGS, libkeybox509_a_CFLAGS): Add
+	NPTH_CFLAGS.
+	* tools/Makefile.am (gpgtar_CFLAGS, gpg_wks_server_CFLAGS,
+	gpg_wks_client_CFLAGS, gpg_pair_tool_CFLAGS): Add LIBGCRYPT_CFLAGS.
+
+2021-11-14  Werner Koch  <wk@gnupg.org>
+
+	agent: Print the non-option warning earlier.
+	+ commit a43efc9294d158c62a3a04396fa3fe6c77090ba8
+	* agent/gpg-agent.c (main): Move detection up.
+
+2021-11-13  Werner Koch  <wk@gnupg.org>
+
+	gpg: Remove stale ultimately trusted keys from the trustdb.
+	+ commit bc6d56282ec998e4b2d13c522316348b5058fc3f
+	* g10/tdbdump.c (export_ownertrust): Skip records marked with the
+	option --trusted-key.
+	(import_ownertrust): Clear the trusted-key flag.
+	* g10/tdbio.h (struct trust_record): Add field flags.
+	* g10/tdbio.c (tdbio_dump_record): Improve output.
+	(tdbio_read_record, tdbio_write_record): Handle flags.
+	* g10/trustdb.c (verify_own_keys): Clear stale trusted-keys and set
+	the flag for new --trusted-keys.
+	(tdb_update_ownertrust): Add arg as_trusted_key.  Update callers.
+
+	gpgconf: New command --show-configs.
+	+ commit 8fe3f57643479b8cb2e9e10fa2069c415c47d0af
+	* tools/gpgconf.c (aShowConfigs): New.
+	(opts): Add --show-configs.
+	(CUTLINE_FMT): New.
+	(show_version_gnupg): Add arg "prefix" and adjust caller.
+	(my_copy_file): New.
+	(show_configs_one_file): New.New.
+	(show_configs): New.
+	(main): Call show_configs.
+
+	agent,dirmngr: New option --steal-socket.
+	+ commit 6507c6ab101e61fc5a3472497d258a0109257a47
+	* agent/gpg-agent.c (oStealSocket): New.
+	(opts): Add option.
+	(steal_socket): New file global var.
+	(main): Set option.
+	(create_server_socket): Implement option.
+
+	* dirmngr/dirmngr.c (oStealSocket): New.
+	(opts): Add option.
+	(steal_socket): New file global var.
+	(main): Set option.  Add comment to eventually implement it.
+
+2021-11-10  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: More conservative selection of a card reader.
+	+ commit 0982c6cb19da689ae84ad25b6db12bf30ac75030
+	* scd/apdu.c (select_a_reader): Only SPRx32 is in the white list.
+
+2021-11-09  Bernhard M. Wiedemann  <bwiedemann@suse.de>
+
+	wks: Do not mark key files as executable.
+	+ commit 46ada6a9bd83daa9e5f064adfea1bb6ccdba5dcb
+
+
+	wks: Allow access to newly created dirs.
+	+ commit f54feb44700062fd3f4ca2d5e6d4e203e74d94ea
+
+
+2021-11-02  Werner Koch  <wk@gnupg.org>
+
+	common: Support MYPROC_SELF_EXE for Solaris.
+	+ commit 006131f6289cd0e03a470c77795ad50a4bf9e269
+	* common/homedir.c (MYPROC_SELF_EXE): Add case for SunOS.
+
+	common: Silence warning from unix_rootdir on systems w/o /proc.
+	+ commit bcd8f0239dfc36f99fbbb8ee309828ccee8974c0
+	* common/homedir.c (unix_rootdir): Silence diagnostic in the common
+	case.
+	(MYPROC_SELF_EXE): Support NetBSD.
+
+2021-11-02  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	common: Respect gpgconf.ctl when looking up translations.
+	+ commit 947fedf0e7d95571abd039e827c401ebc64a8abb
+	* common/i18n.c (i18n_init): Use gnupg_localedir() instead of LOCALEDIR.
+	(i18n_localegettext): Ditto.
+	* tools/gpgconf-comp.c (my_dgettext): Ditto.
+
+2021-11-02  Werner Koch  <wk@gnupg.org>
+
+	common: Support gpgconf.ctl also for BSDs.
+	+ commit 49d589c409cc1813a48fecaf3fb5772e6febe281
+	* common/homedir.c (MYPROC_SELF_EXE): New.
+	(unix_rootdir): Use it here.  Also support GNUPG_BUILD_ROOT as
+	fallback.
+
+	common: Add keyword sysconfdir to the optional gpgconf.ctl file.
+	+ commit 3828dd7a4067db2911caebde324053b4e354a486
+	* common/homedir.c (unix_rootdir): Add arg want_sysconfdir.
+	(gnupg_sysconfdir): Return it.
+
+	common: Support a gpgconf.ctl file under Unix.
+	+ commit 82328165cf4be4771674b703c1e15178f87530e2
+	* common/homedir.c (unix_rootdir): New.
+	(gnupg_bindir): Use it.
+	(gnupg_libexecdir): Use it.
+	(gnupg_libdir): Use it.
+	(gnupg_datadir): Use it.
+	(gnupg_localedir): Use it.
+
+	common: New function substitute_envvars.
+	+ commit f0162afb6b6f8ac1a993452643d8cb64fb3f2953
+	* common/stringhelp.c (substitute_envvars): New.  Based on code in
+	gpg-connect-agent.
+	* common/t-stringhelp.c: Include sysutils.h.
+	(test_substitute_envvars): New.
+
+	common,w32: Do not always print "Garbled console data" warning.
+	+ commit a756a61f19ce44958f93757894f65b09cebd484a
+	* common/init.c (_init_common_subsystems): Silence message.
+
+2021-11-02  NIIBE Yutaka  <gniibe@fsij.org>
+
+	dns: Make reading resolv.conf more robust.
+	+ commit 152f0281552f6a8e4bc082f3aaeec17c84001cfe
+	* dirmngr/dns.c (dns_resconf_loadfile): Skip "search" which
+	begins with '.'.
+
+2021-10-22  Werner Koch  <wk@gnupg.org>
+
+	gpg: Fix printing of binary notations.
+	+ commit 918e9218002b2b0d455a8df86a63c9187cf6fdf4
+	* g10/keylist.c (show_notation): Print binary notation from BDAT.
+
+	gpgconf: create local option file even if a global file exists.
+	+ commit 5e3eea4b738cc3e8e257635b7cb53dcf43c07f79
+	* tools/gpgconf-comp.c (munge_config_filename): New.
+	(change_options_program): Call it.
+
+2021-10-22  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Select a reader for PC/SC.
+	+ commit 752422a792cecf459b37f517d634bcf272292b14
+	* scd/apdu.c (select_a_reader): New.
+	(open_pcsc_reader): Use select_a_reader.
+
+2021-10-13  Werner Koch  <wk@gnupg.org>
+
+	gpg: New option --override-compliance-check.
+	+ commit 773b8fbbe915449c723302f5268d7906b40d84d3
+	* g10/gpg.c (oOverrideComplianceCheck): New.
+	(opts): Add new option.
+	(main): Set option and add check for batch mode.
+	* g10/options.h (opt): Add flags.override_compliance_check.
+
+	* g10/sig-check.c (check_signature2): Factor complaince checking out
+	to ...
+	(check_key_verify_compliance): new.  Turn error into a warning in
+	override mode.
+
+2021-10-06  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.32.
+	+ commit 476096099db9ea3f66581fa3ca8724291e3a5c80
+
+
+2021-10-06  NIIBE Yutaka  <gniibe@fsij.org>
+
+	gpg: Skip the packet when not used for AEAD.
+	+ commit a17f1b607473f5aae081ffe22381dda2b54a7a6a
+	* g10/free-packet.c (free_packet): Add the case for case
+	PKT_ENCRYPTED_AEAD.
+
+2021-10-06  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: New option --ignore-cert.
+	+ commit 323a20399d905e8ae1cc0d71846c298116460464
+	* dirmngr/dirmngr.h (struct fingerprint_list_s): Add field binlen.
+	(opt): Add field ignored_certs.
+	* dirmngr/dirmngr.c: Add option --ignore-cert
+	(parse_rereadable_options): Handle that option.
+	(parse_ocsp_signer): Rename to ...
+	(parse_fingerprint_item): this and add two args.
+	* dirmngr/certcache.c (put_cert): Ignore all to be igored certs.
+	Change callers to handle the new error return.
+
+	dirmngr: Fix Let's Encrypt certificate chain validation.
+	+ commit 341ab0123a8fa386565ecf13f6462a73a137e6a4
+	* dirmngr/certcache.c (find_cert_bysubject): Return the first trusted
+	certififcate if any.
+
+2021-09-15  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.31.
+	+ commit ecf4c2f611238799a3af6369a64e418a77ab9dd6
+
+
+2021-09-14  Werner Koch  <wk@gnupg.org>
+
+	scd: Remove context reference counting from pc/sc.
+	+ commit 67e1834ad402e86906429ba0e2bf7ebd72de2450
+	* scd/apdu.c (pcsc): Add flag context_valid, remove count.
+	(close_pcsc_reader): Use new flag instead of looking at magic context
+	value.
+	(pcsc_init): Set new flag.
+	(open_pcsc_reader): Use new flag.
+	(apdu_init): Clear new flag.
+
+	* scd/apdu.c: Remove assert.h.  Replace all assert by log_assert.
+
+2021-09-13  Werner Koch  <wk@gnupg.org>
+
+	common: New envvar GNUPG_EXEC_DEBUG_FLAGS.
+	+ commit 117afec018911a3b0187f15c8559f811a72ddb79
+	* common/exechelp-w32.c (gnupg_spawn_process_detached): Silence
+	breakaway messages and turn them again into debug messages.
+
+2021-09-08  Werner Koch  <wk@gnupg.org>
+
+	scd: Support PC/SC for "getinfo reader_list".
+	+ commit f32994b0bf07d62bf596cc8bb6ec3c3a5f133ac4
+	* scd/apdu.c: Include membuf.h.
+	(pcsc): Add reader_list field.
+	(open_pcsc_reader): Fill that field.
+	(apdu_get_reader_list): New.
+	* scd/command.c: Remove header ccid-driver.h.
+	(pretty_assuan_send_data): New.
+	(cmd_getinfo): Print all reader names.
+
+2021-09-07  Werner Koch  <wk@gnupg.org>
+
+	scd: Fix possible assertion in close_pcsc_reader.
+	+ commit 192113552faa98f40cc91fe014ec55861474626c
+	* scd/apdu.c (close_pcsc_reader): Don't ref-count if the context is
+	invalid.
+	(open_pcsc_reader): Compare the context against -1 which is our
+	indicator for an invalid context.
+
+	agent: Fix segv in GET_PASSPHRASE (regression)
+	+ commit 4b2cfec2dc2fd524a4fed6c17bb11e6a7baf15f2
+	* agent/command.c (cmd_get_passphrase): Do not deref PI.  PI is always
+	NULL.
+
+2021-08-27  NIIBE Yutaka  <gniibe@fsij.org>
+
+	common: Fix put_membuf.
+	+ commit 7e431e009e479e63f0996a612e12fb9d8b209ab9
+	* common/membuf.c (put_membuf): Allow NULL for the second arg.
+
+	build: Fix removal of AC_TYPE_SIGNAL.
+	+ commit 0ca84cbdf0a5a956f4de80f874f8a3b495cfab20
+	* configure.ac: AC_TYPE_SIGNAL is still needed.
+
+	common: Fix get_signal_name for GNU/Linux.
+	+ commit d5f9481186eaf2ff28d7ab04fd36f0bbd1c9714d
+	* common/signal.c (get_signal_name): Use sigdescr_np if available.
+	* configure.ac: Check the function.
+
+2021-08-26  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.30.
+	+ commit d583e750a668f82bdaa1d0f7c4ffc68c35ed4ca6
+
+
+2021-08-20  Werner Koch  <wk@gnupg.org>
+
+	wkd: Properly unescape the user-id from a key listing.
+	+ commit 2b65f4e953806977490b11cb4739c22ab94e0030
+	* tools/wks-util.c (append_to_uidinfo_list): Unescape UID.
+
+	common: New function decode_c_string.
+	+ commit 17e2ec488f662059df0fd2d3b777aa51eab5c0cc
+	* common/miscellaneous.c (decode_c_string): New.
+
+	agent: Use the sysconfdir for a pattern file.
+	+ commit 5ed8e598faaffa9aec43fc70199ed7f57560c2ba
+	* agent/genkey.c (do_check_passphrase_pattern): Use make_filename.
+
+	agent: Ignore passphrase constraints for a generated passphrase.
+	+ commit db5dc7a91af3774cfbce0bc533e0f0b5498402fe
+	* agent/agent.h (PINENTRY_STATUS_PASSWORD_GENERATED): New.
+	(MAX_GENPIN_TRIES): Remove.
+	* agent/call-pinentry.c (struct entry_parm_s):
+	(struct inq_cb_parm_s): Add genpinhash and genpinhas_valid.
+	(is_generated_pin): New.
+	(inq_cb): Suppress constraints checking for a generated passphrase.
+	No more need for several tries to generate the passphrase.
+	(do_getpin): Store a generated passphrase/pin in the status field.
+	(agent_askpin): Suppress constraints checking for a generated
+	passphrase.
+	(agent_get_passphrase): Ditto.
+	* agent/command.c (cmd_get_passphrase): Ditto.
+
+	wkd: Fix client issue with leading or trailing spaces in user-ids.
+	+ commit 576e429d41a144ff4f0c00e8722da2f92ae17d9a
+	* common/recsel.c (recsel_parse_expr): Add flag -t.
+	* common/stringhelp.c (strtokenize): Factor code out to
+	do_strtokenize.
+	(strtokenize_nt): New.
+	(do_strtokenize): Add arg trim to support the strtokenize_nt.
+	* common/t-stringhelp.c (test_strtokenize_nt): New test cases.
+
+	* tools/wks-util.c (wks_list_key): Use strtokenize_nt and the recsel
+	flag -t.
+
+	gpg: Return SUCCESS/FAILURE status also for --card-edit/name.
+	+ commit 6685696adafba104072303507dedbbd45731d326
+	* g10/card-util.c (change_name): Call write_sc_op_status.
+
+2021-08-18  Werner Koch  <wk@gnupg.org>
+
+	agent: Improve the GENPIN callback.
+	+ commit 2e69ce878f893de0830317f94c51fdce70e1e540
+	* agent/call-pinentry.c (DEFAULT_GENPIN_BYTES): Replace by  ...
+	(DEFAULT_GENPIN_BITS): this and increase to 150.
+	(generate_pin): Make sure that we use at least 128 bits.
+
+	agent: Fix for zero length help string in pinentry hints.
+	+ commit 4855888c0a56a50be6085476f5767d0c62722f2d
+	* agent/call-pinentry.c: Remove unused assert.h.
+	(inq_cb): Fix use use of assuan_end_confidential in case of nested
+	use.
+	(do_getpin): Ditto.
+	(setup_formatted_passphrase): Escape the help string.
+	(setup_enforced_constraints): Ignore empty help strings.
+
+	common,w32: Replace log_debug by log_info for InProcessJobs.
+	+ commit ec2f1b38980a1b60624a35707ccebb05c5524d2f
+	* common/exechelp-w32.c (gnupg_spawn_process_detached): Use log_info.
+
+2021-08-17  Werner Koch  <wk@gnupg.org>
+
+	w32: Move socketdir to LOCAL_APPDATA.
+	+ commit 4dfa951a0a631d5e0e44ff5fb8fb74adb651190c
+	* common/homedir.c (is_gnupg_default_homedir): Use standard_homedir
+	instead of the constant which makes a difference on Windows.
+	(_gnupg_socketdir_internal) [W32]: Move the directory to LOCAL_APPDATA.
+	(gnupg_cachedir): Remove unsued function.
+
+	* common/sysutils.c (gnupg_rmdir): New.
+	* tools/gpgconf.c (main): s/rmdir/gnupg_rmdir/.
+
+	gpgconf,w32: Print more registry diagnostics with --list-dirs.
+	+ commit 013f2e4672b1565002700e307d3bb95d9352c4d5
+	* tools/gpgconf.c (list_dirs): Figure out classes with the key.
+
+	agent: Make QT_QPA_PLATFORMTHEME=qt5ct work for the pient.
+	+ commit 455ba49071dea7588c9de11785b3092e45e4560b
+	* agent/call-pinentry.c (atfork_core): Pass DISPLAY.
+
+	agent: New option --check-sym-passphrase-pattern.
+	+ commit c6a4a660fdb977713a1e6c0dd4dae97ddffbe376
+	* agent/gpg-agent.c (oCheckSymPassphrasePattern): New.
+	(opts): Add --check-sym-passphrase-pattern.
+	(parse_rereadable_options): Set option.
+	(main): Return option info.
+	* tools/gpgconf-comp.c: Add new option.
+	* agent/agent.h (opt): Add var check_sym_passphrase_pattern.
+	(struct pin_entry_info_s): Add var constraints_flags.
+	(CHECK_CONSTRAINTS_NOT_EMPTY): New to replace a hardwired 1.
+	(CHECK_CONSTRAINTS_NEW_SYMKEY): New.
+	* agent/genkey.c (check_passphrase_pattern): Rename to ...
+	(do_check_passphrase_pattern): this to make code reading
+	easier. Handle the --check-sym-passphrase-pattern option.
+	(check_passphrase_constraints): Replace arg no_empty by a generic
+	flags arg.  Also handle --check-sym-passphrase-pattern here.
+	* agent/command.c (cmd_get_passphrase): In --newsymkey mode pass
+	CHECK_CONSTRAINTS_NEW_SYMKEY flag.
+	* agent/call-pinentry.c (struct entry_parm_s): Add constraints_flags.
+	(struct inq_cb_parm_s): New.
+	(inq_cb): Use new struct for parameter passing.  Pass flags to teh
+	constraints checking.
+	(do_getpin): Pass constraints flag down.
+	(agent_askpin): Take constraints flag from the supplied pinentry
+	struct.
+
+2021-08-17  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	agent: Add checkpin inquiry for pinentry.
+	+ commit 9832566e4512ab7cb90aa0b7f769792f5c123ed4
+	* agent/call-pinentry.c: Include zb32.
+	(MAX_GENPIN_TRIES): New.
+	(DEFAULT_GENPIN_BYTES): New.
+	(generate_pin): New.
+	(setup_genpin): New.
+	(inq_quality): Rename to ...
+	(inq_cb): this.  Handle checkpin inquiry.
+	(setup_enforced_constraints): New.
+	(agent_get_passphrase): Call sertup_genpin.  Call
+	setup_enforced_constraints if new passphrase is requested.
+
+2021-08-16  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	agent: New option --pinentry-formatted-passphrase.
+	+ commit 32fbdddf8b4729d9a54a7751c0b5e406a470657f
+	* agent/agent.h (opt): Add field pinentry_formatted_passphrase.
+	* agent/call-pinentry.c (setup_formatted_passphrase): New.
+	(agent_get_passphrase): Pass option to pinentry.
+	* agent/gpg-agent.c (oPinentryFormattedPassphrase): New.
+	(opts): Add option.
+	(parse_rereadable_options): Set option.
+
+	common: Pass XDG_SESSION_TYPE and QT_QPA_PLATFORM envvars to pinentry.
+	+ commit 8fff61de9433e9293712a1dd21dfbe12f951eff9
+	* common/session-env.c (stdenvnames): Add XDG_SESSION_TYPE and
+	QT_QPA_PLATFORM.
+
+2021-08-16  Werner Koch  <wk@gnupg.org>
+
+	tools: Extend gpg-check-pattern.
+	+ commit 5ca15e58b241901cc46fd9fad4db3bbb9e321988
+	* tools/gpg-check-pattern.c: Major rewrite.
+
+2021-07-04  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.29.
+	+ commit 695a879af81e895741109874b9ac0712e1afc994
+
+
+2021-06-25  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Change the default keyserver.
+	+ commit 47c4e3e00a7ef55f954c14b3c237496e54a853c1
+	* configure.ac (DIRMNGR_DEFAULT_KEYSERVER): Change to
+	keyserver.ubuntu.com.
+
+	* dirmngr/certcache.c (cert_cache_init): Disable default pool cert.
+	* dirmngr/http-ntbtls.c (gnupg_http_tls_verify_cb): Ditto.
+	* dirmngr/http.c (http_session_new): Ditto.
+
+	* dirmngr/server.c (make_keyserver_item): Use a different mapping for
+	the gnupg.net names.
+
+	gpg: Let --fetch-key return an exit code on failure.
+	+ commit 5fe4b978875271fb55f1f674ab545bed2b97a7a8
+	* g10/keyserver.c (keyserver_fetch): Return an error code.
+	* g10/gpg.c (main) <aFetchKeys>: Return 1 in case of no data.
+
+2021-06-23  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd:ccid: Handle LIBUSB_TRANSFER_OVERFLOW interrupt transfer.
+	+ commit b90c55fa66db254da98958de10e1287c39a4322a
+	* scd/ccid-driver.c (intr_cb): Ignore LIBUSB_TRANSFER_OVERFLOW.
+
+	scd:ccid:spr532: Extend abort_cmd for initialization time.
+	+ commit 8e941e19b08785e5e709943765548d4f9f9f57a3
+	* scd/ccid-driver.c (abort_cmd): Add INIT argument to support
+	synchronize until success, even ignoring timeout.
+	(bulk_in): Normal use case of abort_cmd.
+	(ccid_vendor_specific_init): Initial use case of abort_cmd.
+
+2021-06-22  Werner Koch  <wk@gnupg.org>
+
+	tests: Cope with broken Libgcrypt versions.
+	+ commit af2fd9f0af25e1f95d9484f7d2125cd9888aa308
+	* common/t-sexputil.c (test_ecc_uncompress): Ignore unknwon curve
+	errors.
+
+	w32: Add fallback in case the Windows console can't cope with Unicode.
+	+ commit e94dfa21d2c17b590122d55468f68e8ab72e4193
+	* common/ttyio.c (w32_write_console): Fallback to WriteConsoleA on
+	error.
+
+2021-06-21  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Fix regression in KS_GET for mail address pattern.
+	+ commit adf7bfba5ddce9faadff959369ba2271cdd36825
+	* dirmngr/ks-engine-hkp.c (ks_hkp_search): Munge mail address pattern.
+	(ks_hkp_get): Allow for mail addresses.
+	-
+
+	Before the keyserver changes in 2.2.28 gpg passed dirmngr a pail
+	address as an exact pattern (e.g. "=foo@example.org").  Since 2.2.28
+	the mail address is detected gpg gpg and we see for example
+	"<foo@example.org>".  This patch fixes this to turn a mail address
+	into an exact match again.
+
+2021-06-14  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Error code map fix for older Yubikey.
+	+ commit 01a413d5235f1bbd00f83fb86d0e183d8f0b1a57
+	* scd/iso7816.c (map_sw): Recognize 6A86.
+
+2021-06-11  NIIBE Yutaka  <gniibe@fsij.org>
+
+	dirmngir: Fix build with --disable-ldap.
+	+ commit c8b2162c0e7eb42b74811b7ed225fa0f56be4083
+	* dirmngr/dirmngr.c (parse_rereadable_options) [USE_LDAP]:
+	Conditionalize.
+
+	dirmngr: Remove use of USE_LDAPWRAPPER.
+	+ commit 8ee4c8d1e0d7677d4f8b9538c12b32bb6393c2c5
+	* configure.ac (USE_LDAPWRAPPER): Remove.
+	* dirmngr/Makefile.am: Use USE_LDAP instead of USE_LDAPWRAPPER.
+	* dirmngr/ldap-wrapper-ce.c: Remove.
+	* dirmngr/ldap-wrapper.h, dirmngr/ldap-wrapper.c: Remove
+	USE_LDAPWRAPPER things.
+
+2021-06-10  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.28.
+	+ commit 9f6076868ecd313e832c112ea79cfcffed3dc342
+
+
+	gpg: Partial fix for Unicode problem in output files.
+	+ commit 845711d1420cc01289c15ba49deb03200a5cd102
+	* g10/openfile.c (overwrite_filep): Use gnupg_access.
+
+	scd: Fix serial number detection for Yubikey 5.
+	+ commit c2f02797cdefdce5afd8b29bb8e51d4515a70a96
+	* scd/app.c (app_new_register): Handle serial number correctly.
+
+2021-06-09  Werner Koch  <wk@gnupg.org>
+
+	gpgtar,w32: Fix file size computation.
+	+ commit 198b240b195596974e8b61e2b79fb6e8dc78f89a
+	* tools/gpgtar-create.c (fillup_entry_w32): Move parentheses.
+
+	sm: New option --ldapserver as an alias for --keyserver.
+	+ commit d6df1bf84969bf5f5781e33bc1c2f6cb2aee0093
+	* sm/gpgsm.c (opts): Add option --ldapserver and make --keyserver an
+	alias.
+
+	dirmngr: Allow to pass no filter args to dirmngr_ldap.
+	+ commit f6e45671aa26f3e7abb968a876de7bbdb4fca3f1
+	* dirmngr/dirmngr_ldap.c (main): Handle no args case.
+
+2021-06-08  Werner Koch  <wk@gnupg.org>
+
+	w32: Change spawn functions to use Unicode version of CreateProcess.
+	+ commit 7a98e45e74ec2883c24689964d6119796da0969f
+	* common/exechelp-w32.c (gnupg_spawn_process): Change to use
+	CreateProcessW.
+	(gnupg_spawn_process_fd): Ditto.
+	(gnupg_spawn_process_detached): Ditto.
+	* g10/exec.c (w32_system): Ditto.
+
+2021-06-08  Andre Heinecke  <aheinecke@gnupg.org>
+
+	common,w32: Breakaway detached childs when in job.
+	+ commit f20e9a464487443552b6cbdf918c6448d3cb643f
+	* common/exechelp-w32.c (gnupg_spawn_process_detached): Add
+	CREATE_BREAKAWAY_FROM_JOB creation flag if required.
+
+2021-06-08  Werner Koch  <wk@gnupg.org>
+
+	w32: Always use Unicode for console input and output.
+	+ commit b912f07cdf00043b97fca54e4113fab277726e03
+	* common/init.c (_init_common_subsystems) [W32]: Set the codepage to
+	UTF-8 for input and putput.  Switch gettext to UTF-8.
+	* g10/gpg.c (utf8_strings) [W32]: Make sure this is always set.
+
+	w32: Free memory allocated by new function w32_write_console.
+	+ commit ebdb62a98a6e917bafb795b5f50483a95790e739
+	* common/ttyio.c (w32_write_console): Free buffer.
+
+	common,w32: Allow Unicode input and output with the console.
+	+ commit 90aadf69f730ff1bd053abcd6cc8bc67518ecf4b
+	* common/ttyio.c (do_get) [W32]: Use ReadConsoleW.
+	(w32_write_console): New.
+	(tty_printf, tty_fprintf) [W32]: Use new function.
+
+	common: Re-indent ttyio.c and remove EMX, RISCOS, and CE support.
+	+ commit 521e176a605e6b6229825761906005b05608daf5
+	* common/ttyio.c: Remove cruft like EMX and RISCOS support.  Translate
+	a few strings.  Re-indent.
+
+	common: Rename w32-misc.c to w32-cmdline.c.
+	+ commit d7d9a5ba3cbf9cf7e22a8871474032b525825eed
+	* common/w32-misc.c: Rename to ....
+	* common/w32-cmdline.c: this.
+	* common/Makefile.am: Adjust.
+
+	common,w32: Implement globing of command line args.
+	+ commit 09f49b4c9aae46c40a189b1270e215bc978dbc3c
+	* common/w32-misc.c [W32]: Include windows.h
+	(struct add_arg_s): New.
+	(add_arg): New.
+	(glob_arg): New.
+	(parse_cmdstring): Add arg argvflags and set it.
+	(w32_parse_commandline): Add arg r_itemsalloced.  Add globing.
+
+	* common/init.c (prepare_w32_commandline): Mark glob created items as
+	leaked.
+
+	* common/t-w32-cmdline.c : Include windows.h
+	(test_all): Add simple glob test for Unix.
+	(main): Add manual test mode for Windows.
+
+	* common/xasprintf.c (xtryreallocarray): New.
+
+	common,w32: Refine the command line parsing for \ in quotes.
+	+ commit 4d6807b215e7541fd52caf7e4adc40d77670f99f
+	* common/t-w32-cmdline.c (test_all): Add new test cases.
+	* common/w32-misc.c (strip_one_arg): Add arg endquote.
+	(parse_cmdstring): Take care of backslashes in quotes.
+
+	common: First take on handling Unicode command line args.
+	+ commit 90ddd1cf13cd6bb88d5bb8c1846d7297ca8ac81c
+	* common/w32-misc.c: New.
+	* common/t-w32-cmdline.c: New.
+	* common/init.c: Include w32help.h.
+	(prepare_w32_commandline): New.
+	(_init_common_subsystems) [W32]: Call prepare_w32_commandline.
+
+	* common/Makefile.am (common_sources) [W32]: Add w32-misc.c
+	(module_tests): Add t-w32-cmdline
+	(t_w32_cmdline_LDADD): New.
+
+	gpg: Prepare for globing with UTF-8.
+	+ commit 1f59c4c8e2cfa2b111f0798212546864668383f9
+	* g10/gpg.c (_dowildcard): Remove.
+	(my_strusage): Enable wildcards using our new system.
+
+	dirmngr: Rewrite the LDAP wrapper tool.
+	+ commit 39815c023f0371dea01f7c51469b19c06ad18718
+	* dirmngr/ldap-misc.c: New.
+	* dirmngr/ldap-misc.h: New.
+	* dirmngr/ks-engine-ldap.c: Include ldap-misc.h.
+	(ldap_err_to_gpg_err, ldap_to_gpg_err): Move to ldap-misc.c.
+	* dirmngr/ldap-wrapper.c (ldap_wrapper): Print list of args in debug
+	mode.
+	* dirmngr/server.c (lookup_cert_by_pattern): Handle GPG_ERR_NOT_FOUND
+	the saqme as GPG_ERR_NO_DATA.
+	* dirmngr/ldap.c (run_ldap_wrapper): Add args tls_mode and ntds.
+	Remove arg url.  Adjust for changes in dirmngr_ldap.
+	(url_fetch_ldap): Remove args host and port.  Parse the URL and use
+	these values to call run_ldap_wrapper.
+	(attr_fetch_ldap): Pass tls flags to run_ldap_wrapper.
+	(rfc2254_need_escape, rfc2254_escape): New.
+	(extfilt_need_escape, extfilt_escape): New.
+	(parse_one_pattern): Rename to ...
+	(make_one_filter): this.  Change for new dirmngr_ldap calling
+	convention.  Make issuer DN searching partly work.
+	(escape4url, make_url): Remove.
+	(start_cert_fetch_ldap): Change for new dirmngr_ldap calling
+	convention.
+	* dirmngr/dirmngr_ldap.c: Major rewrite.
+
+	* dirmngr/t-ldap-misc.c: New.
+	* dirmngr/t-support.h (DIM, DIMof): New.
+	* dirmngr/Makefile.am (dirmngr_ldap_SOURCES): Add ldap-misc.c
+	(module_tests) [USE_LDAP]: Add t-ldap-misc.
+	(t_ldap_parse_uri_SOURCES): Ditto.
+	(t_ldap_misc_SOURCES): New.
+
+2021-06-08  NIIBE Yutaka  <gniibe@fsij.org>
+
+	agent: Appropriate error code for importing key with no passwd.
+	+ commit 2f98d8a0f92dc991bff406e159690a111202fcb4
+	* agent/cvt-openpgp.c (convert_from_openpgp_main): Return
+	GPG_ERR_BAD_SECKEY.
+
+2021-06-04  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Remove useless code.
+	+ commit 8bd5172539e1399b407aa2a9d56fa51b8e040ae3
+	* dirmngr/ks-engine-ldap.c (my_ldap_connect): Remove the
+	password_param thing because we set the password directly without an
+	intermediate var.
+
+2021-06-02  Werner Koch  <wk@gnupg.org>
+
+	sm: Support AES-GCM decryption.
+	+ commit b722fd755c77cbba12478f6de8913c73213d78ee
+	* sm/gpgsm.c (main): Use gpgrt_fcancel on decryption error if gpgrt
+	supports this.
+	* sm/decrypt.c (decrypt_gcm_filter): New.
+	(gpgsm_decrypt): Use this filter if requested.  Check authtag.
+	* common/compliance.c (gnupg_cipher_is_allowed): Allow GCM for gpgsm
+	in consumer (decrypt) de-vs mode.
+
+2021-05-28  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Make runtime changes with different homedir work.
+	+ commit c8f0b02936c73b6ef3c99a1bea9ae63f74da0768
+	* tools/gpgconf-comp.c (dirmngr_runtime_change): Pass --homedir
+	first.  Remove unused variable.
+
+	dirmngr: Fix default port for our redefinition of ldaps.
+	+ commit 8de9d54ac83fa20cb52b847b643311841be4d6dc
+	* dirmngr/server.c (make_keyserver_item): Fix default port for ldaps.
+	Move a tmpstr out of the blocks.
+	* dirmngr/ks-engine-ldap.c (my_ldap_connect): Improve diagnostics.
+
+2021-05-27  NIIBE Yutaka  <gniibe@fsij.org>
+
+	build: _DARWIN_C_SOURCE should be 1.
+	+ commit 40b2890b4349781ddb0330193aed0286b1d23dad
+	* configure.ac (*-apple-darwin*): Set _DARWIN_C_SOURCE 1.
+
+2021-05-26  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Use --ldaptimeout for OpenPGP LDAP keyservers.
+	+ commit 317d5947b84ae2707e46b89fb0d8318c07174e13
+	* dirmngr/ks-engine-ldap.c (my_ldap_connect): Use LDAP_OPT_TIMEOUT.
+
+	* dirmngr/dirmngr.c (main): Move --ldaptimeout setting to ...
+	(parse_rereadable_options): here.
+
+	dirmngr: New option --ldapserver.
+	+ commit ff17aee5d10c8c5ab902253fb4332001c3fc3701
+	* dirmngr/dirmngr.c (opts): Add option --ldapserver.
+	(ldapserver_list_needs_reset): New var.
+	(parse_rereadable_options): Implement option.
+	(main): Ignore dirmngr_ldapservers.conf if no --ldapserver is used.
+
+	* dirmngr/server.c (cmd_ldapserver): Add option --clear and list
+	configured servers if none are given.
+
+	dirmngr: Allow for non-URL specified ldap keyservers.
+	+ commit 2b4cddf9086faaf5b35f64a7db97a5ce8804c05b
+	* dirmngr/server.c (cmd_ldapserver): Strip an optional prefix.
+	(make_keyserver_item): Handle non-URL ldap specs.
+	* dirmngr/dirmngr.h (struct ldap_server_s): Add fields starttls,
+	ldap_over_tls, and ntds.
+
+	* dirmngr/ldapserver.c (ldapserver_parse_one): Add for an empty host
+	string.  Improve error messages for the non-file case.  Support flags.
+	* dirmngr/ks-action.c (ks_action_help): Handle non-URL ldap specs.
+	(ks_action_search, ks_action_get, ks_action_put): Ditto.
+	* dirmngr/ks-engine-ldap.c: Include ldapserver.h.
+	(ks_ldap_help): Handle non-URL ldap specs.
+	(my_ldap_connect): Add args r_host and r_use_tls.  Rewrite to support
+	URLs and non-URL specified keyservers.
+	(ks_ldap_get): Adjust for changes in my_ldap_connect.
+	(ks_ldap_search): Ditto.
+	(ks_ldap_put): Ditto.
+
+	gpg,sm: Simplify keyserver spec parsing.
+	+ commit 9f586700ec4ceac97fd47cd799878a8847342ffa
+	* common/keyserver.h: Remove.
+	* sm/gpgsm.h (struct keyserver_spec): Remove.
+	(opt): Change keyserver to a strlist_t.
+	* sm/gpgsm.c (keyserver_list_free): Remove.
+	(parse_keyserver_line): Remove.
+	(main): Store keyserver in an strlist.
+	* sm/call-dirmngr.c (prepare_dirmngr): Adjust for the strlist.  Avoid
+	an ambiguity in dirmngr by adding a prefix if needed.
+
+	* g10/options.h (struct keyserver_spec): Move definition from
+	keyserver.h to here.  Remove most fields.
+	* g10/keyserver.c (free_keyserver_spec): Adjust.
+	(cmp_keyserver_spec): Adjust.
+	(parse_keyserver_uri): Simplify.
+	(keyidlist): Remove fakev3 arg which does not make any sense because
+	we don't even support v3 keys.
+
+	dirmngr: Support pseudo URI scheme "opaque".
+	+ commit 72124fadafde153f8ac89a70202006d831829d06
+	* dirmngr/http.h (HTTP_PARSE_NO_SCHEME_CHECK): New.
+	* dirmngr/http.c (http_parse_uri): Use this flag.  Change all callers
+	to use the new macro for better readability.
+	(do_parse_uri): Add pseudo scheme "opaque".
+	(uri_query_value): New.
+
+2021-05-21  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Release memory for RDRNAME.
+	+ commit 5be0d075b1ad03a46a6169bf16cd3ee6102e1358
+	* scd/apdu.c (apdu_close_reader): Free RDRNAME field.
+
+2021-05-20  Jakub Jelen  <jjelen@redhat.com>
+
+	scd: avoid memory leaks.
+	+ commit 678e1b20d3531e642fa8871ea56c6c7d5c208fbe
+	* scd/app-p15.c (send_certinfo): free labelbuf
+	  (do_sign): goto leave instead of return
+	* scd/command.c (cmd_genkey): goto leave instead of return
+
+	common: Avoid double-free.
+	+ commit 4dc4b025d6dd194a96b11ccfd64d763d2c902a91
+	* common/name-value.c (do_nvc_parse): reset to null after ownership
+	change
+
+2021-05-19  Ineiev  <ineiev@gnu.org>
+
+	po: Update Russian translation.
+	+ commit 17b7048732e265450323cc3e01a48c9d492edf0c
+
+
+2021-05-19  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: For KS_SEARCH return the fingerprint also with LDAP.
+	+ commit f0e538619d5079fcd87c31e853e6deb28564a321
+	* dirmngr/ks-engine-ldap.c (extract_keys): Return the fingerprint if
+	available.
+	(ks_ldap_search): Ditto.
+	(extract_keys): Make sure to free the ldap values also in corner
+	cases.
+	(my_ldap_value_free): New.
+	(ks_ldap_get): Ditto.
+	(ks_ldap_search): Ditto.
+	(my_ldap_connect): Ditto.
+
+2021-05-18  Werner Koch  <wk@gnupg.org>
+
+	gpg: Fix sending an OpenPGP key with umlaut to an LDAP keyserver.
+	+ commit 7bf8530e75d05a712d00a333d59b0a8cf663b9cb
+	* g10/call-dirmngr.c (record_output): Rewrite.
+
+2021-05-18  Ingo Klöcker  <dev@ingo-kloecker.de>
+
+	scd:p15: Fix logic for appending product name to MANUFACTURER.
+	+ commit aa6288140481bccc366e87fcdc6781dc82d0af31
+	* scd/app-p15.c (do_getattr): Append product name to MANUFACTURER if
+	manufacturer_id does not already contain a bracket and if we have a
+	product name.
+
+2021-05-17  Werner Koch  <wk@gnupg.org>
+
+	gpg: Use a more descriptive prompt for symmetric decryption.
+	+ commit 03f83bcda5d1f8d8246bcc1afc603b7f74d0626b
+	* g10/keydb.h (GETPASSWORD_FLAG_SYMDECRYPT): New.
+	(passphrase_to_dek_ext): Remove this obsolete prototype.
+	* g10/passphrase.c (passphrase_get): Add arg flags.  Use new flag
+	value.
+	(passphrase_to_dek): Add arg flags and pass it on.
+	* g10/mainproc.c (proc_symkey_enc): Use new flag.
+
+	sm: Ask for the password for password based decryption (pwri)
+	+ commit 50ea1b67e8260aaebbeba0c4cd73e21443a74636
+	* sm/decrypt.c (pwri_decrypt): Add arg ctrl.  Ask for passphrase.
+
+	* sm/export.c (export_p12): Mark string as translatable.
+	* sm/import.c (parse_p12): Ditto.
+
+	sm: Support decryption of password based encryption (pwri)
+	+ commit 6f31acac767f2ec67729c0491f29061b26fe14b9
+	* sm/decrypt.c (string_from_gcry_buffer): New.
+	(pwri_parse_pbkdf2): New.
+	(pwri_decrypt): New.
+	(prepare_decryption): Support pwri.
+	(gpgsm_decrypt): Test for PWRI.  Move IS_DE_VS flag to DFPARM.
+
+	* common/sexputil.c (cipher_mode_to_string): New.
+
+	dirmngr: LDAP search by a mailbox now ignores revoked keys.
+	+ commit b6f8cd7eef4b00a2c6ccaac743382f1dd83bde6a
+	* dirmngr/ks-engine-ldap.c (keyspec_to_ldap_filter): Ignore revoked
+	and disable keys in mail mode.
+
+2021-05-07  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd,pcsc: Use a single context.
+	+ commit 987b8168602286d06debbbc8d4deebd35f454e29
+	* scd/apdu.c (pcsc): New variable.
+	(struct reader_table_s): Remove pcsc.context from member.
+	(pcsc_get_status, connect_pcsc_card): Use pcsc.context.
+	(close_pcsc_reader): Release pcsc.context here with reference count.
+	(apdu_open_one_reader): Move API loading to ...
+	(pcsc_init): new.
+	(apdu_open_one_reader): Remove.
+	(apdu_open_reader): Call open_pcsc_reader instead of
+	apdu_open_one_reader.
+	(open_pcsc_reader): Call pcsc_init if needed.  Call close_pcsc_reader
+	instead of pcsc_release_context.  Make reader parsing more robust.
+	(apdu_init): Initialize pcsc.count and pcsc.context.
+
+2021-05-04  Werner Koch  <wk@gnupg.org>
+
+	gpg: Allow ECDH with a smartcard returning just the x-coordinate.
+	+ commit b203325ce112c223a5164081cecd14744a01ff69
+	* g10/ecdh.c (pk_ecdh_encrypt_with_shared_point): Factor extraction
+	part out to  ...
+	(extract_secret_x): new.  Allow for x-only coordinate.
+	(pk_ecdh_encrypt_with_shared_point): Change arg shared_mpi
+	to (shared,nshared).  Move param check to the top.  Add extra safety
+	check.
+	(pk_ecdh_decrypt): Adjust for change.
+	* g10/pkglue.c (get_data_from_sexp): New.
+	(pk_encrypt): Use it for "s" and adjusted for changed
+	pk_ecdh_encrypt_with_shared_point.
+	* g10/pubkey-enc.c (get_it): Remove conversion to an MPI and call
+	pk_ecdh_decrypt with the frame buffer.
+
+	scd: Fix possible PC/SC removed card problem.
+	+ commit 9d83bfb639680d3bc756fcfe2b7f83b18bed8dff
+	* scd/apdu.c (pcsc_cancel): New.
+	(pcsc_init): Load new function.
+	(connect_pcsc_card): Use it after a removed card error.
+
+	scd: Add string for another PC/SC error code.
+	+ commit a475bb725be7e275a06e0625b0088f607f36634c
+	* scd/apdu.c (PCSC_E_NO_READERS_AVAILABLE): New.
+	(pcsc_error_string): Add a description for this.
+	* scd/scdaemon.c (scd_kick_the_loop): Fix diagnostic.
+
+2021-05-04  Kirill Elagin  <kirelagin@gmail.com>
+
+	scd: Fix unblock PIN by a Reset Code with KDF.
+	+ commit 6c4216094ef4771d1d5011b7aee35f241e3bcc4d
+	* scd/app-openpgp.c (do_change_pin): Use correct CHVNO=1 for
+	pin2hash_if_kdf, for user's PIN.
+
+2021-05-04  Werner Koch  <wk@gnupg.org>
+
+	gpg: Fix mailbox based search via AKL keyserver method.
+	+ commit 22fe23f46d3179cb0a68f58bf6f722b89c0c4d9c
+	* g10/keyserver.c (keyserver_import_name): Rename to ...
+	(keyserver_import_mbox): this.  And use mail search mode.
+	* g10/getkey.c (get_pubkey_byname): Change the two callers.
+
+	gpg: Auto import keys specified with --trusted-keys.
+	+ commit e7251be84c797ddbc3f0a5212886761666e3aa33
+	* g10/getkey.c (get_pubkey_with_ldap_fallback): New.
+	* g10/trustdb.c (verify_own_keys): Use it.
+
+	(cherry picked from commit 100037ac0f558e8959fc065d4703c85c2962489e)
+
+	gpg: Allow decryption w/o public key but with correct card inserted.
+	+ commit e53f6037283e1a4f18b1c5d66d2678888c701cea
+	* agent/command.c (cmd_readkey): Add option --no-data and special
+	handling for $SIGNKEYID and $AUTHKEYID.
+	* g10/call-agent.c (agent_scd_getattr): Create shadow keys for KEY-FPR
+	output.
+	* g10/skclist.c (enum_secret_keys): Automagically get a missing public
+	key for the current card.
+
+	agent: Silence error messages for READKEY --card.
+	+ commit aa612d752ebb1851f23184df084aed5314b72e3a
+	* agent/command.c (cmd_readkey): Test for shadow key before creating
+	it.
+
+	(cherry picked from commit 8f2c9cb73538baab7da8107f2cceb2f6fc49642a)
+
+2021-05-03  Werner Koch  <wk@gnupg.org>
+
+	gpg: Allow fingerprint based lookup with --locate-external-key.
+	+ commit 2af217ecd7e4242be2b35bc0085eccaf13cc2027
+	* g10/keyserver.c (keyserver_import_fprint_ntds): New.
+	* g10/getkey.c (get_pubkey_byname): Detect an attempt to search by
+	fingerprint in no_local mode.
+
+	gpg: Lookup a missing public key of the current card via LDAP.
+	+ commit b59af0e2a05a3714b0bcbe7e775c6ffacfbc7119
+	* g10/getkey.c (get_seckey_default_or_card): Lookup a missing public
+	key from the current card via LDAP.
+	* g10/call-dirmngr.c: Include keyserver-intetnal.h.
+	(gpg_dirmngr_ks_get): Rename arg quick into flags.  Take care of the
+	new LDAP flag.
+	* g10/keyserver-internal.h (KEYSERVER_IMPORT_FLAG_QUICK): New.
+	Replace the use of the value 1 for the former quick arg.
+	(KEYSERVER_IMPORT_FLAG_LDAP): New.
+	* g10/keyserver.c (keyserver_get_chunk): Increase the reserved line
+	length.
+	* dirmngr/ks-action.c (ks_action_get): Add arg ldap_only.
+	* dirmngr/server.c (cmd_ks_get): Add option --ldap.
+
+	scd: Add option --info to emit KEYPAIRINFO by readkey command.
+	+ commit b8df8321e1ef38147f42af1166d2c60805f88b9c
+	* scd/command.c (do_readkey): Implement this.
+	* scd/app-help.c (app_help_get_keygrip_string_pk): Make HEXKEYGRIP
+	parm optional.  Add arg R_ALGOSTR.
+
+2021-05-03  NIIBE Yutaka  <gniibe@fsij.org>
+
+	common: Fix gnupg_wait_processes, by skipping invalid PID.
+	+ commit c2ba6bea4ce81a066765c285c4b7c1dc6d39f144
+	* common/exechelp-posix.c (gnupg_wait_processes): Skip invalid PID.
+
+2021-05-03  Werner Koch  <wk@gnupg.org>
+
+	agent: Skip unknown unknown ssh curves seen on cards.
+	+ commit bbf4bd3bfcb51e9d91e08ceefba3ff016bae50ff
+	* agent/command-ssh.c (ssh_handler_request_identities): Skip unknown
+	curves.
+
+2021-04-29  Werner Koch  <wk@gnupg.org>
+
+	gpgconf: Do not i18n an empty string to the PO files meta data.
+	+ commit a456303ae306fbfda0cf89ff41678d50c24bf6fc
+	* tools/gpgconf-comp.c (my_dgettext): Ignore empty strings.
+
+	scd: New option --pcsc-shared.
+	+ commit 5eec40f3d82777b4fb807a9bf1b71422a8caa2f9
+	* scd/scdaemon.h (opt): Add field opcsc_shared.
+	* scd/scdaemon.c (opcscShared): New.
+	(opts): Add "--pcsc-shared".
+	(main): Set flag.
+	* scd/apdu.c (connect_pcsc_card): Use it.
+	(pcsc_get_status): Take flag in account.
+	* scd/app-openpgp.c (verify_chv2): Do not auto verify chv1 in shared
+	mode.
+
+	scd: Rewrite READKEY to allow for compressed points.
+	+ commit 96577e2e46e4c5b66a2685cb605e07be0a6a09a5
+	* scd/app-help.c (app_help_pubkey_from_cert): New.  Taken from 2.3.
+	* scd/command.c (cmd_readkey): Rewrite using new helper.
+
+	common: Extend the openpgp_curve_to_oid function.
+	+ commit 5b8593135fa6e88ecc459444ec19b9a824f12a15
+	* common/openpgp-oid.c (openpgp_curve_to_oid): Add optional arg R_NBITS.
+	Change all callers.
+
+	common: New module to compute openpgp fingerprints.
+	+ commit f3c98b8cb5adcac17043fa6066b73bd08c8ef41a
+	* common/openpgp-fpr.c: New.
+	* common/Makefile.am (common_sources): Add it.
+
+	common: New function to uncompress an ECC public key.
+	+ commit c825117c5fa562fced0d3cafc22fd878cf615b42
+	* common/sexputil.c (ec2os): New.
+	(uncompress_ecc_q_in_canon_sexp): New.
+
+	* common/t-sexputil.c (fail2): new.
+	(test_ecc_uncompress): New.
+	(main): Run new test.
+
+	common: New function cmp_canon_sexp.
+	+ commit 473e649ea1a69e82b7f99a17fbff4d641936c61c
+	* common/sexputil.c (cmp_canon_sexp): New.
+	(cmp_canon_sexp_def_tcmp): New.
+	* common/t-sexputil.c (test_cmp_canon_sexp): Add a simple test.
+
+	scd: New function send_keyinfo to assist in backporting.
+	+ commit 0eed0ced9bcd3c14621076d26cf4d9f809e1873c
+	* scd/command.c (send_keyinfo): New.
+
+	scd: Minor changes to assist in backporting from 2.3.
+	+ commit 3db99b8861a7544efee13be45d14bbac63c0c868
+	* scd/command.c (send_status_direct): Return an error code.
+	* scd/app-common.h (APP_LEARN_FLAG_REREAD): New.
+
+	scd: Extend an internal function to also return the algo.
+	+ commit 72a7d45a230bf28e2ba7e8a57b702c98998ea0a3
+	* scd/app-help.c (app_help_get_keygrip_string_pk): Add optional arg
+	r_algo.  Change all callers.
+	(app_help_get_keygrip_string): Ditto.
+
+	scd: New function for iso7816 PSO_CSV.
+	+ commit 91dd74f3d7e3630bb7f298fe4d392f8a6cef9acb
+	* scd/iso7816.c (iso7816_pso_csv): New.
+
+	scd: Extend iso7816_select_path.
+	+ commit 855d14d390e8dd8464f2f38187dbccb19a13e815
+	* scd/iso7816.c (iso7816_select_path): Add arg top_fd.
+	* scd/app-nks.c (do_readkey): Adjust for this change
+	(select_ef_by_path: Ditto.
+
+	* common/tlv.h: Include membuf.h.
+
+	scd: Add new status codes.
+	+ commit 3ce69d8387925d444d529ce0bb5beed9e880aad7
+	* scd/apdu.h (SW_SM_NOT_SUP, SW_CC_NOT_SUP, SW_FILE_STRUCT)
+	(SW_NO_CURRENT_EF): New.
+	* scd/apdu.c (apdu_strerror): Map them to strings.
+	* scd/iso7816.c (map_sw): ... and to gpg-error.
+
+	scd: Extend ISO binary and record reading functions.
+	+ commit ec9e8e0d6a1fe47dbf42652c4246e1c34fdf0288
+	* scd/iso7816.c (iso7816_read_binary_ext): Add optional arg r_sw and
+	change callers.
+	(iso7816_read_record): Factor all code out to ...
+	(iso7816_read_record_ext): New.
+
+2021-04-13  Werner Koch  <wk@gnupg.org>
+
+	gpg: Do not use self-sigs-only for LDAP keyserver imports.
+	+ commit 1303b0ed84da57b48d88343ab43f83546e508aba
+	* dirmngr/ks-engine-ldap.c (ks_ldap_get): Print a SOURCE status.
+	* g10/options.h (opts): New field expl_import_self_sigs_only.
+	* g10/import.c (parse_import_options): Set it.
+	* g10/keyserver.c (keyserver_get_chunk): Add special options for LDAP.
+
+2021-04-08  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd: Fix CCID driver for SCM SPR332/SPR532.
+	+ commit f8ae51977ce4079d638d1ae2f3dd1da41c02a6d7
+	* scd/ccid-driver.c (ccid_vendor_specific_pinpad_setup): New.
+	(ccid_vendor_specific_setup): Only send CLEAR_HALT.
+	(ccid_transceive_secure): Each time, use send_escape_cmd.
+
+2021-04-06  Werner Koch  <wk@gnupg.org>
+
+	gpg: Fix new pseudo option compliance_de_vs.
+	+ commit 18551c6dc2c33f856d05053b27a1210c4c607cef
+	* g10/gpg.c (gpgconf_list): Take opt.compliance also in account.
+
+2021-04-01  Werner Koch  <wk@gnupg.org>
+
+	common: Make the compliance check more robust.
+	+ commit 8ef0f53cb0014026d0d58b8de2133310d96bc1e3
+	* common/compliance.c (get_compliance_cache): New.
+	(gnupg_rng_is_compliant): Use per mode cache.
+	(gnupg_gcrypt_is_compliant): Ditto.
+
+	gpgconf: Return a new pseudo option compliance_de_vs.
+	+ commit 9feffc03f36499162342609897484b4b32fd53a7
+	* tools/gpgconf-comp.c (gc_options_gpg): Add "compliance_de_vs".
+	* g10/gpg.c (gpgconf_list): Return that pseudo option.
+
+2021-03-26  Werner Koch  <wk@gnupg.org>
+	    cbiedl@gnupg.com
+
+	gpgconf: Fix argv overflow if --homedir is used.
+	+ commit a50093893cd100c74a32cbacc749aab582154625
+	* tools/gpgconf-comp.c (gc_component_launch): Fix crash due to too
+	small array.
+
+2021-03-11  Werner Koch  <wk@gnupg.org>
+
+	gpg: New option --force-sign-key.
+	+ commit 87d7b7e07565bdba9e9e8b8698f7094046d4f762
+	* g10/gpg.c (oForceSignKey,opts): New option "--force-sign-key".
+	(main): Set it.
+	* g10/options.h (opt): New flag flags.force_sign_key.
+	* g10/keyedit.c (sign_uids): Use new flag.
+
+2021-03-02  Werner Koch  <wk@gnupg.org>
+
+	sm: Do away with the locked flag in keydb.c.
+	+ commit f3e68e39da7609f594572833528a0f2b9c20bf2d
+	* sm/keydb.c (struct keydb_handle): Remove field locked.
+	(keydb_lock): Remove use of locked flag.
+	(lock_all): Ditto.
+	(unlock_all): Ditto.
+	(keydb_set_flags): Use dotlock_is_locked instead of the locked flag.
+	(keydb_insert_cert): Ditto.
+	(keydb_delete): Ditto.
+	(keydb_search): s/keydb_lock/lock_all/.
+	(keydb_set_cert_flags): Ditto.
+	(keydb_clear_some_cert_flags): Ditto.
+
+	* sm/keydb.c (maybe_create_keybox): s/access/gnupg_access/.
+
+	common: New function dotlock_is_locked.
+	+ commit 67b82a9c607e1488972a85a30015f48c68245af0
+	* common/dotlock.c (dotlock_is_locked): New.
+	(dotlock_take): Set locked flag also in disabled mode.  No more
+	warning if the lock has already been taken.
+	(dotlock_release): Clear locked flag also in disabled mode.  No more
+	warning if the lock has not been taken.
+
+	sm: Lock kbx files also before a search.
+	+ commit 677245ba0e7d6c0bc85ac998f47e3f220b736840
+	* sm/keydb.c (keydb_search): Lock files.
+
+	sm: On Windows close the kbx files at several places.
+	+ commit 2b9ae79ad81a0d3eff011fabe6629e371cd7c5b4
+	* kbx/keybox-search.c (keybox_search_reset) [W32]: Always close.
+
+	* kbx/keybox-init.c (keybox_close_all_files): New.
+	* sm/keydb.c (keydb_close_all_files): New.
+	* sm/call-dirmngr.c (gpgsm_dirmngr_isvalid): Call new function.
+	(gpgsm_dirmngr_lookup): Ditto.
+	(gpgsm_dirmngr_run_command): Ditto.
+
+	sm: Remove unused function.
+	+ commit c99f3599d80d351dda1400314b43ea8ccdcc7b7d
+	* sm/keydb.c (keydb_insert_cert): Remove.
+	* kbx/keybox-update.c (keybox_update_cert): Remove stub.
+
+2021-03-01  Nicolas Fella via Gnupg-devel  <gnupg-devel@gnupg.org>
+
+	gpg: Keep temp files when opening images via xdg-open.
+	+ commit 0441ed6e1c1d7eac81bfbec6ce51f319d9d20eb7
+	* g10/photoid.c (get_default_photo_command): Change parameter for
+	xdg-open.
+
+2021-03-01  Werner Koch  <wk@gnupg.org>
+
+	sm: Silence some other pkcs#12 import prattle.
+	+ commit e5af401fc4c3294de9a4f10630b200185329230b
+	* sm/minip12.c (parse_bag_data): Print a regular log_info only in
+	verbose mode.
+
+2021-02-24  Werner Koch  <wk@gnupg.org>
+
+	sm: Silence some output on --quiet.
+	+ commit bcdbf0fcf3c1c210504cbed53f524704747deaaa
+	* sm/encrypt.c (gpgsm_encrypt): Take care of --quiet.
+	* sm/gpgsm.c: Include minip12.h.
+	(set_debug): Call p12_set_verbosity.
+	* sm/import.c (parse_p12): Dump keygrip only in debug mode.
+	* sm/minip12.c (opt_verbose, p12_set_verbosity): New.
+	(parse_bag_encrypted_data): Print info messages only in verbose mode.
+
+2021-02-19  Werner Koch  <wk@gnupg.org>
+
+	scd: Change parameters of readkey fucntion pointer.
+	+ commit 41979ed7308ef3ab1c877d3f110ce9b61eb17bec
+	* scd/app-common.h (APP_READKEY_FLAG_ADVANCED): New.
+	(struct app_ctx_s): Replace param advanced by flags in readkey.
+	Change all users.
+
+	scd: Pass ctrl parameter to more app functions.
+	+ commit 669786cf646d8636de85a3cb8b3aa83ba709d207
+	* scd/app-common.h (struct app_ctx_s): Add parameter ctrl to function
+	pointers for readkey, setattr, sign, auth, decipher, and check_pin.
+
+	scd: Detect Yubikey and provide nicer display-s/n.
+	+ commit f8588369bcb0e66118725793b53e871ce2acb10d
+	* scd/app-common.h (struct app_ctx_s): Rename unused field
+	card_version to cardversion.
+	* scd/app.c (app_new_register): Add code rom 2.3 to detect the Yubikey
+	and set cardversion.
+	(app_get_dispserialno): New.
+	* scd/app-openpgp.c (do_getattr): Use app_get_dispserialno.
+
+	scd: Change the apptype from a string to an enum.
+	+ commit 43b3ec5aee40172890c077485e438d2d4994d81d
+	* scd/app-common.h (cardtype_t): New.
+	(apptype_t): New.
+	(struct app_ctx_s): Change type of field apptype.  Add fields
+	appversion and cardtype.  Adjust all app-*.c for the new type.
+	* scd/app.c (supported_app_list): New.
+	(strapptype): New.
+	(apptype_from_name): New.
+	(app_dump_state): Use strapptype.
+	(app_write_learn_status): Ditto.
+	(app_getattr): Ditto.
+	(check_conflict): Use apptype_from_name and integer comparison.
+	* scd/app-openpgp.c: Replace app->card_version by app->appversion.
+
+	scd: Add some compatibility code for easier backporting.
+	+ commit 6380126b31aacb2e8ad3aae4866d4d384186bf97
+	* scd/app-common.h (APP_WRITEKEY_FLAG_FORCE): New.
+	(APP_READKEY_FLAG_INFO): New.
+	(APP_LEARN_FLAG_KEYPAIRINFO): New.
+	(APP_LEARN_FLAG_MULTI): New.
+	(struct app_ctx_s): New forward declaration.
+	(struct app_ctx_s): Add members prep_reselect, reselect, and
+	with_keygrip.
+	(KEYGRIP_ACTION_SEND_DATA): New.
+	(KEYGRIP_ACTION_WRITE_STATUS): New.
+	(KEYGRIP_ACTION_LOOKUP): New.
+	(APP_CARD): New macro.
+	* scd/scdaemon.h: Include app-common.h and remove from all other
+	files.
+	(app_t): Move typedef to ...
+	* scd/app-common.h: here.
+
+2021-02-17  Werner Koch  <wk@gnupg.org>
+
+	dirmngr: Support new gpgNtds parameter in LDAP keyserver URLs.
+	+ commit 55f46b33df08e8e0ea520ade5f73b321bc01d705
+	* dirmngr/ldap-parse-uri.c (ldap_parse_uri): Support a new gpgNtds
+	extension.
+	* dirmngr/ks-engine-ldap.c (my_ldap_connect): Do ldap_init always with
+	hostname - which is NULL and thus the same if not given.  Fix minor
+	error in error code handling.
+
+	dirmngr: Rewrite a weird function by straighter code.
+	+ commit cdc828f6902667196eb3870f9287045afe7144d5
+	* dirmngr/ldap-parse-uri.c (ldap_uri_p): Use ascii-memcasecmp.
+
+2021-01-28  Werner Koch  <wk@gnupg.org>
+
+	Include the library version in the compliance checks.
+	+ commit 6e258babe7ccc52a7fb621339c2e2fc5f0f23bc9
+	* common/compliance.c (gnupg_gcrypt_is_compliant): New.
+	(gnupg_rng_is_compliant): Also check library version.
+	* g10/mainproc.c (proc_encrypted): Use new function.
+	(check_sig_and_print): Ditto.
+	* sm/decrypt.c (gpgsm_decrypt): Ditto.
+	* sm/encrypt.c (gpgsm_encrypt): Ditto.
+	* sm/verify.c (gpgsm_verify): Ditto
+
+2021-01-27  Werner Koch  <wk@gnupg.org>
+
+	gpg: Fix ugly error message for an unknown symkey algorithm.
+	+ commit 9037be5f40da409a7734a2672e64345472f294fc
+	* g10/mainproc.c (proc_symkey_enc): Do not continue with an unknown
+	algorithm.
+
 2021-01-11  Werner Koch  <wk@gnupg.org>
 
 	Release 2.2.27.

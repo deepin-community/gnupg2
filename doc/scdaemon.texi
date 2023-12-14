@@ -248,13 +248,20 @@ Append all logging output to @var{file}.  This is very helpful in
 seeing what the agent actually does.  Use @file{socket://} to log to
 socket.
 
+@item --pcsc-shared
+@opindex pcsc-shared
+Use shared mode to access the card via PC/SC.  This is a somewhat
+dangerous option because Scdaemon assumes exclusivbe access to teh
+card and for example caches certain information from the card.  Use
+this option only if you know what you are doing.
 
 @item --pcsc-driver @var{library}
 @opindex pcsc-driver
 Use @var{library} to access the smartcard reader.  The current default
-is @file{libpcsclite.so}.  Instead of using this option you might also
-want to install a symbolic link to the default file name
-(e.g. from @file{libpcsclite.so.1}).
+on Unix is @file{libpcsclite.so} and on Windows @file{winscard.dll}.
+Instead of using this option you might also want to install a symbolic
+link to the default file name (e.g. from @file{libpcsclite.so.1}).
+A Unicode file name may not be used on Windows.
 
 @item --ctapi-driver @var{library}
 @opindex ctapi-driver

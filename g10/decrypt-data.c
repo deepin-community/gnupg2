@@ -215,10 +215,14 @@ aead_checktag (decode_filter_ctx_t dfx, int final, const void *tagbuf)
 
 
 /****************
- * Decrypt the data, specified by ED with the key DEK.
+ * Decrypt the data, specified by ED with the key DEK.  On return
+ * COMPLIANCE_ERROR is set to true iff the decryption can claim that
+ * it was compliant in the current mode; otherwise this flag is set to
+ * false.
  */
 int
-decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
+decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek,
+              int *compliance_error)
 {
   decode_filter_ctx_t dfx;
   enum gcry_cipher_modes ciphermode;
@@ -229,6 +233,8 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
   unsigned blocksize;
   unsigned nprefix;
 
+  *compliance_error = 0;
+
   dfx = xtrycalloc (1, sizeof *dfx);
   if (!dfx)
     return gpg_error_from_syserror ();
@@ -238,7 +244,7 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
     {
       if (!openpgp_cipher_test_algo (dek->algo))
         log_info (_("%s encrypted data\n"),
-                  openpgp_cipher_algo_name (dek->algo));
+                  openpgp_cipher_algo_mode_name (dek->algo, ed->aead_algo));
       else
         log_info (_("encrypted with unknown algorithm %d\n"), dek->algo );
       dek->algo_info_printed = 1;
@@ -258,10 +264,16 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
   if (!gnupg_cipher_is_allowed (opt.compliance, 0, dek->algo, ciphermode))
     {
       log_error (_("cipher algorithm '%s' may not be used in %s mode\n"),
-		 openpgp_cipher_algo_name (dek->algo),
+		 openpgp_cipher_algo_mode_name (dek->algo,ed->aead_algo),
 		 gnupg_compliance_option_string (opt.compliance));
-      rc = gpg_error (GPG_ERR_CIPHER_ALGO);
-      goto leave;
+      *compliance_error = 1;
+      if (opt.flags.require_compliance)
+        {
+          /* We fail early in this case because it does not make sense
+           * to first decrypt everything.  */
+          rc = gpg_error (GPG_ERR_CIPHER_ALGO);
+          goto leave;
+        }
     }
 
   write_status_printf (STATUS_DECRYPTION_INFO, "%d %d %d",
@@ -272,7 +284,10 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
       char numbuf[25];
       char *hexbuf;
 
-      snprintf (numbuf, sizeof numbuf, "%d:", dek->algo);
+      if (ed->aead_algo)
+        snprintf (numbuf, sizeof numbuf, "%d.%u:", dek->algo, ed->aead_algo);
+      else
+        snprintf (numbuf, sizeof numbuf, "%d:", dek->algo);
       hexbuf = bin2hex (dek->key, dek->keylen, NULL);
       if (!hexbuf)
         {
@@ -420,6 +435,7 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
       if (!ed->buf)
         {
           log_error (_("problem handling encrypted packet\n"));
+          rc = gpg_error (GPG_ERR_INV_PACKET);
           goto leave;
         }
 
@@ -473,11 +489,14 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
     {
       char *filename = NULL;
       estream_t fp;
+
       rc = get_output_file ("", 0, ed->buf, &filename, &fp);
       if (! rc)
         {
           iobuf_t output = iobuf_esopen (fp, "w", 0);
           armor_filter_context_t *afx = NULL;
+
+	  es_setbuf (fp, NULL);
 
           if (opt.armor)
             {
@@ -494,8 +513,7 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek)
                        filename, gpg_strerror (rc));
 
           iobuf_close (output);
-          if (afx)
-            release_armor_context (afx);
+          release_armor_context (afx);
         }
       xfree (filename);
     }

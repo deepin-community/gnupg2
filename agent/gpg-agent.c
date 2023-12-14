@@ -82,7 +82,6 @@ enum cmd_and_opt_values
   oDebugWait,
   oDebugQuickRandom,
   oDebugPinentry,
-  oNoGreeting,
   oNoOptions,
   oHomedir,
   oNoDetach,
@@ -98,6 +97,7 @@ enum cmd_and_opt_values
   oPinentryTouchFile,
   oPinentryInvisibleChar,
   oPinentryTimeout,
+  oPinentryFormattedPassphrase,
   oDisplay,
   oTTYname,
   oTTYtype,
@@ -113,10 +113,12 @@ enum cmd_and_opt_values
   oMinPassphraseLen,
   oMinPassphraseNonalpha,
   oCheckPassphrasePattern,
+  oCheckSymPassphrasePattern,
   oMaxPassphraseDays,
   oEnablePassphraseHistory,
   oDisableExtendedKeyFormat,
   oEnableExtendedKeyFormat,
+  oStealSocket,
   oUseStandardSocket,
   oNoUseStandardSocket,
   oExtraSocket,
@@ -126,6 +128,8 @@ enum cmd_and_opt_values
   oIgnoreCacheForSigning,
   oAllowMarkTrusted,
   oNoAllowMarkTrusted,
+  oNoUserTrustlist,
+  oSysTrustlistName,
   oAllowPresetPassphrase,
   oAllowLoopbackPinentry,
   oNoAllowLoopbackPinentry,
@@ -153,100 +157,66 @@ enum cmd_and_opt_values
 # define ENAMETOOLONG EINVAL
 #endif
 
-
 static ARGPARSE_OPTS opts[] = {
 
   ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
   ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
   ARGPARSE_c (aUseStandardSocketP, "use-standard-socket-p", "@"),
 
-  ARGPARSE_group (301, N_("@Options:\n ")),
+
+  ARGPARSE_header (NULL, N_("Options used for startup")),
 
   ARGPARSE_s_n (oDaemon,  "daemon", N_("run in daemon mode (background)")),
   ARGPARSE_s_n (oServer,  "server", N_("run in server mode (foreground)")),
 #ifndef HAVE_W32_SYSTEM
   ARGPARSE_s_n (oSupervised,  "supervised", N_("run in supervised mode")),
 #endif
-  ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
-  ARGPARSE_s_n (oQuiet,	  "quiet",     N_("be somewhat more quiet")),
+  ARGPARSE_s_n (oNoDetach,  "no-detach", N_("do not detach from the console")),
   ARGPARSE_s_n (oSh,	  "sh",        N_("sh-style command output")),
   ARGPARSE_s_n (oCsh,	  "csh",       N_("csh-style command output")),
-  ARGPARSE_conffile (oOptions, "options", N_("|FILE|read options from FILE")),
-
-  ARGPARSE_s_s (oDebug,	     "debug",       "@"),
-  ARGPARSE_s_n (oDebugAll,   "debug-all",   "@"),
-  ARGPARSE_s_s (oDebugLevel, "debug-level", "@"),
-  ARGPARSE_s_i (oDebugWait,  "debug-wait",  "@"),
-  ARGPARSE_s_n (oDebugQuickRandom, "debug-quick-random", "@"),
-  ARGPARSE_s_n (oDebugPinentry, "debug-pinentry", "@"),
-
-  ARGPARSE_s_n (oNoDetach,  "no-detach", N_("do not detach from the console")),
-  ARGPARSE_s_n (oGrab,      "grab",      "@"),
-                /* FIXME: Add the below string for 2.3 */
-                /* N_("let PIN-Entry grab keyboard and mouse")), */
-  ARGPARSE_s_n (oNoGrab,    "no-grab",   "@"),
-  ARGPARSE_s_s (oLogFile,   "log-file",  N_("use a log file for the server")),
-  ARGPARSE_s_s (oPinentryProgram, "pinentry-program",
-                /* */             N_("|PGM|use PGM as the PIN-Entry program")),
-  ARGPARSE_s_s (oPinentryTouchFile, "pinentry-touch-file", "@"),
-  ARGPARSE_s_s (oPinentryInvisibleChar, "pinentry-invisible-char", "@"),
-  ARGPARSE_s_u (oPinentryTimeout, "pinentry-timeout", "@"),
-  ARGPARSE_s_s (oScdaemonProgram, "scdaemon-program",
-                /* */             N_("|PGM|use PGM as the SCdaemon program") ),
-  ARGPARSE_s_n (oDisableScdaemon, "disable-scdaemon",
-                /* */             N_("do not use the SCdaemon") ),
-  ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
-
-  ARGPARSE_s_s (oExtraSocket, "extra-socket",
-                /* */       N_("|NAME|accept some commands via NAME")),
-
-  ARGPARSE_s_s (oBrowserSocket, "browser-socket", "@"),
-
-  ARGPARSE_s_s (oFakedSystemTime, "faked-system-time", "@"),
-
-  ARGPARSE_s_n (oBatch,      "batch",        "@"),
-  ARGPARSE_s_s (oHomedir,    "homedir",      "@"),
-
+  ARGPARSE_s_n (oStealSocket, "steal-socket", "@"),
   ARGPARSE_s_s (oDisplay,    "display",     "@"),
   ARGPARSE_s_s (oTTYname,    "ttyname",     "@"),
   ARGPARSE_s_s (oTTYtype,    "ttytype",     "@"),
   ARGPARSE_s_s (oLCctype,    "lc-ctype",    "@"),
   ARGPARSE_s_s (oLCmessages, "lc-messages", "@"),
   ARGPARSE_s_s (oXauthority, "xauthority",  "@"),
+  ARGPARSE_s_s (oHomedir,    "homedir",      "@"),
+  ARGPARSE_conffile (oOptions, "options", N_("|FILE|read options from FILE")),
+  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
+
+
+  ARGPARSE_header ("Monitor", N_("Options controlling the diagnostic output")),
+
+  ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
+  ARGPARSE_s_n (oQuiet,	  "quiet",     N_("be somewhat more quiet")),
+  ARGPARSE_s_s (oDebug,	     "debug",       "@"),
+  ARGPARSE_s_n (oDebugAll,   "debug-all",   "@"),
+  ARGPARSE_s_s (oDebugLevel, "debug-level", "@"),
+  ARGPARSE_s_i (oDebugWait,  "debug-wait",  "@"),
+  ARGPARSE_s_n (oDebugQuickRandom, "debug-quick-random", "@"),
+  ARGPARSE_s_n (oDebugPinentry, "debug-pinentry", "@"),
+  ARGPARSE_s_s (oLogFile,   "log-file",
+                /* */       N_("|FILE|write server mode logs to FILE")),
+
+
+  ARGPARSE_header ("Configuration",
+                   N_("Options controlling the configuration")),
+
+  ARGPARSE_s_n (oDisableScdaemon, "disable-scdaemon",
+                /* */             N_("do not use the SCdaemon") ),
+  ARGPARSE_s_s (oScdaemonProgram, "scdaemon-program",
+                /* */             N_("|PGM|use PGM as the SCdaemon program") ),
+  ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
+
+  ARGPARSE_s_s (oExtraSocket, "extra-socket",
+                /* */       N_("|NAME|accept some commands via NAME")),
+
+  ARGPARSE_s_s (oBrowserSocket, "browser-socket", "@"),
   ARGPARSE_s_n (oKeepTTY,    "keep-tty",
                 /* */        N_("ignore requests to change the TTY")),
   ARGPARSE_s_n (oKeepDISPLAY, "keep-display",
                 /* */        N_("ignore requests to change the X display")),
-
-  ARGPARSE_s_u (oDefCacheTTL,    "default-cache-ttl",
-                                 N_("|N|expire cached PINs after N seconds")),
-  ARGPARSE_s_u (oDefCacheTTLSSH, "default-cache-ttl-ssh", "@" ),
-  ARGPARSE_s_u (oMaxCacheTTL,    "max-cache-ttl",         "@" ),
-  ARGPARSE_s_u (oMaxCacheTTLSSH, "max-cache-ttl-ssh",     "@" ),
-
-  ARGPARSE_s_n (oEnforcePassphraseConstraints, "enforce-passphrase-constraints",
-                /* */                          "@"),
-  ARGPARSE_s_u (oMinPassphraseLen,        "min-passphrase-len", "@"),
-  ARGPARSE_s_u (oMinPassphraseNonalpha,   "min-passphrase-nonalpha", "@"),
-  ARGPARSE_s_s (oCheckPassphrasePattern,  "check-passphrase-pattern", "@"),
-  ARGPARSE_s_u (oMaxPassphraseDays,       "max-passphrase-days", "@"),
-  ARGPARSE_s_n (oEnablePassphraseHistory, "enable-passphrase-history", "@"),
-
-  ARGPARSE_s_n (oIgnoreCacheForSigning, "ignore-cache-for-signing",
-                /* */    N_("do not use the PIN cache when signing")),
-  ARGPARSE_s_n (oNoAllowExternalCache,  "no-allow-external-cache",
-                /* */    N_("disallow the use of an external password cache")),
-  ARGPARSE_s_n (oNoAllowMarkTrusted, "no-allow-mark-trusted",
-                /* */    N_("disallow clients to mark keys as \"trusted\"")),
-  ARGPARSE_s_n (oAllowMarkTrusted,   "allow-mark-trusted", "@"),
-  ARGPARSE_s_n (oAllowPresetPassphrase, "allow-preset-passphrase",
-                /* */                    N_("allow presetting passphrase")),
-  ARGPARSE_s_n (oNoAllowLoopbackPinentry, "no-allow-loopback-pinentry",
-                                N_("disallow caller to override the pinentry")),
-  ARGPARSE_s_n (oAllowLoopbackPinentry, "allow-loopback-pinentry", "@"),
-  ARGPARSE_s_n (oAllowEmacsPinentry,  "allow-emacs-pinentry",
-                /* */    N_("allow passphrase to be prompted through Emacs")),
-
   ARGPARSE_s_n (oSSHSupport,   "enable-ssh-support", N_("enable ssh support")),
   ARGPARSE_s_s (oSSHFingerprintDigest, "ssh-fingerprint-digest",
                 N_("|ALGO|use ALGO to show ssh fingerprints")),
@@ -259,14 +229,73 @@ static ARGPARSE_OPTS opts[] = {
                 ),
   ARGPARSE_s_n (oDisableExtendedKeyFormat, "disable-extended-key-format", "@"),
   ARGPARSE_s_n (oEnableExtendedKeyFormat, "enable-extended-key-format", "@"),
+  ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
+  ARGPARSE_op_u (oAutoExpandSecmem, "auto-expand-secmem", "@"),
+  ARGPARSE_s_s (oFakedSystemTime, "faked-system-time", "@"),
 
+
+  ARGPARSE_header ("Security", N_("Options controlling the security")),
+
+  ARGPARSE_s_u (oDefCacheTTL,    "default-cache-ttl",
+                                 N_("|N|expire cached PINs after N seconds")),
+  ARGPARSE_s_u (oDefCacheTTLSSH, "default-cache-ttl-ssh",
+                /* */            N_("|N|expire SSH keys after N seconds")),
+  ARGPARSE_s_u (oMaxCacheTTL,    "max-cache-ttl",
+                /* */     N_("|N|set maximum PIN cache lifetime to N seconds")),
+  ARGPARSE_s_u (oMaxCacheTTLSSH, "max-cache-ttl-ssh",
+                /* */     N_("|N|set maximum SSH key lifetime to N seconds")),
+  ARGPARSE_s_n (oIgnoreCacheForSigning, "ignore-cache-for-signing",
+                /* */    N_("do not use the PIN cache when signing")),
+  ARGPARSE_s_n (oNoAllowExternalCache,  "no-allow-external-cache",
+                /* */    N_("disallow the use of an external password cache")),
+  ARGPARSE_s_n (oNoAllowMarkTrusted, "no-allow-mark-trusted",
+                /* */    N_("disallow clients to mark keys as \"trusted\"")),
+  ARGPARSE_s_n (oAllowMarkTrusted,   "allow-mark-trusted", "@"),
+  ARGPARSE_s_n (oNoUserTrustlist,    "no-user-trustlist", "@"),
+  ARGPARSE_s_s (oSysTrustlistName,   "sys-trustlist-name", "@"),
+  ARGPARSE_s_n (oAllowPresetPassphrase, "allow-preset-passphrase",
+                /* */                    N_("allow presetting passphrase")),
   ARGPARSE_s_u (oS2KCount, "s2k-count", "@"),
   ARGPARSE_s_u (oS2KCalibration, "s2k-calibration", "@"),
 
-  ARGPARSE_op_u (oAutoExpandSecmem, "auto-expand-secmem", "@"),
+  ARGPARSE_header ("Passphrase policy",
+                   N_("Options enforcing a passphrase policy")),
 
-  ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
-  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
+  ARGPARSE_s_n (oEnforcePassphraseConstraints, "enforce-passphrase-constraints",
+                N_("do not allow bypassing the passphrase policy")),
+  ARGPARSE_s_u (oMinPassphraseLen,        "min-passphrase-len",
+                N_("|N|set minimal required length for new passphrases to N")),
+  ARGPARSE_s_u (oMinPassphraseNonalpha,   "min-passphrase-nonalpha",
+                N_("|N|require at least N non-alpha"
+                   " characters for a new passphrase")),
+  ARGPARSE_s_s (oCheckPassphrasePattern,  "check-passphrase-pattern",
+                N_("|FILE|check new passphrases against pattern in FILE")),
+  ARGPARSE_s_s (oCheckSymPassphrasePattern,  "check-sym-passphrase-pattern",
+                "@"),
+  ARGPARSE_s_u (oMaxPassphraseDays,       "max-passphrase-days",
+                N_("|N|expire the passphrase after N days")),
+  ARGPARSE_s_n (oEnablePassphraseHistory, "enable-passphrase-history",
+                N_("do not allow the reuse of old passphrases")),
+
+
+  ARGPARSE_header ("Pinentry", N_("Options controlling the PIN-Entry")),
+
+  ARGPARSE_s_n (oBatch,  "batch",  N_("never use the PIN-entry")),
+  ARGPARSE_s_n (oNoAllowLoopbackPinentry, "no-allow-loopback-pinentry",
+                N_("disallow caller to override the pinentry")),
+  ARGPARSE_s_n (oAllowLoopbackPinentry, "allow-loopback-pinentry", "@"),
+  ARGPARSE_s_n (oGrab,   "grab",   N_("let PIN-Entry grab keyboard and mouse")),
+  ARGPARSE_s_n (oNoGrab, "no-grab",   "@"),
+  ARGPARSE_s_s (oPinentryProgram, "pinentry-program",
+                /* */             N_("|PGM|use PGM as the PIN-Entry program")),
+  ARGPARSE_s_s (oPinentryTouchFile, "pinentry-touch-file", "@"),
+  ARGPARSE_s_s (oPinentryInvisibleChar, "pinentry-invisible-char", "@"),
+  ARGPARSE_s_u (oPinentryTimeout, "pinentry-timeout",
+                N_("|N|set the Pinentry timeout to N seconds")),
+  ARGPARSE_s_n (oPinentryFormattedPassphrase, "pinentry-formatted-passphrase",
+                "@"),
+  ARGPARSE_s_n (oAllowEmacsPinentry,  "allow-emacs-pinentry",
+                N_("allow passphrase to be prompted through Emacs")),
 
   /* Dummy options for backward compatibility.  */
   ARGPARSE_o_s (oWriteEnvFile, "write-env-file", "@"),
@@ -355,6 +384,9 @@ static int disable_check_own_socket;
 
 /* Flag indicating that we are in supervised mode.  */
 static int is_supervised;
+
+/* Flag indicating to start the daemon even if one already runs.  */
+static int steal_socket;
 
 /* Flag to inhibit socket removal in cleanup.  */
 static int inhibit_socket_removal;
@@ -829,6 +861,7 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       xfree (opt.pinentry_invisible_char);
       opt.pinentry_invisible_char = NULL;
       opt.pinentry_timeout = 0;
+      opt.pinentry_formatted_passphrase = 0;
       opt.scdaemon_program = NULL;
       opt.def_cache_ttl = DEFAULT_CACHE_TTL;
       opt.def_cache_ttl_ssh = DEFAULT_CACHE_TTL_SSH;
@@ -838,11 +871,13 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.min_passphrase_len = MIN_PASSPHRASE_LEN;
       opt.min_passphrase_nonalpha = MIN_PASSPHRASE_NONALPHA;
       opt.check_passphrase_pattern = NULL;
+      opt.check_sym_passphrase_pattern = NULL;
       opt.max_passphrase_days = MAX_PASSPHRASE_DAYS;
       opt.enable_passphrase_history = 0;
       opt.enable_extended_key_format = 1;
       opt.ignore_cache_for_signing = 0;
       opt.allow_mark_trusted = 1;
+      opt.sys_trustlist_name = NULL;
       opt.allow_external_cache = 1;
       opt.allow_loopback_pinentry = 1;
       opt.allow_emacs_pinentry = 0;
@@ -889,6 +924,9 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.pinentry_invisible_char = xtrystrdup (pargs->r.ret_str); break;
       break;
     case oPinentryTimeout: opt.pinentry_timeout = pargs->r.ret_ulong; break;
+    case oPinentryFormattedPassphrase:
+      opt.pinentry_formatted_passphrase = 1;
+      break;
     case oScdaemonProgram: opt.scdaemon_program = pargs->r.ret_str; break;
     case oDisableScdaemon: opt.disable_scdaemon = 1; break;
     case oDisableCheckOwnSocket: disable_check_own_socket = 1; break;
@@ -907,6 +945,9 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       break;
     case oCheckPassphrasePattern:
       opt.check_passphrase_pattern = pargs->r.ret_str;
+      break;
+    case oCheckSymPassphrasePattern:
+      opt.check_sym_passphrase_pattern = pargs->r.ret_str;
       break;
     case oMaxPassphraseDays:
       opt.max_passphrase_days = pargs->r.ret_ulong;
@@ -927,6 +968,8 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 
     case oAllowMarkTrusted: opt.allow_mark_trusted = 1; break;
     case oNoAllowMarkTrusted: opt.allow_mark_trusted = 0; break;
+    case oNoUserTrustlist: opt.no_user_trustlist = 1; break;
+    case oSysTrustlistName: opt.sys_trustlist_name = pargs->r.ret_str; break;
 
     case oAllowPresetPassphrase: opt.allow_preset_passphrase = 1; break;
 
@@ -972,6 +1015,11 @@ finalize_rereadable_options (void)
   /* Hack to allow --grab to override --no-grab.  */
   if ((opt.no_grab & 2))
     opt.no_grab = 0;
+
+  /* With --no-user-trustlist it does not make sense to allow the mark
+   * trusted feature.  */
+  if (opt.no_user_trustlist)
+    opt.allow_mark_trusted = 0;
 }
 
 
@@ -1188,7 +1236,6 @@ main (int argc, char **argv )
 
         case oDebugWait: debug_wait = pargs.r.ret_int; break;
 
-        case oNoGreeting: /* Dummy option.  */ break;
         case oNoVerbose: opt.verbose = 0; break;
         case oHomedir: gnupg_set_homedir (pargs.r.ret_str); break;
         case oNoDetach: nodetach = 1; break;
@@ -1197,6 +1244,7 @@ main (int argc, char **argv )
         case oSh: csh_style = 0; break;
         case oServer: pipe_server = 1; break;
         case oDaemon: is_daemon = 1; break;
+        case oStealSocket: steal_socket = 1; break;
         case oSupervised: is_supervised = 1; break;
 
         case oDisplay: default_display = xstrdup (pargs.r.ret_str); break;
@@ -1273,6 +1321,17 @@ main (int argc, char **argv )
           break;
 	}
     }
+
+  /* Print a warning if an argument looks like an option.  */
+  if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
+    {
+      int i;
+
+      for (i=0; i < argc; i++)
+        if (argv[i][0] == '-' && argv[i][1] == '-')
+          log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
+    }
+
   gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (!last_configname)
@@ -1290,15 +1349,6 @@ main (int argc, char **argv )
 
   finalize_rereadable_options ();
 
-  /* Print a warning if an argument looks like an option.  */
-  if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
-    {
-      int i;
-
-      for (i=0; i < argc; i++)
-        if (argv[i][0] == '-' && argv[i][1] == '-')
-          log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
-    }
 
 #ifdef ENABLE_NLS
   /* gpg-agent usually does not output any messages because it runs in
@@ -1381,69 +1431,25 @@ main (int argc, char **argv )
     agent_exit (0);
   else if (gpgconf_list)
     {
-      char *filename_esc;
-
-      /* List options and default values in the GPG Conf format.  */
-      filename_esc = percent_escape (config_filename, NULL);
-      es_printf ("%s-%s.conf:%lu:\"%s\n",
-                 GPGCONF_NAME, GPG_AGENT_NAME,
-                 GC_OPT_FLAG_DEFAULT, filename_esc);
-      xfree (filename_esc);
-
-      es_printf ("verbose:%lu:\n"
-              "quiet:%lu:\n"
-              "debug-level:%lu:\"none:\n"
-              "log-file:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME,
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME,
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME,
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME );
+      es_printf ("debug-level:%lu:\"none:\n", GC_OPT_FLAG_DEFAULT);
       es_printf ("default-cache-ttl:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, DEFAULT_CACHE_TTL );
+              GC_OPT_FLAG_DEFAULT, DEFAULT_CACHE_TTL );
       es_printf ("default-cache-ttl-ssh:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, DEFAULT_CACHE_TTL_SSH );
+              GC_OPT_FLAG_DEFAULT, DEFAULT_CACHE_TTL_SSH );
       es_printf ("max-cache-ttl:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, MAX_CACHE_TTL );
+              GC_OPT_FLAG_DEFAULT, MAX_CACHE_TTL );
       es_printf ("max-cache-ttl-ssh:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, MAX_CACHE_TTL_SSH );
+              GC_OPT_FLAG_DEFAULT, MAX_CACHE_TTL_SSH );
       es_printf ("enforce-passphrase-constraints:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
+              GC_OPT_FLAG_NONE);
       es_printf ("min-passphrase-len:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, MIN_PASSPHRASE_LEN );
+              GC_OPT_FLAG_DEFAULT, MIN_PASSPHRASE_LEN );
       es_printf ("min-passphrase-nonalpha:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME,
-              MIN_PASSPHRASE_NONALPHA);
-      es_printf ("check-passphrase-pattern:%lu:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME);
+              GC_OPT_FLAG_DEFAULT, MIN_PASSPHRASE_NONALPHA);
       es_printf ("max-passphrase-days:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME,
-              MAX_PASSPHRASE_DAYS);
-      es_printf ("enable-passphrase-history:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("no-grab:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("ignore-cache-for-signing:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("no-allow-external-cache:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("no-allow-mark-trusted:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("disable-scdaemon:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("enable-ssh-support:%lu:\n", GC_OPT_FLAG_NONE);
+              GC_OPT_FLAG_DEFAULT, MAX_PASSPHRASE_DAYS);
       es_printf ("ssh-fingerprint-digest:%lu:\"%s:\n",
-                 GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME, "md5");
-#ifdef HAVE_W32_SYSTEM
-      es_printf ("enable-putty-support:%lu:\n", GC_OPT_FLAG_NONE);
-#endif
-      es_printf ("no-allow-loopback-pinentry:%lu:\n",
-              GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("allow-emacs-pinentry:%lu:\n",
-                 GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
-      es_printf ("pinentry-timeout:%lu:0:\n",
-                 GC_OPT_FLAG_DEFAULT|GC_OPT_FLAG_RUNTIME);
-      es_printf ("grab:%lu:\n",
-                 GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME);
+                 GC_OPT_FLAG_DEFAULT, "md5");
 
       agent_exit (0);
     }
@@ -2210,14 +2216,20 @@ create_server_socket (char *name, int primary, int cygwin,
          server is not yet operational; this would lead to a hang.  */
       if (primary && !check_for_running_agent (1))
         {
-          log_set_prefix (NULL, GPGRT_LOG_WITH_PREFIX);
-          log_set_file (NULL);
-          log_error (_("a gpg-agent is already running - "
-                       "not starting a new one\n"));
-          *name = 0; /* Inhibit removal of the socket by cleanup(). */
-          assuan_sock_close (fd);
-          xfree (unaddr);
-          agent_exit (2);
+          if (steal_socket)
+            log_info (N_("trying to steal socket from running %s\n"),
+                      "gpg-agent");
+          else
+            {
+              log_set_prefix (NULL, GPGRT_LOG_WITH_PREFIX);
+              log_set_file (NULL);
+              log_error (_("a gpg-agent is already running - "
+                           "not starting a new one\n"));
+              *name = 0; /* Inhibit removal of the socket by cleanup(). */
+              assuan_sock_close (fd);
+              xfree (unaddr);
+              agent_exit (2);
+            }
         }
       gnupg_remove (unaddr->sun_path);
       rc = assuan_sock_bind (fd, addr, len);

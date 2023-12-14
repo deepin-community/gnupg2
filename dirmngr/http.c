@@ -1,8 +1,8 @@
 /* http.c  -  HTTP protocol handler
- * Copyright (C) 1999, 2001, 2002, 2003, 2004, 2006, 2009, 2010,
+ * Copyright (C) 1999, 2001-2004, 2006, 2009, 2010,
  *               2011 Free Software Foundation, Inc.
- * Copyright (C) 2014 Werner Koch
- * Copyright (C) 2015-2017 g10 Code GmbH
+ * Copyright (C) 1999, 2001-2004, 2006, 2009, 2010, 2011, 2014 Werner Koch
+ * Copyright (C) 2015-2017, 2021 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -766,35 +766,38 @@ http_session_new (http_session_t *r_session,
         goto leave;
       }
 
-    is_hkps_pool = (intended_hostname
-                    && !ascii_strcasecmp (intended_hostname,
-                                          get_default_keyserver (1)));
+    /* Disabled for 2.2.19 to due problems with the standard hkps pool.  */
+    /* is_hkps_pool = (intended_hostname */
+    /*                 && !ascii_strcasecmp (intended_hostname, */
+    /*                                       get_default_keyserver (1))); */
+    is_hkps_pool = 0;
 
     /* If we are looking for the hkps pool from sks-keyservers.net,
      * then forcefully use its dedicated certificate authority.  */
-    if (is_hkps_pool)
-      {
-        char *pemname = make_filename_try (gnupg_datadir (),
-                                           "sks-keyservers.netCA.pem", NULL);
-        if (!pemname)
-          {
-            err = gpg_error_from_syserror ();
-            log_error ("setting CA from file '%s' failed: %s\n",
-                       pemname, gpg_strerror (err));
-          }
-        else
-          {
-            rc = gnutls_certificate_set_x509_trust_file
-              (sess->certcred, pemname, GNUTLS_X509_FMT_PEM);
-            if (rc < 0)
-              log_info ("setting CA from file '%s' failed: %s\n",
-                        pemname, gnutls_strerror (rc));
-            xfree (pemname);
-          }
-
-        if (is_hkps_pool)
-          add_system_cas = 0;
-      }
+    /* Disabled for 2.2.29 because the service had to be shutdown.  */
+    /* if (is_hkps_pool) */
+    /*   { */
+    /*     char *pemname = make_filename_try (gnupg_datadir (), */
+    /*                                        "sks-keyservers.netCA.pem", NULL); */
+    /*     if (!pemname) */
+    /*       { */
+    /*         err = gpg_error_from_syserror (); */
+    /*         log_error ("setting CA from file '%s' failed: %s\n", */
+    /*                    pemname, gpg_strerror (err)); */
+    /*       } */
+    /*     else */
+    /*       { */
+    /*         rc = gnutls_certificate_set_x509_trust_file */
+    /*           (sess->certcred, pemname, GNUTLS_X509_FMT_PEM); */
+    /*         if (rc < 0) */
+    /*           log_info ("setting CA from file '%s' failed: %s\n", */
+    /*                     pemname, gnutls_strerror (rc)); */
+    /*         xfree (pemname); */
+    /*       } */
+    /*         */
+    /*     if (is_hkps_pool) */
+    /*       add_system_cas = 0; */
+    /*   } */
 
     /* Add configured certificates to the session.  */
     if ((flags & HTTP_FLAG_TRUST_DEF) && !is_hkps_pool)
@@ -1298,15 +1301,14 @@ parse_uri (parsed_uri_t *ret_uri, const char *uri,
 /*
  * Parse an URI and put the result into the newly allocated RET_URI.
  * On success the caller must use http_release_parsed_uri() to
- * releases the resources.  If NO_SCHEME_CHECK is set, the function
- * tries to parse the URL in the same way it would do for an HTTP
- * style URI.
- */
+ * releases the resources.  If the HTTP_PARSE_NO_SCHEME_CHECK flag is
+ * set, the function tries to parse the URL in the same way it would
+ * do for an HTTP style URI.   */
 gpg_error_t
 http_parse_uri (parsed_uri_t *ret_uri, const char *uri,
-                int no_scheme_check)
+                unsigned int flags)
 {
-  return parse_uri (ret_uri, uri, no_scheme_check, 0);
+  return parse_uri (ret_uri, uri, !!(flags & HTTP_PARSE_NO_SCHEME_CHECK), 0);
 }
 
 
@@ -1356,8 +1358,9 @@ do_parse_uri (parsed_uri_t uri, int only_local_part,
   uri->off_host = 0;
   uri->off_path = 0;
 
-  /* A quick validity check. */
-  if (strspn (p, VALID_URI_CHARS) != n)
+  /* A quick validity check unless we have the opaque scheme. */
+  if (strspn (p, VALID_URI_CHARS) != n
+      && strncmp (p, "opaque:", 7))
     return GPG_ERR_BAD_URI;	/* Invalid characters found. */
 
   if (!only_local_part)
@@ -1389,6 +1392,12 @@ do_parse_uri (parsed_uri_t uri, int only_local_part,
           uri->use_tls = 1;
         }
 #endif /*USE_TLS*/
+      else if (!strcmp (uri->scheme, "opaque"))
+        {
+          uri->opaque = 1;
+          uri->path = p2;
+          return 0;
+        }
       else if (!no_scheme_check)
 	return GPG_ERR_INV_URI; /* Unsupported scheme */
 
@@ -3539,6 +3548,15 @@ uri_query_lookup (parsed_uri_t uri, const char *key)
 
   return NULL;
 }
+
+const char *
+uri_query_value (parsed_uri_t url, const char *key)
+{
+  struct uri_tuple_s *t;
+  t = uri_query_lookup (url, key);
+  return t? t->value : NULL;
+}
+
 
 
 /* Return true if both URI point to the same host for the purpose of

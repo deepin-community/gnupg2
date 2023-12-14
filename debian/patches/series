@@ -15,8 +15,12 @@ update-defaults/gpg-Prefer-SHA-512-and-SHA-384-in-personal-digest.patch
 import-merge-without-userid/tests-add-test-cases-for-import-without-uid.patch
 import-merge-without-userid/gpg-allow-import-of-previously-known-keys-even-without-UI.patch
 import-merge-without-userid/gpg-accept-subkeys-with-a-good-revocation-but-no-self-sig.patch
-dirmngr-Only-use-SKS-pool-CA-for-SKS-pool.patch
 Use-hkps-keys.openpgp.org-as-the-default-keyserver.patch
 Make-gpg-zip-use-tar-from-PATH.patch
 gpg-drop-import-clean-from-default-keyserver-import-optio.patch
-from-master/gpg-change-agent-spawn-2019-07-24-v2.patch
+from-master/common-Use-gnupg_spawn_process_fd-to-invoke-gpg-agent-dir.patch
+from-master/common-Fix-the-previous-commit.patch
+from-upstream/gpg-Report-an-error-for-receiving-key-from-agent.patch
+from-upstream/gpg-Move-NETLIBS-after-GPG_ERROR_LIBS.patch
+from-upstream/dirmngr-Fix-build-with-no-LDAP-support.patch
+from-upstream/gpg-Move-NETLIBS-after-GPG_ERROR_LIBS-another.patch

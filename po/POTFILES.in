@@ -1,6 +1,7 @@
 # List of files with translatable strings
 
 agent/call-pinentry.c
+agent/command.c
 agent/command-ssh.c
 agent/divert-scd.c
 agent/genkey.c
@@ -24,6 +25,7 @@ common/audit.c
 common/helpfile.c
 common/gettime.c
 common/ksba-io-support.c
+common/ttyio.c
 
 common/argparse.c
 common/logging.c
@@ -115,7 +117,6 @@ dirmngr/dirmngr-client.c
 dirmngr/dirmngr.c
 dirmngr/dirmngr_ldap.c
 dirmngr/http.c
-dirmngr/ldap-wrapper-ce.c
 dirmngr/ldap-wrapper.c
 dirmngr/ldap.c
 dirmngr/ldapserver.c

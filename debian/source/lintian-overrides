@@ -1,2 +1,4 @@
 # doc merely references / cites IETF RFC: 
+gnupg2 source: license-problem-non-free-RFC [doc/OpenPGP]
+# for the older version of lintian used on ftp-master
 gnupg2 source: license-problem-non-free-RFC doc/OpenPGP

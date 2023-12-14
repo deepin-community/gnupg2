@@ -1,7 +1,7 @@
 # configure.ac - for GnuPG 2.2
 # Copyright (C) 1998-2019 Free Software Foundation, Inc.
 # Copyright (C) 1998-2019 Werner Koch
-# Copyright (C) 2003-2021 g10 Code GmbH
+# Copyright (C) 2003-2022 g10 Code GmbH
 #
 # This file is part of GnuPG.
 #
@@ -29,7 +29,7 @@ min_automake_version="1.14"
 m4_define([mym4_package],[gnupg])
 m4_define([mym4_major], [2])
 m4_define([mym4_minor], [2])
-m4_define([mym4_micro], [27])
+m4_define([mym4_micro], [40])
 
 # To start a new development series, i.e a new major or minor number
 # you need to mark an arbitrary commit before the first beta release
@@ -509,20 +509,7 @@ AH_BOTTOM([
 #define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
 #define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
 
-/* GnuPG has always been a part of the GNU project and thus we have
- * shown the FSF as holder of the copyright.  We continue to do so for
- * the reason that without the FSF the free software used all over the
- * world would not have come into existence.  However, under Windows
- * we print a different copyright string with --version because the
- * copyright assignments of g10 Code and Werner Koch were terminated
- * many years ago, g10 Code is still the major contributor to the
- * code, and Windows is not an FSF endorsed platform.  Note that the
- * actual list of copyright holders can be found in the AUTHORS file.  */
-#ifdef HAVE_W32_SYSTEM
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2021 g10 Code GmbH"
-#else
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2021 Free Software Foundation, Inc."
-#endif
+#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2022 g10 Code GmbH"
 
 
 /* For some systems (DOS currently), we hardcode the path here.  For
@@ -677,7 +664,6 @@ have_w32_system=no
 have_w32ce_system=no
 have_android_system=no
 use_simple_gettext=no
-use_ldapwrapper=yes
 mmap_needed=yes
 require_pipe_to_unblock_pselect=yes
 case "${host}" in
@@ -757,7 +743,7 @@ case "${host}" in
         build_wks_tools=no
         ;;
     *-apple-darwin*)
-        AC_DEFINE(_DARWIN_C_SOURCE, 900000L,
+        AC_DEFINE(_DARWIN_C_SOURCE, 1,
                   Expose all libc features (__DARWIN_C_FULL).)
         ;;
     *-*-netbsd*)
@@ -1219,16 +1205,7 @@ fi
 AM_CONDITIONAL(USE_LDAP, [test "$gnupg_have_ldap" = yes])
 if test "$gnupg_have_ldap" = yes ; then
   AC_DEFINE(USE_LDAP,1,[Defined if LDAP is support])
-else
- use_ldapwrapper=no
 fi
-
-if test "$use_ldapwrapper" = yes; then
-   AC_DEFINE(USE_LDAPWRAPPER,1, [Build dirmngr with LDAP wrapper process])
-fi
-AM_CONDITIONAL(USE_LDAPWRAPPER, test "$use_ldapwrapper" = yes)
-
-
 
 
 #
@@ -1362,6 +1339,7 @@ AC_C_VOLATILE
 AC_TYPE_SIZE_T
 AC_TYPE_MODE_T
 AC_TYPE_SIGNAL
+AC_CHECK_FUNCS([sigdescr_np])
 AC_DECL_SYS_SIGLIST
 
 gl_HEADER_SYS_SOCKET
@@ -1643,6 +1621,9 @@ if test "$GCC" = yes; then
 
     else
         mycflags="$mycflags -Wall"
+        if test x"$_gcc_silent_wno" = xyes ; then
+          mycflags="$mycflags -Wno-format-zero-length"
+        fi
     fi
 
     if test x"$_gcc_silent_wno" = xyes ; then
@@ -1856,7 +1837,7 @@ AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
 AC_DEFINE_UNQUOTED(DIRMNGR_SOCK_NAME, "S.dirmngr",
                    [The name of the dirmngr socket])
 AC_DEFINE_UNQUOTED(DIRMNGR_DEFAULT_KEYSERVER,
-                   "hkps://hkps.pool.sks-keyservers.net",
+                   "hkps://keyserver.ubuntu.com",
       [The default keyserver for dirmngr to use, if none is explicitly given])
 
 AC_DEFINE_UNQUOTED(GPGEXT_GPG, "gpg", [The standard binary file suffix])

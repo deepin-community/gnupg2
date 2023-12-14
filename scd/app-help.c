@@ -24,7 +24,6 @@
 #include <string.h>
 
 #include "scdaemon.h"
-#include "app-common.h"
 #include "iso7816.h"
 #include "../common/tlv.h"
 
@@ -55,12 +54,16 @@ app_help_count_bits (const unsigned char *a, size_t len)
 /* Return the KEYGRIP for the canonical encoded public key (PK,PKLEN)
  * as an hex encoded string in the user provided buffer HEXKEYGRIP
  * which must be of at least 41 bytes.  If R_PKEY is not NULL and the
- * function succeeded, the S-expression representing the key is
- * stored there.  The caller needs to call gcry_sexp_release on
- * that.  */
+ * function succeeded, the S-expression representing the key is stored
+ * there.  The caller needs to call gcry_sexp_release on that.  If
+ * R_ALGO is not NULL the public key algorithm id of Libgcrypt is
+ * stored there.  If R_ALGOSTR is not NULL and the function succeeds a
+ * newly allocated algo string (e.g. "rsa2048") is stored there.
+ * HEXKEYGRIP may be NULL if the caller is not interested in it.  */
 gpg_error_t
 app_help_get_keygrip_string_pk (const void *pk, size_t pklen, char *hexkeygrip,
-                                gcry_sexp_t *r_pkey)
+                                gcry_sexp_t *r_pkey, int *r_algo,
+                                char **r_algostr)
 {
   gpg_error_t err;
   gcry_sexp_t s_pkey;
@@ -68,14 +71,30 @@ app_help_get_keygrip_string_pk (const void *pk, size_t pklen, char *hexkeygrip,
 
   if (r_pkey)
     *r_pkey = NULL;
+  if (r_algostr)
+    *r_algostr = NULL;
 
   err = gcry_sexp_sscan (&s_pkey, NULL, pk, pklen);
   if (err)
     return err; /* Can't parse that S-expression. */
-  if (!gcry_pk_get_keygrip (s_pkey, array))
+  if (hexkeygrip && !gcry_pk_get_keygrip (s_pkey, array))
     {
       gcry_sexp_release (s_pkey);
       return gpg_error (GPG_ERR_GENERAL); /* Failed to calculate the keygrip.*/
+    }
+
+  if (r_algo)
+    *r_algo = get_pk_algo_from_key (s_pkey);
+
+  if (r_algostr)
+    {
+      *r_algostr = pubkey_algo_string (s_pkey, NULL);
+      if (!*r_algostr)
+        {
+          err = gpg_error_from_syserror ();
+          gcry_sexp_release (s_pkey);
+          return err;
+        }
     }
 
   if (r_pkey)
@@ -83,7 +102,8 @@ app_help_get_keygrip_string_pk (const void *pk, size_t pklen, char *hexkeygrip,
   else
     gcry_sexp_release (s_pkey);
 
-  bin2hex (array, KEYGRIP_LEN, hexkeygrip);
+  if (hexkeygrip)
+    bin2hex (array, KEYGRIP_LEN, hexkeygrip);
 
   return 0;
 }
@@ -93,10 +113,11 @@ app_help_get_keygrip_string_pk (const void *pk, size_t pklen, char *hexkeygrip,
  * string in the user provided buffer HEXKEYGRIP which must be of at
  * least 41 bytes.  If R_PKEY is not NULL and the function succeeded,
  * the S-expression representing the key is stored there.  The caller
- * needs to call gcry_sexp_release on that. */
+ * needs to call gcry_sexp_release on that.  If R_ALGO is not NULL the
+ * public key algorithm id of Libgcrypt is stored there. */
 gpg_error_t
 app_help_get_keygrip_string (ksba_cert_t cert, char *hexkeygrip,
-                             gcry_sexp_t *r_pkey)
+                             gcry_sexp_t *r_pkey, int *r_algo)
 {
   gpg_error_t err;
   ksba_sexp_t p;
@@ -111,8 +132,63 @@ app_help_get_keygrip_string (ksba_cert_t cert, char *hexkeygrip,
   n = gcry_sexp_canon_len (p, 0, NULL, NULL);
   if (!n)
     return gpg_error (GPG_ERR_INV_SEXP);
-  err = app_help_get_keygrip_string_pk ((void*)p, n, hexkeygrip, r_pkey);
+  err = app_help_get_keygrip_string_pk ((void*)p, n, hexkeygrip,
+                                        r_pkey, r_algo, NULL);
   ksba_free (p);
+  return err;
+}
+
+
+/* Get the public key from the binary encoded (CERT,CERTLEN).  */
+gpg_error_t
+app_help_pubkey_from_cert (const void *cert, size_t certlen,
+                           unsigned char **r_pk, size_t *r_pklen)
+{
+  gpg_error_t err;
+  ksba_cert_t kc;
+  unsigned char *pk, *fixed_pk;
+  size_t pklen, fixed_pklen;
+
+  *r_pk = NULL;
+  *r_pklen = 0;
+
+  pk = NULL; /*(avoid cc warning)*/
+
+  err = ksba_cert_new (&kc);
+  if (err)
+    return err;
+
+  err = ksba_cert_init_from_mem (kc, cert, certlen);
+  if (err)
+    goto leave;
+
+  pk = ksba_cert_get_public_key (kc);
+  if (!pk)
+    {
+      err = gpg_error (GPG_ERR_NO_PUBKEY);
+      goto leave;
+    }
+  pklen = gcry_sexp_canon_len (pk, 0, NULL, &err);
+
+  err = uncompress_ecc_q_in_canon_sexp (pk, pklen, &fixed_pk, &fixed_pklen);
+  if (err)
+    goto leave;
+  if (fixed_pk)
+    {
+      ksba_free (pk); pk = NULL;
+      pk = fixed_pk;
+      pklen = fixed_pklen;
+    }
+
+ leave:
+  if (!err)
+    {
+      *r_pk = pk;
+      *r_pklen = pklen;
+    }
+  else
+    ksba_free (pk);
+  ksba_cert_release (kc);
   return err;
 }
 

@@ -31,9 +31,14 @@
 #include "../common/compliance.h"
 
 
-/* Declaration of a keyserver spec type.  The definition is found in
-   ../common/keyserver.h.  */
-struct keyserver_spec;
+/* Object to hold information pertaining to a keyserver; it also
+   allows building a list of keyservers.  For historic reasons this is
+   not a strlist_t.  */
+struct keyserver_spec
+{
+  struct keyserver_spec *next;
+  char *uri;
+};
 typedef struct keyserver_spec *keyserver_spec_t;
 
 
@@ -209,6 +214,7 @@ struct
   unsigned int screen_lines;
   byte *show_subpackets;
   int rfc2440_text;
+  unsigned int min_rsa_length;   /* Used for compliance checks.  */
 
   /* If true, let write failures on the status-fd exit the process. */
   int exit_on_status_write_error;
@@ -230,6 +236,7 @@ struct
     unsigned int allow_multiple_messages:1;
     unsigned int allow_weak_digest_algos:1;
     unsigned int allow_weak_key_signatures:1;
+    unsigned int override_compliance_check:1;
     unsigned int large_rsa:1;
     unsigned int disable_signer_uid:1;
     unsigned int include_key_block:1;
@@ -241,6 +248,14 @@ struct
     /* Force the use of the OpenPGP card and do not allow the use of
      * another card.  */
     unsigned int use_only_openpgp_card:1;
+    /* Force signing keys even if a key signature already exists.  */
+    unsigned int force_sign_key:1;
+    /* The next flag is set internally iff IMPORT_SELF_SIGS_ONLY has
+     * been set by the user and is not the default value.  */
+    unsigned int expl_import_self_sigs_only:1;
+    /* Fail if an operation can't be done in the requested compliance
+     * mode.  */
+    unsigned int require_compliance:1;
   } flags;
 
   /* Linked list of ways to find a key if the key isn't on the local

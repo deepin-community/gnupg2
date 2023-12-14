@@ -22,7 +22,7 @@ Upstream bug: https://dev.gnupg.org/T1211
  3 files changed, 18 insertions(+), 1 deletion(-)
 
 diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
-index b167c34..5afcf11 100644
+index 53b86dd..3f7aaae 100644
 --- a/agent/gpg-agent.c
 +++ b/agent/gpg-agent.c
 @@ -50,6 +50,9 @@
@@ -35,7 +35,7 @@ index b167c34..5afcf11 100644
  
  #define INCLUDED_BY_MAIN_MODULE 1
  #define GNUPG_COMMON_NEED_AFLOCAL
-@@ -1030,6 +1033,11 @@ main (int argc, char **argv )
+@@ -1078,6 +1081,11 @@ main (int argc, char **argv )
  
    early_system_init ();
  
@@ -48,10 +48,10 @@ index b167c34..5afcf11 100644
       file descriptors and the signal mask.  This info is required to
       do the exec call properly.  We don't need it on Windows.  */
 diff --git a/configure.ac b/configure.ac
-index 7a2d410..2d8b050 100644
+index 4638f99..6e44af2 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1426,7 +1426,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
+@@ -1404,7 +1404,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
                  ftruncate funlockfile getaddrinfo getenv getpagesize \
                  getpwnam getpwuid getrlimit getrusage gettimeofday   \
                  gmtime_r inet_ntop inet_pton isascii lstat memicmp   \
@@ -61,10 +61,10 @@ index 7a2d410..2d8b050 100644
                  stat stpcpy strcasecmp strerror strftime stricmp     \
                  strlwr strncasecmp strpbrk strsep strtol strtoul     \
 diff --git a/scd/scdaemon.c b/scd/scdaemon.c
-index 5c519f8..cab66a0 100644
+index b62f5b6..d804fcb 100644
 --- a/scd/scdaemon.c
 +++ b/scd/scdaemon.c
-@@ -37,6 +37,9 @@
+@@ -38,6 +38,9 @@
  #include <unistd.h>
  #include <signal.h>
  #include <npth.h>
@@ -74,7 +74,7 @@ index 5c519f8..cab66a0 100644
  
  #define INCLUDED_BY_MAIN_MODULE 1
  #define GNUPG_COMMON_NEED_AFLOCAL
-@@ -446,6 +449,12 @@ main (int argc, char **argv )
+@@ -461,6 +464,12 @@ main (int argc, char **argv )
    npth_t pipecon_handler;
  
    early_system_init ();

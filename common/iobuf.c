@@ -194,18 +194,6 @@ fd_cache_strcmp (const char *a, const char *b)
 }
 
 
-#ifdef HAVE_W32_SYSTEM
-static int
-any8bitchar (const char *string)
-{
-  if (string)
-    for ( ; *string; string++)
-      if ((*string & 0x80))
-        return 1;
-  return 0;
-}
-#endif /*HAVE_W32_SYSTEM*/
-
 /*
  * Invalidate (i.e. close) a cached iobuf
  */
@@ -307,11 +295,11 @@ direct_open (const char *fname, const char *mode, int mode700)
       sm = FILE_SHARE_READ;
     }
 
-  /* We use the Unicode version of the function only if needed to
-   * avoid an extra conversion step.  */
-  if (any8bitchar (fname))
+  /* We always use the Unicode version because it supports file names
+   * longer than MAX_PATH.  (requires gpgrt 1.45) */
+  if (1)
     {
-      wchar_t *wfname = utf8_to_wchar (fname);
+      wchar_t *wfname = gpgrt_fname_to_wchar (fname);
       if (wfname)
         {
           hfile = CreateFileW (wfname, da, sm, NULL, cd,
@@ -321,8 +309,6 @@ direct_open (const char *fname, const char *mode, int mode700)
       else
         hfile = INVALID_HANDLE_VALUE;
     }
-  else
-    hfile = CreateFileA (fname, da, sm, NULL, cd, FILE_ATTRIBUTE_NORMAL, NULL);
 
   return hfile;
 
@@ -1211,14 +1197,7 @@ iobuf_cancel (iobuf_t a)
     {
       /* Argg, MSDOS does not allow removing open files.  So
        * we have to do it here */
-#ifdef HAVE_W32CE_SYSTEM
-      wchar_t *wtmp = utf8_to_wchar (remove_name);
-      if (wtmp)
-        DeleteFile (wtmp);
-      xfree (wtmp);
-#else
-      remove (remove_name);
-#endif
+      gnupg_remove (remove_name);
       xfree (remove_name);
     }
 #endif
@@ -2222,7 +2201,7 @@ iobuf_temp_to_buffer (iobuf_t a, byte * buffer, size_t buflen)
 
 /* Copies the data from the input iobuf SOURCE to the output iobuf
    DEST until either an error is encountered or EOF is reached.
-   Returns the number of bytes copies.  */
+   Returns the number of bytes copies or (size_t)(-1) on error.  */
 size_t
 iobuf_copy (iobuf_t dest, iobuf_t source)
 {
@@ -2235,11 +2214,11 @@ iobuf_copy (iobuf_t dest, iobuf_t source)
   size_t max_read = 0;
   int err;
 
-  assert (source->use == IOBUF_INPUT || source->use == IOBUF_INPUT_TEMP);
-  assert (dest->use == IOBUF_OUTPUT || source->use == IOBUF_OUTPUT_TEMP);
+  log_assert (source->use == IOBUF_INPUT || source->use == IOBUF_INPUT_TEMP);
+  log_assert (dest->use == IOBUF_OUTPUT || source->use == IOBUF_OUTPUT_TEMP);
 
   if (iobuf_error (dest))
-    return -1;
+    return (size_t)(-1);
 
   temp = xmalloc (temp_size);
   while (1)

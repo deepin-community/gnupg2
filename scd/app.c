@@ -26,13 +26,31 @@
 
 #include "scdaemon.h"
 #include "../common/exechelp.h"
-#include "app-common.h"
 #include "iso7816.h"
 #include "apdu.h"
 #include "../common/tlv.h"
 
 static npth_mutex_t app_list_lock;
 static app_t app_top;
+
+
+/* List of all supported apps.  */
+static struct
+{
+  apptype_t apptype;
+  char const *name;
+} supported_app_list[] =
+  {{ APPTYPE_OPENPGP  , "openpgp"   },
+   { APPTYPE_NKS      , "nks"       },
+   { APPTYPE_P15      , "p15"       },
+   { APPTYPE_GELDKARTE, "geldkarte" },
+   { APPTYPE_DINSIG   , "dinsig"    },
+   { APPTYPE_SC_HSM   , "sc-hsm"    },
+   { APPTYPE_NONE     , NULL        }
+   /* APPTYPE_UNDEFINED is special and not listed here.  */
+  };
+
+
 
 static void
 print_progress_line (void *opaque, const char *what, int pc, int cur, int tot)
@@ -45,6 +63,37 @@ print_progress_line (void *opaque, const char *what, int pc, int cur, int tot)
       snprintf (line, sizeof line, "%s %c %d %d", what, pc, cur, tot);
       send_status_direct (ctrl, "PROGRESS", line);
     }
+}
+
+
+/* Map an application type to a string.  Never returns NULL.  */
+const char *
+strapptype (apptype_t t)
+{
+  int i;
+
+  for (i=0; supported_app_list[i].apptype; i++)
+    if (supported_app_list[i].apptype == t)
+      return supported_app_list[i].name;
+  return t == APPTYPE_UNDEFINED? "undefined" : t? "?" : "none";
+}
+
+
+/* Return the apptype for NAME.  */
+static apptype_t
+apptype_from_name (const char *name)
+{
+  int i;
+
+  if (!name)
+    return APPTYPE_NONE;
+
+  for (i=0; supported_app_list[i].apptype; i++)
+    if (!ascii_strcasecmp (supported_app_list[i].name, name))
+      return supported_app_list[i].apptype;
+  if (!ascii_strcasecmp ("undefined", name))
+    return APPTYPE_UNDEFINED;
+  return APPTYPE_NONE;
 }
 
 
@@ -97,7 +146,7 @@ app_dump_state (void)
 
   npth_mutex_lock (&app_list_lock);
   for (a = app_top; a; a = a->next)
-    log_info ("app_dump_state: app=%p type='%s'\n", a, a->apptype);
+    log_info ("app_dump_state: app=%p type='%s'\n", a, strapptype (a->apptype));
   npth_mutex_unlock (&app_list_lock);
 }
 
@@ -118,14 +167,15 @@ is_app_allowed (const char *name)
 static gpg_error_t
 check_conflict (app_t app, const char *name)
 {
-  if (!app || !name || (app->apptype && !ascii_strcasecmp (app->apptype, name)))
+  if (!app || !name
+      || (app->apptype && app->apptype == apptype_from_name (name)))
     return 0;
 
-  if (app->apptype && !strcmp (app->apptype, "UNDEFINED"))
+  if (app->apptype && app->apptype == APPTYPE_UNDEFINED)
     return 0;
 
   log_info ("application '%s' in use - can't switch\n",
-            app->apptype? app->apptype : "<null>");
+            strapptype (app->apptype));
 
   return gpg_error (GPG_ERR_CONFLICT);
 }
@@ -214,11 +264,100 @@ app_new_register (int slot, ctrl_t ctrl, const char *name,
   if (!want_undefined)
     {
       err = iso7816_select_file (slot, 0x3F00, 1);
-      if (!err)
+      if (gpg_err_code (err) == GPG_ERR_CARD)
+        {
+          /* Might be SW==0x7D00.  Let's test whether it is a Yubikey
+           * by selecting its manager application and then reading the
+           * config.  */
+          static char const yk_aid[] =
+            { 0xA0, 0x00, 0x00, 0x05, 0x27, 0x47, 0x11, 0x17 }; /*MGR*/
+          static char const otp_aid[] =
+            { 0xA0, 0x00, 0x00, 0x05, 0x27, 0x20, 0x01 }; /*OTP*/
+          unsigned char *buf;
+          size_t buflen;
+          const unsigned char *s0;
+          unsigned char formfactor;
+          size_t n;
+
+          if (!iso7816_select_application (slot, yk_aid, sizeof yk_aid,
+                                           0x0001)
+              && !iso7816_apdu_direct (slot, "\x00\x1d\x00\x00\x00", 5, 0,
+                                       NULL, &buf, &buflen))
+            {
+              app->cardtype = CARDTYPE_YUBIKEY;
+              if (opt.verbose)
+                {
+                  log_info ("Yubico: config=");
+                  log_printhex (buf, buflen, "");
+                }
+
+              /* We skip the first byte which seems to be the total
+               * length of the config data.  */
+              if (buflen > 1)
+                {
+                  s0 = find_tlv (buf+1, buflen-1, 0x04, &n);  /* Form factor */
+                  formfactor = (s0 && n == 1)? *s0 : 0;
+
+                  s0 = find_tlv (buf+1, buflen-1, 0x02, &n);  /* Serial */
+                  if (s0 && n <= 4)
+                    {
+                      app->serialno = xtrymalloc (3 + 1 + 4);
+                      if (app->serialno)
+                        {
+                          app->serialnolen = 3 + 1 + 4;
+                          app->serialno[0] = 0xff;
+                          app->serialno[1] = 0x02;
+                          app->serialno[2] = 0x0;
+                          app->serialno[3] = formfactor;
+                          memset (app->serialno + 4, 0, 4 - n);
+                          memcpy (app->serialno + 4 + 4 - n, s0, n);
+                          err = app_munge_serialno (app);
+                        }
+                    }
+
+                  s0 = find_tlv (buf+1, buflen-1, 0x05, &n);  /* version */
+                  if (s0 && n == 3)
+                    app->cardversion = ((s0[0]<<16)|(s0[1]<<8)|s0[2]);
+                  else if (!s0)
+                    {
+                      /* No version - this is not a Yubikey 5.  We now
+                       * switch to the OTP app and take the first
+                       * three bytes of the response as version
+                       * number.  */
+                      xfree (buf);
+                      buf = NULL;
+                      if (!iso7816_select_application_ext (slot,
+                                                       otp_aid, sizeof otp_aid,
+                                                       1, &buf, &buflen)
+                          && buflen > 3)
+                        app->cardversion = ((buf[0]<<16)|(buf[1]<<8)|buf[2]);
+                    }
+                }
+              xfree (buf);
+            }
+        }
+      else
+        {
+          unsigned char *atr;
+          size_t atrlen;
+
+          /* This is heuristics to identify different implementations.  */
+          atr = apdu_get_atr (slot, &atrlen);
+          if (atr)
+            {
+              if (atrlen == 21 && atr[2] == 0x11)
+                app->cardtype = CARDTYPE_GNUK;
+              else if (atrlen == 21 && atr[7] == 0x75)
+                app->cardtype = CARDTYPE_ZEITCONTROL;
+              xfree (atr);
+            }
+        }
+
+      if (!err && app->cardtype != CARDTYPE_YUBIKEY)
         err = iso7816_select_file (slot, 0x2F02, 0);
-      if (!err)
+      if (!err && app->cardtype != CARDTYPE_YUBIKEY)
         err = iso7816_read_binary (slot, 0, 0, &result, &resultlen);
-      if (!err)
+      if (!err && app->cardtype != CARDTYPE_YUBIKEY)
         {
           size_t n;
           const unsigned char *p;
@@ -264,12 +403,13 @@ app_new_register (int slot, ctrl_t ctrl, const char *name,
     {
       /* We switch to the "undefined" application only if explicitly
          requested.  */
-      app->apptype = "UNDEFINED";
+      app->apptype = APPTYPE_UNDEFINED;
       err = 0;
     }
   else
     err = gpg_error (GPG_ERR_NOT_FOUND);
 
+  /* Fixme: Use a table like we do in 2.3.  */
   if (err && is_app_allowed ("openpgp")
           && (!name || !strcmp (name, "openpgp")))
     err = app_select_openpgp (app);
@@ -566,6 +706,90 @@ app_get_serialno (app_t app)
 }
 
 
+/* Return an allocated string with the serial number in a format to be
+ * show to the user.  With NOFALLBACK set to true return NULL if such an
+ * abbreviated S/N is not available, else return the full serial
+ * number as a hex string.  May return NULL on malloc problem.  */
+char *
+app_get_dispserialno (app_t app, int nofallback)
+{
+  char *result, *p;
+  unsigned long sn;
+
+  if (app && app->serialno && app->serialnolen == 3+1+4
+      && !memcmp (app->serialno, "\xff\x02\x00", 3))
+    {
+      /* This is a 4 byte S/N of a Yubikey which seems to be printed
+       * on the token in decimal.  Maybe they will print larger S/N
+       * also in decimal but we can't be sure, thus do it only for
+       * these 32 bit numbers.  */
+      sn  = app->serialno[4] * 16777216;
+      sn += app->serialno[5] * 65536;
+      sn += app->serialno[6] * 256;
+      sn += app->serialno[7];
+      if ((app->cardversion >> 16) >= 5)
+        result = xtryasprintf ("%lu %03lu %03lu",
+                               (sn/1000000ul),
+                               (sn/1000ul % 1000ul),
+                               (sn % 1000ul));
+      else
+        result = xtryasprintf ("%lu", sn);
+    }
+  else if (app && app->cardtype == CARDTYPE_YUBIKEY)
+    {
+      /* Get back the printed Yubikey number from the OpenPGP AID
+       * Example: D2760001240100000006120808620000
+       */
+      result = app_get_serialno (app);
+      if (result && strlen (result) >= 28 && !strncmp (result+16, "0006", 4))
+        {
+          sn  = atoi_4 (result+20) * 10000;
+          sn += atoi_4 (result+24);
+          if ((app->cardversion >> 16) >= 5)
+            p = xtryasprintf ("%lu %03lu %03lu",
+                              (sn/1000000ul),
+                              (sn/1000ul % 1000ul),
+                              (sn % 1000ul));
+          else
+            p = xtryasprintf ("%lu", sn);
+          if (p)
+            {
+              xfree (result);
+              result = p;
+            }
+        }
+      else if (nofallback)
+        {
+          xfree (result);
+          result = NULL;
+        }
+    }
+  else if (app && app->apptype == APPTYPE_OPENPGP)
+    {
+      /* Extract number from standard OpenPGP AID.  */
+      result = app_get_serialno (app);
+      if (result && strlen (result) > 16+12)
+        {
+          memcpy (result, result+16, 4);
+          result[4] = ' ';
+          memcpy (result+5, result+20, 8);
+          result[13] = 0;
+        }
+      else if (nofallback)
+        {
+          xfree (result);
+          result = NULL;
+        }
+    }
+  else if (nofallback)
+    result = NULL;  /* No Abbreviated S/N.  */
+  else
+    result = app_get_serialno (app);
+
+  return result;
+}
+
+
 /* Write out the application specifig status lines for the LEARN
    command. */
 gpg_error_t
@@ -580,7 +804,7 @@ app_write_learn_status (app_t app, ctrl_t ctrl, unsigned int flags)
 
   /* We do not send APPTYPE if only keypairinfo is requested.  */
   if (app->apptype && !(flags & 1))
-    send_status_direct (ctrl, "APPTYPE", app->apptype);
+    send_status_direct (ctrl, "APPTYPE", strapptype (app->apptype));
   err = lock_app (app, ctrl);
   if (err)
     return err;
@@ -642,7 +866,9 @@ app_readkey (app_t app, ctrl_t ctrl, int advanced, const char *keyid,
   err = lock_app (app, ctrl);
   if (err)
     return err;
-  err= app->fnc.readkey (app, advanced, keyid, pk, pklen);
+  err= app->fnc.readkey (app, ctrl, keyid,
+                         advanced? APP_READKEY_FLAG_ADVANCED : 0,
+                         pk, pklen);
   unlock_app (app);
   return err;
 }
@@ -661,7 +887,7 @@ app_getattr (app_t app, ctrl_t ctrl, const char *name)
 
   if (app->apptype && name && !strcmp (name, "APPTYPE"))
     {
-      send_status_direct (ctrl, "APPTYPE", app->apptype);
+      send_status_direct (ctrl, "APPTYPE", strapptype (app->apptype));
       return 0;
     }
   if (name && !strcmp (name, "SERIALNO"))
@@ -705,7 +931,7 @@ app_setattr (app_t app, ctrl_t ctrl, const char *name,
   err = lock_app (app, ctrl);
   if (err)
     return err;
-  err = app->fnc.setattr (app, name, pincb, pincb_arg, value, valuelen);
+  err = app->fnc.setattr (app, ctrl, name, pincb, pincb_arg, value, valuelen);
   unlock_app (app);
   return err;
 }
@@ -731,7 +957,7 @@ app_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
   err = lock_app (app, ctrl);
   if (err)
     return err;
-  err = app->fnc.sign (app, keyidstr, hashalgo,
+  err = app->fnc.sign (app, ctrl, keyidstr, hashalgo,
                        pincb, pincb_arg,
                        indata, indatalen,
                        outdata, outdatalen);
@@ -763,7 +989,7 @@ app_auth (app_t app, ctrl_t ctrl, const char *keyidstr,
   err = lock_app (app, ctrl);
   if (err)
     return err;
-  err = app->fnc.auth (app, keyidstr,
+  err = app->fnc.auth (app, ctrl, keyidstr,
                        pincb, pincb_arg,
                        indata, indatalen,
                        outdata, outdatalen);
@@ -798,7 +1024,7 @@ app_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
   err = lock_app (app, ctrl);
   if (err)
     return err;
-  err = app->fnc.decipher (app, keyidstr,
+  err = app->fnc.decipher (app, ctrl, keyidstr,
                            pincb, pincb_arg,
                            indata, indatalen,
                            outdata, outdatalen,
@@ -960,7 +1186,7 @@ app_check_pin (app_t app, ctrl_t ctrl, const char *keyidstr,
   err = lock_app (app, ctrl);
   if (err)
     return err;
-  err = app->fnc.check_pin (app, keyidstr, pincb, pincb_arg);
+  err = app->fnc.check_pin (app, ctrl, keyidstr, pincb, pincb_arg);
   unlock_app (app);
   if (opt.verbose)
     log_info ("operation check_pin result: %s\n", gpg_strerror (err));

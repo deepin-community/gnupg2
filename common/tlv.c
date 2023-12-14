@@ -32,20 +32,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
-
-#if GNUPG_MAJOR_VERSION == 1
-#define GPG_ERR_EOF               (-1)
-#define GPG_ERR_BAD_BER           (1)  /*G10ERR_GENERAL*/
-#define GPG_ERR_INV_SEXP          (45) /*G10ERR_INV_ARG*/
-typedef int gpg_error_t;
-#define gpg_make_err(x,n) (n)
-#else
 #include <gpg-error.h>
-#endif
+
 
 #include "util.h"
 #include "tlv.h"
+
 
 static const unsigned char *
 do_find_tlv (const unsigned char *buffer, size_t length,
@@ -230,6 +222,11 @@ parse_ber_header (unsigned char const **buffer, size_t *size,
       *r_length = len;
     }
 
+  if (*r_length > *r_nhdr && (*r_nhdr + *r_length) < *r_length)
+    {
+      return gpg_err_make (default_errsource, GPG_ERR_EOVERFLOW);
+    }
+
   /* Without this kludge some example certs can't be parsed. */
   if (*r_class == CLASS_UNIVERSAL && !*r_tag)
     *r_length = 0;
@@ -250,8 +247,8 @@ parse_ber_header (unsigned char const **buffer, size_t *size,
    returned as a pointer into the original buffer at TOK and TOKLEN.
    If a parentheses is the next token, TOK will be set to NULL.
    TOKLEN is checked to be within the bounds.  On error an error code
-   is returned and no pointer is not guaranteed to point to
-   a meaningful value.  DEPTH should be initialized to 0 and will
+   is returned and pointers are not guaranteed to point to
+   meaningful values.  DEPTH should be initialized to 0 and will
    reflect on return the actual depth of the tree. To detect the end
    of the S-expression it is advisable to check DEPTH after a
    successful return.

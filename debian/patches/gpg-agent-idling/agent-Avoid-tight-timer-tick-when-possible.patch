@@ -26,7 +26,7 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  2 files changed, 29 insertions(+), 2 deletions(-)
 
 diff --git a/agent/call-scd.c b/agent/call-scd.c
-index 6438693..ee69bb4 100644
+index c5b95f4..762de82 100644
 --- a/agent/call-scd.c
 +++ b/agent/call-scd.c
 @@ -414,6 +414,8 @@ start_scd (ctrl_t ctrl)
@@ -39,10 +39,10 @@ index 6438693..ee69bb4 100644
   leave:
    xfree (abs_homedir);
 diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
-index 752552c..eff82ca 100644
+index 2882767..0801449 100644
 --- a/agent/gpg-agent.c
 +++ b/agent/gpg-agent.c
-@@ -2362,6 +2362,26 @@ create_directories (void)
+@@ -2374,6 +2374,26 @@ create_directories (void)
  }
  
  
@@ -69,7 +69,7 @@ index 752552c..eff82ca 100644
  
  /* This is the worker for the ticker.  It is called every few seconds
     and may only do fast operations. */
-@@ -2718,7 +2738,8 @@ do_start_connection_thread (ctrl_t ctrl)
+@@ -2730,7 +2750,8 @@ do_start_connection_thread (ctrl_t ctrl)
  
    agent_deinit_default_ctrl (ctrl);
    xfree (ctrl);
@@ -79,7 +79,7 @@ index 752552c..eff82ca 100644
    return NULL;
  }
  
-@@ -2798,7 +2819,8 @@ start_connection_thread_ssh (void *arg)
+@@ -2810,7 +2831,8 @@ start_connection_thread_ssh (void *arg)
  
    agent_deinit_default_ctrl (ctrl);
    xfree (ctrl);
@@ -89,7 +89,7 @@ index 752552c..eff82ca 100644
    return NULL;
  }
  
-@@ -3008,6 +3030,9 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -3020,6 +3042,9 @@ handle_connections (gnupg_fd_t listen_fd,
           thus a simple assignment is fine to copy the entire set.  */
        read_fdset = fdset;
  

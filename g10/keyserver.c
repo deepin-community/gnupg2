@@ -108,7 +108,7 @@ static struct parse_options keyserver_opts[]=
 static gpg_error_t keyserver_get (ctrl_t ctrl,
                                   KEYDB_SEARCH_DESC *desc, int ndesc,
                                   struct keyserver_spec *override_keyserver,
-                                  int quick,
+                                  unsigned int flags,
                                   unsigned char **r_fpr, size_t *r_fprlen);
 static gpg_error_t keyserver_put (ctrl_t ctrl, strlist_t keyspecs);
 
@@ -186,36 +186,16 @@ void
 free_keyserver_spec(struct keyserver_spec *keyserver)
 {
   xfree(keyserver->uri);
-  xfree(keyserver->scheme);
-  xfree(keyserver->auth);
-  xfree(keyserver->host);
-  xfree(keyserver->port);
-  xfree(keyserver->path);
-  xfree(keyserver->opaque);
-  free_strlist(keyserver->options);
   xfree(keyserver);
 }
 
 /* Return 0 for match */
 static int
-cmp_keyserver_spec(struct keyserver_spec *one,struct keyserver_spec *two)
+cmp_keyserver_spec(struct keyserver_spec *one, struct keyserver_spec *two)
 {
-  if(ascii_strcasecmp(one->scheme,two->scheme)==0)
-    {
-      if(one->host && two->host && ascii_strcasecmp(one->host,two->host)==0)
-	{
-	  if((one->port && two->port
-	      && ascii_strcasecmp(one->port,two->port)==0)
-	     || (!one->port && !two->port))
-	    return 0;
-	}
-      else if(one->opaque && two->opaque
-	      && ascii_strcasecmp(one->opaque,two->opaque)==0)
-	return 0;
-    }
-
-  return 1;
+  return !!ascii_strcasecmp(one->uri, two->uri);
 }
+
 
 /* Try and match one of our keyservers.  If we can, return that.  If
    we can't, return our input. */
@@ -231,40 +211,24 @@ keyserver_match(struct keyserver_spec *spec)
   return spec;
 }
 
-/* TODO: once we cut over to an all-curl world, we don't need this
-   parser any longer so it can be removed, or at least moved to
-   keyserver/ksutil.c for limited use in gpgkeys_ldap or the like. */
 
+/* Create a new keyserver object from STRING.  Unless REQUIRE_SCHEME
+ * is set a missing scheme is replaced by "hkp://".  The data structure
+ * could be much easier but in the past we parsed the URI here for the
+ * old 2.0 keyserver helpers - which is not anymore needed.  */
 keyserver_spec_t
-parse_keyserver_uri (const char *string,int require_scheme)
+parse_keyserver_uri (const char *string, int require_scheme)
 {
-  int assume_hkp=0;
   struct keyserver_spec *keyserver;
   const char *idx;
   int count;
-  char *uri, *duped_uri, *options;
 
   log_assert (string);
 
-  keyserver=xmalloc_clear(sizeof(struct keyserver_spec));
-
-  duped_uri = uri = xstrdup (string);
-
-  options=strchr(uri,' ');
-  if(options)
-    {
-      char *tok;
-
-      *options='\0';
-      options++;
-
-      while((tok=optsep(&options)))
-	warn_kshelper_option (tok, 0);
-    }
+  keyserver = xcalloc (1, sizeof *keyserver);
 
   /* Get the scheme */
-
-  for(idx=uri,count=0;*idx && *idx!=':';idx++)
+  for(idx=string, count=0; *idx && *idx!=':';idx++)
     {
       count++;
 
@@ -290,161 +254,20 @@ parse_keyserver_uri (const char *string,int require_scheme)
 	return NULL;
 
       /* Assume HKP if there is no scheme */
-      assume_hkp=1;
-      keyserver->scheme=xstrdup("hkp");
-
-      keyserver->uri=xmalloc(strlen(keyserver->scheme)+3+strlen(uri)+1);
-      strcpy(keyserver->uri,keyserver->scheme);
-      strcat(keyserver->uri,"://");
-      strcat(keyserver->uri,uri);
+      keyserver->uri = xstrconcat ("hkp://", string, NULL);
     }
   else
     {
-      int i;
-
-      keyserver->uri=xstrdup(uri);
-
-      keyserver->scheme=xmalloc(count+1);
-
-      /* Force to lowercase */
-      for(i=0;i<count;i++)
-	keyserver->scheme[i]=ascii_tolower(uri[i]);
-
-      keyserver->scheme[i]='\0';
-
-      /* Skip past the scheme and colon */
-      uri+=count+1;
+      keyserver->uri = xstrdup (string);
     }
 
-  if(ascii_strcasecmp(keyserver->scheme,"x-broken-hkp")==0)
-    {
-      log_info ("keyserver option '%s' is obsolete\n",
-                "x-broken-hkp");
-    }
-  else if(ascii_strcasecmp(keyserver->scheme,"x-hkp")==0)
-    {
-      /* Canonicalize this to "hkp" so it works with both the internal
-	 and external keyserver interface. */
-      xfree(keyserver->scheme);
-      keyserver->scheme=xstrdup("hkp");
-    }
-
-  if (uri[0]=='/' && uri[1]=='/' && uri[2] == '/')
-    {
-      /* Three slashes means network path with a default host name.
-         This is a hack because it does not crok all possible
-         combinations.  We should better replace all code by the parser
-         from http.c.  */
-      keyserver->path = xstrdup (uri+2);
-    }
-  else if(assume_hkp || (uri[0]=='/' && uri[1]=='/'))
-    {
-      /* Two slashes means network path. */
-
-      /* Skip over the "//", if any */
-      if(!assume_hkp)
-	uri+=2;
-
-      /* Do we have userinfo auth data present? */
-      for(idx=uri,count=0;*idx && *idx!='@' && *idx!='/';idx++)
-	count++;
-
-      /* We found a @ before the slash, so that means everything
-	 before the @ is auth data. */
-      if(*idx=='@')
-	{
-	  if(count==0)
-	    goto fail;
-
-	  keyserver->auth=xmalloc(count+1);
-	  strncpy(keyserver->auth,uri,count);
-	  keyserver->auth[count]='\0';
-	  uri+=count+1;
-	}
-
-      /* Is it an RFC-2732 ipv6 [literal address] ? */
-      if(*uri=='[')
-	{
-	  for(idx=uri+1,count=1;*idx
-		&& ((isascii (*idx) && isxdigit(*idx))
-                    || *idx==':' || *idx=='.');idx++)
-	    count++;
-
-	  /* Is the ipv6 literal address terminated? */
-	  if(*idx==']')
-	    count++;
-	  else
-	    goto fail;
-	}
-      else
-	for(idx=uri,count=0;*idx && *idx!=':' && *idx!='/';idx++)
-	  count++;
-
-      if(count==0)
-	goto fail;
-
-      keyserver->host=xmalloc(count+1);
-      strncpy(keyserver->host,uri,count);
-      keyserver->host[count]='\0';
-
-      /* Skip past the host */
-      uri+=count;
-
-      if(*uri==':')
-	{
-	  /* It would seem to be reasonable to limit the range of the
-	     ports to values between 1-65535, but RFC 1738 and 1808
-	     imply there is no limit.  Of course, the real world has
-	     limits. */
-
-	  for(idx=uri+1,count=0;*idx && *idx!='/';idx++)
-	    {
-	      count++;
-
-	      /* Ports are digits only */
-	      if(!digitp(idx))
-		goto fail;
-	    }
-
-	  keyserver->port=xmalloc(count+1);
-	  strncpy(keyserver->port,uri+1,count);
-	  keyserver->port[count]='\0';
-
-	  /* Skip past the colon and port number */
-	  uri+=1+count;
-	}
-
-      /* Everything else is the path */
-      if(*uri)
-	keyserver->path=xstrdup(uri);
-      else
-	keyserver->path=xstrdup("/");
-
-      if(keyserver->path[1])
-	keyserver->flags.direct_uri=1;
-    }
-  else if(uri[0]!='/')
-    {
-      /* No slash means opaque.  Just record the opaque blob and get
-	 out. */
-      keyserver->opaque=xstrdup(uri);
-    }
-  else
-    {
-      /* One slash means absolute path.  We don't need to support that
-	 yet. */
-      goto fail;
-    }
-
-  xfree (duped_uri);
   return keyserver;
 
  fail:
   free_keyserver_spec(keyserver);
-
-  xfree (duped_uri);
   return NULL;
 }
+
 
 struct keyserver_spec *
 parse_preferred_keyserver(PKT_signature *sig)
@@ -1142,18 +965,16 @@ keyserver_any_configured (ctrl_t ctrl)
 }
 
 
-/* Import all keys that exactly match NAME */
+/* Import all keys that exactly match MBOX */
 int
-keyserver_import_name (ctrl_t ctrl, const char *name,
+keyserver_import_mbox (ctrl_t ctrl, const char *mbox,
                        unsigned char **fpr, size_t *fprlen,
                        struct keyserver_spec *keyserver)
 {
-  KEYDB_SEARCH_DESC desc;
+  KEYDB_SEARCH_DESC desc = { 0 };
 
-  memset (&desc, 0, sizeof desc);
-
-  desc.mode = KEYDB_SEARCH_MODE_EXACT;
-  desc.u.name = name;
+  desc.mode = KEYDB_SEARCH_MODE_MAIL;
+  desc.u.name = mbox;
 
   return keyserver_get (ctrl, &desc, 1, keyserver, 0, fpr, fprlen);
 }
@@ -1175,30 +996,42 @@ keyserver_import_ntds (ctrl_t ctrl, const char *mbox,
 
 
 int
-keyserver_import_fprint (ctrl_t ctrl, const byte *fprint,size_t fprint_len,
-			 struct keyserver_spec *keyserver, int quick)
+keyserver_import_fprint (ctrl_t ctrl, const byte *fprint, size_t fprint_len,
+			 struct keyserver_spec *keyserver,
+                         unsigned int flags)
 {
   KEYDB_SEARCH_DESC desc;
 
-  memset(&desc,0,sizeof(desc));
+  memset (&desc, 0, sizeof(desc));
 
   if(fprint_len==16)
     desc.mode=KEYDB_SEARCH_MODE_FPR16;
   else if(fprint_len==20)
     desc.mode=KEYDB_SEARCH_MODE_FPR20;
   else
-    return -1;
+    return gpg_error (GPG_ERR_INV_ARG);
 
-  memcpy(desc.u.fpr,fprint,fprint_len);
+  memcpy (desc.u.fpr, fprint, fprint_len);
 
-  /* TODO: Warn here if the fingerprint we got doesn't match the one
-     we asked for? */
-  return keyserver_get (ctrl, &desc, 1, keyserver, quick, NULL, NULL);
+  return keyserver_get (ctrl, &desc, 1, keyserver, flags, NULL, NULL);
 }
+
+
+int
+keyserver_import_fprint_ntds (ctrl_t ctrl,
+                              const byte *fprint, size_t fprint_len)
+{
+  struct keyserver_spec keyserver = { NULL, "ldap:///" };
+
+  return keyserver_import_fprint (ctrl, fprint, fprint_len,
+                                  &keyserver, KEYSERVER_IMPORT_FLAG_LDAP);
+}
+
 
 int
 keyserver_import_keyid (ctrl_t ctrl,
-                        u32 *keyid,struct keyserver_spec *keyserver, int quick)
+                        u32 *keyid,struct keyserver_spec *keyserver,
+                        unsigned int flags)
 {
   KEYDB_SEARCH_DESC desc;
 
@@ -1208,14 +1041,14 @@ keyserver_import_keyid (ctrl_t ctrl,
   desc.u.kid[0]=keyid[0];
   desc.u.kid[1]=keyid[1];
 
-  return keyserver_get (ctrl, &desc, 1, keyserver, quick, NULL, NULL);
+  return keyserver_get (ctrl, &desc, 1, keyserver, flags, NULL, NULL);
 }
 
 
 /* code mostly stolen from do_export_stream */
 static int
 keyidlist (ctrl_t ctrl, strlist_t users, KEYDB_SEARCH_DESC **klist,
-           int *count, int fakev3)
+           int *count)
 {
   int rc = 0;
   int num = 100;
@@ -1280,28 +1113,6 @@ keyidlist (ctrl_t ctrl, strlist_t users, KEYDB_SEARCH_DESC **klist,
 
       if((node=find_kbnode(keyblock,PKT_PUBLIC_KEY)))
 	{
-	  /* This is to work around a bug in some keyservers (pksd and
-             OKS) that calculate v4 RSA keyids as if they were v3 RSA.
-             The answer is to refresh both the correct v4 keyid
-             (e.g. 99242560) and the fake v3 keyid (e.g. 68FDDBC7).
-             This only happens for key refresh using the HKP scheme
-             and if the refresh-add-fake-v3-keyids keyserver option is
-             set. */
-	  if(fakev3 && is_RSA(node->pkt->pkt.public_key->pubkey_algo) &&
-	     node->pkt->pkt.public_key->version>=4)
-	    {
-	      (*klist)[*count].mode=KEYDB_SEARCH_MODE_LONG_KID;
-	      v3_keyid (node->pkt->pkt.public_key->pkey[0],
-                        (*klist)[*count].u.kid);
-	      (*count)++;
-
-	      if(*count==num)
-		{
-		  num+=100;
-		  *klist=xrealloc(*klist,sizeof(KEYDB_SEARCH_DESC)*num);
-		}
-	    }
-
 	  /* v4 keys get full fingerprints.  v3 keys get long keyids.
              This is because it's easy to calculate any sort of keyid
              from a v4 fingerprint, but not a v3 fingerprint. */
@@ -1392,7 +1203,6 @@ keyserver_refresh (ctrl_t ctrl, strlist_t users)
 {
   gpg_error_t err;
   int count, numdesc;
-  int fakev3 = 0;
   KEYDB_SEARCH_DESC *desc;
   unsigned int options=opt.keyserver_options.import_options;
 
@@ -1406,19 +1216,8 @@ keyserver_refresh (ctrl_t ctrl, strlist_t users)
      the end here. */
   opt.keyserver_options.import_options|=IMPORT_FAST;
 
-  /* If refresh_add_fake_v3_keyids is on and it's a HKP or MAILTO
-     scheme, then enable fake v3 keyid generation.  Note that this
-     works only with a keyserver configured. gpg.conf
-     (i.e. opt.keyserver); however that method of configuring a
-     keyserver is deprecated and in any case it is questionable
-     whether we should keep on supporting these ancient and broken
-     keyservers.  */
-  if((opt.keyserver_options.options&KEYSERVER_ADD_FAKE_V3) && opt.keyserver
-     && (ascii_strcasecmp(opt.keyserver->scheme,"hkp")==0 ||
-	 ascii_strcasecmp(opt.keyserver->scheme,"mailto")==0))
-    fakev3=1;
 
-  err = keyidlist (ctrl, users, &desc, &numdesc, fakev3);
+  err = keyidlist (ctrl, users, &desc, &numdesc);
   if (err)
     return err;
 
@@ -1505,16 +1304,6 @@ keyserver_search (ctrl_t ctrl, strlist_t tokens)
   if (!tokens)
     return 0;  /* Return success if no patterns are given.  */
 
-  /* Write global options */
-
-  /* for(temp=opt.keyserver_options.other;temp;temp=temp->next) */
-  /*   es_fprintf(spawn->tochild,"OPTION %s\n",temp->d); */
-
-  /* Write per-keyserver options */
-
-  /* for(temp=keyserver->options;temp;temp=temp->next) */
-  /*   es_fprintf(spawn->tochild,"OPTION %s\n",temp->d); */
-
   {
     membuf_t mb;
     strlist_t item;
@@ -1534,8 +1323,6 @@ keyserver_search (ctrl_t ctrl, strlist_t tokens)
         goto leave;
       }
   }
-  /* FIXME: Enable the next line */
-  /* log_info (_("searching for \"%s\" from %s\n"), searchstr, keyserver->uri); */
 
   parm.ctrl = ctrl;
   if (searchstr)
@@ -1557,31 +1344,6 @@ keyserver_search (ctrl_t ctrl, strlist_t tokens)
   else if (err)
     log_error ("error searching keyserver: %s\n", gpg_strerror (err));
 
-  /* switch(ret) */
-  /*   { */
-  /*   case KEYSERVER_SCHEME_NOT_FOUND: */
-  /*     log_error(_("no handler for keyserver scheme '%s'\n"), */
-  /*   	    opt.keyserver->scheme); */
-  /*     break; */
-
-  /*   case KEYSERVER_NOT_SUPPORTED: */
-  /*     log_error(_("action '%s' not supported with keyserver " */
-  /*   	      "scheme '%s'\n"), "search", opt.keyserver->scheme); */
-  /*     break; */
-
-  /*   case KEYSERVER_TIMEOUT: */
-  /*     log_error(_("keyserver timed out\n")); */
-  /*     break; */
-
-  /*   case KEYSERVER_INTERNAL_ERROR: */
-  /*   default: */
-  /*     log_error(_("keyserver internal error\n")); */
-  /*     break; */
-  /*   } */
-
-  /* return gpg_error (GPG_ERR_KEYSERVER); */
-
-
  leave:
   xfree (parm.desc);
   xfree (parm.searchstr_disp);
@@ -1599,7 +1361,7 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
                      int *r_ndesc_used,
                      import_stats_t stats_handle,
                      struct keyserver_spec *override_keyserver,
-                     int quick,
+                     unsigned int flags,
                      unsigned char **r_fpr, size_t *r_fprlen)
 
 {
@@ -1628,7 +1390,7 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
      single request will be rejected only later by gpg_dirmngr_ks_get
      but we are sure that R_NDESC_USED has been updated.  This avoids
      a possible indefinite loop.  */
-  linelen = 17; /* "KS_GET --quick --" */
+  linelen = 24; /* "KS_GET --quick --ldap --" */
   for (npat=npat_fpr=0, idx=0; idx < ndesc; idx++)
     {
       int quiet = 0;
@@ -1739,13 +1501,8 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
 
       if (!quiet && override_keyserver)
         {
-          if (override_keyserver->host)
-            log_info (_("requesting key %s from %s server %s\n"),
-                      keystr_from_desc (&desc[idx]),
-                      override_keyserver->scheme, override_keyserver->host);
-          else
-            log_info (_("requesting key %s from %s\n"),
-                      keystr_from_desc (&desc[idx]), override_keyserver->uri);
+          log_info (_("requesting key %s from %s\n"),
+                    keystr_from_desc (&desc[idx]), override_keyserver->uri);
         }
     }
 
@@ -1755,7 +1512,7 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
 
   only_fprs = (npat && npat == npat_fpr);
 
-  err = gpg_dirmngr_ks_get (ctrl, pattern, override_keyserver, quick,
+  err = gpg_dirmngr_ks_get (ctrl, pattern, override_keyserver, flags,
                             &datastream, &source);
   for (idx=0; idx < npat; idx++)
     xfree (pattern[idx]);
@@ -1763,9 +1520,12 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
   if (opt.verbose && source)
     log_info ("data source: %s\n", source);
 
+
+
   if (!err)
     {
       struct ks_retrieval_screener_arg_s screenerarg;
+      unsigned int options;
 
       /* FIXME: Check whether this comment should be moved to dirmngr.
 
@@ -1779,12 +1539,18 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
          never accept or send them but we better protect against rogue
          keyservers. */
 
+      /* For LDAP servers we reset IMPORT_SELF_SIGS_ONLY unless it has
+       * been set explicitly.  */
+      options = (opt.keyserver_options.import_options | IMPORT_NO_SECKEY);
+      if (source && (!strncmp (source, "ldap:", 5)
+                     || !strncmp (source, "ldaps:", 6))
+          && !opt.flags.expl_import_self_sigs_only)
+        options &= ~IMPORT_SELF_SIGS_ONLY;
+
       screenerarg.desc = desc;
       screenerarg.ndesc = *r_ndesc_used;
       import_keys_es_stream (ctrl, datastream, stats_handle,
-                             r_fpr, r_fprlen,
-                             (opt.keyserver_options.import_options
-                              | IMPORT_NO_SECKEY),
+                             r_fpr, r_fprlen, options,
                              keyserver_retrieval_screener, &screenerarg,
                              only_fprs? KEYORG_KS : 0,
                              source);
@@ -1800,11 +1566,12 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
    (DESC,NDESC).  Allowed search modes are keyid, fingerprint, and
    exact searches.  OVERRIDE_KEYSERVER gives an optional override
    keyserver. If (R_FPR,R_FPRLEN) are not NULL, they may return the
-   fingerprint of a single imported key.  If QUICK is set, dirmngr is
-   advised to use a shorter timeout. */
+   fingerprint of a single imported key.  If the FLAG bit
+   KEYSERVER_IMPORT_FLAG_QUICK is set, dirmngr is advised to use a
+   shorter timeout. */
 static gpg_error_t
 keyserver_get (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
-               struct keyserver_spec *override_keyserver, int quick,
+               struct keyserver_spec *override_keyserver, unsigned int flags,
                unsigned char **r_fpr, size_t *r_fprlen)
 {
   gpg_error_t err;
@@ -1817,7 +1584,7 @@ keyserver_get (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
   for (;;)
     {
       err = keyserver_get_chunk (ctrl, desc, ndesc, &ndesc_used, stats_handle,
-                                 override_keyserver, quick, r_fpr, r_fprlen);
+                                 override_keyserver, flags, r_fpr, r_fprlen);
       if (!err)
         any_good = 1;
       if (err || ndesc_used >= ndesc)
@@ -1900,6 +1667,8 @@ keyserver_fetch (ctrl_t ctrl, strlist_t urilist, int origin)
   strlist_t sl;
   estream_t datastream;
   unsigned int save_options = opt.keyserver_options.import_options;
+  int any_success = 0;
+  gpg_error_t firsterr = 0;
 
   /* Switch on fast-import, since fetch can handle more than one
      import and we don't want each set to rebuild the trustdb.
@@ -1923,12 +1692,24 @@ keyserver_fetch (ctrl_t ctrl, strlist_t urilist, int origin)
 
           import_print_stats (stats_handle);
           import_release_stats_handle (stats_handle);
+          any_success = 1;
         }
       else
-        log_info (_("WARNING: unable to fetch URI %s: %s\n"),
-                  sl->d, gpg_strerror (err));
+        {
+          log_info (_("WARNING: unable to fetch URI %s: %s\n"),
+                    sl->d, gpg_strerror (err));
+          if (!firsterr)
+            firsterr = err;
+        }
       es_fclose (datastream);
     }
+
+  if (!urilist)
+    err = gpg_error (GPG_ERR_NO_NAME);
+  else if (any_success)
+    err = 0;
+  else
+    err = firsterr;
 
   opt.keyserver_options.import_options = save_options;
 
@@ -1937,7 +1718,7 @@ keyserver_fetch (ctrl_t ctrl, strlist_t urilist, int origin)
   if (!(opt.keyserver_options.import_options&IMPORT_FAST))
     check_or_update_trustdb (ctrl);
 
-  return 0;
+  return err;
 }
 
 
@@ -2078,7 +1859,7 @@ keyserver_import_pka (ctrl_t ctrl, const char *name,
 
 /* Import a key using the Web Key Directory protocol.  */
 gpg_error_t
-keyserver_import_wkd (ctrl_t ctrl, const char *name, int quick,
+keyserver_import_wkd (ctrl_t ctrl, const char *name, unsigned int flags,
                       unsigned char **fpr, size_t *fpr_len)
 {
   gpg_error_t err;
@@ -2097,7 +1878,7 @@ keyserver_import_wkd (ctrl_t ctrl, const char *name, int quick,
       return err;
     }
 
-  err = gpg_dirmngr_wkd_get (ctrl, mbox, quick, &key, &url);
+  err = gpg_dirmngr_wkd_get (ctrl, mbox, flags, &key, &url);
   if (err)
     ;
   else if (key)

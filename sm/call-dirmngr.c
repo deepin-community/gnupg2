@@ -198,7 +198,7 @@ warn_version_mismatch (ctrl_t ctrl, assuan_context_t ctx,
 static void
 prepare_dirmngr (ctrl_t ctrl, assuan_context_t ctx, gpg_error_t err)
 {
-  struct keyserver_spec *server;
+  strlist_t server;
 
   if (!err)
     err = warn_version_mismatch (ctrl, ctx, DIRMNGR_NAME, 0);
@@ -219,12 +219,13 @@ prepare_dirmngr (ctrl_t ctrl, assuan_context_t ctx, gpg_error_t err)
   while (server)
     {
       char line[ASSUAN_LINELENGTH];
-      char *user = server->user ? server->user : "";
-      char *pass = server->pass ? server->pass : "";
-      char *base = server->base ? server->base : "";
 
-      snprintf (line, DIM (line), "LDAPSERVER %s:%i:%s:%s:%s",
-		server->host, server->port, user, pass, base);
+      /* If the host is "ldap" we prefix the entire line with "ldap:"
+       * to avoid an ambiguity on the server due to the introduction
+       * of this optional prefix.  */
+      snprintf (line, DIM (line), "LDAPSERVER %s%s",
+                !strncmp (server->d, "ldap:", 5)? "ldap:":"",
+                server->d);
 
       assuan_transact (ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
       /* The code below is not required because we don't return an error.  */
@@ -505,6 +506,8 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
   struct inq_certificate_parm_s parm;
   struct isvalid_status_parm_s stparm;
 
+  keydb_close_all_files ();
+
   rc = start_dirmngr (ctrl);
   if (rc)
     return rc;
@@ -775,6 +778,8 @@ gpgsm_dirmngr_lookup (ctrl_t ctrl, strlist_t names, const char *uri,
   if ((names && uri) || (!names && !uri))
     return gpg_error (GPG_ERR_INV_ARG);
 
+  keydb_close_all_files ();
+
   /* The lookup function can be invoked from the callback of a lookup
      function, for example to walk the chain.  */
   if (!dirmngr_ctx_locked)
@@ -1042,6 +1047,8 @@ gpgsm_dirmngr_run_command (ctrl_t ctrl, const char *command,
   char *line, *p;
   size_t len;
   struct run_command_parm_s parm;
+
+  keydb_close_all_files ();
 
   rc = start_dirmngr (ctrl);
   if (rc)

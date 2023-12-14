@@ -1,3 +1,93 @@
+gnupg2 (2.2.40-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * In migration CI test skip debian-archive-bookworm-stable.gpg (and
+    aggregated keyring), gpg1 cannot read the ed25519 key. Closes: #1033155
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 26 Mar 2023 15:03:05 +0200
+
+gnupg2 (2.2.40-1) unstable; urgency=medium
+
+  * new upstream version
+  * refresh patches
+  * import post-release cleanup patches from upstream
+  * drop stale NEWS files for dirmngr and gpg-agent
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Wed, 19 Oct 2022 11:09:42 -0400
+
+gnupg2 (2.2.39-1) unstable; urgency=medium
+
+  * refresh upstream signing keys from g10/distsigkey.gpg
+  * add additional lintian override for version of lintian used on
+    ftp-master
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Tue, 06 Sep 2022 16:47:57 -0400
+
+gnupg2 (2.2.38-1) unstable; urgency=medium
+
+  * new upstream version
+  * refresh patches (dropping those already upstream)
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Thu, 01 Sep 2022 18:25:24 -0400
+
+gnupg2 (2.2.35-3) unstable; urgency=high
+
+  * fix security error from large notations (Thanks, Demi Marie Obenour)
+    (Closes: #1014157)
+  * Standards-Version: bump to 4.6.1 (no changes needed)
+  * clean up lintian-overrides
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Fri, 01 Jul 2022 02:01:17 -0400
+
+gnupg2 (2.2.35-2) unstable; urgency=medium
+
+  * Only enable wine32 test on i386
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Fri, 29 Apr 2022 16:53:05 -0400
+
+gnupg2 (2.2.35-1) unstable; urgency=medium
+
+  * New upstream release.
+  * refresh patches.
+  * Correct handling of 256-bit Ed25519 secret keys (Closes: #1010171).
+  * Building for Windows requires libgpg-error 1.45
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Wed, 27 Apr 2022 17:09:01 -0400
+
+gnupg2 (2.2.34-1) unstable; urgency=medium
+
+  * New upstream release
+  * Refresh patches.
+  * ship gpg-check-pattern.1 from upstream
+  * override another pedantic lintian warning
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Fri, 22 Apr 2022 18:43:25 -0400
+
+gnupg2 (2.2.27-4) unstable; urgency=medium
+
+  [ Christoph Biedl ]
+  * Remove myself from uploaders
+
+  [ Daniel Kahn Gillmor ]
+  * Replace Werner Koch's signing key
+  * convert to DEP-14 branch name
+  * standards-version: bump to 4.6.0 (no changes needed)
+  * add upstream metadata
+  * gpgv-static: fix up lintian-override
+  * d/copyright: update years
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Wed, 20 Apr 2022 19:03:29 -0400
+
+gnupg2 (2.2.27-3) unstable; urgency=medium
+
+  * Avoid network interaction in generator. Closes: #993578
+  * Remove build dependency on librsvg2-bin. Closes: #993857
+  * Backport "Scd: Fix CCID driver for SCM SPR332/SPR532".
+    Closes: #982546
+  * Update watch file: Sticking to the 2.2 series for the time being
+
+ -- Christoph Biedl <debian.axhn@manchmal.in-ulm.de>  Sat, 18 Dec 2021 14:04:20 +0100
+
 gnupg2 (2.2.27-2) unstable; urgency=medium
 
   * Add a NEWS entry about the end of support for ~/.gnupg/options.

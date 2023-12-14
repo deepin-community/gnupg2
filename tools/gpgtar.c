@@ -34,7 +34,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #define INCLUDED_BY_MAIN_MODULE 1
 #include "../common/util.h"
@@ -77,12 +76,19 @@ enum cmd_and_opt_values
     oNull,
     oUtf8Strings,
 
+    oBatch,
+    oAnswerYes,
+    oAnswerNo,
+    oStatusFD,
+    oRequireCompliance,
+    oWithLog,
+
     /* Compatibility with gpg-zip.  */
     oGpgArgs,
     oTarArgs,
 
     /* Debugging.  */
-    oDryRun,
+    oDryRun
   };
 
 
@@ -112,6 +118,13 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oSetFilename, "set-filename", "@"),
   ARGPARSE_s_n (oOpenPGP, "openpgp", "@"),
   ARGPARSE_s_n (oCMS, "cms", "@"),
+
+  ARGPARSE_s_n (oBatch, "batch", "@"),
+  ARGPARSE_s_n (oAnswerYes, "yes", "@"),
+  ARGPARSE_s_n (oAnswerNo, "no", "@"),
+  ARGPARSE_s_i (oStatusFD, "status-fd", "@"),
+  ARGPARSE_s_n (oRequireCompliance, "require-compliance", "@"),
+  ARGPARSE_s_n (oWithLog, "with-log", "@"),
 
   ARGPARSE_group (302, N_("@\nTar options:\n ")),
 
@@ -259,7 +272,7 @@ shell_parse_stringlist (const char *str, strlist_t *r_list)
           break;
 
         case doublequote:
-          assert (s > str || !"cannot be quoted at first char");
+          log_assert (s > str || !"cannot be quoted at first char");
           if (*s == doublequote && *(s - 1) != '\\')
             quoted = unquoted;
           else
@@ -267,7 +280,7 @@ shell_parse_stringlist (const char *str, strlist_t *r_list)
           break;
 
         default:
-          assert (! "reached");
+          log_assert (! "reached");
         }
     }
 
@@ -373,6 +386,13 @@ parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
         case oOpenPGP: /* Dummy option for now.  */ break;
         case oCMS:     /* Dummy option for now.  */ break;
 
+        case oBatch: opt.batch = 1; break;
+        case oAnswerYes: opt.answer_yes = 1; break;
+        case oAnswerNo: opt.answer_no = 1; break;
+        case oStatusFD: opt.status_fd = pargs->r.ret_int; break;
+        case oRequireCompliance: opt.require_compliance = 1; break;
+        case oWithLog: opt.with_log = 1; break;
+
         case oGpgArgs:;
           {
             strlist_t list;
@@ -438,8 +458,12 @@ main (int argc, char **argv)
   /* Make sure that our subsystems are ready.  */
   i18n_init();
   init_common_subsystems (&argc, &argv);
+  gnupg_init_signals (0, NULL);
 
   log_assert (sizeof (struct ustar_raw_header) == 512);
+
+  /* Set default options */
+  opt.status_fd = -1;
 
   /* Parse the command line. */
   pargs.argc  = &argc;
@@ -523,7 +547,7 @@ main (int argc, char **argv)
 
 
 /* Read the next record from STREAM.  RECORD is a buffer provided by
-   the caller and must be at leadt of size RECORDSIZE.  The function
+   the caller and must be at least of size RECORDSIZE.  The function
    return 0 on success and error code on failure; a diagnostic
    printed as well.  Note that there is no need for an EOF indicator
    because a tarball has an explicit EOF record. */

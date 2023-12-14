@@ -476,24 +476,33 @@ nvc_set (nvc_t pk, const char *name, const char *value)
 
   e = nvc_lookup (pk, name);
   if (e)
-    {
-      char *v;
-
-      v = xtrystrdup (value);
-      if (v == NULL)
-	return my_error_from_syserror ();
-
-      free_strlist_wipe (e->raw_value);
-      e->raw_value = NULL;
-      if (e->value)
-	wipememory (e->value, strlen (e->value));
-      xfree (e->value);
-      e->value = v;
-
-      return 0;
-    }
+    return nve_set (e, value);
   else
     return nvc_add (pk, name, value);
+}
+
+
+/* Update entry E to VALUE.  */
+gpg_error_t
+nve_set (nve_t e, const char *value)
+{
+  char *v;
+
+  if (!e)
+    return GPG_ERR_INV_ARG;
+
+  v = xtrystrdup (value? value:"");
+  if (!v)
+    return my_error_from_syserror ();
+
+  free_strlist_wipe (e->raw_value);
+  e->raw_value = NULL;
+  if (e->value)
+    wipememory (e->value, strlen (e->value));
+  xfree (e->value);
+  e->value = v;
+
+  return 0;
 }
 
 
@@ -514,6 +523,20 @@ nvc_delete (nvc_t pk, nve_t entry)
   nve_release (entry, pk->private_key_mode);
 }
 
+/* Delete the entries with NAME from PK.  */
+void
+nvc_delete_named (nvc_t pk, const char *name)
+{
+  nve_t e;
+
+  if (!valid_name (name))
+    return;
+
+  while ((e = nvc_lookup (pk, name)))
+    nvc_delete (pk, e);
+}
+
+
 
 
 /* Lookup and iteration.  */
@@ -523,21 +546,32 @@ nve_t
 nvc_first (nvc_t pk)
 {
   nve_t entry;
+
+  if (!pk)
+    return NULL;
+
   for (entry = pk->first; entry; entry = entry->next)
     if (entry->name)
       return entry;
+
   return NULL;
 }
 
 
-/* Get the first entry with the given name.  */
+/* Get the first entry with the given name.  Return NULL if it does
+ * not exist.  */
 nve_t
 nvc_lookup (nvc_t pk, const char *name)
 {
   nve_t entry;
+
+  if (!pk)
+    return NULL;
+
   for (entry = pk->first; entry; entry = entry->next)
     if (entry->name && ascii_strcasecmp (entry->name, name) == 0)
       return entry;
+
   return NULL;
 }
 
@@ -561,6 +595,46 @@ nve_next_value (nve_t entry, const char *name)
     if (entry->name && ascii_strcasecmp (entry->name, name) == 0)
       return entry;
   return NULL;
+}
+
+
+/* Return the string for the first entry in NVC with NAME.  If an
+ * entry with NAME is missing in NVC or its value is the empty string
+ * NULL is returned.  Note that the returned string is a pointer
+ * into NVC.  */
+const char *
+nvc_get_string (nvc_t nvc, const char *name)
+{
+  nve_t item;
+
+  if (!nvc)
+    return NULL;
+  item = nvc_lookup (nvc, name);
+  if (!item)
+    return NULL;
+  return nve_value (item);
+}
+
+
+/* Return true if NAME exists and its value is true; that is either
+ * "yes", "true", or a decimal value unequal to 0.  */
+int
+nvc_get_boolean (nvc_t nvc, const char *name)
+{
+  nve_t item;
+  const char *s;
+
+  if (!nvc)
+    return 0;
+  item = nvc_lookup (nvc, name);
+  if (!item)
+    return 0;
+  s = nve_value (item);
+  if (s && (atoi (s)
+            || !ascii_strcasecmp (s, "yes")
+            || !ascii_strcasecmp (s, "true")))
+    return 1;
+  return 0;
 }
 
 
@@ -690,6 +764,7 @@ do_nvc_parse (nvc_t *result, int *errlinep, estream_t stream,
       if (raw_value)
 	{
 	  err = _nvc_add (*result, name, NULL, raw_value, 1);
+          name = NULL;
 	  if (err)
 	    goto leave;
 	}
@@ -778,29 +853,56 @@ nvc_parse_private_key (nvc_t *result, int *errlinep, estream_t stream)
 }
 
 
+/* Helper fpr nvc_write.  */
+static gpg_error_t
+write_one_entry (nve_t entry, estream_t stream)
+{
+  gpg_error_t err;
+  strlist_t sl;
+
+  if (entry->name)
+    es_fputs (entry->name, stream);
+
+  err = assert_raw_value (entry);
+  if (err)
+    return err;
+
+  for (sl = entry->raw_value; sl; sl = sl->next)
+    es_fputs (sl->d, stream);
+
+  if (es_ferror (stream))
+    return my_error_from_syserror ();
+
+  return 0;
+}
+
+
 /* Write a representation of PK to STREAM.  */
 gpg_error_t
 nvc_write (nvc_t pk, estream_t stream)
 {
-  gpg_error_t err;
+  gpg_error_t err = 0;
   nve_t entry;
-  strlist_t s;
+  nve_t keyentry = NULL;
 
   for (entry = pk->first; entry; entry = entry->next)
     {
-      if (entry->name)
-	es_fputs (entry->name, stream);
+      if (pk->private_key_mode
+          && entry->name && !ascii_strcasecmp (entry->name, "Key:"))
+        {
+          if (!keyentry)
+            keyentry = entry;
+          continue;
+        }
 
-      err = assert_raw_value (entry);
+      err = write_one_entry (entry, stream);
       if (err)
 	return err;
-
-      for (s = entry->raw_value; s; s = s->next)
-	es_fputs (s->d, stream);
-
-      if (es_ferror (stream))
-	return my_error_from_syserror ();
     }
 
-  return 0;
+  /* In private key mode we write the Key always last.  */
+  if (keyentry)
+    err = write_one_entry (keyentry, stream);
+
+  return err;
 }

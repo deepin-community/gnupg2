@@ -1,7 +1,7 @@
 /* encrypt.c - Main encryption driver
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
  *               2006, 2009 Free Software Foundation, Inc.
- * Copyright (C) 2016 g10 Code GmbH
+ * Copyright (C) 2016, 2022 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -64,6 +64,65 @@ int
 encrypt_store (const char *filename)
 {
   return encrypt_simple( filename, 0, 0 );
+}
+
+
+/* Create an setup DEK structure and print approriate warnings.  The
+ * FALLBACK_TO_3DES flag is used to handle the two different ways we
+ * use this code.  PK_LIST gives the list of public keys.  Always
+ * returns a DEK.  The actual session needs to be added later.  */
+static DEK *
+create_dek_with_warnings (int fallback_to_3des, pk_list_t pk_list)
+{
+  DEK *dek;
+
+  dek = xmalloc_secure_clear (sizeof *dek);
+  if (!opt.def_cipher_algo)
+    {
+      /* Try to get it from the prefs.  */
+      dek->algo = select_algo_from_prefs (pk_list, PREFTYPE_SYM, -1, NULL);
+      if (dek->algo == -1 && fallback_to_3des)
+        {
+          /* The only way select_algo_from_prefs can fail here is when
+           * mixing v3 and v4 keys, as v4 keys have an implicit
+           * preference entry for 3DES, and the pk_list cannot be
+           * empty.  In this case, use 3DES anyway as it's the safest
+           * choice - perhaps the v3 key is being used in an OpenPGP
+           * implementation and we know that the implementation behind
+           * any v4 key can handle 3DES. */
+          dek->algo = CIPHER_ALGO_3DES;
+        }
+      else if (dek->algo == -1)
+        {
+          /* Because 3DES is implicitly in the prefs, this can only
+           * happen if we do not have any public keys in the list.  */
+          dek->algo = DEFAULT_CIPHER_ALGO;
+        }
+
+      /* In case 3DES has been selected, print a warning if any key
+       * does not have a preference for AES.  This should help to
+       * indentify why encrypting to several recipients falls back to
+       * 3DES. */
+      if (opt.verbose && dek->algo == CIPHER_ALGO_3DES)
+        warn_missing_aes_from_pklist (pk_list);
+    }
+  else
+    {
+      if (!opt.expert
+          && (select_algo_from_prefs (pk_list, PREFTYPE_SYM,
+                                      opt.def_cipher_algo, NULL)
+              != opt.def_cipher_algo))
+        {
+          log_info(_("WARNING: forcing symmetric cipher %s (%d)"
+                     " violates recipient preferences\n"),
+                   openpgp_cipher_algo_name (opt.def_cipher_algo),
+                   opt.def_cipher_algo);
+        }
+
+      dek->algo = opt.def_cipher_algo;
+    }
+
+  return dek;
 }
 
 
@@ -212,7 +271,7 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
 
       if ( use_seskey )
         {
-          DEK *dek = NULL;
+          DEK *dek = NULL;  /* Dummy.  */
 
           seskeylen = openpgp_cipher_get_algo_keylen (default_cipher_algo ());
           encrypt_seskey( cfx.dek, &dek, enckey );
@@ -321,7 +380,7 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
 
   /* Register the cipher filter. */
   if (mode)
-    iobuf_push_filter ( out, cipher_filter, &cfx );
+    iobuf_push_filter ( out, cipher_filter_cfb, &cfx );
 
   /* Register the compress filter. */
   if ( do_compress )
@@ -404,7 +463,7 @@ setup_symkey (STRING2KEY **symkey_s2k, DEK **symkey_dek)
   (*symkey_s2k)->hash_algo = s2kdigest;
 
   *symkey_dek = passphrase_to_dek (defcipher,
-                                   *symkey_s2k, 1, 0, NULL, &canceled);
+                                   *symkey_s2k, 1, 0, NULL, 0, &canceled);
   if (!*symkey_dek || !(*symkey_dek)->keylen)
     {
       xfree(*symkey_dek);
@@ -446,6 +505,83 @@ write_symkey_enc (STRING2KEY *symkey_s2k, DEK *symkey_dek, DEK *dek,
 }
 
 
+/* Check whether all encryption keys are compliant with the current
+ * mode and issue respective status lines.  DEK has the info about the
+ * session key and PK_LIST the list of public keys.  */
+static gpg_error_t
+check_encryption_compliance (DEK *dek, pk_list_t pk_list)
+{
+  gpg_error_t err = 0;
+  pk_list_t pkr;
+  int compliant;
+
+  if (! gnupg_cipher_is_allowed (opt.compliance, 1, dek->algo,
+                                 GCRY_CIPHER_MODE_CFB))
+    {
+      log_error (_("cipher algorithm '%s' may not be used in %s mode\n"),
+		 openpgp_cipher_algo_name (dek->algo),
+		 gnupg_compliance_option_string (opt.compliance));
+      err = gpg_error (GPG_ERR_CIPHER_ALGO);
+      goto leave;
+    }
+
+  if (!gnupg_rng_is_compliant (opt.compliance))
+    {
+      err = gpg_error (GPG_ERR_FORBIDDEN);
+      log_error (_("%s is not compliant with %s mode\n"),
+                 "RNG",
+                 gnupg_compliance_option_string (opt.compliance));
+      write_status_error ("random-compliance", err);
+      goto leave;
+    }
+
+  /* From here on we only test for CO_DE_VS - if we ever want to
+   * return other compliance mode values we need to change this to
+   * loop over all those values.  */
+  compliant = gnupg_gcrypt_is_compliant (CO_DE_VS);
+
+  if (!gnupg_cipher_is_compliant (CO_DE_VS, dek->algo, GCRY_CIPHER_MODE_CFB))
+    compliant = 0;
+
+  for (pkr = pk_list; pkr; pkr = pkr->next)
+    {
+      PKT_public_key *pk = pkr->pk;
+      unsigned int nbits = nbits_from_pk (pk);
+
+      if (!gnupg_pk_is_compliant (opt.compliance, pk->pubkey_algo, 0,
+                                  pk->pkey, nbits, NULL))
+        log_info (_("WARNING: key %s is not suitable for encryption"
+                    " in %s mode\n"),
+                  keystr_from_pk (pk),
+                  gnupg_compliance_option_string (opt.compliance));
+
+      if (compliant
+          && !gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0, pk->pkey,
+                                     nbits, NULL))
+        compliant = 0; /* Not compliant - reset flag.  */
+    }
+
+  /* If we are compliant print the status for de-vs compliance.  */
+  if (compliant)
+    write_status_strings (STATUS_ENCRYPTION_COMPLIANCE_MODE,
+                          gnupg_status_compliance_flag (CO_DE_VS),
+                          NULL);
+
+  /* Check whether we should fail the operation.  */
+  if (opt.flags.require_compliance
+      && opt.compliance == CO_DE_VS
+      && !compliant)
+    {
+      compliance_failure ();
+      err = gpg_error (GPG_ERR_FORBIDDEN);
+      goto leave;
+    }
+
+ leave:
+  return err;
+}
+
+
 /*
  * Encrypt the file with the given userids (or ask if none is
  * supplied).  Either FILENAME or FILEFD must be given, but not both.
@@ -475,7 +611,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
   progress_filter_context_t *pfx;
   PK_LIST pk_list;
   int do_compress;
-  int compliant;
 
   if (filefd != -1 && filename)
     return gpg_error (GPG_ERR_INV_ARG);  /* Both given.  */
@@ -563,97 +698,13 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
       push_armor_filter (afx, out);
     }
 
-  /* Create a session key. */
-  cfx.dek = xmalloc_secure_clear (sizeof *cfx.dek);
-  if (!opt.def_cipher_algo)
-    {
-      /* Try to get it from the prefs.  */
-      cfx.dek->algo = select_algo_from_prefs (pk_list, PREFTYPE_SYM, -1, NULL);
-      /* The only way select_algo_from_prefs can fail here is when
-         mixing v3 and v4 keys, as v4 keys have an implicit preference
-         entry for 3DES, and the pk_list cannot be empty.  In this
-         case, use 3DES anyway as it's the safest choice - perhaps the
-         v3 key is being used in an OpenPGP implementation and we know
-         that the implementation behind any v4 key can handle 3DES. */
-      if (cfx.dek->algo == -1)
-        {
-          cfx.dek->algo = CIPHER_ALGO_3DES;
-        }
+  /* Create a session key (a DEK). */
+  cfx.dek = create_dek_with_warnings (1, pk_list);
 
-      /* In case 3DES has been selected, print a warning if any key
-         does not have a preference for AES.  This should help to
-         indentify why encrypting to several recipients falls back to
-         3DES. */
-      if (opt.verbose && cfx.dek->algo == CIPHER_ALGO_3DES)
-        warn_missing_aes_from_pklist (pk_list);
-    }
-  else
-    {
-      if (!opt.expert
-          && (select_algo_from_prefs (pk_list, PREFTYPE_SYM,
-                                      opt.def_cipher_algo, NULL)
-              != opt.def_cipher_algo))
-        {
-          log_info(_("WARNING: forcing symmetric cipher %s (%d)"
-                     " violates recipient preferences\n"),
-                   openpgp_cipher_algo_name (opt.def_cipher_algo),
-                   opt.def_cipher_algo);
-        }
-
-      cfx.dek->algo = opt.def_cipher_algo;
-    }
-
-  /* Check compliance.  */
-  if (! gnupg_cipher_is_allowed (opt.compliance, 1, cfx.dek->algo,
-                                 GCRY_CIPHER_MODE_CFB))
-    {
-      log_error (_("cipher algorithm '%s' may not be used in %s mode\n"),
-		 openpgp_cipher_algo_name (cfx.dek->algo),
-		 gnupg_compliance_option_string (opt.compliance));
-      rc = gpg_error (GPG_ERR_CIPHER_ALGO);
-      goto leave;
-    }
-
-  if (!gnupg_rng_is_compliant (opt.compliance))
-    {
-      rc = gpg_error (GPG_ERR_FORBIDDEN);
-      log_error (_("%s is not compliant with %s mode\n"),
-                 "RNG",
-                 gnupg_compliance_option_string (opt.compliance));
-      write_status_error ("random-compliance", rc);
-      goto leave;
-    }
-
-  compliant = gnupg_cipher_is_compliant (CO_DE_VS, cfx.dek->algo,
-                                         GCRY_CIPHER_MODE_CFB);
-
-  {
-    pk_list_t pkr;
-
-    for (pkr = pk_list; pkr; pkr = pkr->next)
-      {
-        PKT_public_key *pk = pkr->pk;
-        unsigned int nbits = nbits_from_pk (pk);
-
-        if (!gnupg_pk_is_compliant (opt.compliance, pk->pubkey_algo, 0,
-                                    pk->pkey, nbits, NULL))
-          log_info (_("WARNING: key %s is not suitable for encryption"
-                      " in %s mode\n"),
-                    keystr_from_pk (pk),
-                    gnupg_compliance_option_string (opt.compliance));
-
-        if (compliant
-            && !gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0, pk->pkey,
-                                       nbits, NULL))
-          compliant = 0;
-      }
-
-  }
-
-  if (compliant)
-    write_status_strings (STATUS_ENCRYPTION_COMPLIANCE_MODE,
-                          gnupg_status_compliance_flag (CO_DE_VS),
-                          NULL);
+  /* Check compliance etc.  */
+  rc = check_encryption_compliance (cfx.dek, pk_list);
+  if (rc)
+    goto leave;
 
   cfx.dek->use_mdc = use_mdc (pk_list,cfx.dek->algo);
 
@@ -729,7 +780,7 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
     cfx.datalen = filesize && !do_compress ? filesize : 0;
 
   /* Register the cipher filter. */
-  iobuf_push_filter (out, cipher_filter, &cfx);
+  iobuf_push_filter (out, cipher_filter_cfb, &cfx);
 
   /* Register the compress filter. */
   if (do_compress)
@@ -830,41 +881,13 @@ encrypt_filter (void *opaque, int control,
     {
       if ( !efx->header_okay )
         {
-          efx->cfx.dek = xmalloc_secure_clear ( sizeof *efx->cfx.dek );
-          if ( !opt.def_cipher_algo  )
-            {
-              /* Try to get it from the prefs. */
-              efx->cfx.dek->algo =
-                select_algo_from_prefs (efx->pk_list, PREFTYPE_SYM, -1, NULL);
-              if (efx->cfx.dek->algo == -1 )
-                {
-                  /* Because 3DES is implicitly in the prefs, this can
-                     only happen if we do not have any public keys in
-                     the list.  */
-                  efx->cfx.dek->algo = DEFAULT_CIPHER_ALGO;
-                }
+          efx->header_okay = 1;
 
-              /* In case 3DES has been selected, print a warning if
-                 any key does not have a preference for AES.  This
-                 should help to indentify why encrypting to several
-                 recipients falls back to 3DES. */
-              if (opt.verbose
-                  && efx->cfx.dek->algo == CIPHER_ALGO_3DES)
-                warn_missing_aes_from_pklist (efx->pk_list);
-	    }
-          else
-            {
-	      if (!opt.expert
-                  && select_algo_from_prefs (efx->pk_list,PREFTYPE_SYM,
-                                             opt.def_cipher_algo,
-                                             NULL) != opt.def_cipher_algo)
-		log_info(_("forcing symmetric cipher %s (%d) "
-			   "violates recipient preferences\n"),
-			 openpgp_cipher_algo_name (opt.def_cipher_algo),
-			 opt.def_cipher_algo);
+          efx->cfx.dek = create_dek_with_warnings (0, efx->pk_list);
 
-	      efx->cfx.dek->algo = opt.def_cipher_algo;
-	    }
+          rc = check_encryption_compliance (efx->cfx.dek, efx->pk_list);
+          if (rc)
+            return rc;
 
           efx->cfx.dek->use_mdc = use_mdc (efx->pk_list,efx->cfx.dek->algo);
 
@@ -885,9 +908,7 @@ encrypt_filter (void *opaque, int control,
                 return rc;
             }
 
-          iobuf_push_filter (a, cipher_filter, &efx->cfx);
-
-          efx->header_okay = 1;
+          iobuf_push_filter (a, cipher_filter_cfb, &efx->cfx);
         }
       rc = iobuf_write (a, buf, size);
 

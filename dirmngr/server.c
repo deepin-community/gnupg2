@@ -49,7 +49,7 @@
 # include "ldap-wrapper.h"
 #endif
 #include "ks-action.h"
-#include "ks-engine.h"  /* (ks_hkp_print_hosttable) */
+#include "ks-engine.h"
 #if USE_LDAP
 # include "ldap-parse-uri.h"
 #endif
@@ -924,7 +924,14 @@ proc_wkd_get (ctrl_t ctrl, assuan_context_t ctx, char *line)
 
       err = get_dns_srv (domain, "openpgpkey", NULL, &srvs, &srvscount);
       if (err)
-        goto leave;
+        {
+          /* Ignore server failed becuase there are too many resolvers
+           * which do not work as expected.  */
+          if (gpg_err_code (err) == GPG_ERR_SERVER_FAILED)
+            err = 0; /*(srvcount is guaranteed to be 0)*/
+          else
+            goto leave;
+        }
 
       /* Check for rogue DNS names.  */
       for (i = 0; i < srvscount; i++)
@@ -1005,7 +1012,7 @@ proc_wkd_get (ctrl_t ctrl, assuan_context_t ctx, char *line)
     {
       char *escapedmbox;
 
-      escapedmbox = http_escape_string (mbox, "%;?&=");
+      escapedmbox = http_escape_string (mbox, "%;?&=+#");
       if (escapedmbox)
         {
           uri = strconcat ("https://",
@@ -1140,10 +1147,13 @@ task_check_wkd_support (ctrl_t ctrl, const char *domain)
 
 
 static const char hlp_ldapserver[] =
-  "LDAPSERVER <data>\n"
+  "LDAPSERVER [--clear] <data>\n"
   "\n"
   "Add a new LDAP server to the list of configured LDAP servers.\n"
-  "DATA is in the same format as expected in the configure file.";
+  "DATA is in the same format as expected in the configure file.\n"
+  "An optional prefix \"ldap:\" is allowed.  With no args all\n"
+  "configured ldapservers are listed.  Option --clear removes all\n"
+  "servers configured in this session.";
 static gpg_error_t
 cmd_ldapserver (assuan_context_t ctx, char *line)
 {
@@ -1151,13 +1161,63 @@ cmd_ldapserver (assuan_context_t ctx, char *line)
   ctrl_t ctrl = assuan_get_pointer (ctx);
   ldap_server_t server;
   ldap_server_t *last_next_p;
+  int clear_flag;
 
+  clear_flag = has_option (line, "--clear");
+  line = skip_options (line);
   while (spacep (line))
     line++;
-  if (*line == '\0')
-    return leave_cmd (ctx, PARM_ERROR (_("ldapserver missing")));
 
-  server = ldapserver_parse_one (line, "", 0);
+  if (clear_flag)
+    {
+#if USE_LDAP
+      ldapserver_list_free (ctrl->server_local->ldapservers);
+#endif /*USE_LDAP*/
+      ctrl->server_local->ldapservers = NULL;
+    }
+
+  if (!*line && clear_flag)
+    return leave_cmd (ctx, 0);
+
+  if (!*line)
+    {
+      /* List all ldapservers.  */
+      struct ldapserver_iter ldapserver_iter;
+      char *tmpstr;
+      char portstr[20];
+
+      for (ldapserver_iter_begin (&ldapserver_iter, ctrl);
+           !ldapserver_iter_end_p (&ldapserver_iter);
+           ldapserver_iter_next (&ldapserver_iter))
+        {
+          server = ldapserver_iter.server;
+          if (server->port)
+            snprintf (portstr, sizeof portstr, "%d", server->port);
+          else
+            *portstr = 0;
+
+          tmpstr = xtryasprintf ("ldap:%s:%s:%s:%s:%s:%s%s:",
+                                 server->host? server->host : "",
+                                 portstr,
+                                 server->user? server->user : "",
+                                 server->pass? "*****": "",
+                                 server->base? server->base : "",
+                                 server->starttls ? "starttls" :
+                                 server->ldap_over_tls ? "ldaptls" : "none",
+                                 server->ntds ? ",ntds" : "");
+          if (!tmpstr)
+            return leave_cmd (ctx, gpg_error_from_syserror ());
+          dirmngr_status (ctrl, "LDAPSERVER", tmpstr, NULL);
+          xfree (tmpstr);
+        }
+      return leave_cmd (ctx, 0);
+    }
+
+  /* Skip an "ldap:" prefix unless it is a valid ldap url.  */
+  if (!strncmp (line, "ldap:", 5) && !(line[5] == '/' && line[6] == '/'))
+    line += 5;
+
+  server = ldapserver_parse_one (line, NULL, 0);
   if (! server)
     return leave_cmd (ctx, gpg_error (GPG_ERR_INV_ARG));
 
@@ -1619,7 +1679,8 @@ lookup_cert_by_pattern (assuan_context_t ctx, char *line,
           if (!err && single)
             goto ready;
 
-          if (gpg_err_code (err) == GPG_ERR_NO_DATA)
+          if (gpg_err_code (err) == GPG_ERR_NO_DATA
+              || gpg_err_code (err) == GPG_ERR_NOT_FOUND)
             {
               err = 0;
               if (cache_only)
@@ -2065,6 +2126,8 @@ make_keyserver_item (const char *uri, uri_item_t *r_item)
 {
   gpg_error_t err;
   uri_item_t item;
+  const char *s;
+  char *tmpstr = NULL;
 
   *r_item = NULL;
 
@@ -2082,22 +2145,22 @@ make_keyserver_item (const char *uri, uri_item_t *r_item)
    */
   if (!strcmp (uri, "hkps://keys.gnupg.net")
       || !strcmp (uri, "keys.gnupg.net"))
-    uri = "hkps://hkps.pool.sks-keyservers.net";
+    uri = "hkps://keyserver.ubuntu.com";
   else if (!strcmp (uri, "https://keys.gnupg.net"))
-    uri = "https://hkps.pool.sks-keyservers.net";
+    uri = "hkps://keyserver.ubuntu.com";
   else if (!strcmp (uri, "hkp://keys.gnupg.net"))
-    uri = "hkp://hkps.pool.sks-keyservers.net";
+    uri = "hkp://pgp.surf.nl";
   else if (!strcmp (uri, "http://keys.gnupg.net"))
-    uri = "http://hkps.pool.sks-keyservers.net";
+    uri = "hkp://pgp.surf.nl:80";
   else if (!strcmp (uri, "hkps://http-keys.gnupg.net")
            || !strcmp (uri, "http-keys.gnupg.net"))
-    uri = "hkps://ha.pool.sks-keyservers.net";
+    uri = "hkps://keyserver.ubuntu.com";
   else if (!strcmp (uri, "https://http-keys.gnupg.net"))
-    uri = "https://ha.pool.sks-keyservers.net";
+    uri = "hkps://keyserver.ubuntu.com";
   else if (!strcmp (uri, "hkp://http-keys.gnupg.net"))
-    uri = "hkp://ha.pool.sks-keyservers.net";
+    uri = "hkp://pgp.surf.nl";
   else if (!strcmp (uri, "http://http-keys.gnupg.net"))
-    uri = "http://ha.pool.sks-keyservers.net";
+    uri = "hkp://pgp.surf.nl:80";
 
   item = xtrymalloc (sizeof *item + strlen (uri));
   if (!item)
@@ -2108,14 +2171,64 @@ make_keyserver_item (const char *uri, uri_item_t *r_item)
   strcpy (item->uri, uri);
 
 #if USE_LDAP
-  if (ldap_uri_p (item->uri))
-    err = ldap_parse_uri (&item->parsed_uri, uri);
-  else
-#endif
+  if (!strncmp (uri, "ldap:", 5) && !(uri[5] == '/' && uri[6] == '/'))
     {
-      err = http_parse_uri (&item->parsed_uri, uri, 1);
+      /* Special ldap scheme given.  This differs from a valid ldap
+       * scheme in that no double slash follows..  Use http_parse_uri
+       * to put it as opaque value into parsed_uri.  */
+      tmpstr = strconcat ("opaque:", uri+5, NULL);
+      if (!tmpstr)
+        err = gpg_error_from_syserror ();
+      else
+        err = http_parse_uri (&item->parsed_uri, tmpstr, 0);
+    }
+  else if ((s=strchr (uri, ':')) && !(s[1] == '/' && s[2] == '/'))
+    {
+      /* No valid scheme given.  Use http_parse_uri to put the string
+       * as opaque value into parsed_uri.  */
+      tmpstr = strconcat ("opaque:", uri, NULL);
+      if (!tmpstr)
+        err = gpg_error_from_syserror ();
+      else
+        err = http_parse_uri (&item->parsed_uri, tmpstr, 0);
+    }
+  else if (ldap_uri_p (uri))
+    {
+      int fixup = 0;
+      /* Fixme: We should get rid of that parser and repalce it with
+       * our generic (http) URI parser.  */
+
+      /* If no port has been specified and the scheme ist ldaps we use
+       * our idea of the default port because the standard LDAP URL
+       * parser would use 636 here.  This is because we redefined
+       * ldaps to mean starttls.  */
+#ifdef HAVE_W32_SYSTEM
+      if (!strcmp (uri, "ldap:///"))
+          fixup = 1;
+      else
+#endif
+        if (!http_parse_uri (&item->parsed_uri,uri,HTTP_PARSE_NO_SCHEME_CHECK))
+        {
+          if (!item->parsed_uri->port
+              && !strcmp (item->parsed_uri->scheme, "ldaps"))
+            fixup = 2;
+          http_release_parsed_uri (item->parsed_uri);
+          item->parsed_uri = NULL;
+        }
+
+      err = ldap_parse_uri (&item->parsed_uri, uri);
+      if (!err && fixup == 1)
+        item->parsed_uri->ad_current = 1;
+      else if (!err && fixup == 2)
+        item->parsed_uri->port = 389;
+    }
+  else
+#endif /* USE_LDAP */
+    {
+      err = http_parse_uri (&item->parsed_uri, uri, HTTP_PARSE_NO_SCHEME_CHECK);
     }
 
+  xfree (tmpstr);
   if (err)
     xfree (item);
   else
@@ -2170,7 +2283,7 @@ ensure_keyserver (ctrl_t ctrl)
     {
       /* If there is just one onion and one plain keyserver given, we take
          only one depending on whether Tor is running or not.  */
-      if (is_tor_running (ctrl))
+      if (!dirmngr_never_use_tor_p () && is_tor_running (ctrl))
         {
           ctrl->server_local->keyservers = onion_items;
           onion_items = NULL;
@@ -2181,7 +2294,7 @@ ensure_keyserver (ctrl_t ctrl)
           plain_items = NULL;
         }
     }
-  else if (!is_tor_running (ctrl))
+  else if (dirmngr_never_use_tor_p () || !is_tor_running (ctrl))
     {
       /* Tor is not running.  It does not make sense to add Onion
          addresses.  */
@@ -2403,11 +2516,13 @@ cmd_ks_search (assuan_context_t ctx, char *line)
 
 
 static const char hlp_ks_get[] =
-  "KS_GET {<pattern>}\n"
+  "KS_GET [--quick] [--ldap] [--first|--next] {<pattern>}\n"
   "\n"
   "Get the keys matching PATTERN from the configured OpenPGP keyservers\n"
   "(see command KEYSERVER).  Each pattern should be a keyid, a fingerprint,\n"
-  "or an exact name indicated by the '=' prefix.";
+  "or an exact name indicated by the '=' prefix.  Option --quick uses a\n"
+  "shorter timeout; --ldap will use only ldap servers.  With --first only\n"
+  "the first item is returned; --next is used to return the next item";
 static gpg_error_t
 cmd_ks_get (assuan_context_t ctx, char *line)
 {
@@ -2416,9 +2531,16 @@ cmd_ks_get (assuan_context_t ctx, char *line)
   strlist_t list, sl;
   char *p;
   estream_t outfp;
+  unsigned int flags = 0;
 
   if (has_option (line, "--quick"))
     ctrl->timeout = opt.connect_quick_timeout;
+  if (has_option (line, "--ldap"))
+    flags |= KS_GET_FLAG_ONLY_LDAP;
+  if (has_option (line, "--first"))
+    flags |= KS_GET_FLAG_FIRST;
+  if (has_option (line, "--next"))
+    flags |= KS_GET_FLAG_NEXT;
   line = skip_options (line);
 
   /* Break the line into a strlist.  Each pattern is by
@@ -2447,6 +2569,47 @@ cmd_ks_get (assuan_context_t ctx, char *line)
         }
     }
 
+  if ((flags & KS_GET_FLAG_FIRST) && !(flags & KS_GET_FLAG_ONLY_LDAP))
+    {
+      err = PARM_ERROR ("--first is only supported with --ldap");
+      goto leave;
+    }
+
+  if (list && list->next && (flags & KS_GET_FLAG_FIRST))
+    {
+      /* ks_action_get loops over the pattern and we can't easily keep
+       * this state.  */
+      err = PARM_ERROR ("Only one pattern allowed with --first");
+      goto leave;
+    }
+
+  if (!list && (flags & KS_GET_FLAG_FIRST))
+    {
+      /* Need to add a dummy pattern if no pattern is given.  */
+      if (!add_to_strlist_try (&list, ""))
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+    }
+
+
+  if ((flags & KS_GET_FLAG_NEXT))
+    {
+      if (list || (flags & ~KS_GET_FLAG_NEXT))
+        {
+          err = PARM_ERROR ("No pattern or other options allowed with --next");
+          goto leave;
+        }
+      /* Add a dummy pattern.  */
+      if (!add_to_strlist_try (&list, ""))
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+    }
+
+
   err = ensure_keyserver (ctrl);
   if (err)
     goto leave;
@@ -2460,7 +2623,8 @@ cmd_ks_get (assuan_context_t ctx, char *line)
       ctrl->server_local->inhibit_data_logging = 1;
       ctrl->server_local->inhibit_data_logging_now = 0;
       ctrl->server_local->inhibit_data_logging_count = 0;
-      err = ks_action_get (ctrl, ctrl->server_local->keyservers, list, outfp);
+      err = ks_action_get (ctrl, ctrl->server_local->keyservers,
+                           list, flags, outfp);
       es_fclose (outfp);
       ctrl->server_local->inhibit_data_logging = 0;
     }
@@ -2971,6 +3135,8 @@ start_command_handler (assuan_fd_t fd, unsigned int session_id)
                ctrl->refcount);
   else
     {
+      ks_ldap_free_state (ctrl->ks_get_state);
+      ctrl->ks_get_state = NULL;
       release_ctrl_ocsp_certs (ctrl);
       xfree (ctrl->server_local);
       dirmngr_deinit_default_ctrl (ctrl);

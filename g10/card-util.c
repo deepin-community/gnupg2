@@ -378,31 +378,34 @@ current_card_status (ctrl_t ctrl, estream_t fp,
   else
     tty_fprintf (fp, "Application ID ...: %s\n",
                  info.serialno? info.serialno : "[none]");
+
   if (!info.serialno || strncmp (info.serialno, "D27600012401", 12)
       || strlen (info.serialno) != 32 )
     {
       const char *name1, *name2;
-      if (info.apptype && !strcmp (info.apptype, "NKS"))
+      if (info.apptype && !ascii_strcasecmp (info.apptype, "openpgp"))
+        goto openpgp;
+      else if (info.apptype && !ascii_strcasecmp (info.apptype, "NKS"))
         {
           name1 = "netkey";
           name2 = "NetKey";
         }
-      else if (info.apptype && !strcmp (info.apptype, "DINSIG"))
+      else if (info.apptype && !ascii_strcasecmp (info.apptype, "DINSIG"))
         {
           name1 = "dinsig";
           name2 = "DINSIG";
         }
-      else if (info.apptype && !strcmp (info.apptype, "P15"))
+      else if (info.apptype && !ascii_strcasecmp (info.apptype, "P15"))
         {
           name1 = "pkcs15";
           name2 = "PKCS#15";
         }
-      else if (info.apptype && !strcmp (info.apptype, "GELDKARTE"))
+      else if (info.apptype && !ascii_strcasecmp (info.apptype, "GELDKARTE"))
         {
           name1 = "geldkarte";
           name2 = "Geldkarte";
         }
-      else if (info.apptype && !strcmp (info.apptype, "PIV"))
+      else if (info.apptype && !ascii_strcasecmp (info.apptype, "PIV"))
         {
           name1 = "piv";
           name2 = "PIV";
@@ -418,11 +421,15 @@ current_card_status (ctrl_t ctrl, estream_t fp,
       else
         tty_fprintf (fp, "Application type .: %s\n", name2);
 
+      /* Try to update/create the shadow key here for non-OpenPGP cards. */
+      agent_update_shadow_keys ();
+
       agent_release_card_info (&info);
       xfree (pk);
       return;
     }
 
+ openpgp:
   if (!serialno)
     ;
   else if (strlen (info.serialno)+1 > serialnobuflen)
@@ -435,6 +442,8 @@ current_card_status (ctrl_t ctrl, estream_t fp,
   else
     tty_fprintf (fp, "Application type .: %s\n", "OpenPGP");
 
+  /* Try to update/create the shadow key here for OpenPGP cards. */
+  agent_update_shadow_keys ();
 
   if (opt.with_colons)
     {
@@ -586,7 +595,8 @@ current_card_status (ctrl_t ctrl, estream_t fp,
                 if (info.key_attr[i].curve)
                   {
                     const char *oid;
-                    oid = openpgp_curve_to_oid (info.key_attr[i].curve, NULL);
+                    oid = openpgp_curve_to_oid (info.key_attr[i].curve,
+                                                NULL, NULL);
                     if (oid)
                       curve_for_print = openpgp_oid_to_curve (oid, 0);
                   }
@@ -763,7 +773,8 @@ static int
 change_name (void)
 {
   char *surname = NULL, *givenname = NULL;
-  char *isoname, *p;
+  char *isoname = NULL;
+  char *p;
   int rc;
 
   surname = get_one_name ("keygen.smartcard.surname",
@@ -774,7 +785,8 @@ change_name (void)
     {
       xfree (surname);
       xfree (givenname);
-      return -1; /*canceled*/
+      rc = gpg_error (GPG_ERR_CANCELED);
+      goto leave;
     }
 
   isoname = xmalloc ( strlen (surname) + 2 + strlen (givenname) + 1);
@@ -790,14 +802,17 @@ change_name (void)
       tty_printf (_("Error: Combined name too long "
                     "(limit is %d characters).\n"), 39);
       xfree (isoname);
-      return -1;
+      rc = gpg_error (GPG_ERR_TOO_LARGE);
+      goto leave;
     }
 
   rc = agent_scd_setattr ("DISP-NAME", isoname, strlen (isoname));
   if (rc)
     log_error ("error setting Name: %s\n", gpg_strerror (rc));
 
+ leave:
   xfree (isoname);
+  write_sc_op_status (rc);
   return rc;
 }
 
@@ -1230,8 +1245,9 @@ get_info_for_key_operation (struct agent_card_info_s *info)
 
   memset (info, 0, sizeof *info);
   rc = agent_scd_getattr ("SERIALNO", info);
-  if (rc || !info->serialno || strncmp (info->serialno, "D27600012401", 12)
-      || strlen (info->serialno) != 32 )
+  if (!rc)
+    rc = agent_scd_getattr ("APPTYPE", info);
+  if (rc || !info->apptype || ascii_strcasecmp (info->apptype, "openpgp"))
     {
       log_error (_("key operation not possible: %s\n"),
                  rc ? gpg_strerror (rc) : _("not an OpenPGP card"));
@@ -1489,7 +1505,7 @@ ask_card_keyattr (int keyno, const struct key_attr *current)
       if (curve)
         {
           key_attr->algo = algo;
-          oid_str = openpgp_curve_to_oid (curve, NULL);
+          oid_str = openpgp_curve_to_oid (curve, NULL, NULL);
           key_attr->curve = openpgp_oid_to_curve (oid_str, 0);
         }
       else

@@ -75,13 +75,13 @@ const char *get_validity_string (ctrl_t ctrl,
 
 
 /*-- trustdb.c --*/
-void tdb_register_trusted_keyid (u32 *keyid);
 void tdb_register_trusted_key (const char *string);
 /* Returns whether KID is on the list of ultimately trusted keys.  */
 int tdb_keyid_is_utk (u32 *kid);
 /* Return the list of ultimately trusted keys.  The caller must not
  * modify this list nor must it free the list.  */
 struct key_item *tdb_utks (void);
+void tdb_update_utk (u32 *kid, int add);
 void check_trustdb (ctrl_t ctrl);
 void update_trustdb (ctrl_t ctrl);
 int setup_trustdb( int level, const char *dbname );
@@ -121,7 +121,7 @@ const char *get_ownertrust_string (ctrl_t ctrl,
                                    PKT_public_key *pk, int no_create);
 
 void tdb_update_ownertrust (ctrl_t ctrl, PKT_public_key *pk,
-                            unsigned int new_trust);
+                            unsigned int new_trust, int as_trusted_key);
 int tdb_clear_ownertrusts (ctrl_t ctrl, PKT_public_key *pk);
 
 /*-- tdbdump.c --*/

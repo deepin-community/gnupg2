@@ -205,14 +205,14 @@ if used in an options file.
 
 
 @item -v
-@item --verbose
+@itemx --verbose
 @opindex verbose
 Outputs additional information while running.
 You can increase the verbosity by giving several
 verbose commands to @command{gpg-agent}, such as @samp{-vv}.
 
 @item -q
-@item --quiet
+@itemx --quiet
 @opindex quiet
 Try to be as quiet as possible.
 
@@ -316,6 +316,15 @@ Pinentry.  As of now it is only useful when used along with
 Don't detach the process from the console.  This is mainly useful for
 debugging.
 
+@item --steal-socket
+@opindex steal-socket
+In @option{--daemon} mode, gpg-agent detects an already running
+gpg-agent and does not allow to start a new instance. This option can
+be used to override this check: the new gpg-agent process will try to
+take over the communication sockets from the already running process
+and start anyway.  This option should in general not be used.
+
+
 @item -s
 @itemx --sh
 @itemx -c
@@ -356,6 +365,21 @@ specify the logging output.
 Do not allow clients to mark keys as trusted, i.e. put them into the
 @file{trustlist.txt} file.  This makes it harder for users to inadvertently
 accept Root-CA keys.
+
+
+@anchor{option --no-user-trustlist}
+@item --no-user-trustlist
+@opindex no-user-trustlist
+Entirely ignore the user trust list and consider only the global
+trustlist (@file{@value{SYSCONFDIR}/trustlist.txt}).  This
+implies the @ref{option --no-allow-mark-trusted}.
+
+@item --sys-trustlist-name @var{file}
+@opindex sys-trustlist-name
+Changes the default name for the global trustlist from "trustlist.txt"
+to @var{file}.  If @var{file} does not contain any slashes and does
+not start with "~/" it is searched in the system configuration
+directory (@file{@value{SYSCONFDIR}}).
 
 @anchor{option --allow-preset-passphrase}
 @item --allow-preset-passphrase
@@ -448,11 +472,17 @@ of digits or special characters a warning will be displayed.  Defaults
 to 1.
 
 @item --check-passphrase-pattern @var{file}
+@itemx --check-sym-passphrase-pattern @var{file}
 @opindex check-passphrase-pattern
+@opindex check-sym-passphrase-pattern
 Check the passphrase against the pattern given in @var{file}.  When
 entering a new passphrase matching one of these pattern a warning will
-be displayed. @var{file} should be an absolute filename.  The default is
-not to use any pattern file.
+be displayed.  If @var{file} does not contain any slashes and does not
+start with "~/" it is searched in the system configuration directory
+(@file{@value{SYSCONFDIR}}).  The default is not to use any
+pattern file.  The second version of this option is only used when
+creating a new symmetric key to allow the use of different patterns
+for such passphrases.
 
 Security note: It is known that checking a passphrase against a list of
 pattern or even against a complete dictionary is not very effective to
@@ -483,6 +513,19 @@ This option asks the Pinentry to timeout after @var{n} seconds with no
 user input.  The default value of 0 does not ask the pinentry to
 timeout, however a Pinentry may use its own default timeout value in
 this case.  A Pinentry may or may not honor this request.
+
+@item --pinentry-formatted-passphrase
+@opindex pinentry-formatted-passphrase
+This option asks the Pinentry to enable passphrase formatting when asking the
+user for a new passphrase and masking of the passphrase is turned off.
+
+If passphrase formatting is enabled, then all non-breaking space characters
+are stripped from the entered passphrase.  Passphrase formatting is mostly
+useful in combination with passphrases generated with the GENPIN
+feature of some Pinentries.  Note that such a generated
+passphrase, if not modified by the user, skips all passphrase
+constraints checking because such constraints would actually weaken
+the generated passphrase.
 
 @item --pinentry-program @var{filename}
 @opindex pinentry-program
@@ -766,7 +809,9 @@ that this file can't be changed inadvertently.
 
 As a special feature a line @code{include-default} will include a global
 list of trusted certificates (e.g. @file{@value{SYSCONFDIR}/trustlist.txt}).
-This global list is also used if the local list is not available.
+This global list is also used if the local list is not available;
+the @ref{option --no-user-trustlist} enforces the use of only
+this global list.
 
 It is possible to add further flags after the @code{S} for use by the
 caller:

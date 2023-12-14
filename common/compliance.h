@@ -73,6 +73,7 @@ int gnupg_digest_is_allowed (enum gnupg_compliance_mode compliance,
                              int producer,
                              digest_algo_t digest);
 int gnupg_rng_is_compliant (enum gnupg_compliance_mode compliance);
+int gnupg_gcrypt_is_compliant (enum gnupg_compliance_mode compliance);
 
 const char *gnupg_status_compliance_flag (enum gnupg_compliance_mode
                                           compliance);
@@ -89,6 +90,8 @@ int gnupg_parse_compliance_option (const char *string,
                                    int quiet);
 const char *gnupg_compliance_option_string (enum gnupg_compliance_mode
                                             compliance);
+
+void gnupg_set_compliance_extra_info (unsigned int min_rsa);
 
 
 #endif /*GNUPG_COMMON_COMPLIANCE_H*/

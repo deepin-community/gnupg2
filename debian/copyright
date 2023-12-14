@@ -70,7 +70,7 @@ Copyright: 2000, Dimitrios Souflis
 License: TinySCHEME
 
 Files: debian/*
-Copyright: 1998-2020 Debian GnuPG packagers, including
+Copyright: 1998-2022 Debian GnuPG packagers, including
  Eric Dorland <eric@debian.org>
  Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  NIIBE Yutaka <gniibe@fsij.org>

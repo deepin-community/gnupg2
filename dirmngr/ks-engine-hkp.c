@@ -726,7 +726,8 @@ mark_host_dead (const char *name)
   parsed_uri_t parsed_uri = NULL;
   int done = 0;
 
-  if (name && *name && !http_parse_uri (&parsed_uri, name, 1))
+  if (name && *name
+      && !http_parse_uri (&parsed_uri, name, HTTP_PARSE_NO_SCHEME_CHECK))
     {
       if (parsed_uri->v6lit)
         {
@@ -1439,6 +1440,7 @@ ks_hkp_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
   gpg_error_t err;
   KEYDB_SEARCH_DESC desc;
   char fprbuf[2+40+1];
+  char *namebuffer = NULL;
   char *hostport = NULL;
   char *request = NULL;
   estream_t fp = NULL;
@@ -1462,9 +1464,25 @@ ks_hkp_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
     {
     case KEYDB_SEARCH_MODE_EXACT:
     case KEYDB_SEARCH_MODE_SUBSTR:
-    case KEYDB_SEARCH_MODE_MAIL:
     case KEYDB_SEARCH_MODE_MAILSUB:
       pattern = desc.u.name;
+      break;
+    case KEYDB_SEARCH_MODE_MAIL:
+      namebuffer = xtrystrdup (desc.u.name);
+      if (!namebuffer)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+      /* Strip trailing angle bracket.  */
+      if (namebuffer[0] && namebuffer[1]
+          && namebuffer[strlen (namebuffer)-1] == '>')
+        namebuffer[strlen(namebuffer)-1] = 0;
+      /* Strip optional leading angle bracket.  */
+      if (*namebuffer == '<' && namebuffer[1])
+        pattern = namebuffer + 1;
+      else
+        pattern = namebuffer;
       break;
     case KEYDB_SEARCH_MODE_SHORT_KID:
       snprintf (fprbuf, sizeof fprbuf, "0x%08lX", (ulong)desc.u.kid[1]);
@@ -1515,7 +1533,7 @@ ks_hkp_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 
     xfree (request);
     request = strconcat (hostport,
-                         "/pks/lookup?op=index&options=mr&search=",
+                         "/pks/lookup?op=index&options=mr&fingerprint=on&search=",
                          searchkey,
                          NULL);
     xfree (searchkey);
@@ -1576,6 +1594,7 @@ ks_hkp_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
   xfree (request);
   xfree (hostport);
   xfree (httphost);
+  xfree (namebuffer);
   return err;
 }
 
@@ -1591,6 +1610,7 @@ ks_hkp_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec, estream_t *r_fp)
   KEYDB_SEARCH_DESC desc;
   char kidbuf[2+40+1];
   const char *exactname = NULL;
+  char *namebuffer = NULL;
   char *searchkey = NULL;
   char *hostport = NULL;
   char *request = NULL;
@@ -1630,6 +1650,24 @@ ks_hkp_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec, estream_t *r_fp)
 
     case KEYDB_SEARCH_MODE_EXACT:
       exactname = desc.u.name;
+      break;
+
+    case KEYDB_SEARCH_MODE_MAIL:
+      namebuffer = xtrystrdup (desc.u.name);
+      if (!namebuffer)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+      /* Strip trailing angle bracket.  */
+      if (namebuffer[0] && namebuffer[1]
+          && namebuffer[strlen (namebuffer)-1] == '>')
+        namebuffer[strlen(namebuffer)-1] = 0;
+      /* Strip optional leading angle bracket.  */
+      if (*namebuffer == '<' && namebuffer[1])
+        exactname = namebuffer + 1;
+      else
+        exactname = namebuffer;
       break;
 
     case KEYDB_SEARCH_MODE_FPR16:
@@ -1696,6 +1734,7 @@ ks_hkp_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec, estream_t *r_fp)
 
  leave:
   es_fclose (fp);
+  xfree (namebuffer);
   xfree (request);
   xfree (hostport);
   xfree (httphost);

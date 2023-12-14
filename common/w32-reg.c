@@ -54,17 +54,17 @@ get_root_key(const char *root)
 
   if (!root)
     root_key = HKEY_CURRENT_USER;
-  else if (!strcmp( root, "HKEY_CLASSES_ROOT" ) )
+  else if (!strcmp (root, "HKEY_CLASSES_ROOT") || !strcmp (root, "HKCR"))
     root_key = HKEY_CLASSES_ROOT;
-  else if (!strcmp( root, "HKEY_CURRENT_USER" ) )
+  else if (!strcmp (root, "HKEY_CURRENT_USER") || !strcmp (root, "HKCU"))
     root_key = HKEY_CURRENT_USER;
-  else if (!strcmp( root, "HKEY_LOCAL_MACHINE" ) )
+  else if (!strcmp (root, "HKEY_LOCAL_MACHINE") || !strcmp (root, "HKLM"))
     root_key = HKEY_LOCAL_MACHINE;
-  else if (!strcmp( root, "HKEY_USERS" ) )
+  else if (!strcmp (root, "HKEY_USERS") || !strcmp (root, "HKU"))
     root_key = HKEY_USERS;
-  else if (!strcmp( root, "HKEY_PERFORMANCE_DATA" ) )
+  else if (!strcmp (root, "HKEY_PERFORMANCE_DATA"))
     root_key = HKEY_PERFORMANCE_DATA;
-  else if (!strcmp( root, "HKEY_CURRENT_CONFIG" ) )
+  else if (!strcmp (root, "HKEY_CURRENT_CONFIG") || !strcmp (root, "HKCC"))
     root_key = HKEY_CURRENT_CONFIG;
   else
     return NULL;
@@ -160,8 +160,18 @@ read_w32_registry_string (const char *root, const char *dir, const char *name)
     }
 
   nbytes = 1;
-  if (RegQueryValueEx( key_handle, name, 0, NULL, NULL, &nbytes ) )
-    goto leave;
+  if (RegQueryValueEx (key_handle, name, 0, NULL, NULL, &nbytes))
+    {
+      if (root)
+        goto leave;
+      /* Try to fallback to HKLM also for a missing value.  */
+      RegCloseKey (key_handle);
+      if (RegOpenKeyEx (HKEY_LOCAL_MACHINE, dir, 0, KEY_READ, &key_handle))
+        return NULL; /* Nope.  */
+      if (RegQueryValueEx (key_handle, name, 0, NULL, NULL, &nbytes))
+        goto leave;
+    }
+
   result = xtrymalloc ((n1=nbytes+1));
   if (!result)
     goto leave;
@@ -219,11 +229,86 @@ read_w32_registry_string (const char *root, const char *dir, const char *name)
           xfree (tmp);
         }
     }
+  else if (type == REG_DWORD && nbytes == sizeof (DWORD))
+    {
+      char *tmp;
+      DWORD dummy;
+
+      memcpy (&dummy, result, nbytes);
+      tmp = xtryasprintf ("%u", (unsigned int)dummy);
+      if (tmp)
+        {
+          xfree (result);
+          result = tmp;
+        }
+    }
 
  leave:
   RegCloseKey (key_handle);
   return result;
 #endif /*!HAVE_W32CE_SYSTEM*/
+}
+
+/* Compact version of read_w32_registry_string.  This version expects
+ * a single string as key described here using an example:
+ *
+ *    HKCU\Software\GNU\GnuPG:HomeDir
+ *
+ * HKCU := the class, other supported classes are HKLM, HKCR, HKU, and
+ *         HKCC.  If no class is given and the string thus starts with
+ *         a backslash HKCU with a fallback to HKLM is used.
+ * Software\GNU\GnuPG := The actual key.
+ * HomeDir := the name of the item.  The name is optional to use the default
+ *            value.
+ *
+ * Note that the first backslash and the first colon act as delimiters.
+ *
+ * Returns a malloced string or NULL if not found.  If R_HKLM_FALLBACK
+ * is not NULL, no class was given, and the result came from HKLM,
+ * true is stored there.
+ */
+char *
+read_w32_reg_string (const char *key_arg, int *r_hklm_fallback)
+{
+  char *key;
+  char *p1, *p2;
+  char *result, *result2;
+
+  if (r_hklm_fallback)
+    *r_hklm_fallback = 0;
+
+  if (!key_arg)
+    return NULL;
+  key = xtrystrdup (key_arg);
+  if (!key)
+    {
+      log_info ("warning: malloc failed while reading registry key\n");
+      return NULL;
+    }
+
+  p1 = strchr (key, '\\');
+  if (!p1)
+    {
+      xfree (key);
+      return NULL;
+    }
+  *p1++ = 0;
+  p2 = strchr (p1, ':');
+  if (p2)
+    *p2++ = 0;
+
+  result = read_w32_registry_string (*key? key : NULL, p1, p2);
+  if (result && !*key && r_hklm_fallback)
+    {
+      /* No key given - see whether the result came from HKCU or HKLM.  */
+      result2 = read_w32_registry_string ("HKCU", p1, p2);
+      if (result2)
+        xfree (result2);
+      else
+        *r_hklm_fallback = 1;
+    }
+  xfree (key);
+  return result;
 }
 
 

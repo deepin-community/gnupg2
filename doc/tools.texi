@@ -19,8 +19,8 @@ GnuPG comes with a couple of smaller tools:
 * gpg-connect-agent::     Communicate with a running agent.
 * dirmngr-client::        How to use the Dirmngr client tool.
 * gpgparsemail::          Parse a mail message into an annotated format
-* symcryptrun::           Call a simple symmetric encryption tool.
 * gpgtar::                Encrypt or sign files into an archive.
+* gpg-check-pattern::     Check a passphrase on stdin against the patternfile.
 @end menu
 
 @c
@@ -298,8 +298,11 @@ shall go into the respective configuration file.
 @item --apply-defaults
 Update all configuration files with values taken from the global
 configuration file (usually @file{/etc/gnupg/gpgconf.conf}).
+Note: This is a legacy mechanism.  Please use global configuraion
+files instead.
 
 @item --list-dirs [@var{names}]
+@itemx -L
 Lists the directories used by @command{gpgconf}.  One directory is
 listed per line, and each line consists of a colon-separated list where
 the first field names the directory type (for example @code{sysconfdir})
@@ -333,8 +336,8 @@ force an update of that file this command can be used:
        gpg-connect-agent --dirmngr 'loadswdb --force' /bye
 @end example
 
-
 @item --reload [@var{component}]
+@itemx -R
 @opindex reload
 Reload all or the given component. This is basically the same as
 sending a SIGHUP to the component.  Components which don't support
@@ -351,6 +354,7 @@ may use this command to ensure that they are started.  Using "all" for
 @var{component} launches all components which are daemons.
 
 @item --kill [@var{component}]
+@itemx -K
 @opindex kill
 Kill the given component that runs as a daemon, including
 @command{gpg-agent}, @command{dirmngr}, and @command{scdaemon}.  A
@@ -692,6 +696,10 @@ all options (and the groups they belong to) in the component
 the field @var{name} in the output of the @code{--list-components}
 command.
 
+Take care if system-wide options are used: gpgconf may not be able to
+properly show the options and the listed options may have no actual
+effect in case the system-wide options enforced their own settings.
+
 There is one line for each option and each group.  First come all
 options that are not in any group.  Then comes a line describing a
 group.  Then come all options that belong into each group.  Then comes
@@ -946,8 +954,12 @@ effect.
 @node Listing global options
 @subsection Listing global options
 
-Sometimes it is useful for applications to look at the global options
-file @file{gpgconf.conf}.
+Some legacy applications look at the global configuration file for the
+gpgconf tool itself; this is the file @file{gpgconf.conf}.  Modern
+applications should not use it but use per component global
+configuration files which are more flexible than the
+@file{gpgconf.conf}.  Using both files is not suggested.
+
 The colon separated listing format is record oriented and uses the first
 field to identify the record type:
 
@@ -1088,8 +1100,10 @@ More fields may be added in future to the output.
 @item /etc/gnupg/gpgconf.conf
 @cindex gpgconf.conf
   If this file exists, it is processed as a global configuration file.
-  A commented example can be found in the @file{examples} directory of
-  the distribution.
+  This is a legacy mechanism which should not be used tigether with
+  the modern global per component configuration files.  A commented
+  example can be found in the @file{examples} directory of the
+  distribution.
 
 @item @var{GNUPGHOME}/swdb.lst
 @cindex swdb.lst
@@ -1128,6 +1142,9 @@ More fields may be added in future to the output.
 @end ifset
 
 @mansect description
+This is a legacy script.  Modern application should use the per
+component global configuration files under @file{/etc/gnupg/}.
+
 This script is a wrapper around @command{gpgconf} to run it with the
 command @code{--apply-defaults} for all real users with an existing
 GnuPG home directory.  Admins might want to use this script to update he
@@ -1784,127 +1801,6 @@ debugging.  Run it with @code{--help} for usage information.
 
 
 @c
-@c   SYMCRYPTRUN
-@c
-@node symcryptrun
-@section Call a simple symmetric encryption tool
-@manpage symcryptrun.1
-@ifset manverb
-.B symcryptrun
-\- Call a simple symmetric encryption tool
-@end ifset
-
-@mansect synopsis
-@ifset manverb
-.B  symcryptrun
-.B \-\-class
-.I class
-.B \-\-program
-.I program
-.B \-\-keyfile
-.I keyfile
-.RB [ --decrypt | --encrypt ]
-.RI [ inputfile ]
-@end ifset
-
-@mansect description
-Sometimes simple encryption tools are already in use for a long time
-and there might be a desire to integrate them into the GnuPG
-framework.  The protocols and encryption methods might be non-standard
-or not even properly documented, so that a full-fledged encryption
-tool with an interface like @command{gpg} is not doable.
-@command{symcryptrun} provides a solution: It operates by calling the
-external encryption/decryption module and provides a passphrase for a
-key using the standard @command{pinentry} based mechanism through
-@command{gpg-agent}.
-
-Note, that @command{symcryptrun} is only available if GnuPG has been
-configured with @samp{--enable-symcryptrun} at build time.
-
-@menu
-* Invoking symcryptrun::   List of all commands and options.
-@end menu
-
-@manpause
-@node Invoking symcryptrun
-@subsection List of all commands and options
-
-@noindent
-@command{symcryptrun} is invoked this way:
-
-@example
-symcryptrun --class CLASS --program PROGRAM --keyfile KEYFILE
-   [--decrypt | --encrypt] [inputfile]
-@end example
-@mancont
-
-For encryption, the plain text must be provided on STDIN or as the
-argument @var{inputfile}, and the ciphertext will be output to STDOUT.
-For decryption vice versa.
-
-@var{CLASS} describes the calling conventions of the external tool.
-Currently it must be given as @samp{confucius}.  @var{PROGRAM} is
-the full filename of that external tool.
-
-For the class @samp{confucius} the option @option{--keyfile} is
-required; @var{keyfile} is the name of a file containing the secret key,
-which may be protected by a passphrase.  For detailed calling
-conventions, see the source code.
-
-@noindent
-Note, that @command{gpg-agent} must be running before starting
-@command{symcryptrun}.
-
-@noindent
-The following additional options may be used:
-
-@table @gnupgtabopt
-@item -v
-@itemx --verbose
-@opindex verbose
-Output additional information while running.
-
-@item -q
-@item --quiet
-@opindex q
-@opindex quiet
-Try to be as quiet as possible.
-
-@include opt-homedir.texi
-
-
-@item --log-file @var{file}
-@opindex log-file
-Append all logging output to @var{file}.  Use @file{socket://} to log
-to socket.  Default is to write logging information to STDERR.
-
-@end table
-
-@noindent
-The possible exit status codes of @command{symcryptrun} are:
-
-@table @code
-@item 0
-        Success.
-@item 1
-        Some error occurred.
-@item 2
-        No valid passphrase was provided.
-@item 3
-        The operation was canceled by the user.
-
-@end table
-
-@mansect see also
-@ifset isman
-@command{gpg}(1),
-@command{gpgsm}(1),
-@command{gpg-agent}(1),
-@end ifset
-@include see-also-note.texi
-
-
-@c
 @c  GPGTAR
 @c
 @manpage gpgtar.1
@@ -2050,6 +1946,36 @@ This option is reserved and shall not be used.  It will eventually be
 used to encrypt or sign using the CMS protocol; but that is not yet
 implemented.
 
+@item --batch
+@opindex batch
+Use batch mode.  Never ask but use the default action.  This option is
+passed directly to @command{gpg}.
+
+@item --yes
+@opindex yes
+Assume "yes" on most questions.  Often used together with
+@option{--batch} to overwrite existing files.  This option is passed
+directly to @command{gpg}.
+
+@item --no
+@opindex no
+Assume "no" on most questions.  This option is passed directly to
+@command{gpg}.
+
+@item --require-compliance
+@opindex require-compliance
+This option is passed directly to @command{gpg}.
+
+@item --status-fd @var{n}
+@opindex status-fd
+Write special status strings to the file descriptor @var{n}.
+See the file DETAILS in the documentation for a listing of them.
+
+@item --with-log
+@opindex with-log
+When extracting an encrypted tarball also write a log file with the
+gpg output to a file named after the extraction directory with the
+suffix ".log".
 
 @item --set-filename @var{file}
 @opindex set-filename
@@ -2114,5 +2040,97 @@ gpgtar --list-archive test1
 @ifset isman
 @command{gpg}(1),
 @command{tar}(1),
+@end ifset
+@include see-also-note.texi
+
+@c
+@c  GPG-CHECK-PATTERN
+@c
+@manpage gpg-check-pattern.1
+@node gpg-check-pattern
+@section Check a passphrase on stdin against the patternfile
+@ifset manverb
+.B gpg-check-pattern
+\- Check a passphrase on stdin against the patternfile
+@end ifset
+
+@mansect synopsis
+@ifset manverb
+.B gpg\-check\-pattern
+.RI [ options ]
+.I patternfile
+@end ifset
+
+@mansect description
+@command{gpg-check-pattern} checks a passphrase given on stdin against
+a specified pattern file.
+
+The pattern file is line based with comment lines beginning on the
+@emph{first} position with a @code{#}.  Empty lines and lines with
+only white spaces are ignored.  The actual pattern lines may either be
+verbatim string pattern and match as they are (trailing spaces are
+ignored) or extended regular expressions indicated by a @code{/} or
+@code{!/} in the first column and terminated by another @code{/} or
+end of line.  If a regular expression starts with @code{!/} the match
+result is reversed. By default all comparisons are case insensitive.
+
+Tag lines may be used to further control the operation of this tool.
+The currently defined tags are:
+
+@table @code
+@item [icase]
+Switch to case insensitive comparison for all further patterns.  This
+is the default.
+
+@item [case]
+Switch to case sensitive comparison for all further patterns.
+
+@item [reject]
+Switch to reject mode.  This is the default mode.
+
+@item [accept]
+Switch to accept mode.
+@end table
+
+In the future more tags may be introduced and thus it is advisable not to
+start a plain pattern string with an open bracket.  The tags must be
+given verbatim on the line with no spaces to the left or any non white
+space characters to the right.
+
+In reject mode the program exits on the first match with an exit code
+of 1 (failure).  If at the end of the pattern list the reject mode is
+still active the program exits with code 0 (success).
+
+In accept mode blocks of patterns are used.  A block starts at the
+next pattern after an "accept" tag and ends with the last pattern
+before the next "accept" or "reject" tag or at the end of the pattern
+list.  If all patterns in a block match the program exits with an exit
+code of 0 (success).  If any pattern in a block do not match the next
+pattern block is evaluated.  If at the end of the pattern list the
+accept mode is still active the program exits with code 1 (failure).
+
+
+@mansect options
+@noindent
+
+@table @gnupgtabopt
+
+@item --verbose
+@opindex verbose
+Enable extra informational output.
+
+@item --check
+@opindex check
+Run only a syntax check on the patternfile.
+
+@item --null
+@opindex null
+Input is expected to be null delimited.
+
+@end table
+
+@mansect see also
+@ifset isman
+@command{gpg-agent}(1),
 @end ifset
 @include see-also-note.texi

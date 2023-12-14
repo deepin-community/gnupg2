@@ -1479,8 +1479,16 @@ select_algo_from_prefs(PK_LIST pk_list, int preftype,
 	     --pgp2 mode is on.  This was a 2440 thing that was
 	     dropped from 4880 but is still relevant to GPG's 1991
 	     support.  All this doesn't mean IDEA is actually
-	     available, of course. */
-          implicit=CIPHER_ALGO_3DES;
+	     available, of course.
+
+             Because "de-vs" compliance will soon not anymore allow
+             3DES it does not make sense to assign 3DES as implicit
+             algorithm.  Instead it is better to use AES-128 as
+             implicit algorithm here.   */
+          if (opt.compliance == CO_DE_VS)
+            implicit = CIPHER_ALGO_AES;
+          else
+            implicit=CIPHER_ALGO_3DES;
 
 	  break;
 
@@ -1490,9 +1498,17 @@ select_algo_from_prefs(PK_LIST pk_list, int preftype,
 	     code will never even be called.  Even if the hash wasn't
 	     locked at MD5, we don't support sign+encrypt in --pgp2
 	     mode, and that's the only time PREFTYPE_HASH is used
-	     anyway. -dms */
+	     anyway. -dms
 
-          implicit=DIGEST_ALGO_SHA1;
+             Because "de-vs" compliance does not allow SHA-1 it does
+             not make sense to assign SHA-1 as implicit algorithm.
+             Instead it is better to use SHA-256 as implicit algorithm
+             (which will be the case for rfc4880bis anyway).  */
+
+          if (opt.compliance == CO_DE_VS)
+            implicit = DIGEST_ALGO_SHA256;
+          else
+            implicit = DIGEST_ALGO_SHA1;
 
 	  break;
 

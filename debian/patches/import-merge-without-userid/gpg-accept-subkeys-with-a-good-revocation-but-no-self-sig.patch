@@ -19,10 +19,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  1 file changed, 1 insertion(+)
 
 diff --git a/g10/import.c b/g10/import.c
-index 79104dc..20f4af5 100644
+index 078a78c..c070399 100644
 --- a/g10/import.c
 +++ b/g10/import.c
-@@ -3665,6 +3665,7 @@ chk_self_sigs (ctrl_t ctrl, kbnode_t keyblock, u32 *keyid, int *non_self)
+@@ -3677,6 +3677,7 @@ chk_self_sigs (ctrl_t ctrl, kbnode_t keyblock, u32 *keyid, int *non_self)
                    /* It's valid, so is it newer? */
                    if (sig->timestamp >= rsdate)
                      {

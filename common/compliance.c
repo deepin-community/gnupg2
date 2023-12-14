@@ -40,6 +40,42 @@
 static int initialized;
 static int module;
 
+/* This value is used by DSA and RSA checks in addition to the hard
+ * coded length checks.  It allows to increase the required key length
+ * using a confue file.  */
+static unsigned int min_compliant_rsa_length;
+
+/* Return the address of a compliance cache variable for COMPLIANCE.
+ * If no such variable exists NULL is returned.  FOR_RNG returns the
+ * cache variable for the RNG compliance check. */
+static int *
+get_compliance_cache (enum gnupg_compliance_mode compliance, int for_rng)
+{
+  static int r_gnupg   = -1, s_gnupg   = -1;
+  static int r_rfc4880 = -1, s_rfc4880 = -1;
+  static int r_rfc2440 = -1, s_rfc2440 = -1;
+  static int r_pgp6    = -1, s_pgp6    = -1;
+  static int r_pgp7    = -1, s_pgp7    = -1;
+  static int r_pgp8    = -1, s_pgp8    = -1;
+  static int r_de_vs   = -1, s_de_vs   = -1;
+
+  int *ptr = NULL;
+
+  switch (compliance)
+    {
+    case CO_GNUPG:   ptr = for_rng? &r_gnupg   : &s_gnupg  ; break;
+    case CO_RFC4880: ptr = for_rng? &r_rfc4880 : &s_rfc4880; break;
+    case CO_RFC2440: ptr = for_rng? &r_rfc2440 : &s_rfc2440; break;
+    case CO_PGP6:    ptr = for_rng? &r_pgp6    : &s_pgp6   ; break;
+    case CO_PGP7:    ptr = for_rng? &r_pgp7    : &s_pgp7   ; break;
+    case CO_PGP8:    ptr = for_rng? &r_pgp8    : &s_pgp8   ; break;
+    case CO_DE_VS:   ptr = for_rng? &r_de_vs   : &s_de_vs  ; break;
+    }
+
+  return ptr;
+}
+
+
 /* Initializes the module.  Must be called with the current
  * GNUPG_MODULE_NAME.  Checks a few invariants, and tunes the policies
  * for the given module.  */
@@ -146,9 +182,10 @@ gnupg_pk_is_compliant (enum gnupg_compliance_mode compliance, int algo,
           break;
 
         case is_rsa:
-          result = (keylength == 2048
-                    || keylength == 3072
-                    || keylength == 4096);
+          result = ((keylength == 2048
+                     || keylength == 3072
+                     || keylength == 4096)
+                    && keylength >= min_compliant_rsa_length);
           /* Although rsaPSS was not part of the original evaluation
            * we got word that we can claim compliance.  */
           (void)algo_flags;
@@ -160,7 +197,8 @@ gnupg_pk_is_compliant (enum gnupg_compliance_mode compliance, int algo,
 	      size_t P = gcry_mpi_get_nbits (key[0]);
 	      size_t Q = gcry_mpi_get_nbits (key[1]);
 	      result = (Q == 256
-			&& (P == 2048 || P == 3072));
+			&& (P == 2048 || P == 3072)
+                        && P >= min_compliant_rsa_length);
 	    }
 	  break;
 
@@ -226,9 +264,10 @@ gnupg_pk_is_allowed (enum gnupg_compliance_mode compliance,
               break;
 	    case PK_USE_ENCRYPTION:
 	    case PK_USE_SIGNING:
-	      result = (keylength == 2048
-                        || keylength == 3072
-                        || keylength == 4096);
+	      result = ((keylength == 2048
+                         || keylength == 3072
+                         || keylength == 4096)
+                        && keylength >= min_compliant_rsa_length);
               break;
 	    default:
 	      log_assert (!"reached");
@@ -243,7 +282,9 @@ gnupg_pk_is_allowed (enum gnupg_compliance_mode compliance,
 	    {
 	      size_t P = gcry_mpi_get_nbits (key[0]);
 	      size_t Q = gcry_mpi_get_nbits (key[1]);
-	      result = (Q == 256 && (P == 2048 || P == 3072));
+	      result = (Q == 256
+                        && (P == 2048 || P == 3072)
+                        && keylength >= min_compliant_rsa_length);
             }
           break;
 
@@ -386,7 +427,8 @@ gnupg_cipher_is_allowed (enum gnupg_compliance_mode compliance, int producer,
                       || mode == GCRY_CIPHER_MODE_CFB);
 	    case GNUPG_MODULE_NAME_GPGSM:
 	      return (mode == GCRY_CIPHER_MODE_NONE
-                      || mode == GCRY_CIPHER_MODE_CBC);
+                      || mode == GCRY_CIPHER_MODE_CBC
+                      || (mode == GCRY_CIPHER_MODE_GCM && !producer));
 	    }
 	  log_assert (!"reached");
 
@@ -490,34 +532,94 @@ gnupg_digest_is_allowed (enum gnupg_compliance_mode compliance, int producer,
 int
 gnupg_rng_is_compliant (enum gnupg_compliance_mode compliance)
 {
-  static int result = -1;
+  int *result;
+  int res;
 
-  if (result != -1)
-    ; /* Use cached result.  */
+  result = get_compliance_cache (compliance, 1);
+
+  if (result && *result != -1)
+    res = *result; /* Use cached result.  */
   else if (compliance == CO_DE_VS)
     {
-      /* In DE_VS mode under Windows we require that the JENT RNG
-       * is active.  */
-#ifdef HAVE_W32_SYSTEM
-      char *buf;
-      char *fields[5];
+      /* We also check whether the library is at all compliant.  */
+      res = gnupg_gcrypt_is_compliant (compliance);
 
-      buf = gcry_get_config (0, "rng-type");
-      if (buf
-          && split_fields_colon (buf, fields, DIM (fields)) >= 5
-          && atoi (fields[4]) > 0)
-        result = 1;
-      else
-        result = 0;
-      gcry_free (buf);
-#else /*!HAVE_W32_SYSTEM*/
-      result = 1;  /* Not Windows - RNG is good.  */
-#endif /*!HAVE_W32_SYSTEM*/
+      /* In DE_VS mode under Windows we also require that the JENT RNG
+       * is active.  Check it here. */
+#ifdef HAVE_W32_SYSTEM
+      if (res == 1)
+        {
+          char *buf;
+          char *fields[5];
+
+          buf = gcry_get_config (0, "rng-type");
+          if (buf
+              && split_fields_colon (buf, fields, DIM (fields)) >= 5
+              && atoi (fields[4]) > 0)
+            ; /* Field 5 > 0 := Jent is active.  */
+          else
+            result = 0;  /* Force non-compliance.  */
+          gcry_free (buf);
+        }
+#endif /*HAVE_W32_SYSTEM*/
     }
   else
-    result = 1;
+    res = 1;
 
-  return result;
+  if (result)
+    *result = res;
+
+  return res;
+}
+
+
+/* Return true if the used Libgcrypt is compliant in COMPLIANCE
+ * mode.  */
+int
+gnupg_gcrypt_is_compliant (enum gnupg_compliance_mode compliance)
+{
+  int *result;
+  int res;
+
+  result = get_compliance_cache (compliance, 0);
+
+  if (result && *result != -1)
+    res = *result; /* Use cached result.  */
+  else if (compliance == CO_DE_VS)
+    {
+      int is19orlater = !!gcry_check_version ("1.9.0");
+
+      /* A compliant version of GnuPG requires Libgcrypt >= 1.8.1 and
+       * less than 1.9.0.  Version 1.9.0 requires a re-evaluation and
+       * can thus not be used for de-vs.  */
+      if (gcry_check_version ("1.8.1") && !is19orlater)
+        res = 1;  /* Compliant version of Libgcrypt.  */
+      else if (is19orlater)
+        {
+          /* Libgcrypt might be nice enough to tell us whether it is
+           * compliant.  */
+          char *buf;
+          char *fields[3];
+
+          buf = gcry_get_config (0, "compliance");
+          if (buf
+              && split_fields_colon (buf, fields, DIM (fields)) >= 2
+              && strstr (fields[1], "de-vs"))
+            res = 1;  /* Compliant.  */
+          else
+            res = 0;  /* Non-compliant.  */
+          gcry_free (buf);
+        }
+      else
+        res = 0;  /* Non-compliant version of Libgcrypt.  */
+    }
+  else
+    res = 1;
+
+  if (result)
+    *result = res;
+
+  return res;
 }
 
 
@@ -589,4 +691,12 @@ gnupg_compliance_option_string (enum gnupg_compliance_mode compliance)
     }
 
   log_assert (!"invalid compliance mode");
+}
+
+
+/* Set additional infos for example taken from config files at startup.  */
+void
+gnupg_set_compliance_extra_info (unsigned int min_rsa)
+{
+  min_compliant_rsa_length = min_rsa;
 }

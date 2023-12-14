@@ -946,6 +946,8 @@ convert_from_openpgp_main (ctrl_t ctrl, gcry_sexp_t s_pgp, int dontcare_exist,
       if (!is_protected)
         {
           err = try_do_unprotect_cb (pi);
+          if (gpg_err_code (err) == GPG_ERR_BAD_PASSPHRASE)
+            err = gpg_error (GPG_ERR_BAD_SECKEY);
         }
       else if (cache_nonce)
         {
@@ -1067,7 +1069,8 @@ convert_from_openpgp_native (ctrl_t ctrl,
           if (!agent_protect (*r_key, passphrase,
                               &protectedkey, &protectedkeylen,
                               ctrl->s2k_count, -1))
-            agent_write_private_key (grip, protectedkey, protectedkeylen, 1, 0);
+            agent_write_private_key (grip, protectedkey, protectedkeylen,
+                                     1, 0, NULL, NULL, NULL);
           xfree (protectedkey);
         }
       else
@@ -1076,7 +1079,7 @@ convert_from_openpgp_native (ctrl_t ctrl,
           agent_write_private_key (grip,
                                    *r_key,
                                    gcry_sexp_canon_len (*r_key, 0, NULL,NULL),
-                                   1, 0);
+                                   1, 0, NULL, NULL, NULL);
         }
     }
 

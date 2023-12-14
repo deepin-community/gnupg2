@@ -36,6 +36,7 @@
 #include "../common/sysutils.h" /* (gnupg_fd_t) */
 #include "../common/session-env.h"
 #include "../common/shareddefs.h"
+#include "../common/name-value.h"
 
 /* To convey some special hash algorithms we use algorithm numbers
    reserved for application use. */
@@ -99,6 +100,9 @@ struct
      upon this timeout value.  */
   unsigned long pinentry_timeout;
 
+  /* If set, then passphrase formatting is enabled in pinentry.  */
+  int pinentry_formatted_passphrase;
+
   /* The default and maximum TTL of cache entries. */
   unsigned long def_cache_ttl;     /* Default. */
   unsigned long def_cache_ttl_ssh; /* for SSH. */
@@ -114,8 +118,11 @@ struct
   /* The minimum number of non-alpha characters in a passphrase.  */
   unsigned int min_passphrase_nonalpha;
 
-  /* File name with a patternfile or NULL if not enabled.  */
+  /* File name with a patternfile or NULL if not enabled.  If the
+   * second one is set, it is used for symmetric only encryption
+   * instead of the former. */
   const char *check_passphrase_pattern;
+  const char *check_sym_passphrase_pattern;
 
   /* If not 0 the user is asked to change his passphrase after these
      number of days.  */
@@ -141,6 +148,13 @@ struct
   /* If this global option is true, the user is allowed to
      interactively mark certificate in trustlist.txt as trusted. */
   int allow_mark_trusted;
+
+  /* Only use the system trustlist.  */
+  int no_user_trustlist;
+
+  /* The standard system trustlist is SYSCONFDIR/trustlist.txt.  This
+   * option can be used to change the name.  */
+  const char *sys_trustlist_name;
 
   /* If this global option is true, the Assuan command
      PRESET_PASSPHRASE is allowed.  */
@@ -275,7 +289,8 @@ enum
   {
     PINENTRY_STATUS_CLOSE_BUTTON = 1 << 0,
     PINENTRY_STATUS_PIN_REPEATED = 1 << 8,
-    PINENTRY_STATUS_PASSWORD_FROM_CACHE = 1 << 9
+    PINENTRY_STATUS_PASSWORD_FROM_CACHE = 1 << 9,
+    PINENTRY_STATUS_PASSWORD_GENERATED = 1 << 10
   };
 
 /* Information pertaining to pinentry requests.  */
@@ -284,6 +299,7 @@ struct pin_entry_info_s
   int min_digits; /* min. number of digits required or 0 for freeform entry */
   int max_digits; /* max. number of allowed digits allowed*/
   int max_tries;  /* max. number of allowed tries.  */
+  unsigned int constraints_flags;  /* CHECK_CONSTRAINTS_... */
   int failed_tries; /* Number of tries so far failed.  */
   int with_qualitybar; /* Set if the quality bar should be displayed.  */
   int with_repeat;  /* Request repetition of the passphrase.  */
@@ -414,7 +430,9 @@ gpg_error_t agent_modify_description (const char *in, const char *comment,
                                       const gcry_sexp_t key, char **result);
 int agent_write_private_key (const unsigned char *grip,
                              const void *buffer, size_t length, int force,
-                             time_t timestamp);
+                             time_t timestamp,
+                             const char *serialno, const char *keyref,
+                             const char *dispserialno);
 gpg_error_t agent_key_from_file (ctrl_t ctrl,
                                  const char *cache_nonce,
                                  const char *desc_text,
@@ -426,6 +444,8 @@ gpg_error_t agent_key_from_file (ctrl_t ctrl,
                                  char **r_passphrase);
 gpg_error_t agent_raw_key_from_file (ctrl_t ctrl, const unsigned char *grip,
                                      gcry_sexp_t *result);
+gpg_error_t agent_keymeta_from_file (ctrl_t ctrl, const unsigned char *grip,
+                                     nvc_t *r_keymeta);
 gpg_error_t agent_public_key_from_file (ctrl_t ctrl,
                                         const unsigned char *grip,
                                         gcry_sexp_t *result);
@@ -490,7 +510,11 @@ int agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
                      membuf_t *outbuf, int *r_padding);
 
 /*-- genkey.c --*/
-int check_passphrase_constraints (ctrl_t ctrl, const char *pw, int no_empty,
+#define CHECK_CONSTRAINTS_NOT_EMPTY  1
+#define CHECK_CONSTRAINTS_NEW_SYMKEY 2
+
+int check_passphrase_constraints (ctrl_t ctrl, const char *pw,
+                                  unsigned int flags,
 				  char **failed_constraint);
 gpg_error_t agent_ask_new_passphrase (ctrl_t ctrl, const char *prompt,
                                       char **r_passphrase);
@@ -528,9 +552,11 @@ gpg_error_t s2k_hash_passphrase (const char *passphrase, int hashalgo,
                                  const unsigned char *s2ksalt,
                                  unsigned int s2kcount,
                                  unsigned char *key, size_t keylen);
-gpg_error_t agent_write_shadow_key (const unsigned char *grip,
+gpg_error_t agent_write_shadow_key (int maybe_update,
+                                    const unsigned char *grip,
                                     const char *serialno, const char *keyid,
-                                    const unsigned char *pkbuf, int force);
+                                    const unsigned char *pkbuf, int force,
+                                    const char *dispserialno);
 
 
 /*-- trustlist.c --*/
