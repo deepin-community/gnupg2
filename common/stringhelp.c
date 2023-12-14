@@ -2,7 +2,7 @@
  * Copyright (C) 1998, 1999, 2000, 2001, 2003, 2004, 2005, 2006, 2007,
  *               2008, 2009, 2010  Free Software Foundation, Inc.
  * Copyright (C) 2014 Werner Koch
- * Copyright (C) 2015  g10 Code GmbH
+ * Copyright (C) 2015, 2021  g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -29,6 +29,7 @@
  * You should have received a copies of the GNU General Public License
  * and the GNU Lesser General Public License along with this program;
  * if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: (LGPL-3.0-or-later OR GPL-2.0-or-later)
  */
 
 #include <config.h>
@@ -48,7 +49,6 @@
 # endif
 # include <windows.h>
 #endif
-#include <assert.h>
 #include <limits.h>
 
 #include "util.h"
@@ -214,7 +214,7 @@ trim_spaces( char *str )
 }
 
 
-/* Same as trim_spaces but only condider, space, tab, cr and lf as space.  */
+/* Same as trim_spaces but only consider, space, tab, cr and lf as space.  */
 char *
 ascii_trim_spaces (char *str)
 {
@@ -1167,9 +1167,10 @@ try_percent_escape (const char *str, const char *extra)
 }
 
 
-
-static char *
-do_strconcat (const char *s1, va_list arg_ptr)
+/* Same as strconcat but takes a va_list.  Returns EINVAL if the list
+ * is too long, all other errors are due to an ENOMEM condition.  */
+char *
+vstrconcat (const char *s1, va_list arg_ptr)
 {
   const char *argv[48];
   size_t argc;
@@ -1214,7 +1215,7 @@ strconcat (const char *s1, ...)
   else
     {
       va_start (arg_ptr, s1);
-      result = do_strconcat (s1, arg_ptr);
+      result = vstrconcat (s1, arg_ptr);
       va_end (arg_ptr);
     }
   return result;
@@ -1233,7 +1234,7 @@ xstrconcat (const char *s1, ...)
   else
     {
       va_start (arg_ptr, s1);
-      result = do_strconcat (s1, arg_ptr);
+      result = vstrconcat (s1, arg_ptr);
       va_end (arg_ptr);
     }
   if (!result)
@@ -1291,8 +1292,8 @@ strsplit (char *string, char delim, char replacement, int *count)
  * Returns: A malloced and NULL delimited array with the tokens.  On
  *          memory error NULL is returned and ERRNO is set.
  */
-char **
-strtokenize (const char *string, const char *delim)
+static char **
+do_strtokenize (const char *string, const char *delim, int trim)
 {
   const char *s;
   size_t fields;
@@ -1331,22 +1332,49 @@ strtokenize (const char *string, const char *delim)
   for (n = 0, p = buffer; (pend = strpbrk (p, delim)); p = pend + 1)
     {
       *pend = 0;
-      while (spacep (p))
-        p++;
-      for (px = pend - 1; px >= p && spacep (px); px--)
-        *px = 0;
+      if (trim)
+        {
+          while (spacep (p))
+            p++;
+          for (px = pend - 1; px >= p && spacep (px); px--)
+            *px = 0;
+        }
       result[n++] = p;
     }
-  while (spacep (p))
-    p++;
-  for (px = p + strlen (p) - 1; px >= p && spacep (px); px--)
-    *px = 0;
+  if (trim)
+    {
+      while (spacep (p))
+        p++;
+      for (px = p + strlen (p) - 1; px >= p && spacep (px); px--)
+        *px = 0;
+    }
   result[n++] = p;
   result[n] = NULL;
 
-  assert ((char*)(result + n + 1) == buffer);
+  log_assert ((char*)(result + n + 1) == buffer);
 
   return result;
+}
+
+/* Tokenize STRING using the set of delimiters in DELIM.  Leading
+ * spaces and tabs are removed from all tokens.  The caller must xfree
+ * the result.
+ *
+ * Returns: A malloced and NULL delimited array with the tokens.  On
+ *          memory error NULL is returned and ERRNO is set.
+ */
+char **
+strtokenize (const char *string, const char *delim)
+{
+  return do_strtokenize (string, delim, 1);
+}
+
+/* Same as strtokenize but does not trim leading and trailing spaces
+ * from the fields.  */
+char **
+strtokenize_nt (const char *string, const char *delim)
+{
+  return do_strtokenize (string, delim, 0);
 }
 
 
@@ -1660,4 +1688,108 @@ format_text (const char *text_in, int target_cols, int max_cols)
     text[strlen (text) - 1] = '\0';
 
   return text;
+}
+
+
+/* Substitute environment variables in STRING and return a new string.
+ * On error the function returns NULL.  */
+char *
+substitute_envvars (const char *string)
+{
+  char *line, *p, *pend;
+  const char *value;
+  size_t valuelen, n;
+  char *result = NULL;
+
+  result = line = xtrystrdup (string);
+  if (!result)
+    return NULL; /* Ooops */
+
+  while (*line)
+    {
+      p = strchr (line, '$');
+      if (!p)
+        goto leave; /* No or no more variables.  */
+
+      if (p[1] == '$') /* Escaped dollar sign. */
+        {
+          memmove (p, p+1, strlen (p+1)+1);
+          line = p + 1;
+          continue;
+        }
+
+      if (p[1] == '{')
+        {
+          int count = 0;
+
+          for (pend=p+2; *pend; pend++)
+            {
+              if (*pend == '{')
+                count++;
+              else if (*pend == '}')
+                {
+                  if (--count < 0)
+                    break;
+                }
+            }
+          if (!*pend)
+            goto leave; /* Unclosed - don't substitute.  */
+        }
+      else
+        {
+          for (pend = p+1; *pend && (alnump (pend) || *pend == '_'); pend++)
+            ;
+        }
+
+      if (p[1] == '{' && *pend == '}')
+        {
+          int save = *pend;
+          *pend = 0;
+          value = getenv (p+2);
+          *pend++ = save;
+        }
+      else
+        {
+          int save = *pend;
+          *pend = 0;
+          value = getenv (p+1);
+          *pend = save;
+        }
+
+      if (!value)
+        value = "";
+      valuelen = strlen (value);
+      if (valuelen <= pend - p)
+        {
+          memcpy (p, value, valuelen);
+          p += valuelen;
+          n = pend - p;
+          if (n)
+            memmove (p, p+n, strlen (p+n)+1);
+          line = p;
+        }
+      else
+        {
+          char *src = result;
+          char *dst;
+
+          dst = xtrymalloc (strlen (src) + valuelen + 1);
+          if (!dst)
+            {
+              xfree (result);
+              return NULL;
+            }
+          n = p - src;
+          memcpy (dst, src, n);
+          memcpy (dst + n, value, valuelen);
+          n += valuelen;
+          strcpy (dst + n, pend);
+          line = dst + n;
+          xfree (result);
+          result = dst;
+        }
+    }
+
+ leave:
+  return result;
 }

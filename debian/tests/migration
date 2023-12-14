@@ -11,7 +11,9 @@ gpg1=(gpg1 --homedir "$GPG_HOME" --batch --quiet --with-colons)
 mkdir "$GPG_HOME"
 chmod 700 "$GPG_HOME"
 
-cat /usr/share/keyrings/debian-archive-*.gpg | "${gpg1[@]}" --import
+cat $(ls /usr/share/keyrings/debian-archive-*.gpg \
+	| grep -vE 'debian-archive-bookworm-stable.gpg|debian-archive-keyring.gpg') \
+	| "${gpg1[@]}" --import
 "${gpg1[@]}" --list-keys
 "${gpg[@]}" --list-keys > "$DIR/key.list.before"
 migrate-pubring-from-classic-gpg "$GPG_HOME"

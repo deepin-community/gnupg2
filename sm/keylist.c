@@ -251,8 +251,10 @@ print_capabilities (ksba_cert_t cert, estream_t fp)
 {
   gpg_error_t err;
   unsigned int use;
+  unsigned int is_encr, is_sign, is_cert;
   size_t buflen;
   char buffer[1];
+
 
   err = ksba_cert_get_user_data (cert, "is_qualified",
                                  &buffer, sizeof (buffer), &buflen);
@@ -285,17 +287,33 @@ print_capabilities (ksba_cert_t cert, estream_t fp)
       return;
     }
 
+  is_encr = is_sign = is_cert = 0;
+
   if ((use & (KSBA_KEYUSAGE_KEY_ENCIPHERMENT|KSBA_KEYUSAGE_DATA_ENCIPHERMENT)))
+    is_encr = 1;
+  if ((use & (KSBA_KEYUSAGE_DIGITAL_SIGNATURE|KSBA_KEYUSAGE_NON_REPUDIATION)))
+    is_sign = 1;
+  if ((use & KSBA_KEYUSAGE_KEY_CERT_SIGN))
+    is_cert = 1;
+
+  /* We need to returned the faked key usage to frontends so that they
+   * can select the right key.  Note that we don't do this for the
+   * human readable keyUsage.  */
+  if ((opt.compat_flags & COMPAT_ALLOW_KA_TO_ENCR)
+      && (use & KSBA_KEYUSAGE_KEY_AGREEMENT))
+    is_encr = 1;
+
+  if (is_encr)
     es_putc ('e', fp);
-  if ((use & (KSBA_KEYUSAGE_DIGITAL_SIGNATURE|KSBA_KEYUSAGE_NON_REPUDIATION)))
+  if (is_sign)
     es_putc ('s', fp);
-  if ((use & KSBA_KEYUSAGE_KEY_CERT_SIGN))
+  if (is_cert)
     es_putc ('c', fp);
-  if ((use & (KSBA_KEYUSAGE_KEY_ENCIPHERMENT|KSBA_KEYUSAGE_DATA_ENCIPHERMENT)))
+  if (is_encr)
     es_putc ('E', fp);
-  if ((use & (KSBA_KEYUSAGE_DIGITAL_SIGNATURE|KSBA_KEYUSAGE_NON_REPUDIATION)))
+  if (is_sign)
     es_putc ('S', fp);
-  if ((use & KSBA_KEYUSAGE_KEY_CERT_SIGN))
+  if (is_cert)
     es_putc ('C', fp);
 }
 
@@ -1363,6 +1381,7 @@ list_cert_chain (ctrl_t ctrl, KEYDB_HANDLE hd,
                  estream_t fp, int with_validation)
 {
   ksba_cert_t next = NULL;
+  int depth = 0;
 
   if (raw_mode)
     list_cert_raw (ctrl, hd, cert, fp, 0, with_validation);
@@ -1371,8 +1390,13 @@ list_cert_chain (ctrl_t ctrl, KEYDB_HANDLE hd,
   ksba_cert_ref (cert);
   while (!gpgsm_walk_cert_chain (ctrl, cert, &next))
     {
-      ksba_cert_release (cert);
       es_fputs ("Certified by\n", fp);
+      if (++depth > 50)
+        {
+          es_fputs (_("certificate chain too long\n"), fp);
+          break;
+        }
+      ksba_cert_release (cert);
       if (raw_mode)
         list_cert_raw (ctrl, hd, next, fp, 0, with_validation);
       else

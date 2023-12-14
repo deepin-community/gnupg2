@@ -56,6 +56,15 @@ struct kidlist_item
   int reason;
 };
 
+/* An object to build a list of symkey packet info.  */
+struct symlist_item
+{
+  struct symlist_item *next;
+  int cipher_algo;
+  int cfb_mode;
+  int other_error;
+};
+
 
 /*
  * Object to hold the processing context.
@@ -97,7 +106,9 @@ struct mainproc_context
   int trustletter;  /* Temporary usage in list_node. */
   ulong symkeys;    /* Number of symmetrically encrypted session keys.  */
   struct kidlist_item *pkenc_list; /* List of encryption packets. */
+  struct symlist_item *symenc_list; /* List of sym. encryption packets. */
   int seen_pkt_encrypted_aead; /* PKT_ENCRYPTED_AEAD packet seen. */
+  int seen_pkt_encrypted_mdc;  /* PKT_ENCRYPTED_MDC packet seen. */
   struct {
     unsigned int sig_seen:1;      /* Set to true if a signature packet
                                      has been seen. */
@@ -142,11 +153,19 @@ release_list( CTX c )
       c->pkenc_list = tmp;
     }
   c->pkenc_list = NULL;
+  while (c->symenc_list)
+    {
+      struct symlist_item *tmp = c->symenc_list->next;
+      xfree (c->symenc_list);
+      c->symenc_list = tmp;
+    }
+  c->symenc_list = NULL;
   c->list = NULL;
   c->any.data = 0;
   c->any.uncompress_failed = 0;
   c->last_was_session_key = 0;
   c->seen_pkt_encrypted_aead = 0;
+  c->seen_pkt_encrypted_mdc = 0;
   xfree (c->dek);
   c->dek = NULL;
 }
@@ -393,7 +412,10 @@ proc_symkey_enc (CTX c, PACKET *pkt)
             }
         }
       else
-        log_error (_("encrypted with unknown algorithm %d\n"), algo);
+        {
+          log_error (_("encrypted with unknown algorithm %d\n"), algo);
+          s = NULL; /* Force a goto leave.  */
+        }
 
       if (openpgp_md_test_algo (enc->s2k.hash_algo))
         {
@@ -417,7 +439,8 @@ proc_symkey_enc (CTX c, PACKET *pkt)
         }
       else
         {
-          c->dek = passphrase_to_dek (algo, &enc->s2k, 0, 0, NULL, NULL);
+          c->dek = passphrase_to_dek (algo, &enc->s2k, 0, 0, NULL,
+                                      GETPASSWORD_FLAG_SYMDECRYPT, NULL);
           if (c->dek)
             {
               c->dek->symmetric = 1;
@@ -442,6 +465,11 @@ proc_symkey_enc (CTX c, PACKET *pkt)
                       if (gpg_err_code (err) != GPG_ERR_BAD_KEY
                           && gpg_err_code (err) != GPG_ERR_CHECKSUM)
                         log_fatal ("process terminated to be bug compatible\n");
+                      else
+                        write_status_text (STATUS_ERROR,
+                                           "symkey_decrypt.maybe_error"
+                                           " 11_BAD_PASSPHRASE");
+
                       if (c->dek->s2k_cacheid[0])
                         {
                           if (opt.debug)
@@ -460,6 +488,20 @@ proc_symkey_enc (CTX c, PACKET *pkt)
     }
 
  leave:
+  /* Record infos from the packet.  */
+  {
+    struct symlist_item  *symitem;
+    symitem = xcalloc (1, sizeof *symitem);
+    if (enc)
+      {
+        symitem->cipher_algo = enc->cipher_algo;
+        symitem->cfb_mode = !enc->aead_algo;
+      }
+    else
+      symitem->other_error = 1;
+    symitem->next = c->symenc_list;
+    c->symenc_list = symitem;
+  }
   c->symkeys++;
   free_packet (pkt, NULL);
 }
@@ -632,9 +674,12 @@ proc_encrypted (CTX c, PACKET *pkt)
 {
   int result = 0;
   int early_plaintext = literals_seen;
+  unsigned int compliance_de_vs = 0;
 
   if (pkt->pkttype == PKT_ENCRYPTED_AEAD)
     c->seen_pkt_encrypted_aead = 1;
+  if (pkt->pkttype == PKT_ENCRYPTED_MDC)
+    c->seen_pkt_encrypted_mdc = 1;
 
   if (early_plaintext)
     {
@@ -706,7 +751,8 @@ proc_encrypted (CTX c, PACKET *pkt)
               log_info (_("assuming %s encrypted data\n"), "IDEA");
             }
 
-          c->dek = passphrase_to_dek (algo, s2k, 0, 0, NULL, &canceled);
+          c->dek = passphrase_to_dek (algo, s2k, 0, 0, NULL,
+                                      GETPASSWORD_FLAG_SYMDECRYPT, &canceled);
           if (c->dek)
             c->dek->algo_info_printed = 1;
           else if (canceled)
@@ -720,30 +766,41 @@ proc_encrypted (CTX c, PACKET *pkt)
 
   /* Compute compliance with CO_DE_VS.  */
   if (!result && is_status_enabled ()
-      /* Symmetric encryption and asymmetric encryption voids compliance.  */
-      && (c->symkeys != !!c->pkenc_list )
       /* Overriding session key voids compliance.  */
       && !opt.override_session_key
       /* Check symmetric cipher.  */
+      && gnupg_gcrypt_is_compliant (CO_DE_VS)
       && gnupg_cipher_is_compliant (CO_DE_VS, c->dek->algo,
                                     GCRY_CIPHER_MODE_CFB))
     {
       struct kidlist_item *i;
+      struct symlist_item *si;
       int compliant = 1;
       PKT_public_key *pk = xmalloc (sizeof *pk);
 
       if ( !(c->pkenc_list || c->symkeys) )
         log_debug ("%s: where else did the session key come from?\n", __func__);
 
-      /* Now check that every key used to encrypt the session key is
-       * compliant.  */
+      /* Check that all seen symmetric key packets use compliant
+       * algos.  This is so that no non-compliant encrypted session
+       * key can be sneaked in.  */
+      for (si = c->symenc_list; si && compliant; si = si->next)
+        {
+          if (!si->cfb_mode
+              || !gnupg_cipher_is_compliant (CO_DE_VS, si->cipher_algo,
+                                             GCRY_CIPHER_MODE_CFB))
+            compliant = 0;
+        }
+
+      /* Check that every known public key used to encrypt the session key
+       * is compliant.  */
       for (i = c->pkenc_list; i && compliant; i = i->next)
         {
           memset (pk, 0, sizeof *pk);
           pk->pubkey_algo = i->pubkey_algo;
-          if (get_pubkey (c->ctrl, pk, i->kid) != 0
-              || ! gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0,
-                                          pk->pkey, nbits_from_pk (pk), NULL))
+          if (!get_pubkey (c->ctrl, pk, i->kid)
+              && !gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0,
+                                         pk->pkey, nbits_from_pk (pk), NULL))
             compliant = 0;
           release_public_key_parts (pk);
         }
@@ -751,15 +808,18 @@ proc_encrypted (CTX c, PACKET *pkt)
       xfree (pk);
 
       if (compliant)
-        write_status_strings (STATUS_DECRYPTION_COMPLIANCE_MODE,
-                              gnupg_status_compliance_flag (CO_DE_VS),
-                              NULL);
-
+        compliance_de_vs |= 1;
     }
 
 
   if (!result)
-    result = decrypt_data (c->ctrl, c, pkt->pkt.encrypted, c->dek );
+    {
+      int compl_error;
+      result = decrypt_data (c->ctrl, c, pkt->pkt.encrypted, c->dek,
+                             &compl_error);
+      if (!result && !compl_error)
+        compliance_de_vs |= 2;
+    }
 
   /* Trigger the deferred error.  */
   if (!result && early_plaintext)
@@ -810,9 +870,15 @@ proc_encrypted (CTX c, PACKET *pkt)
         log_info(_("decryption okay\n"));
 
       if (pkt->pkt.encrypted->aead_algo)
-        write_status (STATUS_GOODMDC);
+        {
+          write_status (STATUS_GOODMDC);
+          compliance_de_vs |= 4;
+        }
       else if (pkt->pkt.encrypted->mdc_method && !result)
-        write_status (STATUS_GOODMDC);
+        {
+          write_status (STATUS_GOODMDC);
+          compliance_de_vs |= 4;
+        }
       else
         log_info (_("WARNING: message was not integrity protected\n"));
     }
@@ -826,21 +892,38 @@ proc_encrypted (CTX c, PACKET *pkt)
     }
   else
     {
-      if ((gpg_err_code (result) == GPG_ERR_BAD_KEY
-	   || gpg_err_code (result) == GPG_ERR_CHECKSUM
-	   || gpg_err_code (result) == GPG_ERR_CIPHER_ALGO)
-          && *c->dek->s2k_cacheid != '\0')
+      if (gpg_err_code (result) == GPG_ERR_BAD_KEY
+          || gpg_err_code (result) == GPG_ERR_CHECKSUM
+          || gpg_err_code (result) == GPG_ERR_CIPHER_ALGO)
         {
-          if (opt.debug)
-            log_debug ("cleared passphrase cached with ID: %s\n",
-                       c->dek->s2k_cacheid);
-          passphrase_clear_cache (c->dek->s2k_cacheid);
+          if (c->symkeys)
+            write_status_text (STATUS_ERROR,
+                               "symkey_decrypt.maybe_error"
+                               " 11_BAD_PASSPHRASE");
+
+          if (*c->dek->s2k_cacheid != '\0')
+            {
+              if (opt.debug)
+                log_debug ("cleared passphrase cached with ID: %s\n",
+                           c->dek->s2k_cacheid);
+              passphrase_clear_cache (c->dek->s2k_cacheid);
+            }
         }
       glo_ctrl.lasterr = result;
       write_status (STATUS_DECRYPTION_FAILED);
       log_error (_("decryption failed: %s\n"), gpg_strerror (result));
       /* Hmmm: does this work when we have encrypted using multiple
        * ways to specify the session key (symmmetric and PK). */
+    }
+
+
+  /* If we concluded that the decryption was compliant, issue a
+   * compliance status before the end of the decryption status.  */
+  if (compliance_de_vs == (4|2|1))
+    {
+      write_status_strings (STATUS_DECRYPTION_COMPLIANCE_MODE,
+                            gnupg_status_compliance_flag (CO_DE_VS),
+                            NULL);
     }
 
   xfree (c->dek);
@@ -854,17 +937,28 @@ proc_encrypted (CTX c, PACKET *pkt)
    * a misplace extra literal data packets follows after this
    * encrypted packet.  */
   literals_seen++;
+
+  /* The --require-compliance option allows to simplify decryption in
+   * de-vs compliance mode by just looking at the exit status.  */
+  if (opt.flags.require_compliance
+      && opt.compliance == CO_DE_VS
+      && compliance_de_vs != (4|2|1))
+    {
+      compliance_failure ();
+    }
 }
 
 
 static int
-have_seen_pkt_encrypted_aead( CTX c )
+have_seen_pkt_encrypted_aead_or_mdc( CTX c )
 {
   CTX cc;
 
   for (cc = c; cc; cc = cc->anchor)
     {
       if (cc->seen_pkt_encrypted_aead)
+	return 1;
+      if (cc->seen_pkt_encrypted_mdc)
 	return 1;
     }
 
@@ -947,7 +1041,7 @@ proc_plaintext( CTX c, PACKET *pkt )
         }
     }
 
-  if (!any && !opt.skip_verify && !have_seen_pkt_encrypted_aead(c))
+  if (!any && !opt.skip_verify && !have_seen_pkt_encrypted_aead_or_mdc(c))
     {
       /* This is for the old GPG LITERAL+SIG case.  It's not legal
          according to 2440, so hopefully it won't come up that often.
@@ -2089,7 +2183,8 @@ check_sig_and_print (CTX c, kbnode_t node)
                   free_public_key (pk);
                   pk = NULL;
                   glo_ctrl.in_auto_key_retrieve++;
-                  res = keyserver_import_keyid (c->ctrl, sig->keyid,spec, 1);
+                  res = keyserver_import_keyid (c->ctrl, sig->keyid,spec,
+                                                KEYSERVER_IMPORT_FLAG_QUICK);
                   glo_ctrl.in_auto_key_retrieve--;
                   if (!res)
                     rc = do_check_sig (c, node, NULL,
@@ -2128,7 +2223,8 @@ check_sig_and_print (CTX c, kbnode_t node)
       free_public_key (pk);
       pk = NULL;
       glo_ctrl.in_auto_key_retrieve++;
-      res = keyserver_import_wkd (c->ctrl, sig->signers_uid, 1, NULL, NULL);
+      res = keyserver_import_wkd (c->ctrl, sig->signers_uid,
+                                  KEYSERVER_IMPORT_FLAG_QUICK, NULL, NULL);
       glo_ctrl.in_auto_key_retrieve--;
       /* Fixme: If the fingerprint is embedded in the signature,
        * compare it to the fingerprint of the returned key.  */
@@ -2197,7 +2293,8 @@ check_sig_and_print (CTX c, kbnode_t node)
           free_public_key (pk);
           pk = NULL;
           glo_ctrl.in_auto_key_retrieve++;
-          res = keyserver_import_fprint (c->ctrl, p, n, opt.keyserver, 1);
+          res = keyserver_import_fprint (c->ctrl, p, n, opt.keyserver,
+                                         KEYSERVER_IMPORT_FLAG_QUICK);
           glo_ctrl.in_auto_key_retrieve--;
           if (!res)
             rc = do_check_sig (c, node, NULL,
@@ -2516,12 +2613,21 @@ check_sig_and_print (CTX c, kbnode_t node)
 
       /* Compute compliance with CO_DE_VS.  */
       if (pk && is_status_enabled ()
+          && gnupg_gcrypt_is_compliant (CO_DE_VS)
           && gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0, pk->pkey,
                                     nbits_from_pk (pk), NULL)
           && gnupg_digest_is_compliant (CO_DE_VS, sig->digest_algo))
         write_status_strings (STATUS_VERIFICATION_COMPLIANCE_MODE,
                               gnupg_status_compliance_flag (CO_DE_VS),
                               NULL);
+      else if (opt.flags.require_compliance
+               && opt.compliance == CO_DE_VS)
+        {
+          compliance_failure ();
+          if (!rc)
+            rc = gpg_error (GPG_ERR_FORBIDDEN);
+        }
+
 
       free_public_key (pk);
       pk = NULL;

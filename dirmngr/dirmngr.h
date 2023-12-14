@@ -50,6 +50,11 @@ struct ldap_server_s
   char *user;
   char *pass;
   char *base;
+
+  unsigned int starttls:1;       /* Use STARTTLS.  */
+  unsigned int ldap_over_tls:1;  /* Use LDAP over an TLS tunnel */
+  unsigned int ntds:1;           /* Use Active Directory authentication.  */
+  unsigned int areconly:1;       /* Set LDAP_OPT_AREC_EXCLUSIVE.  */
 };
 typedef struct ldap_server_s *ldap_server_t;
 
@@ -71,6 +76,7 @@ typedef struct fingerprint_list_s *fingerprint_list_t;
 struct fingerprint_list_s
 {
   fingerprint_list_t next;
+  char binlen;  /* If this is not 0 hexfpr actually carries a binary fpr.  */
   char hexfpr[20+20+1];
 };
 
@@ -116,10 +122,17 @@ struct
   int ignore_ocsp_service_url; /* Ignore OCSP service URLs as given in
                                   the certificate.  */
 
+  /* A list of fingerprints of certififcates we should completely
+   * ignore.  These are all stored in binary format.  */
+  fingerprint_list_t ignored_certs;
+
   /* A list of certificate extension OIDs which are ignored so that
      one can claim that a critical extension has been handled.  One
      OID per string.  */
   strlist_t ignored_cert_extensions;
+
+  /* Allow expired certificates in the cache.  */
+  int debug_cache_expired_certs;
 
   int allow_ocsp;     /* Allow using OCSP. */
 
@@ -175,8 +188,10 @@ struct cert_ref_s
 };
 typedef struct cert_ref_s *cert_ref_t;
 
+/* Forward reference; access only via ks-engine-ldap.c.  */
+struct ks_engine_ldap_local_s;
 
-/* Forward references; access only through server.c.  */
+/* Forward reference; access only through server.c.  */
 struct server_local_s;
 
 #if SIZEOF_UNSIGNED_LONG == 8
@@ -193,6 +208,7 @@ struct server_control_s
   int no_server;      /* We are not running under server control. */
   int status_fd;      /* Only for non-server mode. */
   struct server_local_s *server_local;
+  struct ks_engine_ldap_local_s *ks_get_state;
   int force_crl_refresh; /* Always load a fresh CRL. */
 
   int check_revocations_nest_level; /* Internal to check_revovations.  */
@@ -215,6 +231,7 @@ void dirmngr_deinit_default_ctrl (ctrl_t ctrl);
 void dirmngr_sighup_action (void);
 const char* dirmngr_get_current_socket_name (void);
 int dirmngr_use_tor (void);
+int dirmngr_never_use_tor_p (void);
 
 /*-- Various housekeeping functions.  --*/
 void ks_hkp_housekeeping (time_t curtime);

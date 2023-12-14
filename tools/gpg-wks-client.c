@@ -1,5 +1,5 @@
 /* gpg-wks-client.c - A client for the Web Key Service protocols.
- * Copyright (C) 2016 Werner Koch
+ * Copyright (C) 2016, 2022 g10 Code GmbH
  * Copyright (C) 2016 Bundesamt für Sicherheit in der Informationstechnik
  *
  * This file is part of GnuPG.
@@ -61,6 +61,7 @@ enum cmd_and_opt_values
     aCreate,
     aReceive,
     aRead,
+    aMirror,
     aInstallKey,
     aRemoveKey,
     aPrintWKDHash,
@@ -71,6 +72,8 @@ enum cmd_and_opt_values
     oFakeSubmissionAddr,
     oStatusFD,
     oWithColons,
+    oBlacklist,
+    oNoAutostart,
 
     oDummy
   };
@@ -90,6 +93,8 @@ static ARGPARSE_OPTS opts[] = {
               ("receive a MIME confirmation request")),
   ARGPARSE_c (aRead,      "read",
               ("receive a plain text confirmation request")),
+  ARGPARSE_c (aMirror, "mirror",
+              "mirror an LDAP directory"),
   ARGPARSE_c (aInstallKey, "install-key",
               "install a key into a directory"),
   ARGPARSE_c (aRemoveKey, "remove-key",
@@ -108,7 +113,9 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oSend, "send", "send the mail using sendmail"),
   ARGPARSE_s_s (oOutput, "output", "|FILE|write the mail to FILE"),
   ARGPARSE_s_i (oStatusFD, "status-fd", N_("|FD|write status info to this FD")),
+  ARGPARSE_s_n (oNoAutostart, "no-autostart", "@"),
   ARGPARSE_s_n (oWithColons, "with-colons", "@"),
+  ARGPARSE_s_s (oBlacklist, "blacklist", "@"),
   ARGPARSE_s_s (oDirectory, "directory", "@"),
 
   ARGPARSE_s_s (oFakeSubmissionAddr, "fake-submission-addr", "@"),
@@ -135,8 +142,14 @@ static struct debug_flags_s debug_flags [] =
 /* Value of the option --fake-submission-addr.  */
 const char *fake_submission_addr;
 
+/* An array with blacklisted addresses and its length.  Use
+ * is_in_blacklist to check.  */
+static char **blacklist_array;
+static size_t blacklist_array_len;
+
 
 static void wrong_args (const char *text) GPGRT_ATTR_NORETURN;
+static void add_blacklist (const char *fname);
 static gpg_error_t proc_userid_from_stdin (gpg_error_t (*func)(const char *),
                                            const char *text);
 static gpg_error_t command_supported (char *userid);
@@ -149,6 +162,7 @@ static gpg_error_t read_confirmation_request (estream_t msg);
 static gpg_error_t command_receive_cb (void *opaque,
                                        const char *mediatype, estream_t fp,
                                        unsigned int flags);
+static gpg_error_t command_mirror (char *domain[]);
 
 
 
@@ -234,12 +248,19 @@ parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
         case oWithColons:
           opt.with_colons = 1;
           break;
+        case oNoAutostart:
+          opt.no_autostart = 1;
+          break;
+        case oBlacklist:
+          add_blacklist (pargs->r.ret_str);
+          break;
 
 	case aSupported:
 	case aCreate:
 	case aReceive:
 	case aRead:
         case aCheck:
+        case aMirror:
         case aInstallKey:
         case aRemoveKey:
         case aPrintWKDHash:
@@ -303,11 +324,12 @@ main (int argc, char **argv)
     opt.directory = "openpgpkey";
 
   /* Tell call-dirmngr what options we want.  */
-  set_dirmngr_options (opt.verbose, (opt.debug & DBG_IPC_VALUE), 1);
+  set_dirmngr_options (opt.verbose, (opt.debug & DBG_IPC_VALUE),
+                       !opt.no_autostart);
 
 
   /* Check that the top directory exists.  */
-  if (cmd == aInstallKey || cmd == aRemoveKey)
+  if (cmd == aInstallKey || cmd == aRemoveKey || cmd == aMirror)
     {
       struct stat sb;
 
@@ -377,6 +399,13 @@ main (int argc, char **argv)
       err = command_check (argv[0]);
       break;
 
+    case aMirror:
+      if (!argc)
+        err = command_mirror (NULL);
+      else
+        err = command_mirror (argv);
+      break;
+
     case aInstallKey:
       if (!argc)
         err = wks_cmd_install_key (NULL, NULL);
@@ -442,6 +471,153 @@ main (int argc, char **argv)
 }
 
 
+
+/* Read a file FNAME into a buffer and return that malloced buffer.
+ * Caller must free the buffer.  On error NULL is returned, on success
+ * the valid length of the buffer is stored at R_LENGTH.  The returned
+ * buffer is guaranteed to be Nul terminated.  */
+static char *
+read_file (const char *fname, size_t *r_length)
+{
+  estream_t fp;
+  char *buf;
+  size_t buflen;
+
+  if (!strcmp (fname, "-"))
+    {
+      size_t nread, bufsize = 0;
+
+      fp = es_stdin;
+      es_set_binary (fp);
+      buf = NULL;
+      buflen = 0;
+#define NCHUNK 32767
+      do
+        {
+          bufsize += NCHUNK;
+          if (!buf)
+            buf = xmalloc (bufsize+1);
+          else
+            buf = xrealloc (buf, bufsize+1);
+
+          nread = es_fread (buf+buflen, 1, NCHUNK, fp);
+          if (nread < NCHUNK && es_ferror (fp))
+            {
+              log_error ("error reading '[stdin]': %s\n", strerror (errno));
+              xfree (buf);
+              return NULL;
+            }
+          buflen += nread;
+        }
+      while (nread == NCHUNK);
+#undef NCHUNK
+    }
+  else
+    {
+      struct stat st;
+
+      fp = es_fopen (fname, "rb");
+      if (!fp)
+        {
+          log_error ("can't open '%s': %s\n", fname, strerror (errno));
+          return NULL;
+        }
+
+      if (fstat (es_fileno (fp), &st))
+        {
+          log_error ("can't stat '%s': %s\n", fname, strerror (errno));
+          es_fclose (fp);
+          return NULL;
+        }
+
+      buflen = st.st_size;
+      buf = xmalloc (buflen+1);
+      if (es_fread (buf, buflen, 1, fp) != 1)
+        {
+          log_error ("error reading '%s': %s\n", fname, strerror (errno));
+          es_fclose (fp);
+          xfree (buf);
+          return NULL;
+        }
+      es_fclose (fp);
+    }
+  buf[buflen] = 0;
+  if (r_length)
+    *r_length = buflen;
+  return buf;
+}
+
+
+static int
+cmp_blacklist (const void *arg_a, const void *arg_b)
+{
+  const char *a = *(const char **)arg_a;
+  const char *b = *(const char **)arg_b;
+  return strcmp (a, b);
+}
+
+
+/* Add a blacklist to our global table.  This is called during option
+ * parsing and thus any use of log_error will eventually stop further
+ * processing.  */
+static void
+add_blacklist (const char *fname)
+{
+  char *buffer;
+  char *p, *pend;
+  char **array;
+  size_t arraysize, arrayidx;
+
+  buffer = read_file (fname, NULL);
+  if (!buffer)
+    return;
+
+  /* Estimate the number of entries by counting the non-comment lines.  */
+  arraysize = 2; /* For the first and an extra NULL item.  */
+  for (p=buffer; *p; p++)
+    if (*p == '\n' && p[1] && p[1] != '#')
+      arraysize++;
+
+  array = xcalloc (arraysize, sizeof *array);
+  arrayidx = 0;
+
+  /* Loop over all lines.  */
+  for (p = buffer; p && *p; p = pend)
+    {
+      pend = strchr (p, '\n');
+      if (pend)
+        *pend++ = 0;
+      trim_spaces (p);
+      if (!*p || *p == '#' )
+        continue;
+      ascii_strlwr (p);
+      log_assert (arrayidx < arraysize);
+      array[arrayidx] = p;
+      arrayidx++;
+    }
+  log_assert (arrayidx < arraysize);
+
+  qsort (array, arrayidx, sizeof *array, cmp_blacklist);
+
+  blacklist_array = array;
+  blacklist_array_len = arrayidx;
+  gpgrt_annotate_leaked_object (buffer);
+  gpgrt_annotate_leaked_object (blacklist_array);
+}
+
+
+/* Return true if NAME is in a blacklist.  */
+static int
+is_in_blacklist (const char *name)
+{
+  if (!name || !blacklist_array)
+    return 0;
+  return !!bsearch (&name, blacklist_array, blacklist_array_len,
+                    sizeof *blacklist_array, cmp_blacklist);
+}
+
+
+
 /* Read user ids from stdin and call FUNC for each user id.  TEXT is
  * used for error messages.  */
 static gpg_error_t
@@ -507,9 +683,9 @@ add_user_id (const char *fingerprint, const char *uid)
   ccparray_init (&ccp, 0);
 
   ccparray_put (&ccp, "--no-options");
-  if (!opt.verbose)
+  if (opt.verbose < 2)
     ccparray_put (&ccp, "--quiet");
-  else if (opt.verbose > 1)
+  else
     ccparray_put (&ccp, "--verbose");
   ccparray_put (&ccp, "--batch");
   ccparray_put (&ccp, "--always-trust");
@@ -596,9 +772,9 @@ decrypt_stream (estream_t *r_output, struct decrypt_stream_parm_s *decinfo,
    * tricks.  A regular client will anyway only send a minimal key;
    * that is one w/o key signatures and attribute packets.  */
   ccparray_put (&ccp, "--max-output=0x10000");
-  if (!opt.verbose)
+  if (opt.verbose < 2)
     ccparray_put (&ccp, "--quiet");
-  else if (opt.verbose > 1)
+  else
     ccparray_put (&ccp, "--verbose");
   ccparray_put (&ccp, "--batch");
   ccparray_put (&ccp, "--status-fd=2");
@@ -1244,9 +1420,9 @@ encrypt_response (estream_t *r_output, estream_t input, const char *addrspec,
   ccparray_init (&ccp, 0);
 
   ccparray_put (&ccp, "--no-options");
-  if (!opt.verbose)
+  if (opt.verbose < 2)
     ccparray_put (&ccp, "--quiet");
-  else if (opt.verbose > 1)
+  else
     ccparray_put (&ccp, "--verbose");
   ccparray_put (&ccp, "--batch");
   ccparray_put (&ccp, "--status-fd=2");
@@ -1591,5 +1767,218 @@ command_receive_cb (void *opaque, const char *mediatype,
       err = gpg_error (GPG_ERR_UNEXPECTED_MSG);
     }
 
+  return err;
+}
+
+
+
+/* An object used to communicate with the mirror_one_key callback.  */
+struct
+{
+  const char *domain;
+  int anyerror;
+  unsigned int nkeys;   /* Number of keys processed.  */
+  unsigned int nuids;   /* Number of published user ids.  */
+} mirror_one_key_parm;
+
+
+/* Return true if the Given a mail DOMAIN and the full addrspec MBOX
+ * match.  */
+static int
+domain_matches_mbox (const char *domain, const char *mbox)
+{
+  const char *s;
+
+  if (!domain || !mbox)
+    return 0;
+  s = strchr (domain, '@');
+  if (s)
+    domain = s+1;
+  if (!*domain)
+    return 0; /* Not a valid domain.  */
+
+  s = strchr (mbox, '@');
+  if (!s || !s[1])
+    return 0; /* Not a valid mbox.  */
+  mbox = s+1;
+
+  return !ascii_strcasecmp (domain, mbox);
+}
+
+
+/* Core of mirror_one_key with the goal of mirroring just one uid.
+ * UIDLIST is used to figure out whether the given MBOX occurs several
+ * times in UIDLIST and then to single out the newwest one.  This is
+ * so that for a key with
+ *    uid: Joe Someone <joe@example.org>
+ *    uid: Joe <joe@example.org>
+ * only the news user id (and thus its self-signature) is used.
+ * UIDLIST is nodified to set all MBOX fields to NULL for a processed
+ * user id.  FPR is the fingerprint of the key.
+ */
+static gpg_error_t
+mirror_one_keys_userid (estream_t key, const char *mbox, uidinfo_list_t uidlist,
+                        const char *fpr)
+{
+  gpg_error_t err;
+  uidinfo_list_t uid, thisuid, firstuid;
+  time_t thistime;
+  estream_t newkey = NULL;
+
+  /* Find the UID we want to use.  */
+  thistime = 0;
+  thisuid = firstuid = NULL;
+  for (uid = uidlist; uid; uid = uid->next)
+    {
+      if ((uid->flags & 1) || !uid->mbox || strcmp (uid->mbox, mbox))
+        continue; /* Already processed or no matching mbox.  */
+      uid->flags |= 1;  /* Set "processed" flag.  */
+      if (!firstuid)
+        firstuid = uid;
+      if (uid->created > thistime)
+        {
+          thistime = uid->created;
+          thisuid = uid;
+        }
+    }
+  if (!thisuid)
+    thisuid = firstuid;  /* This is the case for a missing timestamp.  */
+  if (!thisuid)
+    {
+      log_error ("error finding the user id for %s (%s)\n", fpr, mbox);
+      err = gpg_error (GPG_ERR_NO_USER_ID);
+      goto leave;
+    }
+  /* FIXME: Consult blacklist.  */
+
+
+  /* Only if we have more than one user id we bother to run the
+   * filter.  In this case the result will be put into NEWKEY*/
+  es_rewind (key);
+  if (uidlist->next)
+    {
+      err = wks_filter_uid (&newkey, key, thisuid->uid, 0);
+      if (err)
+        {
+          log_error ("error filtering key %s: %s\n", fpr, gpg_strerror (err));
+          err = gpg_error (GPG_ERR_NO_PUBKEY);
+          goto leave;
+        }
+    }
+
+  err = wks_install_key_core (newkey? newkey : key, mbox);
+  if (opt.verbose)
+    log_info ("key %s published for '%s'\n", fpr, mbox);
+  mirror_one_key_parm.nuids++;
+  if (!opt.quiet && !(mirror_one_key_parm.nuids % 25))
+    log_info ("%u user ids from %d keys so far\n",
+              mirror_one_key_parm.nuids, mirror_one_key_parm.nkeys);
+
+ leave:
+  es_fclose (newkey);
+  return err;
+}
+
+
+/* The callback used by command_mirror.  It received an estream with
+ * one key and should return success to process the next key.  */
+static gpg_error_t
+mirror_one_key (estream_t key)
+{
+  gpg_error_t err = 0;
+  char *fpr;
+  uidinfo_list_t uidlist = NULL;
+  uidinfo_list_t uid;
+  const char *domain = mirror_one_key_parm.domain;
+
+  /* List the key to get all user ids.  */
+  err = wks_list_key (key, &fpr, &uidlist);
+  if (err)
+    {
+      log_error ("error parsing a key: %s - skipped\n",
+                 gpg_strerror (err));
+      mirror_one_key_parm.anyerror = 1;
+      err = 0;
+      goto leave;
+    }
+  for (uid = uidlist; uid; uid = uid->next)
+    {
+      if (!uid->mbox || (uid->flags & 1))
+        continue; /* No mail box or already processed.  */
+      if (!domain_matches_mbox (domain, uid->mbox))
+        continue; /* We don't want this one.  */
+      if (is_in_blacklist (uid->mbox))
+        continue;
+
+      err = mirror_one_keys_userid (key, uid->mbox, uidlist, fpr);
+      if (err)
+        {
+          log_error ("error processing key %s: %s - skipped\n",
+                     fpr, gpg_strerror (err));
+          mirror_one_key_parm.anyerror = 1;
+          err = 0;
+          goto leave;
+        }
+    }
+  mirror_one_key_parm.nkeys++;
+
+
+ leave:
+  free_uidinfo_list (uidlist);
+  xfree (fpr);
+  return err;
+}
+
+
+/* Copy the keys from the configured LDAP server into a local WKD.
+ * DOMAINLIST is an array of domain names to restrict the copy to only
+ * the given domains; if it is NULL all keys are mirrored.  */
+static gpg_error_t
+command_mirror (char *domainlist[])
+{
+  gpg_error_t err;
+  const char *domain;
+  char *domainbuf = NULL;
+
+  mirror_one_key_parm.anyerror = 0;
+  mirror_one_key_parm.nkeys = 0;
+  mirror_one_key_parm.nuids = 0;
+
+  if (!domainlist)
+    {
+      mirror_one_key_parm.domain = "";
+      err = wkd_dirmngr_ks_get (NULL, mirror_one_key);
+    }
+  else
+    {
+      while ((domain = *domainlist++))
+        {
+          if (*domain != '.' && domain[1] != '@')
+            {
+              /* This does not already specify a mail search by
+               * domain.  Change it.  */
+              xfree (domainbuf);
+              domainbuf = xstrconcat (".@", domain, NULL);
+              domain = domainbuf;
+            }
+          mirror_one_key_parm.domain = domain;
+          if (opt.verbose)
+            log_info ("mirroring keys for domain '%s'\n", domain+2);
+          err = wkd_dirmngr_ks_get (domain, mirror_one_key);
+          if (err)
+            break;
+        }
+    }
+
+  if (!opt.quiet)
+    log_info ("a total of %u user ids from %d keys published\n",
+              mirror_one_key_parm.nuids, mirror_one_key_parm.nkeys);
+  if (err)
+    log_error ("error mirroring LDAP directory: %s <%s>\n",
+               gpg_strerror (err), gpg_strsource (err));
+  else if (mirror_one_key_parm.anyerror)
+    log_info ("warning: errors encountered - not all keys are mirrored\n");
+
+  xfree (domainbuf);
   return err;
 }

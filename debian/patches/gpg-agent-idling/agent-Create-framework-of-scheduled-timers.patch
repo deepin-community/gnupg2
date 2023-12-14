@@ -31,10 +31,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  1 file changed, 57 insertions(+), 27 deletions(-)
 
 diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
-index 5afcf11..69705ed 100644
+index 3f7aaae..309e87c 100644
 --- a/agent/gpg-agent.c
 +++ b/agent/gpg-agent.c
-@@ -2365,12 +2365,8 @@ create_directories (void)
+@@ -2377,12 +2377,8 @@ create_directories (void)
  static void
  handle_tick (void)
  {
@@ -47,7 +47,7 @@ index 5afcf11..69705ed 100644
    /* Check whether the scdaemon has died and cleanup in this case. */
    agent_scd_check_aliveness ();
  
-@@ -2390,15 +2386,6 @@ handle_tick (void)
+@@ -2402,15 +2398,6 @@ handle_tick (void)
      }
  #endif /*HAVE_W32_SYSTEM*/
  
@@ -63,7 +63,7 @@ index 5afcf11..69705ed 100644
    /* Need to check for expired cache entries.  */
    agent_cache_housekeeping ();
  
-@@ -2809,6 +2796,15 @@ start_connection_thread_ssh (void *arg)
+@@ -2821,6 +2808,15 @@ start_connection_thread_ssh (void *arg)
  }
  
  
@@ -79,7 +79,7 @@ index 5afcf11..69705ed 100644
  /* Connection handler loop.  Wait for connection requests and spawn a
     thread after accepting a connection.  */
  static void
-@@ -2826,9 +2822,11 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -2838,9 +2834,11 @@ handle_connections (gnupg_fd_t listen_fd,
    gnupg_fd_t fd;
    int nfd;
    int saved_errno;
@@ -91,7 +91,7 @@ index 5afcf11..69705ed 100644
  #ifdef HAVE_W32_SYSTEM
    HANDLE events[2];
    unsigned int events_set;
-@@ -2845,6 +2843,14 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -2857,6 +2855,14 @@ handle_connections (gnupg_fd_t listen_fd,
      { "browser", start_connection_thread_browser },
      { "ssh",    start_connection_thread_ssh   }
    };
@@ -106,7 +106,7 @@ index 5afcf11..69705ed 100644
  
  
    ret = npth_attr_init(&tattr);
-@@ -2952,9 +2958,6 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -2964,9 +2970,6 @@ handle_connections (gnupg_fd_t listen_fd,
    listentbl[2].l_fd = listen_fd_browser;
    listentbl[3].l_fd = listen_fd_ssh;
  
@@ -116,7 +116,7 @@ index 5afcf11..69705ed 100644
    for (;;)
      {
        /* Shutdown test.  */
-@@ -2989,18 +2992,46 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -3001,18 +3004,46 @@ handle_connections (gnupg_fd_t listen_fd,
           thus a simple assignment is fine to copy the entire set.  */
        read_fdset = fdset;
  
@@ -172,7 +172,7 @@ index 5afcf11..69705ed 100644
                            npth_sigev_sigmask ());
        saved_errno = errno;
  
-@@ -3010,7 +3041,7 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -3022,7 +3053,7 @@ handle_connections (gnupg_fd_t listen_fd,
            handle_signal (signo);
        }
  #else
@@ -181,7 +181,7 @@ index 5afcf11..69705ed 100644
                            events, &events_set);
        saved_errno = errno;
  
-@@ -3055,7 +3086,6 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -3067,7 +3098,6 @@ handle_connections (gnupg_fd_t listen_fd,
  
        if (!shutdown_pending)
          {

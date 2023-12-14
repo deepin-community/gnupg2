@@ -1,6 +1,6 @@
 /* t-stringhelp.c - Regression tests for stringhelp.c
  * Copyright (C) 2007 Free Software Foundation, Inc.
- *               2015  g10 Code GmbH
+ *               2015, 2021  g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -27,6 +27,7 @@
  * You should have received a copies of the GNU General Public License
  * and the GNU Lesser General Public License along with this program;
  * if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: (LGPL-3.0-or-later OR GPL-2.0-or-later)
  */
 
 #include <config.h>
@@ -34,15 +35,16 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 #ifdef HAVE_PWD_H
 # include <pwd.h>
 #endif
 #include <unistd.h>
 #include <sys/types.h>
 #include <limits.h>
+#include <assert.h>
 
 #include "t-support.h"
+#include "sysutils.h"
 #include "stringhelp.h"
 
 
@@ -687,6 +689,144 @@ test_strtokenize (void)
 
 
 static void
+test_strtokenize_nt (void)
+{
+  struct {
+    const char *s;
+    const char *delim;
+    const char *fields_expected[10];
+  } tv[] = {
+    {
+      "", ":",
+      { "", NULL }
+    },
+    {
+      "a", ":",
+      { "a", NULL }
+    },
+    {
+      ":", ":",
+      { "", "", NULL }
+    },
+    {
+      "::", ":",
+      { "", "", "", NULL }
+    },
+    {
+      "a:b:c", ":",
+      { "a", "b", "c", NULL }
+    },
+    {
+      "a:b:", ":",
+      { "a", "b", "", NULL }
+    },
+    {
+      "a:b", ":",
+      { "a", "b", NULL }
+    },
+    {
+      "aa:b:cd", ":",
+      { "aa", "b", "cd", NULL }
+    },
+    {
+      "aa::b:cd", ":",
+      { "aa", "", "b", "cd", NULL }
+    },
+    {
+      "::b:cd", ":",
+      { "", "", "b", "cd", NULL }
+    },
+    {
+      "aa:   : b:cd ", ":",
+      { "aa", "   ", " b", "cd ", NULL }
+    },
+    {
+      "  aa:   : b:  cd ", ":",
+      { "  aa", "   ", " b", "  cd ", NULL }
+    },
+    {
+      "  ", ":",
+      { "  ", NULL }
+    },
+    {
+      "  :", ":",
+      { "  ", "", NULL }
+    },
+    {
+      "  : ", ":",
+      { "  ", " ", NULL }
+    },
+    {
+      ": ", ":",
+      { "", " ", NULL }
+    },
+    {
+      ": x ", ":",
+      { "", " x ", NULL }
+    },
+    {
+      "a:bc:cde:fghi:jklmn::foo:", ":",
+      { "a", "bc", "cde", "fghi", "jklmn", "", "foo", "", NULL }
+    },
+    {
+      ",a,bc,,def,", ",",
+      { "", "a", "bc", "", "def", "", NULL }
+    },
+    {
+      " a ", " ",
+      { "", "a", "", NULL }
+    },
+    {
+      " ", " ",
+      { "", "", NULL }
+    },
+    {
+      "", " ",
+      { "", NULL }
+    }
+  };
+
+  int tidx;
+
+  for (tidx = 0; tidx < DIM(tv); tidx++)
+    {
+      char **fields;
+      int field_count;
+      int field_count_expected;
+      int i;
+
+      for (field_count_expected = 0;
+           tv[tidx].fields_expected[field_count_expected];
+           field_count_expected ++)
+        ;
+
+      fields = strtokenize_nt (tv[tidx].s, tv[tidx].delim);
+      if (!fields)
+        fail (tidx * 1000);
+      else
+        {
+          for (field_count = 0; fields[field_count]; field_count++)
+            ;
+          if (field_count != field_count_expected)
+            fail (tidx * 1000);
+          else
+            {
+              for (i = 0; i < field_count_expected; i++)
+                if (strcmp (tv[tidx].fields_expected[i], fields[i]))
+                  {
+                    printf ("For field %d, expected '%s', but got '%s'\n",
+                            i, tv[tidx].fields_expected[i], fields[i]);
+                    fail (tidx * 1000 + i + 1);
+                  }
+            }
+          }
+
+      xfree (fields);
+    }
+}
+
+
+static void
 test_split_fields (void)
 {
   struct {
@@ -1056,6 +1196,103 @@ test_compare_version_strings (void)
 }
 
 
+static void
+test_substitute_envvars (void)
+{
+  struct {
+    const char *name;
+    const char *value;
+  } envvars[] = {
+    { "HOME", "/home/joe" },
+    { "AVAR",  "avar" },
+    { "AVAR1", "avarx" },
+    { "AVAR2", "avarxy" },
+    { "AVAR3", "avarxyz" },
+    { "AVAR0", "ava" },
+    { "MY_VAR", "my_vars_value" },
+    { "STRANGE{X}VAR", "strange{x}vars-value" },
+    { "ZERO",  "" }
+  };
+  struct {
+    const char *string;
+    const char *result;
+  } tests[] = {
+    { "foo bar",
+      "foo bar"
+    },
+    { "foo $HOME",
+      "foo /home/joe"
+    },
+    { "foo $HOME ",
+      "foo /home/joe "
+    },
+    { "foo $HOME$$",
+      "foo /home/joe$"
+    },
+    { "foo ${HOME}/.ssh",
+      "foo /home/joe/.ssh"
+    },
+    { "foo $HOME/.ssh",
+      "foo /home/joe/.ssh"
+    },
+    { "foo $HOME_/.ssh",
+      "foo /.ssh"
+    },
+    { "foo $HOME/.ssh/$MY_VAR:1",
+      "foo /home/joe/.ssh/my_vars_value:1"
+    },
+    { "foo $HOME${MY_VAR}:1",
+      "foo /home/joemy_vars_value:1"
+    },
+    { "${STRANGE{X}VAR}-bla",
+      "strange{x}vars-value-bla"
+    },
+    { "${STRANGE{X}{VAR}-bla", /* missing "}" */
+      "${STRANGE{X}{VAR}-bla"
+    },
+    { "zero->$ZERO<-",
+      "zero-><-"
+    },
+    { "->$AVAR.$AVAR1.$AVAR2.$AVAR3.$AVAR0<-",
+      "->avar.avarx.avarxy.avarxyz.ava<-"
+    },
+    { "",
+      ""
+    }
+  };
+  int idx;
+  char *res;
+
+  for (idx=0; idx < DIM(envvars); idx++)
+    if (gnupg_setenv (envvars[idx].name, envvars[idx].value, 1))
+      {
+        fprintf (stderr,"error setting envvar '%s' to '%s': %s\n",
+                 envvars[idx].name, envvars[idx].value,
+                 strerror (errno));
+        exit (2);
+      }
+
+  for (idx=0; idx < DIM(tests); idx++)
+    {
+      res = substitute_envvars (tests[idx].string);
+      if (!res)
+        {
+          fprintf (stderr,"error substituting '%s' (test %d): %s\n",
+                   tests[idx].string, idx, strerror (errno));
+          exit (2);
+        }
+      if (strcmp (res, tests[idx].result))
+        {
+          fprintf (stderr, "substituted '%s'\n", tests[idx].string);
+          fprintf (stderr, "     wanted '%s'\n", tests[idx].result);
+          fprintf (stderr, "        got '%s'\n", res);
+          fail (idx);
+        }
+      xfree (res);
+    }
+}
+
+
 int
 main (int argc, char **argv)
 {
@@ -1070,10 +1307,12 @@ main (int argc, char **argv)
   test_make_absfilename_try ();
   test_strsplit ();
   test_strtokenize ();
+  test_strtokenize_nt ();
   test_split_fields ();
   test_split_fields_colon ();
   test_compare_version_strings ();
   test_format_text ();
+  test_substitute_envvars ();
 
   xfree (home_buffer);
   return !!errcount;

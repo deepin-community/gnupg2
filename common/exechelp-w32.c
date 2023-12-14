@@ -414,9 +414,11 @@ gnupg_spawn_process (const char *pgmname, const char *argv[],
       0,         /* Returns pid.  */
       0          /* Returns tid.  */
     };
-  STARTUPINFO si;
+  STARTUPINFOW si;
   int cr_flags;
   char *cmdline;
+  wchar_t *wcmdline = NULL;
+  wchar_t *wpgmname = NULL;
   HANDLE inpipe[2]  = {INVALID_HANDLE_VALUE, INVALID_HANDLE_VALUE};
   HANDLE outpipe[2] = {INVALID_HANDLE_VALUE, INVALID_HANDLE_VALUE};
   HANDLE errpipe[2] = {INVALID_HANDLE_VALUE, INVALID_HANDLE_VALUE};
@@ -426,7 +428,7 @@ gnupg_spawn_process (const char *pgmname, const char *argv[],
   HANDLE nullhd[3] = {INVALID_HANDLE_VALUE,
                       INVALID_HANDLE_VALUE,
                       INVALID_HANDLE_VALUE};
-  int i;
+  int i, rc;
   es_syshd_t syshd;
   gpg_err_source_t errsource = default_errsource;
   int nonblock = !!(flags & GNUPG_SPAWN_NONBLOCK);
@@ -542,11 +544,14 @@ gnupg_spawn_process (const char *pgmname, const char *argv[],
     return err;
 
   if (inpipe[0] == INVALID_HANDLE_VALUE)
-    nullhd[0] = w32_open_null (0);
+    nullhd[0] = ((flags & GNUPG_SPAWN_KEEP_STDIN)?
+                 GetStdHandle (STD_INPUT_HANDLE) : w32_open_null (0));
   if (outpipe[1] == INVALID_HANDLE_VALUE)
-    nullhd[1] = w32_open_null (1);
+    nullhd[1] = ((flags & GNUPG_SPAWN_KEEP_STDOUT)?
+                 GetStdHandle (STD_OUTPUT_HANDLE) : w32_open_null (1));
   if (errpipe[1] == INVALID_HANDLE_VALUE)
-    nullhd[2] = w32_open_null (1);
+    nullhd[2] = ((flags & GNUPG_SPAWN_KEEP_STDOUT)?
+                 GetStdHandle (STD_ERROR_HANDLE) : w32_open_null (1));
 
   /* Start the process.  Note that we can't run the PREEXEC function
      because this might change our own environment. */
@@ -564,20 +569,34 @@ gnupg_spawn_process (const char *pgmname, const char *argv[],
               | ((flags & GNUPG_SPAWN_DETACHED)? DETACHED_PROCESS : 0)
               | GetPriorityClass (GetCurrentProcess ())
               | CREATE_SUSPENDED);
-/*   log_debug ("CreateProcess, path='%s' cmdline='%s'\n", pgmname, cmdline); */
-  if (!CreateProcess (pgmname,       /* Program to start.  */
-                      cmdline,       /* Command line arguments.  */
-                      &sec_attr,     /* Process security attributes.  */
-                      &sec_attr,     /* Thread security attributes.  */
-                      TRUE,          /* Inherit handles.  */
-                      cr_flags,      /* Creation flags.  */
-                      NULL,          /* Environment.  */
-                      NULL,          /* Use current drive/directory.  */
-                      &si,           /* Startup information. */
-                      &pi            /* Returns process information.  */
-                      ))
+  /*   log_debug ("CreateProcess, path='%s' cmdline='%s'\n", */
+  /*              pgmname, cmdline); */
+  /* Take care: CreateProcessW may modify wpgmname */
+  if (!(wpgmname = utf8_to_wchar (pgmname)))
+    rc = 0;
+  else if (!(wcmdline = utf8_to_wchar (cmdline)))
+    rc = 0;
+  else
+    rc = CreateProcessW (wpgmname,      /* Program to start.  */
+                         wcmdline,      /* Command line arguments.  */
+                         &sec_attr,     /* Process security attributes.  */
+                         &sec_attr,     /* Thread security attributes.  */
+                         TRUE,          /* Inherit handles.  */
+                         cr_flags,      /* Creation flags.  */
+                         NULL,          /* Environment.  */
+                         NULL,          /* Use current drive/directory.  */
+                         &si,           /* Startup information. */
+                         &pi            /* Returns process information.  */
+                         );
+  if (!rc)
     {
-      log_error ("CreateProcess failed: %s\n", w32_strerror (-1));
+      if (!wpgmname || !wcmdline)
+        log_error ("CreateProcess failed (utf8_to_wchar): %s\n",
+                   strerror (errno));
+      else
+        log_error ("CreateProcess failed: %s\n", w32_strerror (-1));
+      xfree (wpgmname);
+      xfree (wcmdline);
       xfree (cmdline);
       if (infp)
         es_fclose (infp);
@@ -599,6 +618,8 @@ gnupg_spawn_process (const char *pgmname, const char *argv[],
         CloseHandle (errpipe[1]);
       return gpg_err_make (errsource, GPG_ERR_GENERAL);
     }
+  xfree (wpgmname);
+  xfree (wcmdline);
   xfree (cmdline);
   cmdline = NULL;
 
@@ -660,9 +681,11 @@ gnupg_spawn_process_fd (const char *pgmname, const char *argv[],
   gpg_error_t err;
   SECURITY_ATTRIBUTES sec_attr;
   PROCESS_INFORMATION pi = { NULL, 0, 0, 0 };
-  STARTUPINFO si;
+  STARTUPINFOW si;
   char *cmdline;
-  int i;
+  wchar_t *wcmdline = NULL;
+  wchar_t *wpgmname = NULL;
+  int i, rc;
   HANDLE stdhd[3];
 
   /* Setup return values.  */
@@ -690,25 +713,38 @@ gnupg_spawn_process_fd (const char *pgmname, const char *argv[],
   si.hStdError  = errfd == -1? stdhd[2] : (void*)_get_osfhandle (errfd);
 
 /*   log_debug ("CreateProcess, path='%s' cmdline='%s'\n", pgmname, cmdline); */
-  if (!CreateProcess (pgmname,       /* Program to start.  */
-                      cmdline,       /* Command line arguments.  */
-                      &sec_attr,     /* Process security attributes.  */
-                      &sec_attr,     /* Thread security attributes.  */
-                      TRUE,          /* Inherit handles.  */
-                      (CREATE_DEFAULT_ERROR_MODE
-                       | GetPriorityClass (GetCurrentProcess ())
-                       | CREATE_SUSPENDED | DETACHED_PROCESS),
-                      NULL,          /* Environment.  */
-                      NULL,          /* Use current drive/directory.  */
-                      &si,           /* Startup information. */
-                      &pi            /* Returns process information.  */
-                      ))
+  /* Take care: CreateProcessW may modify wpgmname */
+  if (!(wpgmname = utf8_to_wchar (pgmname)))
+    rc = 0;
+  else if (!(wcmdline = utf8_to_wchar (cmdline)))
+    rc = 0;
+  else
+    rc = CreateProcessW (wpgmname,      /* Program to start.  */
+                         wcmdline,      /* Command line arguments.  */
+                         &sec_attr,     /* Process security attributes.  */
+                         &sec_attr,     /* Thread security attributes.  */
+                         TRUE,          /* Inherit handles.  */
+                         (CREATE_DEFAULT_ERROR_MODE
+                          | GetPriorityClass (GetCurrentProcess ())
+                          | CREATE_SUSPENDED | DETACHED_PROCESS),
+                         NULL,          /* Environment.  */
+                         NULL,          /* Use current drive/directory.  */
+                         &si,           /* Startup information. */
+                         &pi            /* Returns process information.  */
+                         );
+  if (!rc)
     {
-      log_error ("CreateProcess failed: %s\n", w32_strerror (-1));
+      if (!wpgmname || !wcmdline)
+        log_error ("CreateProcess failed (utf8_to_wchar): %s\n",
+                   strerror (errno));
+      else
+        log_error ("CreateProcess failed: %s\n", w32_strerror (-1));
       err = my_error (GPG_ERR_GENERAL);
     }
   else
     err = 0;
+  xfree (wpgmname);
+  xfree (wcmdline);
   xfree (cmdline);
   for (i=0; i < 3; i++)
     if (stdhd[i] != INVALID_HANDLE_VALUE)
@@ -852,13 +888,21 @@ gnupg_spawn_process_detached (const char *pgmname, const char *argv[],
       0,         /* Returns pid.  */
       0          /* Returns tid.  */
     };
-  STARTUPINFO si;
+  STARTUPINFOW si;
   int cr_flags;
   char *cmdline;
+  wchar_t *wcmdline = NULL;
+  wchar_t *wpgmname = NULL;
+  BOOL in_job = FALSE;
   gpg_err_code_t ec;
+  int rc;
+  int jobdebug;
 
   /* We don't use ENVP.  */
   (void)envp;
+
+  cmdline = getenv ("GNUPG_EXEC_DEBUG_FLAGS");
+  jobdebug = (cmdline && (atoi (cmdline) & 1));
 
   if ((ec = gnupg_access (pgmname, X_OK)))
     return gpg_err_make (default_errsource, ec);
@@ -883,24 +927,91 @@ gnupg_spawn_process_detached (const char *pgmname, const char *argv[],
               | GetPriorityClass (GetCurrentProcess ())
               | CREATE_NEW_PROCESS_GROUP
               | DETACHED_PROCESS);
-/*   log_debug ("CreateProcess(detached), path='%s' cmdline='%s'\n", */
-/*              pgmname, cmdline); */
-  if (!CreateProcess (pgmname,       /* Program to start.  */
-                      cmdline,       /* Command line arguments.  */
-                      &sec_attr,     /* Process security attributes.  */
-                      &sec_attr,     /* Thread security attributes.  */
-                      FALSE,         /* Inherit handles.  */
-                      cr_flags,      /* Creation flags.  */
-                      NULL,          /* Environment.  */
-                      NULL,          /* Use current drive/directory.  */
-                      &si,           /* Startup information. */
-                      &pi            /* Returns process information.  */
-                      ))
+
+  /* Check if we were spawned as part of a Job.
+   * In a job we need to add CREATE_BREAKAWAY_FROM_JOB
+   * to the cr_flags, otherwise our child processes
+   * are killed when we terminate. */
+  if (!IsProcessInJob (GetCurrentProcess(), NULL, &in_job))
     {
-      log_error ("CreateProcess(detached) failed: %s\n", w32_strerror (-1));
+      log_error ("IsProcessInJob() failed: %s\n", w32_strerror (-1));
+      in_job = FALSE;
+    }
+
+  if (in_job)
+    {
+      /* Only try to break away from job if it is allowed, otherwise
+       * CreateProcess() would fail with an "Access is denied" error. */
+      JOBOBJECT_EXTENDED_LIMIT_INFORMATION info;
+      if (!QueryInformationJobObject (NULL, JobObjectExtendedLimitInformation,
+                                      &info, sizeof info, NULL))
+        {
+          log_error ("QueryInformationJobObject() failed: %s\n",
+                     w32_strerror (-1));
+        }
+      else if ((info.BasicLimitInformation.LimitFlags &
+                JOB_OBJECT_LIMIT_BREAKAWAY_OK))
+        {
+          if (jobdebug)
+            log_debug ("Using CREATE_BREAKAWAY_FROM_JOB flag\n");
+          cr_flags |= CREATE_BREAKAWAY_FROM_JOB;
+        }
+      else if ((info.BasicLimitInformation.LimitFlags &
+                JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK))
+        {
+          /* The child process should automatically detach from the job. */
+          if (jobdebug)
+            log_debug ("Not using CREATE_BREAKAWAY_FROM_JOB flag; "
+                       "JOB_OBJECT_LIMIT_SILENT_BREAKAWAY_OK is set\n");
+        }
+      else
+        {
+          /* It seems that the child process must remain in the job.
+           * This is not necessarily an error, although it can cause premature
+           * termination of the child process when the job is closed. */
+          if (jobdebug)
+            log_debug ("Not using CREATE_BREAKAWAY_FROM_JOB flag\n");
+        }
+    }
+  else
+    {
+      if (jobdebug)
+        log_debug ("Process is not in a Job\n");
+    }
+
+  /*   log_debug ("CreateProcess(detached), path='%s' cmdline='%s'\n", */
+  /*              pgmname, cmdline); */
+  /* Take care: CreateProcessW may modify wpgmname */
+  if (!(wpgmname = utf8_to_wchar (pgmname)))
+    rc = 0;
+  else if (!(wcmdline = utf8_to_wchar (cmdline)))
+    rc = 0;
+  else
+    rc = CreateProcessW (wpgmname,      /* Program to start.  */
+                         wcmdline,      /* Command line arguments.  */
+                         &sec_attr,     /* Process security attributes.  */
+                         &sec_attr,     /* Thread security attributes.  */
+                         FALSE,         /* Inherit handles.  */
+                         cr_flags,      /* Creation flags.  */
+                         NULL,          /* Environment.  */
+                         NULL,          /* Use current drive/directory.  */
+                         &si,           /* Startup information. */
+                         &pi            /* Returns process information.  */
+                         );
+  if (!rc)
+    {
+      if (!wpgmname || !wcmdline)
+        log_error ("CreateProcess failed (utf8_to_wchar): %s\n",
+                   strerror (errno));
+      else
+        log_error ("CreateProcess(detached) failed: %s\n", w32_strerror (-1));
+      xfree (wpgmname);
+      xfree (wcmdline);
       xfree (cmdline);
       return my_error (GPG_ERR_GENERAL);
     }
+  xfree (wpgmname);
+  xfree (wcmdline);
   xfree (cmdline);
   cmdline = NULL;
 

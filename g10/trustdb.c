@@ -39,6 +39,9 @@
 #include "tofu.h"
 #include "key-clean.h"
 
+static void write_record (ctrl_t ctrl, TRUSTREC *rec);
+static void do_sync(void);
+
 
 typedef struct key_item **KeyHashTable; /* see new_key_hash_table() */
 
@@ -189,7 +192,7 @@ release_key_array ( struct key_array *keys )
  * before initializing the validation module.
  * FIXME: Should be replaced by a function to add those keys to the trustdb.
  */
-void
+static void
 tdb_register_trusted_keyid (u32 *keyid)
 {
   struct key_item *k;
@@ -214,7 +217,7 @@ tdb_register_trusted_key (const char *string)
     {
       if (desc.mode == KEYDB_SEARCH_MODE_LONG_KID)
         {
-          register_trusted_keyid (desc.u.kid);
+          tdb_register_trusted_keyid (desc.u.kid);
           return;
         }
       if (desc.mode == KEYDB_SEARCH_MODE_FPR
@@ -222,7 +225,7 @@ tdb_register_trusted_key (const char *string)
         {
           kid[0] = buf32_to_u32 (desc.u.fpr+12);
           kid[1] = buf32_to_u32 (desc.u.fpr+16);
-          register_trusted_keyid (kid);
+          tdb_register_trusted_keyid (kid);
           return;
         }
     }
@@ -254,6 +257,49 @@ add_utk (u32 *kid)
 }
 
 
+/* Add/remove KID to/from the list of ultimately trusted keys.  */
+void
+tdb_update_utk (u32 *kid, int add)
+{
+  struct key_item *k, *k_prev;
+
+  k_prev = NULL;
+  for (k = utk_list; k; k = k->next)
+    if (k->kid[0] == kid[0] && k->kid[1] == kid[1])
+      break;
+    else
+      k_prev = k;
+
+  if (add)
+    {
+      if (!k)
+        {
+          k = new_key_item ();
+          k->kid[0] = kid[0];
+          k->kid[1] = kid[1];
+          k->ownertrust = TRUST_ULTIMATE;
+          k->next = utk_list;
+          utk_list = k;
+          if ( opt.verbose > 1 )
+            log_info(_("key %s: accepted as trusted key\n"), keystr(kid));
+        }
+    }
+  else
+    {
+      if (k)
+        {
+          if (k_prev)
+            k_prev->next = k->next;
+          else
+            utk_list = NULL;
+
+          xfree (k->trust_regexp);
+          xfree (k);
+        }
+    }
+}
+
+
 /****************
  * Verify that all our secret keys are usable and put them into the utk_list.
  */
@@ -263,10 +309,11 @@ verify_own_keys (ctrl_t ctrl)
   TRUSTREC rec;
   ulong recnum;
   int rc;
-  struct key_item *k;
+  struct key_item *k, *k2;
+  int need_revalidation = 0;
 
   if (utk_list)
-    return;
+    return; /* Has already been run.  */
 
   /* scan the trustdb to find all ultimately trusted keys */
   for (recnum=1; !tdbio_read_record (recnum, &rec, 0); recnum++ )
@@ -274,22 +321,45 @@ verify_own_keys (ctrl_t ctrl)
       if ( rec.rectype == RECTYPE_TRUST
            && (rec.r.trust.ownertrust & TRUST_MASK) == TRUST_ULTIMATE)
         {
-            byte *fpr = rec.r.trust.fingerprint;
-            int fprlen;
-            u32 kid[2];
+          byte *fpr = rec.r.trust.fingerprint;
+          int fprlen;
+          u32 kid[2];
 
-            /* Problem: We do only use fingerprints in the trustdb but
-             * we need the keyID here to indetify the key; we can only
-             * use that ugly hack to distinguish between 16 and 20
-             * butes fpr - it does not work always so we better change
-             * the whole validation code to only work with
-             * fingerprints */
-            fprlen = (!fpr[16] && !fpr[17] && !fpr[18] && !fpr[19])? 16:20;
-            keyid_from_fingerprint (ctrl, fpr, fprlen, kid);
-            if (!add_utk (kid))
-	      log_info(_("key %s occurs more than once in the trustdb\n"),
-		       keystr(kid));
+          /* Problem: We do only use fingerprints in the trustdb but
+           * we need the keyID here to indetify the key; we can only
+           * use that ugly hack to distinguish between 16 and 20 bytes
+           * fpr - it does not work always so we better change the
+           * whole validation code to only work with fingerprints */
+          fprlen = (!fpr[16] && !fpr[17] && !fpr[18] && !fpr[19])? 16:20;
+          keyid_from_fingerprint (ctrl, fpr, fprlen, kid);
+          if (!add_utk (kid))
+            log_info(_("key %s occurs more than once in the trustdb\n"),
+                     keystr(kid));
+          else if ((rec.r.trust.flags & 1))
+            {
+              /* Record marked as inserted via --trusted-key.  Is this
+               * still the case?  */
+              for (k2 = user_utk_list; k2; k2 = k2->next)
+                if (k2->kid[0] == kid[0] && k2->kid[1] == kid[1])
+                  break;
+              if (!k2) /* No - clear the flag.  */
+                {
+                  if (DBG_TRUST)
+                    log_debug ("clearing former --trusted-key %s\n",
+                               keystr (kid));
+                  rec.r.trust.ownertrust = TRUST_UNKNOWN;
+                  rec.r.trust.flags &= ~(rec.r.trust.flags & 1);
+                  write_record (ctrl, &rec);
+                  need_revalidation = 1;
+                }
+            }
         }
+    }
+
+  if (need_revalidation)
+    {
+      tdb_revalidation_mark (ctrl);
+      do_sync ();
     }
 
   /* Put any --trusted-key keys into the trustdb */
@@ -300,7 +370,7 @@ verify_own_keys (ctrl_t ctrl)
           PKT_public_key pk;
 
           memset (&pk, 0, sizeof pk);
-          rc = get_pubkey (ctrl, &pk, k->kid);
+          rc = get_pubkey_with_ldap_fallback (ctrl, &pk, k->kid);
           if (rc)
 	    log_info(_("key %s: no public key for trusted key - skipped\n"),
 		     keystr(k->kid));
@@ -308,7 +378,7 @@ verify_own_keys (ctrl_t ctrl)
 	    {
 	      tdb_update_ownertrust
                 (ctrl, &pk, ((tdb_get_ownertrust (ctrl, &pk, 0) & ~TRUST_MASK)
-                             | TRUST_ULTIMATE ));
+                             | TRUST_ULTIMATE ),  1);
 	      release_public_key_parts (&pk);
 	    }
 
@@ -749,7 +819,8 @@ tdb_get_min_ownertrust (ctrl_t ctrl, PKT_public_key *pk, int no_create)
  * The key should be a primary one.
  */
 void
-tdb_update_ownertrust (ctrl_t ctrl, PKT_public_key *pk, unsigned int new_trust )
+tdb_update_ownertrust (ctrl_t ctrl, PKT_public_key *pk, unsigned int new_trust,
+                       int as_trusted_key)
 {
   TRUSTREC rec;
   gpg_error_t err;
@@ -761,11 +832,24 @@ tdb_update_ownertrust (ctrl_t ctrl, PKT_public_key *pk, unsigned int new_trust )
   if (!err)
     {
       if (DBG_TRUST)
-        log_debug ("update ownertrust from %u to %u\n",
-                   (unsigned int)rec.r.trust.ownertrust, new_trust );
+        log_debug ("update ownertrust from %u to %u%s\n",
+                   (unsigned int)rec.r.trust.ownertrust, new_trust,
+                   as_trusted_key? " via --trusted-key":"");
       if (rec.r.trust.ownertrust != new_trust)
         {
           rec.r.trust.ownertrust = new_trust;
+          /* Clear or set the trusted key flag if the new value is
+           * ultimate.  This is required so that we know which keys
+           * have been added by --trusted-keys.  */
+          if ((rec.r.trust.ownertrust & TRUST_MASK) == TRUST_ULTIMATE)
+            {
+              if (as_trusted_key)
+                rec.r.trust.flags |= 1;
+              else
+                rec.r.trust.flags &= ~(rec.r.trust.flags & 1);
+            }
+          else
+            rec.r.trust.flags &= ~(rec.r.trust.flags & 1);
           write_record (ctrl, &rec);
           tdb_revalidation_mark (ctrl);
           do_sync ();
@@ -776,13 +860,17 @@ tdb_update_ownertrust (ctrl_t ctrl, PKT_public_key *pk, unsigned int new_trust )
       size_t dummy;
 
       if (DBG_TRUST)
-        log_debug ("insert ownertrust %u\n", new_trust );
+        log_debug ("insert ownertrust %u%s\n", new_trust,
+                   as_trusted_key? " via --trusted-key":"");
 
       memset (&rec, 0, sizeof rec);
       rec.recnum = tdbio_new_recnum (ctrl);
       rec.rectype = RECTYPE_TRUST;
       fingerprint_from_pk (pk, rec.r.trust.fingerprint, &dummy);
       rec.r.trust.ownertrust = new_trust;
+      if ((rec.r.trust.ownertrust & TRUST_MASK) == TRUST_ULTIMATE
+          && as_trusted_key)
+        rec.r.trust.flags = 1;
       write_record (ctrl, &rec);
       tdb_revalidation_mark (ctrl);
       do_sync ();
@@ -1403,7 +1491,7 @@ ask_ownertrust (ctrl_t ctrl, u32 *kid, int minimum)
     {
       log_info("force trust for key %s to %s\n",
 	       keystr(kid),trust_value_to_string(opt.force_ownertrust));
-      tdb_update_ownertrust (ctrl, pk, opt.force_ownertrust);
+      tdb_update_ownertrust (ctrl, pk, opt.force_ownertrust, 0);
       ot=opt.force_ownertrust;
     }
   else

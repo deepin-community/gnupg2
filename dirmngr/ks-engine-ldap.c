@@ -28,208 +28,53 @@
 # include <getopt.h>
 #endif
 #include <stdlib.h>
-#include <errno.h>
-#include <assert.h>
-
-#ifdef _WIN32
-# include <winsock2.h>
-# include <winldap.h>
-#else
-# ifdef NEED_LBER_H
-#  include <lber.h>
-# endif
-/* For OpenLDAP, to enable the API that we're using. */
-# define LDAP_DEPRECATED 1
-# include <ldap.h>
-#endif
 #include <npth.h>
+
 
 #include "dirmngr.h"
 #include "misc.h"
 #include "../common/userids.h"
 #include "../common/mbox-util.h"
 #include "ks-engine.h"
+#include "ldap-misc.h"
 #include "ldap-parse-uri.h"
+#include "ldapserver.h"
 
 
 /* Flags with infos from the connected server.  */
 #define SERVERINFO_REALLDAP 1 /* This is not the PGP keyserver.      */
-#define SERVERINFO_PGPKEYV2 2 /* Needs "pgpeyV2" instead of "pgpKey" */
+#define SERVERINFO_PGPKEYV2 2 /* Needs "pgpKeyV2" instead of "pgpKey"*/
 #define SERVERINFO_SCHEMAV2 4 /* Version 2 of the Schema.            */
 #define SERVERINFO_NTDS     8 /* Server is an Active Directory.      */
 
+
+/* The page size requested from the server.  */
+#define PAGE_SIZE  100
 
 
 #ifndef HAVE_TIMEGM
 time_t timegm(struct tm *tm);
 #endif
-
-/* Convert an LDAP error to a GPG error.  */
-static int
-ldap_err_to_gpg_err (int code)
+
+
+/* Object to keep state pertaining to this module.  */
+struct ks_engine_ldap_local_s
 {
-  gpg_err_code_t ec;
+  LDAP *ldap_conn;
+  LDAPMessage *message;
+  LDAPMessage *msg_iter;  /* Iterator for message.  */
+  unsigned int serverinfo;
+  char *basedn;
+  char *keyspec;
+  char *filter;
+  struct berval *pagecookie;
+  unsigned int pageno;  /* Current page number (starting at 1). */
+  unsigned int total;   /* Total number of attributes read.     */
+  int more_pages;       /* More pages announced by server.      */
+};
 
-  switch (code)
-    {
-#ifdef LDAP_X_CONNECTING
-    case LDAP_X_CONNECTING: ec = GPG_ERR_LDAP_X_CONNECTING; break;
-#endif
 
-    case LDAP_REFERRAL_LIMIT_EXCEEDED: ec = GPG_ERR_LDAP_REFERRAL_LIMIT; break;
-    case LDAP_CLIENT_LOOP: ec = GPG_ERR_LDAP_CLIENT_LOOP; break;
-    case LDAP_NO_RESULTS_RETURNED: ec = GPG_ERR_LDAP_NO_RESULTS; break;
-    case LDAP_CONTROL_NOT_FOUND: ec = GPG_ERR_LDAP_CONTROL_NOT_FOUND; break;
-    case LDAP_NOT_SUPPORTED: ec = GPG_ERR_LDAP_NOT_SUPPORTED; break;
-    case LDAP_CONNECT_ERROR: ec = GPG_ERR_LDAP_CONNECT; break;
-    case LDAP_NO_MEMORY: ec = GPG_ERR_LDAP_NO_MEMORY; break;
-    case LDAP_PARAM_ERROR: ec = GPG_ERR_LDAP_PARAM; break;
-    case LDAP_USER_CANCELLED: ec = GPG_ERR_LDAP_USER_CANCELLED; break;
-    case LDAP_FILTER_ERROR: ec = GPG_ERR_LDAP_FILTER; break;
-    case LDAP_AUTH_UNKNOWN: ec = GPG_ERR_LDAP_AUTH_UNKNOWN; break;
-    case LDAP_TIMEOUT: ec = GPG_ERR_LDAP_TIMEOUT; break;
-    case LDAP_DECODING_ERROR: ec = GPG_ERR_LDAP_DECODING; break;
-    case LDAP_ENCODING_ERROR: ec = GPG_ERR_LDAP_ENCODING; break;
-    case LDAP_LOCAL_ERROR: ec = GPG_ERR_LDAP_LOCAL; break;
-    case LDAP_SERVER_DOWN: ec = GPG_ERR_LDAP_SERVER_DOWN; break;
 
-    case LDAP_SUCCESS: ec = GPG_ERR_LDAP_SUCCESS; break;
-
-    case LDAP_OPERATIONS_ERROR: ec = GPG_ERR_LDAP_OPERATIONS; break;
-    case LDAP_PROTOCOL_ERROR: ec = GPG_ERR_LDAP_PROTOCOL; break;
-    case LDAP_TIMELIMIT_EXCEEDED: ec = GPG_ERR_LDAP_TIMELIMIT; break;
-    case LDAP_SIZELIMIT_EXCEEDED: ec = GPG_ERR_LDAP_SIZELIMIT; break;
-    case LDAP_COMPARE_FALSE: ec = GPG_ERR_LDAP_COMPARE_FALSE; break;
-    case LDAP_COMPARE_TRUE: ec = GPG_ERR_LDAP_COMPARE_TRUE; break;
-    case LDAP_AUTH_METHOD_NOT_SUPPORTED: ec=GPG_ERR_LDAP_UNSUPPORTED_AUTH;break;
-    case LDAP_STRONG_AUTH_REQUIRED: ec = GPG_ERR_LDAP_STRONG_AUTH_RQRD; break;
-    case LDAP_PARTIAL_RESULTS: ec = GPG_ERR_LDAP_PARTIAL_RESULTS; break;
-    case LDAP_REFERRAL: ec = GPG_ERR_LDAP_REFERRAL; break;
-
-#ifdef LDAP_ADMINLIMIT_EXCEEDED
-    case LDAP_ADMINLIMIT_EXCEEDED: ec = GPG_ERR_LDAP_ADMINLIMIT; break;
-#endif
-
-#ifdef LDAP_UNAVAILABLE_CRITICAL_EXTENSION
-    case LDAP_UNAVAILABLE_CRITICAL_EXTENSION:
-                               ec = GPG_ERR_LDAP_UNAVAIL_CRIT_EXTN; break;
-#endif
-
-    case LDAP_CONFIDENTIALITY_REQUIRED: ec = GPG_ERR_LDAP_CONFIDENT_RQRD; break;
-    case LDAP_SASL_BIND_IN_PROGRESS: ec = GPG_ERR_LDAP_SASL_BIND_INPROG; break;
-    case LDAP_NO_SUCH_ATTRIBUTE: ec = GPG_ERR_LDAP_NO_SUCH_ATTRIBUTE; break;
-    case LDAP_UNDEFINED_TYPE: ec = GPG_ERR_LDAP_UNDEFINED_TYPE; break;
-    case LDAP_INAPPROPRIATE_MATCHING: ec = GPG_ERR_LDAP_BAD_MATCHING; break;
-    case LDAP_CONSTRAINT_VIOLATION: ec = GPG_ERR_LDAP_CONST_VIOLATION; break;
-
-#ifdef LDAP_TYPE_OR_VALUE_EXISTS
-    case LDAP_TYPE_OR_VALUE_EXISTS: ec = GPG_ERR_LDAP_TYPE_VALUE_EXISTS; break;
-#endif
-
-    case LDAP_INVALID_SYNTAX: ec = GPG_ERR_LDAP_INV_SYNTAX; break;
-    case LDAP_NO_SUCH_OBJECT: ec = GPG_ERR_LDAP_NO_SUCH_OBJ; break;
-    case LDAP_ALIAS_PROBLEM: ec = GPG_ERR_LDAP_ALIAS_PROBLEM; break;
-    case LDAP_INVALID_DN_SYNTAX: ec = GPG_ERR_LDAP_INV_DN_SYNTAX; break;
-    case LDAP_IS_LEAF: ec = GPG_ERR_LDAP_IS_LEAF; break;
-    case LDAP_ALIAS_DEREF_PROBLEM: ec = GPG_ERR_LDAP_ALIAS_DEREF; break;
-
-#ifdef LDAP_X_PROXY_AUTHZ_FAILURE
-    case LDAP_X_PROXY_AUTHZ_FAILURE: ec = GPG_ERR_LDAP_X_PROXY_AUTH_FAIL; break;
-#endif
-
-    case LDAP_INAPPROPRIATE_AUTH: ec = GPG_ERR_LDAP_BAD_AUTH; break;
-    case LDAP_INVALID_CREDENTIALS: ec = GPG_ERR_LDAP_INV_CREDENTIALS; break;
-
-#ifdef LDAP_INSUFFICIENT_ACCESS
-    case LDAP_INSUFFICIENT_ACCESS: ec = GPG_ERR_LDAP_INSUFFICIENT_ACC; break;
-#endif
-
-    case LDAP_BUSY: ec = GPG_ERR_LDAP_BUSY; break;
-    case LDAP_UNAVAILABLE: ec = GPG_ERR_LDAP_UNAVAILABLE; break;
-    case LDAP_UNWILLING_TO_PERFORM: ec = GPG_ERR_LDAP_UNWILL_TO_PERFORM; break;
-    case LDAP_LOOP_DETECT: ec = GPG_ERR_LDAP_LOOP_DETECT; break;
-    case LDAP_NAMING_VIOLATION: ec = GPG_ERR_LDAP_NAMING_VIOLATION; break;
-    case LDAP_OBJECT_CLASS_VIOLATION: ec = GPG_ERR_LDAP_OBJ_CLS_VIOLATION; break;
-    case LDAP_NOT_ALLOWED_ON_NONLEAF: ec=GPG_ERR_LDAP_NOT_ALLOW_NONLEAF;break;
-    case LDAP_NOT_ALLOWED_ON_RDN: ec = GPG_ERR_LDAP_NOT_ALLOW_ON_RDN; break;
-    case LDAP_ALREADY_EXISTS: ec = GPG_ERR_LDAP_ALREADY_EXISTS; break;
-    case LDAP_NO_OBJECT_CLASS_MODS: ec = GPG_ERR_LDAP_NO_OBJ_CLASS_MODS; break;
-    case LDAP_RESULTS_TOO_LARGE: ec = GPG_ERR_LDAP_RESULTS_TOO_LARGE; break;
-    case LDAP_AFFECTS_MULTIPLE_DSAS: ec = GPG_ERR_LDAP_AFFECTS_MULT_DSAS; break;
-
-#ifdef LDAP_VLV_ERROR
-    case LDAP_VLV_ERROR: ec = GPG_ERR_LDAP_VLV; break;
-#endif
-
-    case LDAP_OTHER: ec = GPG_ERR_LDAP_OTHER; break;
-
-#ifdef LDAP_CUP_RESOURCES_EXHAUSTED
-    case LDAP_CUP_RESOURCES_EXHAUSTED: ec=GPG_ERR_LDAP_CUP_RESOURCE_LIMIT;break;
-    case LDAP_CUP_SECURITY_VIOLATION: ec=GPG_ERR_LDAP_CUP_SEC_VIOLATION; break;
-    case LDAP_CUP_INVALID_DATA: ec = GPG_ERR_LDAP_CUP_INV_DATA; break;
-    case LDAP_CUP_UNSUPPORTED_SCHEME: ec = GPG_ERR_LDAP_CUP_UNSUP_SCHEME; break;
-    case LDAP_CUP_RELOAD_REQUIRED: ec = GPG_ERR_LDAP_CUP_RELOAD; break;
-#endif
-
-#ifdef LDAP_CANCELLED
-    case LDAP_CANCELLED: ec = GPG_ERR_LDAP_CANCELLED; break;
-#endif
-
-#ifdef LDAP_NO_SUCH_OPERATION
-    case LDAP_NO_SUCH_OPERATION: ec = GPG_ERR_LDAP_NO_SUCH_OPERATION; break;
-#endif
-
-#ifdef LDAP_TOO_LATE
-    case LDAP_TOO_LATE: ec = GPG_ERR_LDAP_TOO_LATE; break;
-#endif
-
-#ifdef LDAP_CANNOT_CANCEL
-    case LDAP_CANNOT_CANCEL: ec = GPG_ERR_LDAP_CANNOT_CANCEL; break;
-#endif
-
-#ifdef LDAP_ASSERTION_FAILED
-    case LDAP_ASSERTION_FAILED: ec = GPG_ERR_LDAP_ASSERTION_FAILED; break;
-#endif
-
-#ifdef LDAP_PROXIED_AUTHORIZATION_DENIED
-    case LDAP_PROXIED_AUTHORIZATION_DENIED:
-                                      ec = GPG_ERR_LDAP_PROX_AUTH_DENIED; break;
-#endif
-
-    default:
-#if defined(LDAP_E_ERROR) && defined(LDAP_X_ERROR)
-      if (LDAP_E_ERROR (code))
-        ec = GPG_ERR_LDAP_E_GENERAL;
-      else if (LDAP_X_ERROR (code))
-        ec = GPG_ERR_LDAP_X_GENERAL;
-      else
-#endif
-        ec = GPG_ERR_LDAP_GENERAL;
-      break;
-    }
-
-  return ec;
-}
-
-/* Retrieve an LDAP error and return it's GPG equivalent.  */
-static int
-ldap_to_gpg_err (LDAP *ld)
-{
-#if defined(HAVE_LDAP_GET_OPTION) && defined(LDAP_OPT_ERROR_NUMBER)
-  int err;
-
-  if (ldap_get_option (ld, LDAP_OPT_ERROR_NUMBER, &err) == 0)
-    return ldap_err_to_gpg_err (err);
-  else
-    return GPG_ERR_GENERAL;
-#elif defined(HAVE_LDAP_LD_ERRNO)
-  return ldap_err_to_gpg_err (ld->ld_errno);
-#else
-  /* We should never get here since the LDAP library should always
-     have either ldap_get_option or ld_errno, but just in case... */
-  return GPG_ERR_INTERNAL;
-#endif
-}
 
 static time_t
 ldap2epochtime (const char *timestr)
@@ -295,6 +140,16 @@ epoch2ldaptime (time_t stamp)
     return xstrdup ("INVALID TIME");
 }
 #endif
+
+
+static void
+my_ldap_value_free (char **vals)
+{
+  if (vals)
+    ldap_value_free (vals);
+}
+
+
 
 /* Print a help output for the schemata supported by this module. */
 gpg_error_t
@@ -302,32 +157,93 @@ ks_ldap_help (ctrl_t ctrl, parsed_uri_t uri)
 {
   const char data[] =
     "Handler for LDAP URLs:\n"
-    "  ldap://host:port/[BASEDN]???[bindname=BINDNAME,password=PASSWORD]\n"
+    "  ldap://HOST:PORT/[BASEDN]????[bindname=BINDNAME,password=PASSWORD]\n"
     "\n"
     "Note: basedn, bindname and password need to be percent escaped. In\n"
     "particular, spaces need to be replaced with %20 and commas with %2c.\n"
-    "bindname will typically be of the form:\n"
+    "Thus bindname will typically be of the form:\n"
     "\n"
     "  uid=user%2cou=PGP%20Users%2cdc=EXAMPLE%2cdc=ORG\n"
     "\n"
     "The ldaps:// and ldapi:// schemes are also supported.  If ldaps is used\n"
     "then the server's certificate will be checked.  If it is not valid, any\n"
-    "operation will be aborted.\n"
+    "operation will be aborted.  Note that ldaps means LDAP with STARTTLS\n"
+    "\n"
+    "As an alternative to an URL a string in this form may be used:\n"
+    "\n"
+    "  HOST:PORT:BINDNAME:PASSWORD:BASEDN:FLAGS:\n"
+    "\n"
+    "The use of the percent sign or a colon in one of the string values is\n"
+    "currently not supported.\n"
     "\n"
     "Supported methods: search, get, put\n";
   gpg_error_t err;
 
   if(!uri)
     err = ks_print_help (ctrl, "  ldap");
-  else if (strcmp (uri->scheme, "ldap") == 0
-      || strcmp (uri->scheme, "ldaps") == 0
-      || strcmp (uri->scheme, "ldapi") == 0)
+  else if (!strcmp (uri->scheme, "ldap")
+           || !strcmp (uri->scheme, "ldaps")
+           || !strcmp (uri->scheme, "ldapi")
+           || uri->opaque)
     err = ks_print_help (ctrl, data);
   else
     err = 0;
 
   return err;
 }
+
+/* Create a new empty state object.  Returns NULL on error */
+static struct ks_engine_ldap_local_s *
+ks_ldap_new_state (void)
+{
+  return xtrycalloc (1, sizeof(struct ks_engine_ldap_local_s));
+}
+
+
+/* Clear the state object STATE.  Returns the STATE object.  */
+static struct ks_engine_ldap_local_s *
+ks_ldap_clear_state (struct ks_engine_ldap_local_s *state)
+{
+  if (state->ldap_conn)
+    {
+      ldap_unbind (state->ldap_conn);
+      state->ldap_conn = NULL;
+    }
+  if (state->message)
+    {
+      ldap_msgfree (state->message);
+      state->message = NULL;
+    }
+  if (state->pagecookie)
+    {
+      ber_bvfree (state->pagecookie);
+      state->pagecookie = NULL;
+    }
+  state->serverinfo = 0;
+  xfree (state->basedn);
+  state->basedn = NULL;
+  xfree (state->keyspec);
+  state->keyspec = NULL;
+  xfree (state->filter);
+  state->filter = NULL;
+  state->pageno = 0;
+  state->total = 0;
+  state->more_pages = 0;
+  return state;
+}
+
+
+/* Release a state object.  */
+void
+ks_ldap_free_state (struct ks_engine_ldap_local_s *state)
+{
+  if (!state)
+    return;
+  ks_ldap_clear_state (state);
+  xfree (state);
+}
+
+
 
 /* Convert a keyspec to a filter.  Return an error if the keyspec is
    bad or is not supported.  The filter is escaped and returned in
@@ -379,19 +295,26 @@ keyspec_to_ldap_filter (const char *keyspec, char **filter, int only_exact,
       else
         p = freeme;
       if ((serverinfo & SERVERINFO_SCHEMAV2))
-        f = xasprintf ("(gpgMailbox=%s)", p);
+        f = xasprintf ("(&(gpgMailbox=%s)(!(|(pgpRevoked=1)(pgpDisabled=1))))",
+                       p);
       else if (!only_exact)
         f = xasprintf ("(pgpUserID=*<%s>*)", p);
       break;
 
     case KEYDB_SEARCH_MODE_MAILSUB:
-      if (! only_exact)
+      if ((serverinfo & SERVERINFO_SCHEMAV2))
+	f = xasprintf("(&(gpgMailbox=*%s*)(!(|(pgpRevoked=1)(pgpDisabled=1))))",
+                      (freeme = ldap_escape_filter (desc.u.name)));
+      else if (!only_exact)
 	f = xasprintf ("(pgpUserID=*<*%s*>*)",
 		       (freeme = ldap_escape_filter (desc.u.name)));
       break;
 
     case KEYDB_SEARCH_MODE_MAILEND:
-      if (! only_exact)
+      if ((serverinfo & SERVERINFO_SCHEMAV2))
+	f = xasprintf("(&(gpgMailbox=*%s)(!(|(pgpRevoked=1)(pgpDisabled=1))))",
+                      (freeme = ldap_escape_filter (desc.u.name)));
+      else if (!only_exact)
 	f = xasprintf ("(pgpUserID=*<*%s>*)",
 		       (freeme = ldap_escape_filter (desc.u.name)));
       break;
@@ -446,138 +369,277 @@ keyspec_to_ldap_filter (const char *keyspec, char **filter, int only_exact,
 }
 
 
+
+/* Helper for my_ldap_connect.  */
+static char *
+interrogate_ldap_dn (LDAP *ldap_conn, const char *basedn_search,
+                     unsigned int *r_serverinfo)
+{
+  int lerr;
+  char **vals;
+  LDAPMessage *si_res;
+  int is_gnupg = 0;
+  char *basedn = NULL;
+  char *attr2[] = { "pgpBaseKeySpaceDN", "pgpVersion", "pgpSoftware", NULL };
+  char *object;
+
+
+  object = xasprintf ("cn=pgpServerInfo,%s", basedn_search);
+
+  npth_unprotect ();
+  lerr = ldap_search_s (ldap_conn, object, LDAP_SCOPE_BASE,
+                        "(objectClass=*)", attr2, 0, &si_res);
+  npth_protect ();
+  xfree (object);
+
+  if (lerr == LDAP_SUCCESS)
+    {
+      vals = ldap_get_values (ldap_conn, si_res, "pgpBaseKeySpaceDN");
+      if (vals && vals[0])
+        basedn = xtrystrdup (vals[0]);
+      my_ldap_value_free (vals);
+
+      vals = ldap_get_values (ldap_conn, si_res, "pgpSoftware");
+      if (vals && vals[0])
+        {
+          if (opt.debug)
+            log_debug ("Server: \t%s\n", vals[0]);
+          if (!ascii_strcasecmp (vals[0], "GnuPG"))
+            is_gnupg = 1;
+        }
+      my_ldap_value_free (vals);
+
+      vals = ldap_get_values (ldap_conn, si_res, "pgpVersion");
+      if (vals && vals[0])
+        {
+          if (opt.debug)
+            log_debug ("Version:\t%s\n", vals[0]);
+          if (is_gnupg)
+            {
+              char *fields[2];
+              int nfields;
+              nfields = split_fields (vals[0], fields, DIM(fields));
+              if (nfields > 0 && atoi(fields[0]) > 1)
+                *r_serverinfo |= SERVERINFO_SCHEMAV2;
+              if (nfields > 1
+                  && !ascii_strcasecmp (fields[1], "ntds"))
+                *r_serverinfo |= SERVERINFO_NTDS;
+            }
+        }
+      my_ldap_value_free (vals);
+    }
+
+  /* From man ldap_search_s: "res parameter of
+     ldap_search_ext_s() and ldap_search_s() should be
+     freed with ldap_msgfree() regardless of return
+     value of these functions.  */
+  ldap_msgfree (si_res);
+  return basedn;
+}
+
+
 
 /* Connect to an LDAP server and interrogate it.
-
-     - uri describes the server to connect to and various options
-       including whether to use TLS and the username and password (see
-       ldap_parse_uri for a description of the various fields).
-
-   This function returns:
-
-     - The ldap connection handle in *LDAP_CONNP.
-
-     - The base DN for the PGP key space by querying the
-       pgpBaseKeySpaceDN attribute (This is normally
-       'ou=PGP Keys,dc=EXAMPLE,dc=ORG').
-
-     - The attribute to lookup to find the pgp key.  This is either
-       'pgpKey' or 'pgpKeyV2'.
-
-     - Whether this is a real ldap server.  (It's unclear what this
-       exactly means.)
-
-   The values are returned in the passed variables.  If you pass NULL,
-   then the value won't be returned.  It is the caller's
-   responsibility to release *LDAP_CONNP with ldap_unbind and xfree
-   *BASEDNP.
-
-   If this function successfully interrogated the server, it returns
-   0.  If there was an LDAP error, it returns the LDAP error code.  If
-   an error occurred, *basednp, etc., are undefined (and don't need to
-   be freed.)
-
-   R_SERVERINFO receives information about the server.
-
-   If no LDAP error occurred, you still need to check that *basednp is
-   valid.  If it is NULL, then the server does not appear to be an
-   OpenPGP Keyserver.  */
-static int
+ *
+ * URI describes the server to connect to and various options
+ * including whether to use TLS and the username and password (see
+ * ldap_parse_uri for a description of the various fields).
+ *
+ * Returns: The ldap connection handle in *LDAP_CONNP, R_BASEDN is set
+ * to the base DN for the PGP key space, several flags will be stored
+ * at SERVERINFO, If you pass NULL, then the value won't be returned.
+ * It is the caller's responsibility to release *LDAP_CONNP with
+ * ldap_unbind and to xfree *BASEDNP.  On error these variables are
+ * cleared.
+ *
+ * Note: On success, you still need to check that *BASEDNP is valid.
+ * If it is NULL, then the server does not appear to be an OpenPGP
+ * keyserver.  */
+static gpg_error_t
 my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
-                 char **basednp, unsigned int *r_serverinfo)
+                 char **r_basedn, char **r_host, int *r_use_tls,
+                 unsigned int *r_serverinfo)
 {
-  int err = 0;
+  gpg_error_t err = 0;
+  int lerr;
+  ldap_server_t server = NULL;
   LDAP *ldap_conn = NULL;
-  char *user = uri->auth;
-  struct uri_tuple_s *password_param;
-  char *password;
   char *basedn = NULL;
+  char *host = NULL;   /* Host to use.  */
+  int port;            /* Port to use.  */
+  int use_tls;         /* 1 = starttls, 2 = ldap-over-tls  */
+  int use_ntds;        /* Use Active Directory authentication.  */
+  int use_areconly;    /* Lookup only via A record (Windows).  */
+  const char *bindname;
+  const char *password;
+  const char *basedn_arg;
+#ifndef HAVE_W32_SYSTEM
+  char *tmpstr;
+#endif
 
+  if (r_basedn)
+    *r_basedn = NULL;
+  if (r_host)
+    *r_host = NULL;
+  if (r_use_tls)
+    *r_use_tls = 0;
   *r_serverinfo = 0;
 
-  password_param = uri_query_lookup (uri, "password");
-  password = password_param ? password_param->value : NULL;
+  if (uri->opaque)
+    {
+      server = ldapserver_parse_one (uri->path, NULL, 0);
+      if (!server)
+        return gpg_error (GPG_ERR_LDAP_OTHER);
+      host = server->host;
+      port = server->port;
+      bindname = server->user;
+      password = bindname? server->pass : NULL;
+      basedn_arg = server->base;
+      use_tls = server->starttls? 1 : server->ldap_over_tls? 2 : 0;
+      use_ntds = server->ntds;
+      use_areconly = server->areconly;
+    }
+  else
+    {
+      host = uri->host;
+      port = uri->port;
+      bindname = uri->auth;
+      password = bindname? uri_query_value (uri, "password") : NULL;
+      basedn_arg = uri->path;
+      use_tls = uri->use_tls ? 1 : 0;
+      use_ntds = uri->ad_current;
+      use_areconly = 0;
+    }
 
-  if (opt.debug)
-    log_debug ("my_ldap_connect(%s:%d/%s????%s%s%s%s%s%s)\n",
-               uri->host, uri->port,
-               uri->path ? uri->path : "",
-               uri->auth ? "bindname=" : "",
-               uri->auth ? uri->auth : "",
-               uri->auth && password ? "," : "",
-               password ? "password=" : "",
-               password ? ">not shown<": "",
-               uri->ad_current? " auth=>current_user<":"");
+  if (!port)
+    port = use_tls == 2? 636 : 389;
+
+  if (host)
+    {
+      host = xtrystrdup (host);
+      if (!host)
+        {
+          err = gpg_error_from_syserror ();
+          goto out;
+        }
+    }
+
+  if (opt.verbose)
+    log_info ("ldap connect to '%s:%d:%s:%s:%s:%s%s%s'\n",
+              host, port,
+              basedn_arg ? basedn_arg : "",
+              bindname ? bindname : "",
+              password ? "*****" : "",
+              use_tls == 1? "starttls" : use_tls == 2? "ldaptls" : "plain",
+              use_ntds ? ",ntds":"",
+              use_areconly? ",areconly":"");
+
 
   /* If the uri specifies a secure connection and we don't support
      TLS, then fail; don't silently revert to an insecure
      connection.  */
-  if (uri->use_tls)
+  if (use_tls)
     {
 #ifndef HAVE_LDAP_START_TLS_S
-      log_error ("Can't use LDAP to connect to the server: no TLS support.");
+      log_error ("ldap: can't connect to the server: no TLS support.");
       err = GPG_ERR_LDAP_NOT_SUPPORTED;
       goto out;
 #endif
     }
 
-  if (uri->ad_current)
-    ldap_conn = ldap_init (NULL, uri->port);
-  else
-    ldap_conn = ldap_init (uri->host, uri->port);
+
+#ifdef HAVE_W32_SYSTEM
+  /* Note that host==NULL uses the default domain controller.  */
+  npth_unprotect ();
+  ldap_conn = ldap_sslinit (host, port, (use_tls == 2));
+  npth_protect ();
   if (!ldap_conn)
     {
-      err = gpg_err_code_from_syserror ();
-      if (uri->ad_current)
-        log_error ("error initializing LDAP for current user\n");
-      else
-        log_error ("error initializing LDAP for (%s://%s:%d)\n",
-                   uri->scheme, uri->host, uri->port);
+      lerr = LdapGetLastError ();
+      err = ldap_err_to_gpg_err (lerr);
+      log_error ("error initializing LDAP '%s:%d': %s\n",
+                 host, port, ldap_err2string (lerr));
       goto out;
     }
+  if (use_areconly)
+    {
+      lerr = ldap_set_option (ldap_conn, LDAP_OPT_AREC_EXCLUSIVE, LDAP_OPT_ON);
+      if (lerr != LDAP_SUCCESS)
+        {
+          log_error ("ks-ldap: unable to set LDAP_OPT_AREC_EXLUSIVE: %s\n",
+                     ldap_err2string (lerr));
+          err = ldap_err_to_gpg_err (lerr);
+          goto out;
+        }
+    }
+
+#else /* Unix */
+  tmpstr = xtryasprintf ("%s://%s:%d",
+                         use_tls == 2? "ldaps" : "ldap",
+                         host, port);
+  if (!tmpstr)
+    {
+      err = gpg_error_from_syserror ();
+      goto out;
+    }
+  npth_unprotect ();
+  lerr = ldap_initialize (&ldap_conn, tmpstr);
+  npth_protect ();
+  if (lerr != LDAP_SUCCESS || !ldap_conn)
+    {
+      err = ldap_err_to_gpg_err (lerr);
+      log_error ("error initializing LDAP '%s': %s\n",
+                 tmpstr, ldap_err2string (lerr));
+      xfree (tmpstr);
+      goto out;
+    }
+  xfree (tmpstr);
+#endif /* Unix */
 
 #ifdef HAVE_LDAP_SET_OPTION
   {
     int ver = LDAP_VERSION3;
 
-    err = ldap_set_option (ldap_conn, LDAP_OPT_PROTOCOL_VERSION, &ver);
-    if (err != LDAP_SUCCESS)
+    lerr = ldap_set_option (ldap_conn, LDAP_OPT_PROTOCOL_VERSION, &ver);
+    if (lerr != LDAP_SUCCESS)
       {
 	log_error ("ks-ldap: unable to go to LDAP 3: %s\n",
-		   ldap_err2string (err));
+		   ldap_err2string (lerr));
+	err = ldap_err_to_gpg_err (lerr);
 	goto out;
       }
   }
+  if (opt.ldaptimeout)
+    {
+      int ver = opt.ldaptimeout;
+
+      lerr = ldap_set_option (ldap_conn, LDAP_OPT_TIMELIMIT, &ver);
+      if (lerr != LDAP_SUCCESS)
+        {
+          log_error ("ks-ldap: unable to set LDAP timelimit to %us: %s\n",
+                     opt.ldaptimeout, ldap_err2string (lerr));
+          err = ldap_err_to_gpg_err (lerr);
+          goto out;
+        }
+      if (opt.verbose)
+        log_info ("ldap timeout set to %us\n", opt.ldaptimeout);
+    }
 #endif
 
-  /* XXX: It would be nice to have an option to provide the server's
-     certificate.  */
-#if 0
-#if defined(LDAP_OPT_X_TLS_CACERTFILE) && defined(HAVE_LDAP_SET_OPTION)
-  err = ldap_set_option (NULL, LDAP_OPT_X_TLS_CACERTFILE, ca_cert_file);
-  if (err)
-    {
-      log_error ("unable to set ca-cert-file to '%s': %s\n",
-		 ca_cert_file, ldap_err2string (err));
-      goto out;
-    }
-#endif /* LDAP_OPT_X_TLS_CACERTFILE && HAVE_LDAP_SET_OPTION */
-#endif
 
 #ifdef HAVE_LDAP_START_TLS_S
-  if (uri->use_tls)
+  if (use_tls == 1)
     {
-      /* XXX: We need an option to determine whether to abort if the
-	 certificate is bad or not.  Right now we conservatively
-	 default to checking the certificate and aborting.  */
 #ifndef HAVE_W32_SYSTEM
       int check_cert = LDAP_OPT_X_TLS_HARD; /* LDAP_OPT_X_TLS_NEVER */
 
-      err = ldap_set_option (ldap_conn,
-			     LDAP_OPT_X_TLS_REQUIRE_CERT, &check_cert);
-      if (err)
+      lerr = ldap_set_option (ldap_conn,
+                              LDAP_OPT_X_TLS_REQUIRE_CERT, &check_cert);
+      if (lerr)
 	{
-	  log_error ("error setting TLS option on LDAP connection\n");
+	  log_error ("ldap: error setting an TLS option: %s\n",
+                     ldap_err2string (lerr));
+          err = ldap_err_to_gpg_err (lerr);
 	  goto out;
 	}
 #else
@@ -589,7 +651,7 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
 #endif
 
       npth_unprotect ();
-      err = ldap_start_tls_s (ldap_conn,
+      lerr = ldap_start_tls_s (ldap_conn,
 #ifdef HAVE_W32_SYSTEM
 			      /* ServerReturnValue, result */
 			      NULL, NULL,
@@ -597,44 +659,49 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
 			      /* ServerControls, ClientControls */
 			      NULL, NULL);
       npth_protect ();
-      if (err)
+      if (lerr)
 	{
-	  log_error ("error connecting to LDAP server with TLS\n");
+	  log_error ("ldap: error switching to STARTTLS mode: %s\n",
+                     ldap_err2string (lerr));
+          err = ldap_err_to_gpg_err (lerr);
 	  goto out;
 	}
     }
 #endif
 
-  if (uri->ad_current)
+  if (use_ntds)
     {
-      if (opt.debug)
-        log_debug ("LDAP bind to current user via AD\n");
 #ifdef HAVE_W32_SYSTEM
       npth_unprotect ();
-      err = ldap_bind_s (ldap_conn, NULL, NULL, LDAP_AUTH_NEGOTIATE);
+      lerr = ldap_bind_s (ldap_conn, NULL, NULL, LDAP_AUTH_NEGOTIATE);
       npth_protect ();
-#else
-      err = gpg_error (GPG_ERR_NOT_SUPPORTED);
-#endif
-      if (err != LDAP_SUCCESS)
+      if (lerr != LDAP_SUCCESS)
 	{
 	  log_error ("error binding to LDAP via AD: %s\n",
-                     ldap_err2string (err));
+                     ldap_err2string (lerr));
+          err = ldap_err_to_gpg_err (lerr);
 	  goto out;
 	}
+#else
+      log_error ("ldap: no Active Directory support but 'ntds' requested\n");
+      err = gpg_error (GPG_ERR_NOT_SUPPORTED);
+      goto out;
+#endif
     }
-  else if (uri->auth)
+  else if (bindname)
     {
-      if (opt.debug)
-        log_debug ("LDAP bind to %s, password %s\n",
-                   user, password ? ">not shown<" : ">none<");
 
       npth_unprotect ();
-      err = ldap_simple_bind_s (ldap_conn, user, password);
+      /* Older Windows header dont have the const for the last two args.
+       * Thus we need to cast to avoid warnings.  */
+      lerr = ldap_simple_bind_s (ldap_conn,
+                                 (char * const)bindname,
+                                 (char * const)password);
       npth_protect ();
-      if (err != LDAP_SUCCESS)
+      if (lerr != LDAP_SUCCESS)
 	{
-	  log_error ("error binding to LDAP: %s\n", ldap_err2string (err));
+	  log_error ("error binding to LDAP: %s\n", ldap_err2string (lerr));
+          err = ldap_err_to_gpg_err (lerr);
 	  goto out;
 	}
     }
@@ -643,14 +710,25 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
       /* By default we don't bind as there is usually no need to.  */
     }
 
-  if (uri->path && *uri->path)
+  if (basedn_arg && *basedn_arg)
     {
-      /* User specified base DN.  */
-      basedn = xstrdup (uri->path);
-
-      /* If the user specifies a base DN, then we know the server is a
+      /* User specified base DN.  In this case we know the server is a
        * real LDAP server.  */
+      const char *user_basedn = basedn_arg;
+
       *r_serverinfo |= SERVERINFO_REALLDAP;
+
+      /* First try with provided basedn, else retry up one level.
+       * Retry assumes that provided entry is for keyspace,
+       * matching old behavior */
+      basedn = interrogate_ldap_dn (ldap_conn, user_basedn, r_serverinfo);
+      if (!basedn)
+        {
+          const char *basedn_parent = strchr (user_basedn, ',');
+          if (basedn_parent && *basedn_parent)
+            basedn = interrogate_ldap_dn (ldap_conn, basedn_parent + 1,
+                                          r_serverinfo);
+        }
     }
   else
     { /* Look for namingContexts.  */
@@ -658,11 +736,11 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
       char *attr[] = { "namingContexts", NULL };
 
       npth_unprotect ();
-      err = ldap_search_s (ldap_conn, "", LDAP_SCOPE_BASE,
+      lerr = ldap_search_s (ldap_conn, "", LDAP_SCOPE_BASE,
 			   "(objectClass=*)", attr, 0, &res);
       npth_protect ();
 
-      if (err == LDAP_SUCCESS)
+      if (lerr == LDAP_SUCCESS)
 	{
 	  char **context;
 
@@ -676,81 +754,17 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
                * we found this, we know we're talking to a regular-ish
                * LDAP server and not an LDAP keyserver.  */
 	      int i;
-	      char *attr2[] =
-		{ "pgpBaseKeySpaceDN", "pgpVersion", "pgpSoftware", NULL };
 
               *r_serverinfo |= SERVERINFO_REALLDAP;
 
-	      for (i = 0; context[i] && ! basedn; i++)
-		{
-		  char **vals;
-		  LDAPMessage *si_res;
-                  int is_gnupg = 0;
-
-                  {
-                    char *object = xasprintf ("cn=pgpServerInfo,%s",
-                                              context[i]);
-                    npth_unprotect ();
-                    err = ldap_search_s (ldap_conn, object, LDAP_SCOPE_BASE,
-                                         "(objectClass=*)", attr2, 0, &si_res);
-                    npth_protect ();
-                    xfree (object);
-                  }
-
-		  if (err == LDAP_SUCCESS)
-		    {
-		      vals = ldap_get_values (ldap_conn, si_res,
-					      "pgpBaseKeySpaceDN");
-		      if (vals)
-			{
-			  basedn = xtrystrdup (vals[0]);
-			  ldap_value_free (vals);
-			}
-
-		      vals = ldap_get_values (ldap_conn, si_res,
-					      "pgpSoftware");
-		      if (vals)
-			{
-                          if (opt.debug)
-                            log_debug ("Server: \t%s\n", vals[0]);
-                          if (!ascii_strcasecmp (vals[0], "GnuPG"))
-                            is_gnupg = 1;
-			  ldap_value_free (vals);
-			}
-
-		      vals = ldap_get_values (ldap_conn, si_res,
-					      "pgpVersion");
-		      if (vals)
-			{
-                          if (opt.debug)
-                            log_debug ("Version:\t%s\n", vals[0]);
-                          if (is_gnupg)
-                            {
-                              char *fields[2];
-                              int nfields;
-                              nfields = split_fields (vals[0],
-                                                      fields, DIM(fields));
-                              if (nfields > 0 && atoi(fields[0]) > 1)
-                                *r_serverinfo |= SERVERINFO_SCHEMAV2;
-                              if (nfields > 1
-                                  && !ascii_strcasecmp (fields[1], "ntds"))
-                                *r_serverinfo |= SERVERINFO_NTDS;
-                            }
-			  ldap_value_free (vals);
-			}
-		    }
-
-		  /* From man ldap_search_s: "res parameter of
-		     ldap_search_ext_s() and ldap_search_s() should be
-		     freed with ldap_msgfree() regardless of return
-		     value of these functions.  */
-		  ldap_msgfree (si_res);
-		}
+	      for (i = 0; context[i] && !basedn; i++)
+                basedn = interrogate_ldap_dn (ldap_conn, context[i],
+                                              r_serverinfo);
 
 	      ldap_value_free (context);
 	    }
 	}
-      else
+      else /* ldap_search failed.  */
 	{
 	  /* We don't have an answer yet, which means the server might
 	     be a PGP.com keyserver. */
@@ -760,32 +774,32 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
 	  char *attr2[] = { "pgpBaseKeySpaceDN", "version", "software", NULL };
 
           npth_unprotect ();
-	  err = ldap_search_s (ldap_conn, "cn=pgpServerInfo", LDAP_SCOPE_BASE,
+	  lerr = ldap_search_s (ldap_conn, "cn=pgpServerInfo", LDAP_SCOPE_BASE,
 			       "(objectClass=*)", attr2, 0, &si_res);
           npth_protect ();
-	  if (err == LDAP_SUCCESS)
+	  if (lerr == LDAP_SUCCESS)
 	    {
 	      /* For the PGP LDAP keyserver, this is always
 	       * "OU=ACTIVE,O=PGP KEYSPACE,C=US", but it might not be
                * in the future. */
 
 	      vals = ldap_get_values (ldap_conn, si_res, "baseKeySpaceDN");
-	      if (vals)
+	      if (vals && vals[0])
 		{
 		  basedn = xtrystrdup (vals[0]);
-		  ldap_value_free (vals);
 		}
+              my_ldap_value_free (vals);
 
 	      vals = ldap_get_values (ldap_conn, si_res, "software");
-	      if (vals)
+	      if (vals && vals[0])
 		{
                   if (opt.debug)
                     log_debug ("ks-ldap: PGP Server: \t%s\n", vals[0]);
-		  ldap_value_free (vals);
 		}
+              my_ldap_value_free (vals);
 
 	      vals = ldap_get_values (ldap_conn, si_res, "version");
-	      if (vals)
+	      if (vals && vals[0])
 		{
                   if (opt.debug)
                     log_debug ("ks-ldap: PGP Server Version:\t%s\n", vals[0]);
@@ -799,8 +813,8 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
 		  if (atoi (vals[0]) > 1)
                     *r_serverinfo |= SERVERINFO_PGPKEYV2;
 
-		  ldap_value_free (vals);
 		}
+              my_ldap_value_free (vals);
 	    }
 
 	  ldap_msgfree (si_res);
@@ -823,23 +837,27 @@ my_ldap_connect (parsed_uri_t uri, LDAP **ldap_connp,
                  (*r_serverinfo & SERVERINFO_PGPKEYV2)? "pgpKeyV2":"pgpKey");
     }
 
-  if (err)
-    xfree (basedn);
-  else
-    {
-      if (basednp)
-	*basednp = basedn;
-      else
-	xfree (basedn);
-    }
+  ldapserver_list_free (server);
 
   if (err)
     {
+      xfree (basedn);
       if (ldap_conn)
 	ldap_unbind (ldap_conn);
     }
   else
-    *ldap_connp = ldap_conn;
+    {
+      if (r_basedn)
+	*r_basedn = basedn;
+      else
+	xfree (basedn);
+      if (r_host)
+        *r_host = host;
+      else
+        xfree (host);
+
+      *ldap_connp = ldap_conn;
+    }
 
   return err;
 }
@@ -854,10 +872,17 @@ extract_keys (estream_t output,
   char **vals;
 
   es_fprintf (output, "INFO %s BEGIN\n", certid);
-  es_fprintf (output, "pub:%s:", certid);
 
   /* Note: ldap_get_values returns a NULL terminated array of
      strings.  */
+
+  vals = ldap_get_values (ldap_conn, message, "gpgfingerprint");
+  if (vals && vals[0] && vals[0][0])
+    es_fprintf (output, "pub:%s:", vals[0]);
+  else
+    es_fprintf (output, "pub:%s:", certid);
+  my_ldap_value_free (vals);
+
   vals = ldap_get_values (ldap_conn, message, "pgpkeytype");
   if (vals && vals[0])
     {
@@ -865,8 +890,8 @@ extract_keys (estream_t output,
 	es_fprintf  (output, "1");
       else if (strcmp (vals[0],"DSS/DH") == 0)
 	es_fprintf (output, "17");
-      ldap_value_free (vals);
     }
+  my_ldap_value_free (vals);
 
   es_fprintf (output, ":");
 
@@ -876,8 +901,8 @@ extract_keys (estream_t output,
       int v = atoi (vals[0]);
       if (v > 0)
 	es_fprintf (output, "%d", v);
-      ldap_value_free (vals);
     }
+  my_ldap_value_free (vals);
 
   es_fprintf (output, ":");
 
@@ -886,8 +911,8 @@ extract_keys (estream_t output,
     {
       if (strlen (vals[0]) == 15)
 	es_fprintf (output, "%u", (unsigned int) ldap2epochtime (vals[0]));
-      ldap_value_free (vals);
     }
+  my_ldap_value_free (vals);
 
   es_fprintf (output, ":");
 
@@ -896,8 +921,8 @@ extract_keys (estream_t output,
     {
       if (strlen (vals[0]) == 15)
 	es_fprintf (output, "%u", (unsigned int) ldap2epochtime (vals[0]));
-      ldap_value_free (vals);
     }
+  my_ldap_value_free (vals);
 
   es_fprintf (output, ":");
 
@@ -906,8 +931,8 @@ extract_keys (estream_t output,
     {
       if (atoi (vals[0]) == 1)
 	es_fprintf (output, "r");
-      ldap_value_free (vals);
     }
+  my_ldap_value_free (vals);
 
   es_fprintf (output, "\n");
 
@@ -917,27 +942,245 @@ extract_keys (estream_t output,
       int i;
       for (i = 0; vals[i]; i++)
 	es_fprintf (output, "uid:%s\n", vals[i]);
-      ldap_value_free (vals);
     }
+  my_ldap_value_free (vals);
 
   es_fprintf (output, "INFO %s END\n", certid);
 }
 
-/* Get the key described key the KEYSPEC string from the keyserver
-   identified by URI.  On success R_FP has an open stream to read the
-   data.  */
-gpg_error_t
-ks_ldap_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec,
-	     estream_t *r_fp)
+
+/* Helper for ks_ldap_get.  Returns 0 if a key was fetched and printed
+ * to FP.  The error code GPG_ERR_NO_DATA is returned if no key was
+ * printed.  Note that FP is updated by this function. */
+static gpg_error_t
+return_one_keyblock (LDAP *ldap_conn, LDAPMessage *msg, unsigned int serverinfo,
+                     estream_t *fp, strlist_t *seenp)
+{
+  gpg_error_t err;
+  char **vals;
+  char **certid;
+
+  /* Use the long keyid to remove duplicates.  The LDAP server returns
+   * the same keyid more than once if there are multiple user IDs on
+   * the key.  Note that this does NOT mean that a keyid that exists
+   * multiple times on the keyserver will not be fetched.  It means
+   * that each KEY, no matter how many user IDs share its keyid, will
+   * be fetched only once.  If a keyid that belongs to more than one
+   * key is fetched, the server quite properly responds with all
+   * matching keys. -ds
+   *
+   * Note that in --first/--next mode we don't do any duplicate
+   * detection.
+   */
+
+  certid = ldap_get_values (ldap_conn, msg, "pgpcertid");
+  if (certid && certid[0])
+    {
+      if (!seenp || !strlist_find (*seenp, certid[0]))
+        {
+          /* It's not a duplicate, add it */
+          if (seenp)
+            add_to_strlist (seenp, certid[0]);
+
+          if (!*fp)
+            {
+              *fp = es_fopenmem(0, "rw");
+              if (!*fp)
+                {
+                  err = gpg_error_from_syserror ();
+                  goto leave;
+                }
+            }
+
+          extract_keys (*fp, ldap_conn, certid[0], msg);
+
+          vals = ldap_get_values (ldap_conn, msg,
+                                  (serverinfo & SERVERINFO_PGPKEYV2)?
+                                  "pgpKeyV2" : "pgpKey");
+          if (!vals)
+            {
+              err = ldap_to_gpg_err (ldap_conn);
+              log_error("ks-ldap: unable to retrieve key %s "
+                        "from keyserver\n", certid[0]);
+            }
+          else
+            {
+              /* We should strip the new lines.  */
+              es_fprintf (*fp, "KEY 0x%s BEGIN\n", certid[0]);
+              es_fputs (vals[0], *fp);
+              es_fprintf (*fp, "\nKEY 0x%s END\n", certid[0]);
+
+              ldap_value_free (vals);
+              err = 0;
+            }
+        }
+      else /* Duplicate.  */
+        err = gpg_error (GPG_ERR_NO_DATA);
+    }
+  else
+    err = gpg_error (GPG_ERR_NO_DATA);
+
+ leave:
+  my_ldap_value_free (certid);
+  return err;
+}
+
+
+/* Helper for ks_ldap_get.  Note that KEYSPEC is only used for
+ * diagnostics. */
+static gpg_error_t
+search_and_parse (ctrl_t ctrl, const char *keyspec,
+                  LDAP *ldap_conn, char *basedn, char *filter,
+                  char **attrs, LDAPMessage **r_message)
 {
   gpg_error_t err = 0;
-  int ldap_err;
+  int l_err, l_reserr;
+  LDAPControl *srvctrls[2] = { NULL, NULL };
+  int count;
+  unsigned int totalcount = 0;
+  LDAPControl *pagectrl = NULL;
+  LDAPControl **resctrls = NULL;
+
+  /* first/next mode is used to retrieve many entries; thus we should
+   * use paged results.  We assume first/next mode if we have a state.
+   * We make the paged mode non-critical so that we get at least as
+   * many entries the server delivers anyway.  */
+  if (ctrl->ks_get_state)
+    {
+      l_err = ldap_create_page_control (ldap_conn, PAGE_SIZE,
+                                        ctrl->ks_get_state->pagecookie, 0,
+                                        &pagectrl);
+      if (err)
+        {
+          err = ldap_err_to_gpg_err (l_err);
+          log_error ("ks-ldap: create_page_control failed: %s\n",
+                     ldap_err2string (l_err));
+          goto leave;
+        }
+
+      ctrl->ks_get_state->more_pages = 0;
+      srvctrls[0] = pagectrl;
+    }
+
+  npth_unprotect ();
+  l_err = ldap_search_ext_s (ldap_conn, basedn, LDAP_SCOPE_SUBTREE,
+                             filter, attrs, 0,
+                             srvctrls[0]? srvctrls : NULL, NULL, NULL, 0,
+                             r_message);
+  npth_protect ();
+  if (l_err)
+    {
+      err = ldap_err_to_gpg_err (l_err);
+      log_error ("ks-ldap: LDAP search error: %s\n", ldap_err2string (l_err));
+      goto leave;
+    }
+
+  if (ctrl->ks_get_state)
+    {
+      l_err = ldap_parse_result (ldap_conn, *r_message, &l_reserr,
+                                 NULL, NULL, NULL, &resctrls, 0);
+      if (l_err)
+        {
+          err = ldap_err_to_gpg_err (l_err);
+          log_error ("ks-ldap: LDAP parse result error: %s\n",
+                     ldap_err2string (l_err));
+          goto leave;
+        }
+      /* Get the current cookie.  */
+      if (ctrl->ks_get_state->pagecookie)
+        {
+          ber_bvfree (ctrl->ks_get_state->pagecookie);
+          ctrl->ks_get_state->pagecookie = NULL;
+        }
+      l_err = ldap_parse_page_control (ldap_conn, resctrls,
+                                       &totalcount,
+                                       &ctrl->ks_get_state->pagecookie);
+      if (l_err)
+        {
+          err = ldap_err_to_gpg_err (l_err);
+          log_error ("ks-ldap: LDAP parse page control error: %s\n",
+                     ldap_err2string (l_err));
+          goto leave;
+        }
+
+      ctrl->ks_get_state->pageno++;
+
+      /* Decide whether there will be more pages.  */
+      ctrl->ks_get_state->more_pages =
+        (ctrl->ks_get_state->pagecookie
+         && ctrl->ks_get_state->pagecookie->bv_val
+         && *ctrl->ks_get_state->pagecookie->bv_val);
+
+      srvctrls[0] = NULL;
+    }
+
+  count = ldap_count_entries (ldap_conn, *r_message);
+  if (ctrl->ks_get_state)
+    {
+      if (count >= 0)
+        ctrl->ks_get_state->total += count;
+      if (opt.verbose)
+        log_info ("ks-ldap: received result page %u%s (%d/%u/%u)\n",
+                  ctrl->ks_get_state->pageno,
+                  ctrl->ks_get_state->more_pages? "":" (last)",
+                  count, ctrl->ks_get_state->total, totalcount);
+    }
+  if (count < 1)
+    {
+      if (!ctrl->ks_get_state || ctrl->ks_get_state->pageno == 1)
+        log_info ("ks-ldap: key %s not found on keyserver\n", keyspec);
+
+      if (count == -1)
+        err = ldap_to_gpg_err (ldap_conn);
+      else
+        err = gpg_error (GPG_ERR_NO_DATA);
+
+      goto leave;
+    }
+
+
+ leave:
+  if (resctrls)
+    ldap_controls_free (resctrls);
+  if (pagectrl)
+    ldap_control_free (pagectrl);
+  return err;
+}
+
+
+/* Get the key described key the KEYSPEC string from the keyserver
+ * identified by URI.  On success R_FP has an open stream to read the
+ * data.  KS_GET_FLAGS conveys flags from the client.  */
+gpg_error_t
+ks_ldap_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec,
+	     unsigned int ks_get_flags, estream_t *r_fp)
+{
+  gpg_error_t err = 0;
   unsigned int serverinfo;
+  char *host = NULL;
+  int use_tls;
   char *filter = NULL;
   LDAP *ldap_conn = NULL;
   char *basedn = NULL;
   estream_t fp = NULL;
   LDAPMessage *message = NULL;
+  LDAPMessage *msg;
+  int anykey = 0;
+  int first_mode = 0;
+  int next_mode = 0;
+  int get_first;
+  strlist_t seen = NULL; /* The set of entries that we've seen.  */
+  /* The ordering is significant.  Specifically, "pgpcertid" needs to
+   * be the second item in the list, since everything after it may be
+   * discarded if we aren't in verbose mode.  */
+  char *attrs[] =
+    {
+     "dummy", /* (to be be replaced.)  */
+     "pgpcertid", "pgpuserid", "pgpkeyid", "pgprevoked", "pgpdisabled",
+     "pgpkeycreatetime", "modifytimestamp", "pgpkeysize", "pgpkeytype",
+     "gpgfingerprint",
+     NULL
+    };
 
   (void) ctrl;
 
@@ -948,163 +1191,206 @@ ks_ldap_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec,
       return gpg_error (GPG_ERR_NOT_SUPPORTED);
     }
 
-  /* Make sure we are talking to an OpenPGP LDAP server.  */
-  ldap_err = my_ldap_connect (uri, &ldap_conn, &basedn, &serverinfo);
-  if (ldap_err || !basedn)
+  /* Make sure we got a state.  */
+  if ((ks_get_flags & KS_GET_FLAG_FIRST))
     {
-      if (ldap_err)
-	err = ldap_err_to_gpg_err (ldap_err);
-      else
-	err = gpg_error (GPG_ERR_GENERAL);
-      goto out;
+      if (ctrl->ks_get_state)
+        ks_ldap_clear_state (ctrl->ks_get_state);
+      else if (!(ctrl->ks_get_state = ks_ldap_new_state ()))
+        return gpg_error_from_syserror ();
+      first_mode = 1;
     }
 
-  /* Now that we have information about the server we can construct a
-   * query best suited for the capabilities of the server.  */
-  err = keyspec_to_ldap_filter (keyspec, &filter, 1, serverinfo);
-  if (err)
-    goto out;
-
-  if (opt.debug)
-    log_debug ("ks-ldap: using filter: %s\n", filter);
-
-  {
-    /* The ordering is significant.  Specifically, "pgpcertid" needs
-       to be the second item in the list, since everything after it
-       may be discarded we aren't in verbose mode. */
-    char *attrs[] =
-      {
-	"dummy",
-	"pgpcertid", "pgpuserid", "pgpkeyid", "pgprevoked", "pgpdisabled",
-	"pgpkeycreatetime", "modifytimestamp", "pgpkeysize", "pgpkeytype",
-	NULL
-      };
-    /* 1 if we want just attribute types; 0 if we want both attribute
-     * types and values.  */
-    int attrsonly = 0;
-    int count;
-
-    /* Replace "dummy".  */
-    attrs[0] = (serverinfo & SERVERINFO_PGPKEYV2)? "pgpKeyV2" : "pgpKey";
-
-    npth_unprotect ();
-    ldap_err = ldap_search_s (ldap_conn, basedn, LDAP_SCOPE_SUBTREE,
-			      filter, attrs, attrsonly, &message);
-    npth_protect ();
-    if (ldap_err)
-      {
-	err = ldap_err_to_gpg_err (ldap_err);
-
-	log_error ("ks-ldap: LDAP search error: %s\n",
-		   ldap_err2string (ldap_err));
-	goto out;
-      }
-
-    count = ldap_count_entries (ldap_conn, message);
-    if (count < 1)
-      {
-	log_info ("ks-ldap: key %s not found on keyserver\n", keyspec);
-
-	if (count == -1)
-	  err = ldap_to_gpg_err (ldap_conn);
-	else
-	  err = gpg_error (GPG_ERR_NO_DATA);
-
-	goto out;
-      }
-
+  if ((ks_get_flags & KS_GET_FLAG_NEXT))
     {
-      /* There may be more than one unique result for a given keyID,
-	 so we should fetch them all (test this by fetching short key
-	 id 0xDEADBEEF). */
+      if (!ctrl->ks_get_state || !ctrl->ks_get_state->ldap_conn
+          || !ctrl->ks_get_state->message)
+        {
+          log_error ("ks_ldap: --next requested but no state\n");
+          return gpg_error (GPG_ERR_INV_STATE);
+        }
+      next_mode = 1;
+    }
 
-      /* The set of entries that we've seen.  */
-      strlist_t seen = NULL;
-      LDAPMessage *each;
+  /* Do not keep an old state around if not needed.  */
+  if (!(first_mode || next_mode))
+    {
+      ks_ldap_free_state (ctrl->ks_get_state);
+      ctrl->ks_get_state = NULL;
+    }
+
+
+  if (next_mode)
+    {
+    next_again:
+      if (!ctrl->ks_get_state->msg_iter && ctrl->ks_get_state->more_pages)
+        {
+          /* Get the next page of results.  */
+          if (ctrl->ks_get_state->message)
+            {
+              ldap_msgfree (ctrl->ks_get_state->message);
+              ctrl->ks_get_state->message = NULL;
+            }
+          attrs[0] = ((ctrl->ks_get_state->serverinfo & SERVERINFO_PGPKEYV2)?
+                      "pgpKeyV2" : "pgpKey");
+          err = search_and_parse (ctrl, ctrl->ks_get_state->keyspec,
+                                  ctrl->ks_get_state->ldap_conn,
+                                  ctrl->ks_get_state->basedn,
+                                  ctrl->ks_get_state->filter,
+                                  attrs,
+                                  &ctrl->ks_get_state->message);
+          if (err)
+            goto leave;
+          ctrl->ks_get_state->msg_iter = ctrl->ks_get_state->message;
+          get_first = 1;
+        }
+      else
+        get_first = 0;
+
+      while (ctrl->ks_get_state->msg_iter)
+        {
+          npth_unprotect ();
+          ctrl->ks_get_state->msg_iter
+            = get_first? ldap_first_entry (ctrl->ks_get_state->ldap_conn,
+                                           ctrl->ks_get_state->msg_iter)
+              /*    */ : ldap_next_entry (ctrl->ks_get_state->ldap_conn,
+                                          ctrl->ks_get_state->msg_iter);
+          npth_protect ();
+          get_first = 0;
+          if (ctrl->ks_get_state->msg_iter)
+            {
+              err = return_one_keyblock (ctrl->ks_get_state->ldap_conn,
+                                         ctrl->ks_get_state->msg_iter,
+                                         ctrl->ks_get_state->serverinfo,
+                                         &fp, NULL);
+              if (!err)
+                break;  /* Found.  */
+              else if (gpg_err_code (err) == GPG_ERR_NO_DATA)
+                err = 0;  /* Skip empty attributes. */
+              else
+                goto leave;
+            }
+        }
+
+      if (!ctrl->ks_get_state->msg_iter || !fp)
+        {
+          ctrl->ks_get_state->msg_iter = NULL;
+          if (ctrl->ks_get_state->more_pages)
+            goto next_again;
+          err = gpg_error (GPG_ERR_NO_DATA);
+        }
+
+    }
+  else /* Not in --next mode.  */
+    {
+      /* Make sure we are talking to an OpenPGP LDAP server.  */
+      err = my_ldap_connect (uri, &ldap_conn,
+                             &basedn, &host, &use_tls, &serverinfo);
+      if (err || !basedn)
+        {
+          if (!err)
+            err = gpg_error (GPG_ERR_GENERAL);
+          goto leave;
+        }
+
+      /* Now that we have information about the server we can construct a
+       * query best suited for the capabilities of the server.  */
+      if (first_mode && !*keyspec)
+        {
+          filter = xtrystrdup("(!(|(pgpRevoked=1)(pgpDisabled=1)))");
+          err = filter? 0 : gpg_error_from_syserror ();
+        }
+      else
+        err = keyspec_to_ldap_filter (keyspec, &filter, 1, serverinfo);
+      if (err)
+        goto leave;
+
+      if (opt.debug)
+        log_debug ("ks-ldap: using filter: %s\n", filter);
+
+      /* Replace "dummy".  */
+      attrs[0] = (serverinfo & SERVERINFO_PGPKEYV2)? "pgpKeyV2" : "pgpKey";
+
+      err = search_and_parse (ctrl, keyspec, ldap_conn, basedn, filter, attrs,
+                              &message);
+      if (err)
+        goto leave;
+
 
       for (npth_unprotect (),
-             each = ldap_first_entry (ldap_conn, message),
+             msg = ldap_first_entry (ldap_conn, message),
              npth_protect ();
-	   each;
+	   msg;
            npth_unprotect (),
-             each = ldap_next_entry (ldap_conn, each),
+             msg = ldap_next_entry (ldap_conn, msg),
              npth_protect ())
 	{
-	  char **vals;
-	  char **certid;
-
-	  /* Use the long keyid to remove duplicates.  The LDAP
-	     server returns the same keyid more than once if there
-	     are multiple user IDs on the key.  Note that this does
-	     NOT mean that a keyid that exists multiple times on the
-	     keyserver will not be fetched.  It means that each KEY,
-	     no matter how many user IDs share its keyid, will be
-	     fetched only once.  If a keyid that belongs to more
-	     than one key is fetched, the server quite properly
-	     responds with all matching keys. -ds */
-
-	  certid = ldap_get_values (ldap_conn, each, "pgpcertid");
-	  if (certid && certid[0])
-	    {
-	      if (! strlist_find (seen, certid[0]))
-		{
-		  /* It's not a duplicate, add it */
-
-		  add_to_strlist (&seen, certid[0]);
-
-		  if (! fp)
-		    fp = es_fopenmem(0, "rw");
-
-		  extract_keys (fp, ldap_conn, certid[0], each);
-
-		  vals = ldap_get_values (ldap_conn, each, attrs[0]);
-		  if (! vals)
-		    {
-		      err = ldap_to_gpg_err (ldap_conn);
-		      log_error("ks-ldap: unable to retrieve key %s "
-				"from keyserver\n", certid[0]);
-		      goto out;
-		    }
-		  else
-		    {
-		      /* We should strip the new lines.  */
-		      es_fprintf (fp, "KEY 0x%s BEGIN\n", certid[0]);
-		      es_fputs (vals[0], fp);
-		      es_fprintf (fp, "\nKEY 0x%s END\n", certid[0]);
-
-		      ldap_value_free (vals);
-		    }
-		}
-	    }
-
-	  ldap_value_free (certid);
+          err = return_one_keyblock (ldap_conn, msg, serverinfo,
+                                     &fp, first_mode? NULL : &seen);
+          if (!err)
+            {
+              anykey = 1;
+              if (first_mode)
+                break;
+            }
+          else if (gpg_err_code (err) == GPG_ERR_NO_DATA)
+            err = 0;  /* Skip empty/duplicate attributes. */
+          else
+            goto leave;
 	}
 
-      free_strlist (seen);
+      if (ctrl->ks_get_state) /* Save the iterator.  */
+        ctrl->ks_get_state->msg_iter = msg;
 
-      if (! fp)
+      if (!fp) /* Nothing was found.  */
 	err = gpg_error (GPG_ERR_NO_DATA);
-    }
-  }
 
- out:
+      if (!err && anykey)
+        err = dirmngr_status_printf (ctrl, "SOURCE", "%s://%s",
+                                     use_tls? "ldaps" : "ldap",
+                                     host? host:"");
+    }
+
+
+ leave:
+  /* Store our state if needed.  */
+  if (!err && (ks_get_flags & KS_GET_FLAG_FIRST))
+    {
+      log_assert (!ctrl->ks_get_state->ldap_conn);
+      ctrl->ks_get_state->ldap_conn = ldap_conn;
+      ldap_conn = NULL;
+      log_assert (!ctrl->ks_get_state->message);
+      ctrl->ks_get_state->message = message;
+      message = NULL;
+      ctrl->ks_get_state->serverinfo = serverinfo;
+      ctrl->ks_get_state->basedn = basedn;
+      basedn = NULL;
+      ctrl->ks_get_state->keyspec = keyspec? xtrystrdup (keyspec) : NULL;
+      ctrl->ks_get_state->filter = filter;
+      filter = NULL;
+    }
+  if ((ks_get_flags & KS_GET_FLAG_NEXT))
+    {
+      /* Keep the state in --next mode even with errors.  */
+      ldap_conn = NULL;
+      message = NULL;
+    }
+
   if (message)
     ldap_msgfree (message);
 
   if (err)
-    {
-      if (fp)
-	es_fclose (fp);
-    }
+    es_fclose (fp);
   else
     {
       if (fp)
 	es_fseek (fp, 0, SEEK_SET);
-
       *r_fp = fp;
     }
 
+  free_strlist (seen);
   xfree (basedn);
+  xfree (host);
 
   if (ldap_conn)
     ldap_unbind (ldap_conn);
@@ -1139,12 +1425,10 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
     }
 
   /* Make sure we are talking to an OpenPGP LDAP server.  */
-  ldap_err = my_ldap_connect (uri, &ldap_conn, &basedn, &serverinfo);
-  if (ldap_err || !basedn)
+  err = my_ldap_connect (uri, &ldap_conn, &basedn, NULL, NULL, &serverinfo);
+  if (err || !basedn)
     {
-      if (ldap_err)
-	err = ldap_err_to_gpg_err (ldap_err);
-      else
+      if (!err)
 	err = GPG_ERR_GENERAL;
       goto out;
     }
@@ -1178,7 +1462,8 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
       {
 	"pgpcertid", "pgpuserid", "pgprevoked", "pgpdisabled",
 	"pgpkeycreatetime", "pgpkeyexpiretime", "modifytimestamp",
-	"pgpkeysize", "pgpkeytype", NULL
+	"pgpkeysize", "pgpkeytype", "gpgfingerprint",
+        NULL
       };
 
     if (opt.debug)
@@ -1218,6 +1503,7 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 	    add_to_strlist (&dupelist, certid[0]);
 	    count++;
 	  }
+        my_ldap_value_free (certid);
       }
 
     if (ldap_err == LDAP_SIZELIMIT_EXCEEDED)
@@ -1247,18 +1533,26 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 	    LDAPMessage *uids;
 
 	    certid = ldap_get_values (ldap_conn, each, "pgpcertid");
-	    if (! certid || ! certid[0])
-	      continue;
+	    if (!certid || !certid[0])
+              {
+                my_ldap_value_free (certid);
+                continue;
+              }
 
 	    /* Have we seen this certid before? */
 	    if (! strlist_find (dupelist, certid[0]))
 	      {
 		add_to_strlist (&dupelist, certid[0]);
 
-		es_fprintf (fp, "pub:%s:",certid[0]);
+                vals = ldap_get_values (ldap_conn, each, "gpgfingerprint");
+                if (vals && vals[0] && vals[0][0])
+                  es_fprintf (fp, "pub:%s:", vals[0]);
+                else
+                  es_fprintf (fp, "pub:%s:", certid[0]);
+                my_ldap_value_free (vals);
 
 		vals = ldap_get_values (ldap_conn, each, "pgpkeytype");
-		if (vals)
+		if (vals && vals[0])
 		  {
 		    /* The LDAP server doesn't exactly handle this
 		       well. */
@@ -1266,60 +1560,60 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 		      es_fputs ("1", fp);
 		    else if (strcasecmp (vals[0], "DSS/DH") == 0)
 		      es_fputs ("17", fp);
-		    ldap_value_free (vals);
 		  }
+		my_ldap_value_free (vals);
 
 		es_fputc (':', fp);
 
 		vals = ldap_get_values (ldap_conn, each, "pgpkeysize");
-		if (vals)
+		if (vals && vals[0])
 		  {
 		    /* Not sure why, but some keys are listed with a
 		       key size of 0.  Treat that like an unknown. */
 		    if (atoi (vals[0]) > 0)
 		      es_fprintf (fp, "%d", atoi (vals[0]));
-		    ldap_value_free (vals);
 		  }
+                my_ldap_value_free (vals);
 
 		es_fputc (':', fp);
 
 		/* YYYYMMDDHHmmssZ */
 
 		vals = ldap_get_values (ldap_conn, each, "pgpkeycreatetime");
-		if(vals && strlen (vals[0]) == 15)
+		if(vals && vals[0] && strlen (vals[0]) == 15)
 		  {
 		    es_fprintf (fp, "%u",
 				(unsigned int) ldap2epochtime(vals[0]));
-		    ldap_value_free (vals);
 		  }
+                my_ldap_value_free (vals);
 
 		es_fputc (':', fp);
 
 		vals = ldap_get_values (ldap_conn, each, "pgpkeyexpiretime");
-		if (vals && strlen (vals[0]) == 15)
+		if (vals && vals[0] && strlen (vals[0]) == 15)
 		  {
 		    es_fprintf (fp, "%u",
 				(unsigned int) ldap2epochtime (vals[0]));
-		    ldap_value_free (vals);
 		  }
+                my_ldap_value_free (vals);
 
 		es_fputc (':', fp);
 
 		vals = ldap_get_values (ldap_conn, each, "pgprevoked");
-		if (vals)
+		if (vals && vals[0])
 		  {
 		    if (atoi (vals[0]) == 1)
 		      es_fprintf (fp, "r");
-		    ldap_value_free (vals);
 		  }
+                my_ldap_value_free (vals);
 
 		vals = ldap_get_values (ldap_conn, each, "pgpdisabled");
-		if (vals)
+		if (vals && vals[0])
 		  {
 		    if (atoi (vals[0]) ==1)
 		      es_fprintf (fp, "d");
-		    ldap_value_free (vals);
 		  }
+                my_ldap_value_free (vals);
 
 #if 0
 		/* This is not yet specified in the keyserver
@@ -1327,12 +1621,12 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 		es_fputc (':', fp);
 
 		vals = ldap_get_values (ldap_conn, each, "modifytimestamp");
-		if(vals && strlen (vals[0]) == 15)
+		if(vals && vals[0] strlen (vals[0]) == 15)
 		  {
 		    es_fprintf (fp, "%u",
 				(unsigned int) ldap2epochtime (vals[0]));
-		    ldap_value_free (vals);
 		  }
+                my_ldap_value_free (vals);
 #endif
 
 		es_fprintf (fp, "\n");
@@ -1343,10 +1637,13 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 		     uids = ldap_next_entry (ldap_conn, uids))
 		  {
 		    vals = ldap_get_values (ldap_conn, uids, "pgpcertid");
-		    if (! vals)
-		      continue;
+                    if (!vals || !vals[0])
+                      {
+                        my_ldap_value_free (vals);
+                        continue;
+                      }
 
-		    if (strcasecmp (certid[0], vals[0]) == 0)
+		    if (!ascii_strcasecmp (certid[0], vals[0]))
 		      {
 			char **uidvals;
 
@@ -1356,12 +1653,14 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 						   uids, "pgpuserid");
 			if (uidvals)
 			  {
-			    /* Need to escape any colons */
-			    char *quoted = percent_escape (uidvals[0], NULL);
-			    es_fputs (quoted, fp);
+			    /* Need to percent escape any colons */
+                            char *quoted = try_percent_escape (uidvals[0],
+                                                               NULL);
+                            if (quoted)
+                              es_fputs (quoted, fp);
 			    xfree (quoted);
-			    ldap_value_free (uidvals);
 			  }
+                        my_ldap_value_free (uidvals);
 
 			es_fprintf (fp, "\n");
 		      }
@@ -1370,7 +1669,7 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 		  }
 	      }
 
-	      ldap_value_free (certid);
+            my_ldap_value_free (certid);
 	  }
       }
 
@@ -1384,8 +1683,7 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
  out:
   if (err)
     {
-      if (fp)
-	es_fclose (fp);
+      es_fclose (fp);
     }
   else
     {
@@ -1702,7 +2000,7 @@ uncescape (char *str)
 	  && hexdigitp (str + r + 3))
 	{
 	  int x = hextobyte (&str[r + 2]);
-	  assert (0 <= x && x <= 0xff);
+	  log_assert (0 <= x && x <= 0xff);
 
 	  str[w] = x;
 
@@ -2018,12 +2316,10 @@ ks_ldap_put (ctrl_t ctrl, parsed_uri_t uri,
       return gpg_error (GPG_ERR_NOT_SUPPORTED);
     }
 
-  ldap_err = my_ldap_connect (uri, &ldap_conn, &basedn, &serverinfo);
-  if (ldap_err || !basedn)
+  err = my_ldap_connect (uri, &ldap_conn, &basedn, NULL, NULL, &serverinfo);
+  if (err || !basedn)
     {
-      if (ldap_err)
-	err = ldap_err_to_gpg_err (ldap_err);
-      else
+      if (!err)
 	err = GPG_ERR_GENERAL;
       goto out;
     }
@@ -2077,8 +2373,8 @@ ks_ldap_put (ctrl_t ctrl, parsed_uri_t uri,
     {
       dump = es_fopen("/tmp/modlist.txt", "w");
       if (! dump)
-	log_error ("Failed to open /tmp/modlist.txt: %s\n",
-		   strerror (errno));
+	log_error ("failed to open /tmp/modlist.txt: %s\n",
+		   gpg_strerror (gpg_error_from_syserror ()));
 
       if (dump)
 	{

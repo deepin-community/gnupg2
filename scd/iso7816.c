@@ -69,14 +69,17 @@ map_sw (int sw)
     case SW_WRONG_LENGTH:   ec = GPG_ERR_INV_VALUE; break;
     case SW_SM_NOT_SUP:     ec = GPG_ERR_NOT_SUPPORTED; break;
     case SW_CC_NOT_SUP:     ec = GPG_ERR_NOT_SUPPORTED; break;
+    case SW_FILE_STRUCT:    ec = GPG_ERR_CARD; break;
     case SW_CHV_WRONG:      ec = GPG_ERR_BAD_PIN; break;
     case SW_CHV_BLOCKED:    ec = GPG_ERR_PIN_BLOCKED; break;
     case SW_USE_CONDITIONS: ec = GPG_ERR_USE_CONDITIONS; break;
+    case SW_NO_CURRENT_EF:  ec = GPG_ERR_ENOENT; break;
     case SW_NOT_SUPPORTED:  ec = GPG_ERR_NOT_SUPPORTED; break;
     case SW_BAD_PARAMETER:  ec = GPG_ERR_INV_VALUE; break;
     case SW_FILE_NOT_FOUND: ec = GPG_ERR_ENOENT; break;
     case SW_RECORD_NOT_FOUND:ec= GPG_ERR_NOT_FOUND; break;
     case SW_REF_NOT_FOUND:  ec = GPG_ERR_NO_OBJ; break;
+    case SW_INCORRECT_P0_P1:ec = GPG_ERR_INV_VALUE; break;
     case SW_BAD_P0_P1:      ec = GPG_ERR_INV_VALUE; break;
     case SW_EXACT_LENGTH:   ec = GPG_ERR_INV_VALUE; break;
     case SW_INS_NOT_SUP:    ec = GPG_ERR_CARD; break;
@@ -191,18 +194,26 @@ iso7816_select_file (int slot, int tag, int is_dir)
 }
 
 
-/* Do a select file command with a direct path. */
+/* Do a select file command with a direct path.  If TOPDF is set, the
+ * actual used path is 3f00/<topdf>/<path>.  */
 gpg_error_t
-iso7816_select_path (int slot, const unsigned short *path, size_t pathlen)
+iso7816_select_path (int slot, const unsigned short *path, size_t pathlen,
+                     unsigned short topdf)
 {
   int sw, p0, p1;
   unsigned char buffer[100];
-  int buflen;
+  int buflen = 0;
 
-  if (pathlen/2 >= sizeof buffer)
+  if (pathlen*2 + 2 >= sizeof buffer)
     return gpg_error (GPG_ERR_TOO_LARGE);
 
-  for (buflen = 0; pathlen; pathlen--, path++)
+  if (topdf)
+    {
+      buffer[buflen++] = topdf >> 8;
+      buffer[buflen++] = topdf;
+    }
+
+  for (; pathlen; pathlen--, path++)
     {
       buffer[buflen++] = (*path >> 8);
       buffer[buflen++] = *path;
@@ -618,6 +629,67 @@ iso7816_decipher (int slot, int extended_mode,
 }
 
 
+/* Perform the security operation COMPUTE SHARED SECRET.  On success 0
+   is returned and the shared secret is available in a newly allocated
+   buffer stored at RESULT with its length stored at RESULTLEN.  For
+   LE see do_generate_keypair. */
+gpg_error_t
+iso7816_pso_csv (int slot, int extended_mode,
+                 const unsigned char *data, size_t datalen, int le,
+                 unsigned char **result, size_t *resultlen)
+{
+  int sw;
+  unsigned char *buf;
+  unsigned int nbuf;
+
+  if (!data || !datalen || !result || !resultlen)
+    return gpg_error (GPG_ERR_INV_VALUE);
+  *result = NULL;
+  *resultlen = 0;
+
+  if (!extended_mode)
+    le = 256;  /* Ignore provided Le and use what apdu_send uses. */
+  else if (le >= 0 && le < 256)
+    le = 256;
+
+  /* Data needs to be in BER-TLV format. */
+  buf = xtrymalloc (datalen + 4);
+  if (!buf)
+    return gpg_error_from_syserror ();
+  nbuf = 0;
+  buf[nbuf++] = 0x9c;
+  if (datalen < 128)
+    buf[nbuf++] = datalen;
+  else if (datalen < 256)
+    {
+      buf[nbuf++] = 0x81;
+      buf[nbuf++] = datalen;
+    }
+  else
+    {
+      buf[nbuf++] = 0x82;
+      buf[nbuf++] = datalen << 8;
+      buf[nbuf++] = datalen;
+    }
+  memcpy (buf+nbuf, data, datalen);
+  sw = apdu_send_le (slot, extended_mode,
+                     0x00, CMD_PSO, 0x80, 0xa6,
+                     datalen+nbuf, (const char *)buf, le,
+                     result, resultlen);
+  xfree (buf);
+  if (sw != SW_SUCCESS)
+    {
+      /* Make sure that pending buffers are released. */
+      xfree (*result);
+      *result = NULL;
+      *resultlen = 0;
+      return map_sw (sw);
+    }
+
+  return 0;
+}
+
+
 /* For LE see do_generate_keypair.  */
 gpg_error_t
 iso7816_internal_authenticate (int slot, int extended_mode,
@@ -786,19 +858,24 @@ iso7816_get_challenge (int slot, int length, unsigned char *buffer)
 }
 
 /* Perform a READ BINARY command requesting a maximum of NMAX bytes
-   from OFFSET.  With NMAX = 0 the entire file is read. The result is
-   stored in a newly allocated buffer at the address passed by RESULT.
-   Returns the length of this data at the address of RESULTLEN. */
+ * from OFFSET.  With NMAX = 0 the entire file is read. The result is
+ * stored in a newly allocated buffer at the address passed by RESULT.
+ * Returns the length of this data at the address of RESULTLEN.  If
+ * R_SW is not NULL the last status word is stored there. */
 gpg_error_t
 iso7816_read_binary_ext (int slot, int extended_mode,
                          size_t offset, size_t nmax,
-                         unsigned char **result, size_t *resultlen)
+                         unsigned char **result, size_t *resultlen,
+                         int *r_sw)
 {
   int sw;
   unsigned char *buffer;
   size_t bufferlen;
   int read_all = !nmax;
   size_t n;
+
+  if (r_sw)
+    *r_sw = 0;
 
   if (!result || !resultlen)
     return gpg_error (GPG_ERR_INV_VALUE);
@@ -825,6 +902,8 @@ iso7816_read_binary_ext (int slot, int extended_mode,
                              ((offset>>8) & 0xff), (offset & 0xff) , -1, NULL,
                              n, &buffer, &bufferlen);
         }
+      if (r_sw)
+        *r_sw = sw;
 
       if (*result && sw == SW_BAD_P0_P1)
         {
@@ -885,7 +964,8 @@ gpg_error_t
 iso7816_read_binary (int slot, size_t offset, size_t nmax,
                      unsigned char **result, size_t *resultlen)
 {
-  return iso7816_read_binary_ext (slot, 0, offset, nmax, result, resultlen);
+  return iso7816_read_binary_ext (slot, 0, offset, nmax,
+                                  result, resultlen, NULL);
 }
 
 
@@ -895,14 +975,19 @@ iso7816_read_binary (int slot, size_t offset, size_t nmax,
    should be 0 to read the current EF or contain a short EF. The
    result is stored in a newly allocated buffer at the address passed
    by RESULT.  Returns the length of this data at the address of
-   RESULTLEN. */
+   RESULTLEN.  If R_SW is not NULL the last status word is stored
+   there.  */
 gpg_error_t
-iso7816_read_record (int slot, int recno, int reccount, int short_ef,
-                     unsigned char **result, size_t *resultlen)
+iso7816_read_record_ext (int slot, int recno, int reccount, int short_ef,
+                         unsigned char **result, size_t *resultlen,
+                         int *r_sw)
 {
   int sw;
   unsigned char *buffer;
   size_t bufferlen;
+
+  if (r_sw)
+    *r_sw = 0;
 
   if (!result || !resultlen)
     return gpg_error (GPG_ERR_INV_VALUE);
@@ -922,6 +1007,8 @@ iso7816_read_record (int slot, int recno, int reccount, int short_ef,
                      short_ef? short_ef : 0x04,
                      -1, NULL,
                      0, &buffer, &bufferlen);
+  if (r_sw)
+    *r_sw = sw;
 
   if (sw != SW_SUCCESS && sw != SW_EOF_REACHED)
     {
@@ -936,4 +1023,12 @@ iso7816_read_record (int slot, int recno, int reccount, int short_ef,
   *resultlen = bufferlen;
 
   return 0;
+}
+
+gpg_error_t
+iso7816_read_record (int slot, int recno, int reccount, int short_ef,
+                     unsigned char **result, size_t *resultlen)
+{
+  return iso7816_read_record_ext (slot, recno, reccount, short_ef,
+                                  result, resultlen, NULL);
 }

@@ -753,6 +753,9 @@ do_plaintext( IOBUF out, int ctb, PKT_plaintext *pt )
     if (pt->buf)
       {
         nbytes = iobuf_copy (out, pt->buf);
+        if (nbytes == (size_t)(-1)
+            && (iobuf_error (out) || iobuf_error (pt->buf)))
+            return iobuf_error (out)? iobuf_error (out):iobuf_error (pt->buf);
         if(ctb_new_format_p (ctb) && !pt->len)
           /* Turn off partial body length mode.  */
           iobuf_set_partial_body_length_mode (out, 0);
@@ -1504,9 +1507,12 @@ do_signature( IOBUF out, int ctb, PKT_signature *sig )
     {
       iobuf_put( a, 3 );
 
-      /* Version 3 packets don't support subpackets.  */
-      log_assert (! sig->hashed);
-      log_assert (! sig->unhashed);
+      /* Version 3 packets don't support subpackets.  Actually we
+       * should never get to here but real life is different and thus
+       * we now use a log_fatal instead of a log_assert here. */
+      if (sig->hashed || sig->unhashed)
+        log_fatal ("trying to write a subpacket to a v3 signature (%d,%d)\n",
+                   !!sig->hashed, !!sig->unhashed);
     }
   else
     iobuf_put( a, sig->version );

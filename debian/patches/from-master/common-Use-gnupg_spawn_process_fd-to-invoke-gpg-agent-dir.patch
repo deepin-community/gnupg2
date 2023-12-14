@@ -1,25 +1,31 @@
 From: NIIBE Yutaka <gniibe@fsij.org>
-Date: Thu, 22 Oct 2020 11:32:00 +0900
-Subject: buildd: sbuild randomly fails to sign changes file despite valid
- signature keys
-Forwarded: https://dev.gnupg.org/rGb1c56cf9e2bb51abfd47747128bd2a6285ed1623
+Date: Wed, 24 Jul 2019 15:15:32 +0900
+Subject: common: Use gnupg_spawn_process_fd to invoke gpg-agent/dirmngr.
 
+* common/asshelp.c (start_new_gpg_agent): Call gnupg_spawn_process_fd
+and gnupg_wait_process.
+(start_new_dirmngr): Likewise.
+
+--
+
+With --daemon option, gpg-agent/dirmngr detaches by itself.
+
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+(cherry picked from commit b1c56cf9e2bb51abfd47747128bd2a6285ed1623)
 ---
- common/asshelp.c | 19 +++++++++++++++++++
- 1 file changed, 19 insertions(+)
+ common/asshelp.c | 16 +++++++++++++---
+ 1 file changed, 13 insertions(+), 3 deletions(-)
 
 diff --git a/common/asshelp.c b/common/asshelp.c
-index d87017e..9f269ab 100644
+index d87017e..73f159d 100644
 --- a/common/asshelp.c
 +++ b/common/asshelp.c
-@@ -477,8 +477,18 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
+@@ -477,8 +477,13 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
        if (!(err = lock_spawning (&lock, gnupg_homedir (), "agent", verbose))
            && assuan_socket_connect (ctx, sockname, 0, 0))
          {
-+#ifdef HAVE_W32_SYSTEM
-           err = gnupg_spawn_process_detached (program? program : agent_program,
-                                               argv, NULL);
-+#else
+-          err = gnupg_spawn_process_detached (program? program : agent_program,
+-                                              argv, NULL);
 +          pid_t pid;
 +
 +          err = gnupg_spawn_process_fd (program? program : agent_program,
@@ -27,24 +33,20 @@ index d87017e..9f269ab 100644
 +          if (!err)
 +            err = gnupg_wait_process (program? program : agent_program,
 +                                      pid, 1, NULL);
-+#endif
            if (err)
              log_error ("failed to start agent '%s': %s\n",
                         agent_program, gpg_strerror (err));
-@@ -612,7 +622,16 @@ start_new_dirmngr (assuan_context_t *r_ctx,
+@@ -612,7 +617,12 @@ start_new_dirmngr (assuan_context_t *r_ctx,
        if (!(err = lock_spawning (&lock, gnupg_homedir (), "dirmngr", verbose))
            && assuan_socket_connect (ctx, sockname, 0, 0))
          {
-+#ifdef HAVE_W32_SYSTEM
-           err = gnupg_spawn_process_detached (dirmngr_program, argv, NULL);
-+#else
+-          err = gnupg_spawn_process_detached (dirmngr_program, argv, NULL);
 +          pid_t pid;
 +
 +          err = gnupg_spawn_process_fd (dirmngr_program, argv,
 +                                        -1, -1, -1, &pid);
 +          if (!err)
 +            err = gnupg_wait_process (dirmngr_program, pid, 1, NULL);
-+#endif
            if (err)
              log_error ("failed to start the dirmngr '%s': %s\n",
                         dirmngr_program, gpg_strerror (err));

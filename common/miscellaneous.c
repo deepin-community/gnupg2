@@ -117,6 +117,65 @@ xoutofcore (void)
 }
 
 
+/* This is safe version of realloc useful for reallocing a calloced
+ * array.  There are two ways to call it:  The first example
+ * reallocates the array A to N elements each of SIZE but does not
+ * clear the newly allocated elements:
+ *
+ *  p = gpgrt_reallocarray (a, n, n, nsize);
+ *
+ * Note that when NOLD is larger than N no cleaning is needed anyway.
+ * The second example reallocates an array of size NOLD to N elements
+ * each of SIZE but clear the newly allocated elements:
+ *
+ *  p = gpgrt_reallocarray (a, nold, n, nsize);
+ *
+ * Note that gnupg_reallocarray (NULL, 0, n, nsize) is equivalent to
+ * gcry_calloc (n, nsize).
+ */
+void *
+gnupg_reallocarray (void *a, size_t oldnmemb, size_t nmemb, size_t size)
+{
+  size_t oldbytes, bytes;
+  char *p;
+
+  bytes = nmemb * size; /* size_t is unsigned so the behavior on overflow
+                         * is defined. */
+  if (size && bytes / size != nmemb)
+    {
+      gpg_err_set_errno (ENOMEM);
+      return NULL;
+    }
+
+  p = gcry_realloc (a, bytes);
+  if (p && oldnmemb < nmemb)
+    {
+      /* OLDNMEMBS is lower than NMEMB thus the user asked for a
+         calloc.  Clear all newly allocated members.  */
+      oldbytes = oldnmemb * size;
+      if (size && oldbytes / size != oldnmemb)
+        {
+          xfree (p);
+          gpg_err_set_errno (ENOMEM);
+          return NULL;
+        }
+      memset (p + oldbytes, 0, bytes - oldbytes);
+    }
+  return p;
+}
+
+
+/* Die-on-error version of gnupg_reallocarray.   */
+void *
+xreallocarray (void *a, size_t oldnmemb, size_t nmemb, size_t size)
+{
+  void *p = gnupg_reallocarray (a, oldnmemb, nmemb, size);
+  if (!p)
+    xoutofcore ();
+  return p;
+}
+
+
 /* A wrapper around gcry_cipher_algo_name to return the string
    "AES-128" instead of "AES".  Given that we have an alias in
    libgcrypt for it, it does not harm to too much to return this other
@@ -325,6 +384,82 @@ make_printable_string (const void *p, size_t n, int delim )
   if (!string)
     xoutofcore ();
   return string;
+}
+
+
+/* Decode the C formatted string SRC and return the result in a newly
+ * allocated buffer.  In error returns NULL and sets ERRNO. */
+char *
+decode_c_string (const char *src)
+{
+  char *buffer, *dst;
+  int val;
+
+  /* The converted string will never be larger than the original
+     string.  */
+  buffer = dst = xtrymalloc (strlen (src) + 1);
+  if (!buffer)
+    return NULL;
+
+  while (*src)
+    {
+      if (*src != '\\')
+	{
+	  *dst++ = *src++;
+	  continue;
+	}
+
+#define DECODE_ONE(_m,_r) case _m: src += 2; *dst++ = _r; break;
+
+      switch (src[1])
+	{
+	  DECODE_ONE ('n', '\n');
+	  DECODE_ONE ('r', '\r');
+	  DECODE_ONE ('f', '\f');
+	  DECODE_ONE ('v', '\v');
+	  DECODE_ONE ('b', '\b');
+	  DECODE_ONE ('t', '\t');
+	  DECODE_ONE ('\\', '\\');
+	  DECODE_ONE ('\'', '\'');
+	  DECODE_ONE ('\"', '\"');
+
+	case 'x':
+          val = hextobyte (src+2);
+          if (val == -1)  /* Bad coding, keep as is. */
+            {
+              *dst++ = *src++;
+              *dst++ = *src++;
+              if (*src)
+                *dst++ = *src++;
+              if (*src)
+                *dst++ = *src++;
+            }
+          else if (!val)
+            {
+              /* A binary zero is not representable in a C string thus
+               * we keep the C-escaping.  Note that this will also
+               * never be larger than the source string.  */
+              *dst++ = '\\';
+              *dst++ = '0';
+              src += 4;
+            }
+          else
+            {
+              *(unsigned char *)dst++ = val;
+              src += 4;
+            }
+	  break;
+
+	default: /* Bad coding; keep as is..  */
+          *dst++ = *src++;
+          *dst++ = *src++;
+          break;
+        }
+#undef DECODE_ONE
+    }
+  *dst++ = 0;
+
+  return buffer;
 }
 
 
@@ -623,5 +758,85 @@ parse_debug_flag (const char *string, unsigned int *debugvar,
     }
 
   *debugvar |= result;
+  return 0;
+}
+
+
+
+/* Parse an --comaptibility_flags style argument consisting of comma
+ * separated strings.
+ *
+ * Returns: 0 on success or -1 and ERRNO set on error.  On success the
+ *          supplied variable is updated by the parsed flags.
+ *
+ * If STRING is NULL the enabled flags are printed.
+ */
+int
+parse_compatibility_flags (const char *string, unsigned int *flagvar,
+                           const struct compatibility_flags_s *flags)
+
+{
+  unsigned long result = 0;
+  int i, j;
+
+  if (!string)
+    {
+      if (flagvar)
+        {
+          log_info ("enabled compatibility flags:");
+          for (i=0; flags[i].name; i++)
+            if ((*flagvar & flags[i].flag))
+              log_printf (" %s", flags[i].name);
+          log_printf ("\n");
+        }
+      return 0;
+    }
+
+  while (spacep (string))
+    string++;
+
+  if (!strcmp (string, "?") || !strcmp (string, "help"))
+    {
+      log_info ("available compatibility flags:\n");
+      for (i=0; flags[i].name; i++)
+        log_info (" %s\n", flags[i].name);
+      if (flags[i].flag != 77)
+        exit (0);
+    }
+  else
+    {
+      char **words;
+      words = strtokenize (string, ",");
+      if (!words)
+        return -1;
+      for (i=0; words[i]; i++)
+        {
+          if (*words[i])
+            {
+              for (j=0; flags[j].name; j++)
+                if (!strcmp (words[i], flags[j].name))
+                  {
+                    result |= flags[j].flag;
+                    break;
+                  }
+              if (!flags[j].name)
+                {
+                  if (!strcmp (words[i], "none"))
+                    {
+                      *flagvar = 0;
+                      result = 0;
+                    }
+                  else if (!strcmp (words[i], "all"))
+                    result = ~0;
+                  else
+                    log_info ("unknown compatibility flag '%s' ignored\n",
+                              words[i]);
+                }
+            }
+        }
+      xfree (words);
+    }
+
+  *flagvar |= result;
   return 0;
 }

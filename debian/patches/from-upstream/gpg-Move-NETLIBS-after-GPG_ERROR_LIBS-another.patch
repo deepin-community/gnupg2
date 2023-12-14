@@ -1,0 +1,29 @@
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Tue, 18 Oct 2022 10:24:54 +0900
+Subject: gpg: Move NETLIBS after GPG_ERROR_LIBS (another).
+
+* g10/Makefile.am (t_keydb_LDADD): Add NETLIBS after GPG_ERROR_LIBS.
+
+--
+
+Fixes-commit: b26bb03ed96f380ad603f7ad902862625233c931
+GnuPG-bug-id: 6244
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+(cherry picked from commit 256b3c05789d8026b62f594bd592199a90b1b446)
+---
+ g10/Makefile.am | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/g10/Makefile.am b/g10/Makefile.am
+index d38e292..cd5307e 100644
+--- a/g10/Makefile.am
++++ b/g10/Makefile.am
+@@ -200,7 +200,7 @@ module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter
+ t_rmd160_SOURCES = t-rmd160.c rmd160.c
+ t_rmd160_LDADD = $(t_common_ldadd)
+ t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source)
+-t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
++t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+ 	      $(LIBICONV) $(t_common_ldadd)
+ t_keydb_get_keyblock_SOURCES = t-keydb-get-keyblock.c test-stubs.c \
+ 	      $(common_source)

@@ -19,7 +19,7 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  1 file changed, 5 insertions(+), 5 deletions(-)
 
 diff --git a/g10/keygen.c b/g10/keygen.c
-index 79d4579..cb92468 100644
+index 5b4a785..2066bf1 100644
 --- a/g10/keygen.c
 +++ b/g10/keygen.c
 @@ -391,16 +391,16 @@ keygen_set_std_prefs (const char *string,int personal)

@@ -24,6 +24,7 @@ include $(top_srcdir)/am/cmacros.am
 examples = examples/README examples/scd-event examples/trustlist.txt	\
 	   examples/VS-NfD.prf examples/Automatic.prf                   \
            examples/debug.prf                                           \
+           examples/gpgconf.rnames examples/gpgconf.conf                \
 	   examples/systemd-user/README 				\
 	   examples/systemd-user/dirmngr.service 			\
 	   examples/systemd-user/dirmngr.socket				\
@@ -32,7 +33,7 @@ examples = examples/README examples/scd-event examples/trustlist.txt	\
 	   examples/systemd-user/gpg-agent-ssh.socket 			\
 	   examples/systemd-user/gpg-agent-browser.socket		\
 	   examples/systemd-user/gpg-agent-extra.socket 		\
-	   examples/gpgconf.conf examples/pwpattern.list
+	   examples/pwpattern.list
 
 helpfiles = help.txt help.be.txt help.ca.txt help.cs.txt		\
             help.da.txt help.de.txt help.el.txt help.eo.txt		\
@@ -93,7 +94,8 @@ myman_sources = gnupg7.texi gpg.texi gpgsm.texi gpg-agent.texi \
 	        dirmngr.texi scdaemon.texi tools.texi wks.texi
 myman_pages   = gpgsm.1 gpg-agent.1 dirmngr.8 scdaemon.1 \
                 watchgnupg.1 gpgconf.1 addgnupghome.8 gpg-preset-passphrase.1 \
-		gpg-connect-agent.1 gpgparsemail.1 symcryptrun.1 gpgtar.1 \
+		gpg-connect-agent.1 gpgparsemail.1 gpgtar.1 \
+                gpg-check-pattern.1 \
 		applygnupgdefaults.8 gpg-wks-client.1 gpg-wks-server.1 \
 		dirmngr-client.1
 if USE_GPG2_HACK

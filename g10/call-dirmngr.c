@@ -36,8 +36,8 @@
 #include "options.h"
 #include "../common/i18n.h"
 #include "../common/asshelp.h"
-#include "../common/keyserver.h"
 #include "../common/status.h"
+#include "keyserver-internal.h"
 #include "call-dirmngr.h"
 
 
@@ -397,6 +397,7 @@ ks_status_cb (void *opaque, const char *line)
   const char *s, *s2;
   const char *warn = NULL;
   int is_note = 0;
+  char *p;
 
   if ((s = has_leading_keyword (line, parm->keyword? parm->keyword : "SOURCE")))
     {
@@ -406,6 +407,30 @@ ks_status_cb (void *opaque, const char *line)
           parm->source = xtrystrdup (s);
           if (!parm->source)
             err = gpg_error_from_syserror ();
+          else
+            {
+              p = strchr (parm->source, ':');
+              if (p && p[1] == '/' && p[2] == '/')
+                {
+                  /* This is a real URL like "ldap://foo:389/bla,bla"
+                   * Strip off the local part.  */
+                  if ((p = strchr (p+3, '/')))
+                    *p = 0;
+                }
+              else
+                {
+                  /* This is an LDAP config entry like
+                   * "foo:389:user:pass:base:flags"
+                   * we strip off everything beyound the port.  */
+                  if ((p = strchr (p+1, ':')))
+                    {
+                      if (p[-1] == ':')
+                        p[-1] = 0;  /* No port given.  */
+                      else
+                        *p = 0;
+                    }
+                }
+            }
         }
     }
   else if ((s = has_leading_keyword (line, "WARNING"))
@@ -669,7 +694,9 @@ ks_get_data_cb (void *opaque, const void *data, size_t datalen)
    don't need to escape the patterns before sending them to the
    server.
 
-   If QUICK is set the dirmngr is advised to use a shorter timeout.
+   Bit values for FLAGS are:
+   - KEYSERVER_IMPORT_FLAG_QUICK :: dirmngr shall use a shorter timeout.
+   - KEYSERVER_IMPORT_FLAG_LDAP  :: dirmngr shall only use LDAP or NTDS.
 
    If R_SOURCE is not NULL the source of the data is stored as a
    malloced string there.  If a source is not known NULL is stored.
@@ -681,7 +708,8 @@ ks_get_data_cb (void *opaque, const void *data, size_t datalen)
    are able to ask for (1000-10-1)/(2+8+1) = 90 keys at once.  */
 gpg_error_t
 gpg_dirmngr_ks_get (ctrl_t ctrl, char **pattern,
-                    keyserver_spec_t override_keyserver, int quick,
+                    keyserver_spec_t override_keyserver,
+                    unsigned int flags,
                     estream_t *r_fp, char **r_source)
 {
   gpg_error_t err;
@@ -706,7 +734,7 @@ gpg_dirmngr_ks_get (ctrl_t ctrl, char **pattern,
 
   /* If we have an override keyserver we first indicate that the next
      user of the context needs to again setup the global keyservers and
-     them we send the override keyserver.  */
+     then we send the override keyserver.  */
   if (override_keyserver)
     {
       clear_context_flags (ctrl, ctx);
@@ -727,7 +755,12 @@ gpg_dirmngr_ks_get (ctrl_t ctrl, char **pattern,
 
   /* Lump all patterns into one string.  */
   init_membuf (&mb, 1024);
-  put_membuf_str (&mb, quick? "KS_GET --quick --" : "KS_GET --");
+  put_membuf_str (&mb, "KS_GET");
+  if ((flags & KEYSERVER_IMPORT_FLAG_QUICK))
+    put_membuf_str (&mb, " --quick");
+  if ((flags & KEYSERVER_IMPORT_FLAG_LDAP))
+    put_membuf_str (&mb, " --ldap");
+  put_membuf_str (&mb, " --");
   for (idx=0; pattern[idx]; idx++)
     {
       put_membuf (&mb, " ", 1); /* Append Delimiter.  */
@@ -840,24 +873,14 @@ static void
 record_output (estream_t output,
 	       pkttype_t type,
 	       const char *validity,
-	       /* The public key length or -1.  */
-	       int pub_key_length,
-	       /* The public key algo or -1.  */
-	       int pub_key_algo,
-	       /* 2 ulongs or NULL.  */
-	       const u32 *keyid,
-	       /* The creation / expiration date or 0.  */
-	       u32 creation_date,
-	       u32 expiration_date,
-	       const char *userid)
+	       int pub_key_length,  /* The public key length or -1.  */
+	       int pub_key_algo,    /* The public key algo or -1.    */
+	       const u32 *keyid,    /* 2 ulongs or NULL.             */
+	       u32 creation_date,   /* The creation date or 0.       */
+	       u32 expiration_date, /* The expiration date or 0.     */
+	       const char *userid)  /* The userid or NULL.           */
 {
   const char *type_str = NULL;
-  char *pub_key_length_str = NULL;
-  char *pub_key_algo_str = NULL;
-  char *keyid_str = NULL;
-  char *creation_date_str = NULL;
-  char *expiration_date_str = NULL;
-  char *userid_escaped = NULL;
 
   switch (type)
     {
@@ -876,76 +899,32 @@ record_output (estream_t output,
     default:
       log_assert (! "Unhandled type.");
     }
+  es_fprintf (output, "%s:%s:",
+              type_str,
+	      validity ? validity : "");
 
   if (pub_key_length > 0)
-    pub_key_length_str = xasprintf ("%d", pub_key_length);
+    es_fprintf (output, "%d", pub_key_length);
+  es_fputc (':', output);
 
   if (pub_key_algo != -1)
-    pub_key_algo_str = xasprintf ("%d", pub_key_algo);
+    es_fprintf (output, "%d", pub_key_algo);
+  es_fputc (':', output);
 
   if (keyid)
-    keyid_str = xasprintf ("%08lX%08lX", (ulong) keyid[0], (ulong) keyid[1]);
+    es_fprintf (output, "%08lX%08lX", (ulong) keyid[0], (ulong) keyid[1]);
 
-  if (creation_date)
-    creation_date_str = xstrdup (colon_strtime (creation_date));
+  es_fprintf (output, ":%s:", colon_strtime (creation_date));
+  es_fprintf (output, "%s:::", colon_strtime (expiration_date));
 
-  if (expiration_date)
-    expiration_date_str = xstrdup (colon_strtime (expiration_date));
-
-  /* Quote ':', '%', and any 8-bit characters.  */
   if (userid)
-    {
-      int r;
-      int w = 0;
+    es_write_sanitized (output, userid, strlen (userid), ":", NULL);
+  else
+    es_fputc (':', output);
+  es_fputs (":::::::::\n", output);
 
-      int len = strlen (userid);
-      /* A 100k character limit on the uid should be way more than
-	 enough.  */
-      if (len > 100 * 1024)
-	len = 100 * 1024;
-
-      /* The minimum amount of space that we need.  */
-      userid_escaped = xmalloc (len * 3 + 1);
-
-      for (r = 0; r < len; r++)
-	{
-	  if (userid[r] == ':' || userid[r]== '%' || (userid[r] & 0x80))
-	    {
-	      sprintf (&userid_escaped[w], "%%%02X", (byte) userid[r]);
-	      w += 3;
-	    }
-	  else
-	    userid_escaped[w ++] = userid[r];
-	}
-      userid_escaped[w] = '\0';
-    }
-
-  es_fprintf (output, "%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s:%s\n",
-	      type_str,
-	      validity ?: "",
-	      pub_key_length_str ?: "",
-	      pub_key_algo_str ?: "",
-	      keyid_str ?: "",
-	      creation_date_str ?: "",
-	      expiration_date_str ?: "",
-	      "" /* Certificate S/N */,
-	      "" /* Ownertrust.  */,
-	      userid_escaped ?: "",
-	      "" /* Signature class.  */,
-	      "" /* Key capabilities.  */,
-	      "" /* Issuer certificate fingerprint.  */,
-	      "" /* Flag field.  */,
-	      "" /* S/N of a token.  */,
-	      "" /* Hash algo.  */,
-	      "" /* Curve name.  */);
-
-  xfree (userid_escaped);
-  xfree (expiration_date_str);
-  xfree (creation_date_str);
-  xfree (keyid_str);
-  xfree (pub_key_algo_str);
-  xfree (pub_key_length_str);
 }
+
 
 /* Handle the KS_PUT inquiries. */
 static gpg_error_t

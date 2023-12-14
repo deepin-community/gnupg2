@@ -905,18 +905,17 @@ write_signature_packets (ctrl_t ctrl,
 }
 
 
-/****************
- * Sign the files whose names are in FILENAME.
- * If DETACHED has the value true,
- * make a detached signature.  If FILENAMES->d is NULL read from stdin
- * and ignore the detached mode.  Sign the file with all secret keys
- * which can be taken from LOCUSR, if this is NULL, use the default one
- * If ENCRYPTFLAG is true, use REMUSER (or ask if it is NULL) to encrypt the
- * signed data for these users.  If ENCRYPTFLAG is 2 symmetric encryption
- * is also used.
- * If OUTFILE is not NULL; this file is used for output and the function
- * does not ask for overwrite permission; output is then always
- * uncompressed, non-armored and in binary mode.
+/* Sign the files whose names are in FILENAME using all secret keys
+ * which can be taken from LOCUSR, if this is NULL, use the default
+ * secret key.
+ * If DETACHED has the value true, make a detached signature.
+ * If FILENAMES->d is NULL read from stdin and ignore the detached mode.
+ * If ENCRYPTFLAG is true, use REMUSER (or ask if it is NULL) to
+ * encrypt the signed data for these users.  If ENCRYPTFLAG is 2
+ * symmetric encryption is also used.
+ * If OUTFILE is not NULL; this file is used for output and the
+ * function does not ask for overwrite permission; output is then
+ * always uncompressed, non-armored and in binary mode.
  */
 int
 sign_file (ctrl_t ctrl, strlist_t filenames, int detached, strlist_t locusr,
@@ -1464,7 +1463,7 @@ sign_symencrypt_file (ctrl_t ctrl, const char *fname, strlist_t locusr)
     if (!opt.quiet || !opt.batch)
         log_info (_("%s encryption will be used\n"),
                   openpgp_cipher_algo_name (algo) );
-    cfx.dek = passphrase_to_dek (algo, s2k, 1, 1, NULL, &canceled);
+    cfx.dek = passphrase_to_dek (algo, s2k, 1, 1, NULL, 0, &canceled);
 
     if (!cfx.dek || !cfx.dek->keylen) {
         rc = gpg_error (canceled?GPG_ERR_CANCELED:GPG_ERR_BAD_PASSPHRASE);
@@ -1511,7 +1510,7 @@ sign_symencrypt_file (ctrl_t ctrl, const char *fname, strlist_t locusr)
     }
 
     /* Push the encryption filter */
-    iobuf_push_filter( out, cipher_filter, &cfx );
+    iobuf_push_filter (out, cipher_filter_cfb, &cfx );
 
     /* Push the compress filter */
     if (default_compress_algo())

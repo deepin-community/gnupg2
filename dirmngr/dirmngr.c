@@ -1,6 +1,6 @@
 /* dirmngr.c - Keyserver and X.509 LDAP access
  * Copyright (C) 2002 Klarälvdalens Datakonsult AB
- * Copyright (C) 2003, 2004, 2006, 2007, 2008, 2010, 2011, 2020 g10 Code GmbH
+ * Copyright (C) 2003-2004, 2006-2007, 2008, 2010-2011, 2020-2021 g10 Code GmbH
  * Copyright (C) 2014 Werner Koch
  *
  * This file is part of GnuPG.
@@ -107,6 +107,7 @@ enum cmd_and_opt_values {
   oDebugWait,
   oDebugLevel,
   oGnutlsDebug,
+  oDebugCacheExpiredCerts,
   oNoGreeting,
   oNoOptions,
   oHomedir,
@@ -124,6 +125,7 @@ enum cmd_and_opt_values {
   oHTTPProxy,
   oLDAPProxy,
   oOnlyLDAPProxy,
+  oLDAPServer,
   oLDAPFile,
   oLDAPTimeout,
   oLDAPAddServers,
@@ -138,9 +140,11 @@ enum cmd_and_opt_values {
   oForce,
   oAllowOCSP,
   oAllowVersionCheck,
+  oStealSocket,
   oSocketName,
   oLDAPWrapperProgram,
   oHTTPWrapperProgram,
+  oIgnoreCert,
   oIgnoreCertExtension,
   oUseTor,
   oNoUseTor,
@@ -160,6 +164,10 @@ enum cmd_and_opt_values {
 
 static ARGPARSE_OPTS opts[] = {
 
+  ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
+  ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
+  ARGPARSE_c (aGPGConfVersions, "gpgconf-versions", "@"),
+
   ARGPARSE_group (300, N_("@Commands:\n ")),
 
   ARGPARSE_c (aServer,   "server",  N_("run in server mode (foreground)") ),
@@ -168,47 +176,98 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_c (aSupervised,  "supervised", N_("run in supervised mode")),
 #endif
   ARGPARSE_c (aListCRLs, "list-crls", N_("list the contents of the CRL cache")),
-  ARGPARSE_c (aLoadCRL,  "load-crl",  N_("|FILE|load CRL from FILE into cache")),
+  ARGPARSE_c (aLoadCRL,  "load-crl", N_("|FILE|load CRL from FILE into cache")),
   ARGPARSE_c (aFetchCRL, "fetch-crl", N_("|URL|fetch a CRL from URL")),
   ARGPARSE_c (aShutdown, "shutdown",  N_("shutdown the dirmngr")),
   ARGPARSE_c (aFlush,    "flush",     N_("flush the cache")),
-  ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
-  ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
-  ARGPARSE_c (aGPGConfVersions, "gpgconf-versions", "@"),
 
-  ARGPARSE_group (301, N_("@\nOptions:\n ")),
+
+  ARGPARSE_header (NULL, N_("Options used for startup")),
+
+  ARGPARSE_s_n (oNoDetach, "no-detach", N_("do not detach from the console")),
+  ARGPARSE_s_n (oSh,       "sh",        N_("sh-style command output")),
+  ARGPARSE_s_n (oCsh,      "csh",       N_("csh-style command output")),
+  ARGPARSE_s_n (oStealSocket, "steal-socket", "@"),
+  ARGPARSE_s_s (oHomedir, "homedir", "@"),
+  ARGPARSE_conffile (oOptions,  "options", N_("|FILE|read options from FILE")),
+  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
+
+
+  ARGPARSE_header ("Monitor", N_("Options controlling the diagnostic output")),
 
   ARGPARSE_s_n (oVerbose,  "verbose",   N_("verbose")),
   ARGPARSE_s_n (oQuiet,    "quiet",     N_("be somewhat more quiet")),
-  ARGPARSE_s_n (oSh,       "sh",        N_("sh-style command output")),
-  ARGPARSE_s_n (oCsh,      "csh",       N_("csh-style command output")),
-  ARGPARSE_conffile (oOptions, "options", N_("|FILE|read options from FILE")),
+  ARGPARSE_s_n (oNoGreeting, "no-greeting", "@"),
   ARGPARSE_s_s (oDebugLevel, "debug-level",
                 N_("|LEVEL|set the debugging level to LEVEL")),
-  ARGPARSE_s_n (oNoDetach, "no-detach", N_("do not detach from the console")),
+  ARGPARSE_s_s (oDebug,    "debug", "@"),
+  ARGPARSE_s_n (oDebugAll, "debug-all", "@"),
+  ARGPARSE_s_i (oGnutlsDebug, "gnutls-debug", "@"),
+  ARGPARSE_s_i (oGnutlsDebug, "tls-debug", "@"),
+  ARGPARSE_s_i (oDebugWait, "debug-wait", "@"),
   ARGPARSE_s_s (oLogFile,  "log-file",
                 N_("|FILE|write server mode logs to FILE")),
-  ARGPARSE_s_n (oBatch,    "batch",       N_("run without asking a user")),
-  ARGPARSE_s_n (oForce,    "force",       N_("force loading of outdated CRLs")),
-  ARGPARSE_s_n (oAllowOCSP, "allow-ocsp", N_("allow sending OCSP requests")),
+
+
+  ARGPARSE_header ("Configuration",
+                   N_("Options controlling the configuration")),
+
   ARGPARSE_s_n (oAllowVersionCheck, "allow-version-check",
                 N_("allow online software version check")),
+  ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
+  ARGPARSE_s_i (oMaxReplies, "max-replies",
+                N_("|N|do not return more than N items in one query")),
+  ARGPARSE_s_u (oFakedSystemTime, "faked-system-time", "@"), /*(epoch time)*/
+  ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
+  ARGPARSE_s_s (oIgnoreCert,"ignore-cert", "@"),
+  ARGPARSE_s_s (oIgnoreCertExtension,"ignore-cert-extension", "@"),
+
+
+  ARGPARSE_header ("Network", N_("Network related options")),
+
+  ARGPARSE_s_n (oUseTor, "use-tor", N_("route all network traffic via Tor")),
+  ARGPARSE_s_n (oNoUseTor, "no-use-tor", "@"),
+  ARGPARSE_s_n (oDisableIPv4, "disable-ipv4", "@"),
+  ARGPARSE_s_n (oDisableIPv6, "disable-ipv6", "@"),
+  ARGPARSE_s_n (oStandardResolver, "standard-resolver", "@"),
+  ARGPARSE_s_n (oRecursiveResolver, "recursive-resolver", "@"),
+  ARGPARSE_s_i (oResolverTimeout, "resolver-timeout", "@"),
+  ARGPARSE_s_s (oNameServer, "nameserver", "@"),
+  ARGPARSE_s_i (oConnectTimeout, "connect-timeout", "@"),
+  ARGPARSE_s_i (oConnectQuickTimeout, "connect-quick-timeout", "@"),
+
+
+  ARGPARSE_header ("Keyserver", N_("Configuration for Keyservers")),
+
+  ARGPARSE_s_s (oKeyServer, "keyserver",
+                N_("|URL|use keyserver at URL")),
+  ARGPARSE_s_s (oHkpCaCert, "hkp-cacert",
+                N_("|FILE|use the CA certificates in FILE for HKP over TLS")),
+
+
+  ARGPARSE_header ("HTTP", N_("Configuration for HTTP servers")),
+
   ARGPARSE_s_n (oDisableHTTP, "disable-http", N_("inhibit the use of HTTP")),
-  ARGPARSE_s_n (oDisableLDAP, "disable-ldap", N_("inhibit the use of LDAP")),
   ARGPARSE_s_n (oIgnoreHTTPDP,"ignore-http-dp",
                 N_("ignore HTTP CRL distribution points")),
-  ARGPARSE_s_n (oIgnoreLDAPDP,"ignore-ldap-dp",
-                N_("ignore LDAP CRL distribution points")),
-  ARGPARSE_s_n (oIgnoreOCSPSvcUrl, "ignore-ocsp-service-url",
-                N_("ignore certificate contained OCSP service URLs")),
-
   ARGPARSE_s_s (oHTTPProxy,  "http-proxy",
                 N_("|URL|redirect all HTTP requests to URL")),
+  ARGPARSE_s_n (oHonorHTTPProxy, "honor-http-proxy",
+                N_("use system's HTTP proxy setting")),
+  ARGPARSE_s_s (oLDAPWrapperProgram, "ldap-wrapper-program", "@"),
+
+
+  ARGPARSE_header ("LDAP", N_("Configuration of LDAP servers to use")),
+
+  ARGPARSE_s_n (oDisableLDAP, "disable-ldap", N_("inhibit the use of LDAP")),
+  ARGPARSE_s_n (oIgnoreLDAPDP,"ignore-ldap-dp",
+                N_("ignore LDAP CRL distribution points")),
   ARGPARSE_s_s (oLDAPProxy,  "ldap-proxy",
                 N_("|HOST|use HOST for LDAP queries")),
   ARGPARSE_s_n (oOnlyLDAPProxy, "only-ldap-proxy",
                 N_("do not use fallback hosts with --ldap-proxy")),
-
+  ARGPARSE_s_s (oLDAPServer, "ldapserver",
+                N_("|SPEC|use this keyserver to lookup keys")),
   ARGPARSE_s_s (oLDAPFile, "ldapserverlist-file",
                 N_("|FILE|read LDAP server list from FILE")),
   ARGPARSE_s_n (oLDAPAddServers, "add-servers",
@@ -217,6 +276,12 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_i (oLDAPTimeout, "ldaptimeout",
                 N_("|N|set LDAP timeout to N seconds")),
 
+
+  ARGPARSE_header ("OCSP", N_("Configuration for OCSP")),
+
+  ARGPARSE_s_n (oAllowOCSP, "allow-ocsp", N_("allow sending OCSP requests")),
+  ARGPARSE_s_n (oIgnoreOCSPSvcUrl, "ignore-ocsp-service-url",
+                N_("ignore certificate contained OCSP service URLs")),
   ARGPARSE_s_s (oOCSPResponder, "ocsp-responder",
                 N_("|URL|use OCSP responder at URL")),
   ARGPARSE_s_s (oOCSPSigner, "ocsp-signer",
@@ -225,42 +290,20 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_i (oOCSPMaxPeriod,    "ocsp-max-period", "@"),
   ARGPARSE_s_i (oOCSPCurrentPeriod, "ocsp-current-period", "@"),
 
-  ARGPARSE_s_i (oMaxReplies, "max-replies",
-                N_("|N|do not return more than N items in one query")),
 
-  ARGPARSE_s_s (oNameServer, "nameserver", "@"),
-  ARGPARSE_s_s (oKeyServer, "keyserver", "@"),
-  ARGPARSE_s_s (oHkpCaCert, "hkp-cacert",
-                N_("|FILE|use the CA certificates in FILE for HKP over TLS")),
+  ARGPARSE_header (NULL, N_("Other options")),
 
-  ARGPARSE_s_n (oUseTor, "use-tor", N_("route all network traffic via Tor")),
-  ARGPARSE_s_n (oNoUseTor, "no-use-tor", "@"),
-
-  ARGPARSE_s_n (oDisableIPv4, "disable-ipv4", "@"),
-  ARGPARSE_s_n (oDisableIPv6, "disable-ipv6", "@"),
+  ARGPARSE_s_n (oForce,    "force",    N_("force loading of outdated CRLs")),
 
   ARGPARSE_s_s (oSocketName, "socket-name", "@"),  /* Only for debugging.  */
+  ARGPARSE_s_n (oDebugCacheExpiredCerts, "debug-cache-expired-certs", "@"),
 
-  ARGPARSE_s_u (oFakedSystemTime, "faked-system-time", "@"), /*(epoch time)*/
-  ARGPARSE_s_s (oDebug,    "debug", "@"),
-  ARGPARSE_s_n (oDebugAll, "debug-all", "@"),
-  ARGPARSE_s_i (oGnutlsDebug, "gnutls-debug", "@"),
-  ARGPARSE_s_i (oGnutlsDebug, "tls-debug", "@"),
-  ARGPARSE_s_i (oDebugWait, "debug-wait", "@"),
-  ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
-  ARGPARSE_s_n (oNoGreeting, "no-greeting", "@"),
-  ARGPARSE_s_s (oHomedir, "homedir", "@"),
-  ARGPARSE_s_s (oLDAPWrapperProgram, "ldap-wrapper-program", "@"),
+  ARGPARSE_header (NULL, ""),  /* Stop the header group.  */
+
+  /* Not yet used options.  */
+  ARGPARSE_s_n (oBatch,    "batch",       "@"),
   ARGPARSE_s_s (oHTTPWrapperProgram, "http-wrapper-program", "@"),
-  ARGPARSE_s_n (oHonorHTTPProxy, "honor-http-proxy", "@"),
-  ARGPARSE_s_s (oIgnoreCertExtension,"ignore-cert-extension", "@"),
-  ARGPARSE_s_n (oStandardResolver, "standard-resolver", "@"),
-  ARGPARSE_s_n (oRecursiveResolver, "recursive-resolver", "@"),
-  ARGPARSE_s_i (oResolverTimeout, "resolver-timeout", "@"),
-  ARGPARSE_s_i (oConnectTimeout, "connect-timeout", "@"),
-  ARGPARSE_s_i (oConnectQuickTimeout, "connect-quick-timeout", "@"),
-  ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
-  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
+
 
   ARGPARSE_group (302,N_("@\n(See the \"info\" manual for a complete listing "
                          "of all commands and options)\n")),
@@ -324,6 +367,10 @@ static volatile int shutdown_pending;
 /* Flags to indicate that we shall not watch our own socket. */
 static int disable_check_own_socket;
 
+/* Flag indicating to start the daemon even if one already runs.  */
+static int steal_socket;
+
+
 /* Flag to control the Tor mode.  */
 static enum
   { TOR_MODE_AUTO = 0,  /* Switch to NO or YES         */
@@ -344,6 +391,11 @@ static int network_activity_seen;
 /* A list of filenames registred with --hkp-cacert.  */
 static strlist_t hkp_cacert_filenames;
 
+/* A flag used to clear the list of ldapservers iff --ldapserver is
+ * given on the command line or one of the conf files. In this case we
+ * want to clear all old specifications through the legacy
+ * dirmngr_ldapservers.conf. */
+static int ldapserver_list_needs_reset;
 
 /* The timer tick used for housekeeping stuff.  The second constant is used when a shutdown is pending.  */
 #define TIMERTICK_INTERVAL           (60)
@@ -377,7 +429,9 @@ static void cleanup (void);
 #if USE_LDAP
 static ldap_server_t parse_ldapserver_file (const char* filename, int ienoent);
 #endif /*USE_LDAP*/
-static fingerprint_list_t parse_ocsp_signer (const char *string);
+static fingerprint_list_t parse_fingerprint_item (const char *string,
+                                                  const  char *optionname,
+                                                  int want_binary);
 static void netactivity_action (void);
 static void handle_connections (assuan_fd_t listen_fd);
 static void gpgconf_versions (void);
@@ -569,6 +623,15 @@ dirmngr_use_tor (void)
 }
 
 
+/* This is somewhat similar to dirmngr_use_tor but avoids a trial
+ * connect and may thus be faster for this special case.  */
+int
+dirmngr_never_use_tor_p (void)
+{
+  return tor_mode == TOR_MODE_NEVER;
+}
+
+
 static void
 wrong_args (const char *text)
 {
@@ -625,6 +688,12 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
           xfree (opt.ocsp_signer);
           opt.ocsp_signer = tmp;
         }
+      while (opt.ignored_certs)
+        {
+          fingerprint_list_t tmp = opt.ignored_certs->next;
+          xfree (opt.ignored_certs);
+          opt.ignored_certs = tmp;
+        }
       FREE_STRLIST (opt.ignored_cert_extensions);
       http_register_tls_ca (NULL);
       FREE_STRLIST (hkp_cacert_filenames);
@@ -637,6 +706,9 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       set_dns_timeout (0);
       opt.connect_timeout = 0;
       opt.connect_quick_timeout = 0;
+      opt.ldaptimeout = DEFAULT_LDAP_TIMEOUT;
+      ldapserver_list_needs_reset = 1;
+      opt.debug_cache_expired_certs = 0;
       return 1;
     }
 
@@ -688,7 +760,8 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
     case oAllowVersionCheck: opt.allow_version_check = 1; break;
     case oOCSPResponder: opt.ocsp_responder = pargs->r.ret_str; break;
     case oOCSPSigner:
-      opt.ocsp_signer = parse_ocsp_signer (pargs->r.ret_str);
+      opt.ocsp_signer = parse_fingerprint_item (pargs->r.ret_str,
+                                                "--ocsp-signer", 0);
       break;
     case oOCSPMaxClockSkew: opt.ocsp_max_clock_skew = pargs->r.ret_int; break;
     case oOCSPMaxPeriod: opt.ocsp_max_period = pargs->r.ret_int; break;
@@ -710,6 +783,24 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       }
       break;
 
+    case oIgnoreCert:
+      {
+        fingerprint_list_t item, r;
+        item = parse_fingerprint_item (pargs->r.ret_str, "--ignore-cert", 20);
+        if (item)
+          {  /* Append  */
+            if (!opt.ignored_certs)
+              opt.ignored_certs = item;
+            else
+              {
+                for (r = opt.ignored_certs; r->next; r = r->next)
+                  ;
+                r->next = item;
+              }
+          }
+      }
+      break;
+
     case oIgnoreCertExtension:
       add_to_strlist (&opt.ignored_cert_extensions, pargs->r.ret_str);
       break;
@@ -724,6 +815,32 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 
     case oStandardResolver: enable_standard_resolver (1); break;
     case oRecursiveResolver: enable_recursive_resolver (1); break;
+
+    case oLDAPServer:
+#if USE_LDAP
+      {
+        ldap_server_t server;
+        char *p;
+
+        p = pargs->r.ret_str;
+        if (!strncmp (p, "ldap:", 5) && !(p[5] == '/' && p[6] == '/'))
+          p += 5;
+
+        server = ldapserver_parse_one (p, NULL, 0);
+        if (server)
+          {
+            if (ldapserver_list_needs_reset)
+              {
+                ldapserver_list_needs_reset = 0;
+                ldapserver_list_free (opt.ldapservers);
+                opt.ldapservers = NULL;
+              }
+            server->next = opt.ldapservers;
+            opt.ldapservers = server;
+          }
+      }
+#endif
+      break;
 
     case oKeyServer:
       if (*pargs->r.ret_str)
@@ -744,6 +861,14 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 
     case oConnectQuickTimeout:
       opt.connect_quick_timeout = pargs->r.ret_ulong * 1000;
+      break;
+
+    case oLDAPTimeout:
+      opt.ldaptimeout = pargs->r.ret_int;
+      break;
+
+    case oDebugCacheExpiredCerts:
+      opt.debug_cache_expired_certs = 0;
       break;
 
     default:
@@ -993,6 +1118,7 @@ main (int argc, char **argv)
         case oNoVerbose: opt.verbose = 0; break;
         case oHomedir: /* Ignore this option here. */; break;
         case oNoDetach: nodetach = 1; break;
+        case oStealSocket: steal_socket = 1; break;
         case oLogFile: logfile = pargs.r.ret_str; break;
         case oCsh: csh_style = 1; break;
         case oSh: csh_style = 0; break;
@@ -1002,9 +1128,6 @@ main (int argc, char **argv)
 #        endif /*USE_LDAP*/
           break;
 	case oLDAPAddServers: opt.add_new_ldapservers = 1; break;
-	case oLDAPTimeout:
-	  opt.ldaptimeout = pargs.r.ret_int;
-	  break;
 
         case oFakedSystemTime:
           gnupg_set_time ((time_t)pargs.r.ret_ulong, 0);
@@ -1087,9 +1210,11 @@ main (int argc, char **argv)
 
   post_option_parsing ();
 
-  /* Get LDAP server list from file. */
+  /* Get LDAP server list from file unless --ldapserver has been used.  */
 #if USE_LDAP
-  if (!ldapfile)
+  if (opt.ldapservers)
+    ;
+  else if (!ldapfile)
     {
       ldapfile = make_filename (gnupg_homedir (),
                                 "dirmngr_ldapservers.conf",
@@ -1255,7 +1380,11 @@ main (int argc, char **argv)
 #endif
               ))
 	{
-          /* Fixme: We should test whether a dirmngr is already running. */
+          /* Fixme: We should actually test whether a dirmngr is
+           * already running.  For now the steal option is a dummy. */
+          /* if (steal_socket) */
+          /*   log_info (N_("trying to steal socket from running %s\n"), */
+          /*             "dirmngr"); */
 	  gnupg_remove (redir_socket_name? redir_socket_name : socket_name);
 	  rc = assuan_sock_bind (fd, (struct sockaddr*) &serv_addr, len);
 	}
@@ -1465,68 +1594,19 @@ main (int argc, char **argv)
   else if (cmd == aGPGConfList)
     {
       unsigned long flags = 0;
-      char *filename;
       char *filename_esc;
 
-      filename = percent_escape (opt.config_filename, NULL);
-      es_printf ("gpgconf-dirmngr.conf:%lu:\"%s\n",
-              GC_OPT_FLAG_DEFAULT, filename);
-      xfree (filename);
-
-      es_printf ("verbose:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("quiet:%lu:\n", flags | GC_OPT_FLAG_NONE);
       es_printf ("debug-level:%lu:\"none\n", flags | GC_OPT_FLAG_DEFAULT);
-      es_printf ("log-file:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("force:%lu:\n", flags | GC_OPT_FLAG_NONE);
-
-      /* --csh and --sh are mutually exclusive, something we can not
-         express in GPG Conf.  --options is only usable from the
-         command line, really.  --debug-all interacts with --debug,
-         and having both of them is thus problematic.  --no-detach is
-         also only usable on the command line.  --batch is unused.  */
-
-      filename = make_filename (gnupg_homedir (),
-                                "dirmngr_ldapservers.conf",
-                                NULL);
-      filename_esc = percent_escape (filename, NULL);
-      es_printf ("ldapserverlist-file:%lu:\"%s\n", flags | GC_OPT_FLAG_DEFAULT,
-	      filename_esc);
-      xfree (filename_esc);
-      xfree (filename);
-
       es_printf ("ldaptimeout:%lu:%u\n",
-              flags | GC_OPT_FLAG_DEFAULT, DEFAULT_LDAP_TIMEOUT);
+                 flags | GC_OPT_FLAG_DEFAULT, DEFAULT_LDAP_TIMEOUT);
       es_printf ("max-replies:%lu:%u\n",
-              flags | GC_OPT_FLAG_DEFAULT, DEFAULT_MAX_REPLIES);
-      es_printf ("allow-ocsp:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("allow-version-check:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("ocsp-responder:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("ocsp-signer:%lu:\n", flags | GC_OPT_FLAG_NONE);
-
-      es_printf ("faked-system-time:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("no-greeting:%lu:\n", flags | GC_OPT_FLAG_NONE);
-
-      es_printf ("disable-http:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("disable-ldap:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("honor-http-proxy:%lu\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("http-proxy:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("ldap-proxy:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("only-ldap-proxy:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("ignore-ldap-dp:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("ignore-http-dp:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      es_printf ("ignore-ocsp-service-url:%lu:\n", flags | GC_OPT_FLAG_NONE);
-      /* Note: The next one is to fix a typo in gpgconf - should be
-         removed eventually. */
-      es_printf ("ignore-ocsp-servic-url:%lu:\n", flags | GC_OPT_FLAG_NONE);
-
-      es_printf ("use-tor:%lu:\n", flags | GC_OPT_FLAG_NONE);
+                 flags | GC_OPT_FLAG_DEFAULT, DEFAULT_MAX_REPLIES);
 
       filename_esc = percent_escape (get_default_keyserver (0), NULL);
       es_printf ("keyserver:%lu:\"%s:\n", flags | GC_OPT_FLAG_DEFAULT,
                  filename_esc);
       xfree (filename_esc);
 
-      es_printf ("nameserver:%lu:\n", flags | GC_OPT_FLAG_NONE);
       es_printf ("resolver-timeout:%lu:%u\n",
                  flags | GC_OPT_FLAG_DEFAULT, 0);
     }
@@ -1672,8 +1752,13 @@ parse_ldapserver_file (const char* filename, int ignore_enoent)
 }
 #endif /*USE_LDAP*/
 
+
+/* Parse a fingerprint entry as used by --ocsc-signer.  OPTIONNAME as
+ * a description on the options used.  WANT_BINARY requests to store a
+ * binary fingerprint.  Returns NULL on error and logs that error. */
 static fingerprint_list_t
-parse_ocsp_signer (const char *string)
+parse_fingerprint_item (const char *string,
+                        const char *optionname, int want_binary)
 {
   gpg_error_t err;
   char *fname;
@@ -1698,9 +1783,14 @@ parse_ocsp_signer (const char *string)
       if (j != 40 || !(spacep (string+i) || !string[i]))
         {
           log_error (_("%s:%u: invalid fingerprint detected\n"),
-                     "--ocsp-signer", 0);
+                     optionname, 0);
           xfree (item);
           return NULL;
+        }
+      if (want_binary)
+        {
+          item->binlen = 20;
+          hex2bin (item->hexfpr, item->hexfpr, 20);
         }
       return item;
     }
@@ -1784,6 +1874,12 @@ parse_ocsp_signer (const char *string)
           log_error (_("%s:%u: invalid fingerprint detected\n"), fname, lnr);
           errflag = 1;
         }
+      else if (want_binary)
+        {
+          item->binlen = 20;
+          hex2bin (item->hexfpr, item->hexfpr, 20);
+        }
+
       i++;
       while (spacep (p+i))
         i++;

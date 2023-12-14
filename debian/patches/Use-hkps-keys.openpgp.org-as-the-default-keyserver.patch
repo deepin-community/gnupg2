@@ -40,32 +40,32 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  2 files changed, 6 insertions(+), 2 deletions(-)
 
 diff --git a/configure.ac b/configure.ac
-index 4b9d908..47eb11c 100644
+index 0a4ae1e..c48cb8c 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1856,7 +1856,7 @@ AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
+@@ -1837,7 +1837,7 @@ AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
  AC_DEFINE_UNQUOTED(DIRMNGR_SOCK_NAME, "S.dirmngr",
                     [The name of the dirmngr socket])
  AC_DEFINE_UNQUOTED(DIRMNGR_DEFAULT_KEYSERVER,
--                   "hkps://hkps.pool.sks-keyservers.net",
+-                   "hkps://keyserver.ubuntu.com",
 +                   "hkps://keys.openpgp.org",
        [The default keyserver for dirmngr to use, if none is explicitly given])
  
  AC_DEFINE_UNQUOTED(GPGEXT_GPG, "gpg", [The standard binary file suffix])
 diff --git a/doc/dirmngr.texi b/doc/dirmngr.texi
-index 84a8d28..603a11a 100644
+index ab831de..f7c7672 100644
 --- a/doc/dirmngr.texi
 +++ b/doc/dirmngr.texi
-@@ -329,7 +329,11 @@ whether Tor is locally running or not.  The check for a running Tor is
+@@ -331,7 +331,11 @@ whether Tor is locally running or not.  The check for a running Tor is
  done for each new connection.
  
  If no keyserver is explicitly configured, dirmngr will use the
--built-in default of @code{hkps://hkps.pool.sks-keyservers.net}.
-+built-in default of @code{hkps://keys.openpgp.org}.
+-built-in default of @code{https://keyserver.ubuntu.com}.
++built-in default of @code{https://keys.openpgp.org}.
 +
 +Note that the above default is a Debian-specific choice.  Upstream
-+GnuPG prefers @code{hkps://hkps.pool.sks-keyservers.net}.  See
++GnuPG prefers @code{hkps://keyserver.ubuntu.com}.  See
 +/usr/share/doc/gpgconf/NEWS.Debian.gz for more details.
  
  Windows users with a keyserver running on their Active Directory
- should use @code{ldap:///} for @var{name} to access this directory.
+ may use the short form @code{ldap:///} for @var{name} to access this directory.

@@ -277,20 +277,21 @@ gpg_error_t build_sk_list (ctrl_t ctrl, strlist_t locusr,
                            SK_LIST *ret_sk_list, unsigned use);
 
 /*-- passphrase.h --*/
+
+/* Flags for passphrase_to_dek */
+#define GETPASSWORD_FLAG_SYMDECRYPT  1
+
+
 unsigned char encode_s2k_iterations (int iterations);
 int  have_static_passphrase(void);
 const char *get_static_passphrase (void);
 void set_passphrase_from_string(const char *pass);
 void read_passphrase_from_fd( int fd );
 void passphrase_clear_cache (const char *cacheid);
-DEK *passphrase_to_dek_ext(u32 *keyid, int pubkey_algo,
-                           int cipher_algo, STRING2KEY *s2k, int mode,
-                           const char *tryagain_text,
-                           const char *custdesc, const char *custprompt,
-                           int *canceled);
 DEK *passphrase_to_dek (int cipher_algo, STRING2KEY *s2k,
                         int create, int nocache,
-                        const char *tryagain_text, int *canceled);
+                        const char *tryagain_text, unsigned int flags,
+                        int *canceled);
 void set_next_passphrase( const char *s );
 char *get_last_passphrase(void);
 void next_to_last_passphrase(void);
@@ -321,6 +322,10 @@ gpg_error_t get_pubkey_for_sig (ctrl_t ctrl,
 
 /* Return the public key with the key id KEYID and store it at PK.  */
 int get_pubkey (ctrl_t ctrl, PKT_public_key *pk, u32 *keyid);
+
+/* Same as get_pubkey but with auto LDAP fetch.  */
+gpg_error_t get_pubkey_with_ldap_fallback (ctrl_t ctrl,
+                                           PKT_public_key *pk, u32 * keyid);
 
 /* Similar to get_pubkey, but it does not take PK->REQ_USAGE into
    account nor does it merge in the self-signed data.  This function

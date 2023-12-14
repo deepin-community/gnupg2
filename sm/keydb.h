@@ -33,6 +33,8 @@ typedef struct keydb_handle *KEYDB_HANDLE;
 /*-- keydb.c --*/
 gpg_error_t keydb_add_resource (ctrl_t ctrl, const char *url,
                                 int force, int *auto_created);
+void keydb_close_all_files (void);
+
 KEYDB_HANDLE keydb_new (void);
 void keydb_release (KEYDB_HANDLE hd);
 int keydb_set_ephemeral (KEYDB_HANDLE hd, int yes);
@@ -47,7 +49,6 @@ void keydb_push_found_state (KEYDB_HANDLE hd);
 void keydb_pop_found_state (KEYDB_HANDLE hd);
 int keydb_get_cert (KEYDB_HANDLE hd, ksba_cert_t *r_cert);
 int keydb_insert_cert (KEYDB_HANDLE hd, ksba_cert_t cert);
-int keydb_update_cert (KEYDB_HANDLE hd, ksba_cert_t cert);
 
 int keydb_delete (KEYDB_HANDLE hd, int unlock);
 

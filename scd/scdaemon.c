@@ -1,6 +1,7 @@
 /* scdaemon.c  -  The GnuPG Smartcard Daemon
- * Copyright (C) 2001-2002, 2004-2005, 2007-2009 Free Software Foundation, Inc.
- * Copyright (C) 2001-2002, 2004-2005, 2007-2014 Werner Koch
+ * Copyright (C) 2001-2002, 2004-2005, 2007-2020 Free Software Foundation, Inc.
+ * Copyright (C) 2001-2002, 2004-2005, 2007-2019 Werner Koch
+ * Copyright (C) 2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -48,7 +49,6 @@
 
 #include "../common/i18n.h"
 #include "../common/sysutils.h"
-#include "app-common.h"
 #include "iso7816.h"
 #include "apdu.h"
 #include "ccid-driver.h"
@@ -94,6 +94,7 @@ enum cmd_and_opt_values
   oCardTimeout,
   octapiDriver,
   opcscDriver,
+  opcscShared,
   oDisableCCID,
   oDisableOpenSC,
   oDisablePinpad,
@@ -112,17 +113,24 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
   ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
 
-  ARGPARSE_group (301, N_("@Options:\n ")),
+  ARGPARSE_header (NULL, N_("Options used for startup")),
 
   ARGPARSE_s_n (oServer,"server", N_("run in server mode (foreground)")),
   ARGPARSE_s_n (oMultiServer, "multi-server",
                 N_("run in multi server mode (foreground)")),
   ARGPARSE_s_n (oDaemon, "daemon", N_("run in daemon mode (background)")),
-  ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
-  ARGPARSE_s_n (oQuiet, "quiet", N_("be somewhat more quiet")),
+  ARGPARSE_s_n (oNoDetach, "no-detach", N_("do not detach from the console")),
   ARGPARSE_s_n (oSh,    "sh", N_("sh-style command output")),
   ARGPARSE_s_n (oCsh,   "csh", N_("csh-style command output")),
+  ARGPARSE_s_s (oHomedir,    "homedir",      "@"),
   ARGPARSE_conffile (oOptions, "options", N_("|FILE|read options from FILE")),
+  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
+
+
+  ARGPARSE_header ("Monitor", N_("Options controlling the diagnostic output")),
+
+  ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
+  ARGPARSE_s_n (oQuiet, "quiet", N_("be somewhat more quiet")),
   ARGPARSE_s_s (oDebug, "debug", "@"),
   ARGPARSE_s_n (oDebugAll, "debug-all", "@"),
   ARGPARSE_s_s (oDebugLevel, "debug-level" ,
@@ -132,14 +140,19 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oDebugCCIDDriver, "debug-ccid-driver", "@"),
   ARGPARSE_s_n (oDebugLogTid, "debug-log-tid", "@"),
   ARGPARSE_p_u (oDebugAssuanLogCats, "debug-assuan-log-cats", "@"),
-  ARGPARSE_s_n (oNoDetach, "no-detach", N_("do not detach from the console")),
   ARGPARSE_s_s (oLogFile,  "log-file", N_("|FILE|write a log to FILE")),
+
+
+  ARGPARSE_header ("Configuration",
+                   N_("Options controlling the configuration")),
+
   ARGPARSE_s_s (oReaderPort, "reader-port",
                 N_("|N|connect to reader at port N")),
   ARGPARSE_s_s (octapiDriver, "ctapi-driver",
                 N_("|NAME|use NAME as ct-API driver")),
   ARGPARSE_s_s (opcscDriver, "pcsc-driver",
                 N_("|NAME|use NAME as PC/SC driver")),
+  ARGPARSE_s_n (opcscShared, "pcsc-shared", "@"),
   ARGPARSE_s_n (oDisableCCID, "disable-ccid",
 #ifdef HAVE_LIBUSB
                                     N_("do not use the internal CCID driver")
@@ -153,16 +166,17 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oDisablePinpad, "disable-pinpad",
                 N_("do not use a reader's pinpad")),
   ARGPARSE_ignore (300, "disable-keypad"),
+  ARGPARSE_s_n (oEnablePinpadVarlen, "enable-pinpad-varlen",
+                N_("use variable length input for pinpad")),
+  ARGPARSE_s_s (oDisableApplication, "disable-application", "@"),
+  ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
+
+
+  ARGPARSE_header("Security", N_("Options controlling the security")),
 
   ARGPARSE_s_n (oAllowAdmin, "allow-admin", "@"),
   ARGPARSE_s_n (oDenyAdmin, "deny-admin",
                 N_("deny the use of admin card commands")),
-  ARGPARSE_s_s (oDisableApplication, "disable-application", "@"),
-  ARGPARSE_s_n (oEnablePinpadVarlen, "enable-pinpad-varlen",
-                N_("use variable length input for pinpad")),
-  ARGPARSE_s_s (oHomedir,    "homedir",      "@"),
-  ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
-  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
 
   /* Stubs for options which are implemented by 2.3 or later.  */
   ARGPARSE_s_s (oNoop, "application-priority", "@"),
@@ -181,6 +195,7 @@ static struct debug_flags_s debug_flags [] =
     { DBG_MEMSTAT_VALUE, "memstat" },
     { DBG_HASHING_VALUE, "hashing" },
     { DBG_IPC_VALUE    , "ipc"     },
+    { DBG_CARD_VALUE   , "card"    },
     { DBG_CARD_IO_VALUE, "cardio"  },
     { DBG_READER_VALUE , "reader"  },
     { 0, NULL }
@@ -587,6 +602,7 @@ main (int argc, char **argv )
         case oReaderPort: opt.reader_port = pargs.r.ret_str; break;
         case octapiDriver: opt.ctapi_driver = pargs.r.ret_str; break;
         case opcscDriver: opt.pcsc_driver = pargs.r.ret_str; break;
+        case opcscShared: opt.pcsc_shared = 1; break;
         case oDisableCCID: opt.disable_ccid = 1; break;
         case oDisableOpenSC: break;
 
@@ -1219,7 +1235,7 @@ scd_kick_the_loop (void)
 #else
   int ret = kill (main_thread_pid, SIGCONT);
   if (ret < 0)
-    log_error ("SetEvent for scd_kick_the_loop failed: %s\n",
+    log_error ("sending signal for scd_kick_the_loop failed: %s\n",
                gpg_strerror (gpg_error_from_syserror ()));
 #endif
 }
@@ -1275,6 +1291,8 @@ handle_connections (int listen_fd)
 
     events[0] = the_event = INVALID_HANDLE_VALUE;
     events[1] = INVALID_HANDLE_VALUE;
+    /* Create event for manual reset, initially non-signaled.  Make it
+     * waitable and inheritable.  */
     h = CreateEvent (&sa, TRUE, FALSE, NULL);
     if (!h)
       log_error ("can't create scd event: %s\n", w32_strerror (-1) );

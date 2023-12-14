@@ -25,7 +25,7 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  4 files changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/agent/command.c b/agent/command.c
-index 8642498..f94e770 100644
+index b682c55..ea65290 100644
 --- a/agent/command.c
 +++ b/agent/command.c
 @@ -843,7 +843,7 @@ static const char hlp_genkey[] =
@@ -38,10 +38,10 @@ index 8642498..f94e770 100644
    "  S: D (public-key\n"
    "  S: D   (rsa (n 326487324683264) (e 10001)))\n"
 diff --git a/doc/wks.texi b/doc/wks.texi
-index 119e31c..ae6c310 100644
+index e398ccb..68ed117 100644
 --- a/doc/wks.texi
 +++ b/doc/wks.texi
-@@ -412,10 +412,10 @@ the submission address:
+@@ -447,10 +447,10 @@ the submission address:
  The output of the last command looks similar to this:
  
  @example
@@ -55,7 +55,7 @@ index 119e31c..ae6c310 100644
  
  Take the fingerprint from that output and manually publish the key:
 diff --git a/g10/keygen.c b/g10/keygen.c
-index d50acf8..79d4579 100644
+index 80d65c4..5b4a785 100644
 --- a/g10/keygen.c
 +++ b/g10/keygen.c
 @@ -1436,7 +1436,7 @@ gen_elg (int algo, unsigned int nbits, KBNODE pub_root,

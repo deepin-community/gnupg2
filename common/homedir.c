@@ -1,6 +1,7 @@
 /* homedir.c - Setup the home directory.
  * Copyright (C) 2004, 2006, 2007, 2010 Free Software Foundation, Inc.
  * Copyright (C) 2013, 2016 Werner Koch
+ * Copyright (C) 2021 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -26,6 +27,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: (LGPL-3.0-or-later OR GPL-2.0-or-later)
  */
 
 #include <config.h>
@@ -57,12 +59,23 @@
 #include <sys/stat.h> /* for stat() */
 #endif
 
-
-
 #include "util.h"
 #include "sysutils.h"
 #include "i18n.h"
 #include "zb32.h"
+
+/* The name of the symbolic link to the file from which the process
+ * text was read.  */
+#if __linux__
+# define MYPROC_SELF_EXE "/proc/self/exe"
+#elif defined(__NetBSD__)
+# define MYPROC_SELF_EXE "/proc/curproc/exe"
+#elif defined(__illumos__) || defined(__sun)
+# define MYPROC_SELF_EXE "/proc/self/path/a.out"
+#else /* Assume other BSDs */
+# define MYPROC_SELF_EXE "/proc/curproc/file"
+#endif
+
 
 /* The GnuPG homedir.  This is only accessed by the functions
  * gnupg_homedir and gnupg_set_homedir.  Malloced.  */
@@ -74,15 +87,15 @@ static byte non_default_homedir;
 
 #ifdef HAVE_W32_SYSTEM
 /* A flag used to indicate that a control file for gpgconf has been
-   detected.  Under Windows the presence of this file indicates a
-   portable installations and triggers several changes:
-
-   - The GNUGHOME directory is fixed relative to installation
-     directory.  All other means to set the home directory are ignore.
-
-   - All registry variables will be ignored.
-
-   This flag is not used on Unix systems.
+ * detected.  Under Windows the presence of this file indicates a
+ * portable installations and triggers several changes:
+ *
+ * - The GNUGHOME directory is fixed relative to installation
+ *   directory.  All other means to set the home directory are ignored.
+ *
+ * - All registry variables will be ignored.
+ *
+ * This flag is not used on Unix systems.
  */
 static byte w32_portable_app;
 #endif /*HAVE_W32_SYSTEM*/
@@ -96,25 +109,6 @@ static byte w32_bin_is_bin;
 
 #ifdef HAVE_W32_SYSTEM
 static const char *w32_rootdir (void);
-#endif
-
-
-
-#ifdef HAVE_W32_SYSTEM
-static void
-w32_try_mkdir (const char *dir)
-{
-#ifdef HAVE_W32CE_SYSTEM
-  wchar_t *wdir = utf8_to_wchar (dir);
-  if (wdir)
-    {
-      CreateDirectory (wdir, NULL);
-      xfree (wdir);
-    }
-#else
-  CreateDirectory (dir, NULL);
-#endif
-}
 #endif
 
 
@@ -166,7 +160,7 @@ is_gnupg_default_homedir (const char *dir)
 {
   int result;
   char *a = make_absfilename (dir, NULL);
-  char *b = make_absfilename (GNUPG_DEFAULT_HOMEDIR, NULL);
+  char *b = make_absfilename (standard_homedir (), NULL);
   result = !compare_filenames (a, b);
   xfree (b);
   xfree (a);
@@ -262,7 +256,7 @@ standard_homedir (void)
 
               /* Try to create the directory if it does not yet exists.  */
               if (gnupg_access (dir, F_OK))
-                w32_try_mkdir (dir);
+                gnupg_mkdir (dir, "-rwx");
             }
           else
             dir = GNUPG_DEFAULT_HOMEDIR;
@@ -373,8 +367,10 @@ check_portable_app (const char *dir)
     }
   xfree (fname);
 }
+#endif /*HAVE_W32_SYSTEM*/
 
 
+#ifdef HAVE_W32_SYSTEM
 /* Determine the root directory of the gnupg installation on Windows.  */
 static const char *
 w32_rootdir (void)
@@ -426,7 +422,235 @@ w32_rootdir (void)
   /* Fallback to the hardwired value. */
   return GNUPG_LIBEXECDIR;
 }
+#endif /*HAVE_W32_SYSTEM*/
 
+
+#ifndef HAVE_W32_SYSTEM /* Unix */
+/* Determine the root directory of the gnupg installation on Unix.
+ * The standard case is that this function returns NULL so that the
+ * root directory as configured at build time is used.  However, it
+ * may return a static string with a different root directory, similar
+ * to what we do on Windows.  That second mode is triggered by the
+ * existence of a file gpgconf.ctl installed side-by-side to gpgconf.
+ * This file is parsed for keywords describing the actually to be used
+ * root directory.  There is no solid standard on Unix to locate the
+ * binary used to create the process, thus we support this currently
+ * only on Linux and BSD where we can look this info up using the proc
+ * file system.  If WANT_SYSCONFDIR is true the optional sysconfdir
+ * entry is returned.  */
+static const char *
+unix_rootdir (int want_sysconfdir)
+{
+  static int checked;
+  static char *dir;   /* for the rootdir  */
+  static char *sdir;  /* for the sysconfdir */
+
+  if (!checked)
+    {
+      char *p;
+      char *buffer;
+      size_t bufsize = 256-1;
+      int nread;
+      gpg_error_t err;
+      char *line;
+      size_t linelen;
+      ssize_t length;
+      estream_t fp;
+      char *rootdir;
+      char *sysconfdir;
+      const char *name;
+
+      for (;;)
+        {
+          buffer = xmalloc (bufsize+1);
+          nread = readlink (MYPROC_SELF_EXE, buffer, bufsize);
+          if (nread < 0)
+            {
+              err = gpg_error_from_syserror ();
+              buffer[0] = 0;
+              if ((name = getenv ("GNUPG_BUILD_ROOT")) && *name == '/')
+                {
+                  /* Try a fallback for systems w/o a supported /proc
+                   * file system if we are running a regression test.  */
+                  log_info ("error reading symlink '%s': %s\n",
+                            MYPROC_SELF_EXE, gpg_strerror (err));
+                  xfree  (buffer);
+                  buffer = xstrconcat (name, "/bin/gpgconf", NULL);
+                  log_info ("trying fallback '%s'\n", buffer);
+                }
+              break;
+            }
+          else if (nread < bufsize)
+            {
+              buffer[nread] = 0;
+              break;  /* Got it.  */
+            }
+          else if (bufsize >= 4095)
+            {
+              buffer[0] = 0;
+              log_info ("error reading symlink '%s': %s\n",
+                        MYPROC_SELF_EXE, "value too large");
+              break;
+            }
+          xfree (buffer);
+          bufsize += 256;
+        }
+      if (!*buffer)
+        {
+          xfree (buffer);
+          checked = 1;
+          return NULL;  /* Error - assume no gpgconf.ctl.  */
+        }
+
+      p = strrchr (buffer, '/');
+      if (!p)
+        {
+          xfree (buffer);
+          checked = 1;
+          return NULL;  /* Erroneous /proc - assume no gpgconf.ctl.  */
+        }
+      *p = 0;  /* BUFFER has the directory.  */
+      if ((p = strrchr (buffer, '/')))
+        {
+          /* Strip one part and expect the file below a bin dir.  */
+          *p = 0;
+          p = xstrconcat (buffer, "/bin/gpgconf.ctl", NULL);
+          xfree (buffer);
+          buffer = p;
+        }
+      else /* !p */
+        {
+          /* Installed in the root which is not a good idea.  Assume
+           * no gpgconf.ctl.  */
+          xfree (buffer);
+          checked = 1;
+          return NULL;
+        }
+
+      if (gnupg_access (buffer, F_OK))
+        {
+          /* No gpgconf.ctl file.  */
+          xfree (buffer);
+          checked = 1;
+          return NULL;
+        }
+      /* log_info ("detected '%s'\n", buffer); */
+      fp = es_fopen (buffer, "r");
+      if (!fp)
+        {
+          err = gpg_error_from_syserror ();
+          log_info ("error opening '%s': %s\n", buffer, gpg_strerror (err));
+          xfree (buffer);
+          checked = 1;
+          return NULL;
+        }
+
+      line = NULL;
+      linelen = 0;
+      rootdir = NULL;
+      sysconfdir = NULL;
+      while ((length = es_read_line (fp, &line, &linelen, NULL)) > 0)
+        {
+          /* Strip NL and CR, if present.  */
+          while (length > 0
+                 && (line[length - 1] == '\n' || line[length - 1] == '\r'))
+            line[--length] = 0;
+          trim_spaces (line);
+          if (!strncmp (line, "rootdir=", 8))
+            {
+              name = "rootdir";
+              p = line + 8;
+            }
+          else if (!strncmp (line, "rootdir =", 9))  /* (What a kludge) */
+            {
+              name = "rootdir";
+              p = line + 9;
+            }
+          else if (!strncmp (line, "sysconfdir=", 11))
+            {
+              name = "sysconfdir";
+              p = line + 11;
+            }
+          else if (!strncmp (line, "sysconfdir =", 12))  /* (What a kludge) */
+            {
+              name = "sysconfdir";
+              p = line + 12;
+            }
+          else
+            continue;
+          trim_spaces (p);
+          p = substitute_envvars (p);
+          if (!p)
+            {
+              err = gpg_error_from_syserror ();
+              log_info ("error getting %s from gpgconf.ctl: %s\n",
+                        name, gpg_strerror (err));
+            }
+          else if (!strcmp (name, "sysconfdir"))
+            {
+              xfree (sysconfdir);
+              sysconfdir = p;
+            }
+          else
+            {
+              xfree (rootdir);
+              rootdir = p;
+            }
+        }
+      if (es_ferror (fp))
+        {
+          err = gpg_error_from_syserror ();
+          log_info ("error reading '%s': %s\n", buffer, gpg_strerror (err));
+          es_fclose (fp);
+          xfree (buffer);
+          xfree (line);
+          checked = 1;
+          return NULL;
+        }
+      es_fclose (fp);
+      xfree (buffer);
+      xfree (line);
+
+      if (!rootdir || !*rootdir || *rootdir != '/')
+        {
+          log_info ("invalid rootdir '%s' specified in gpgconf.ctl\n", rootdir);
+          xfree (rootdir);
+          xfree (sysconfdir);
+          dir = NULL;
+        }
+      else if (sysconfdir && (!*sysconfdir || *sysconfdir != '/'))
+        {
+          log_info ("invalid sysconfdir '%s' specified in gpgconf.ctl\n",
+                    sysconfdir);
+          xfree (rootdir);
+          xfree (sysconfdir);
+          dir = NULL;
+        }
+      else
+        {
+          while (*rootdir && rootdir[strlen (rootdir)-1] == '/')
+            rootdir[strlen (rootdir)-1] = 0;
+          dir = rootdir;
+          gpgrt_annotate_leaked_object (dir);
+          /* log_info ("want rootdir '%s'\n", dir); */
+          if (sysconfdir)
+            {
+              while (*sysconfdir && sysconfdir[strlen (sysconfdir)-1] == '/')
+                sysconfdir[strlen (sysconfdir)-1] = 0;
+              sdir = sysconfdir;
+              gpgrt_annotate_leaked_object (sdir);
+              /* log_info ("want sysconfdir '%s'\n", sdir); */
+            }
+        }
+      checked = 1;
+    }
+
+  return want_sysconfdir? sdir : dir;
+}
+#endif /* Unix */
+
+
+#ifdef HAVE_W32_SYSTEM
 static const char *
 w32_commondir (void)
 {
@@ -590,8 +814,117 @@ gnupg_daemon_rootdir (void)
 char *
 _gnupg_socketdir_internal (int skip_checks, unsigned *r_info)
 {
-#if defined(HAVE_W32_SYSTEM) || !defined(HAVE_STAT)
+#if defined(HAVE_W32_SYSTEM)
+  char *name;
 
+  (void)skip_checks;
+
+  *r_info = 0;
+
+  /* First make sure that non_default_homedir and w32_portable_app can
+   * be set.  */
+  gnupg_homedir ();
+
+  if (w32_portable_app)
+    {
+      name = xstrconcat (w32_rootdir (), DIRSEP_S, "gnupg", NULL);
+    }
+  else
+    {
+      char *path;
+
+      path = w32_shgetfolderpath (NULL,
+                                  CSIDL_LOCAL_APPDATA|CSIDL_FLAG_CREATE,
+                                  NULL, 0);
+      if (path)
+        {
+          name = xstrconcat (path, "\\gnupg", NULL);
+          xfree (path);
+          if (gnupg_access (name, F_OK))
+            gnupg_mkdir (name, "-rwx");
+        }
+      else
+        {
+          name = xstrdup (gnupg_homedir ());
+        }
+    }
+
+  /* If a non default homedir is used, we check whether an
+   * corresponding sub directory below the socket dir is available
+   * and use that.  We hash the non default homedir to keep the new
+   * subdir short enough.  */
+  if (non_default_homedir)
+    {
+      char sha1buf[20];
+      struct stat sb;
+      char *suffix;
+      char *p;
+
+      *r_info |= 32; /* Testing subdir.  */
+
+      /* Canonicalize the name to avoid problems with mixed case
+       * names.  Note that we use only 10 bytes of the hash because on
+       * Windows the account name is also part of the name.  */
+      suffix = ascii_strlwr (xstrdup (gnupg_homedir ()));
+      for (p=suffix; *p; p++)
+        if ( *p == '\\')
+          *p = '/';
+      gcry_md_hash_buffer (GCRY_MD_SHA1, sha1buf, suffix, strlen (suffix));
+      xfree (suffix);
+      suffix = zb32_encode (sha1buf, 8*10);
+      if (!suffix)
+        {
+          *r_info |= 1; /* Out of core etc. */
+          goto leave_w32;
+        }
+      p = xstrconcat (name, "\\d.", suffix, NULL);
+      xfree (suffix);
+      xfree (name);
+      name = p;
+
+      /* Stat that directory and check constraints.
+       * The command
+       *    gpgconf --remove-socketdir
+       * can be used to remove that directory.  */
+      if (gnupg_stat (name, &sb))
+        {
+          if (errno != ENOENT)
+            *r_info |= 1; /* stat failed. */
+          else if (!skip_checks)
+            {
+              /* Try to create the directory and check again.  */
+              if (gnupg_mkdir (name, "-rwx"))
+                *r_info |= 16; /* mkdir failed.  */
+              else if (gnupg_stat (name, &sb))
+                {
+                  if (errno != ENOENT)
+                    *r_info |= 1; /* stat failed. */
+                  else
+                    *r_info |= 64; /* Subdir does not exist.  */
+                }
+              else
+                goto leave_w32; /* Success!  */
+            }
+          else
+            *r_info |= 64; /* Subdir does not exist.  */
+          if (!skip_checks)
+            {
+              xfree (name);
+              name = NULL;
+              goto leave_w32;
+            }
+        }
+    }
+
+ leave_w32:
+  /* If nothing works - fall back to the homedir.  */
+  if (!name)
+    {
+      *r_info |= 128; /* Fallback.  */
+      name = xstrdup (gnupg_homedir ());
+    }
+
+#elif !defined(HAVE_STAT)
   char *name;
 
   (void)skip_checks;
@@ -814,7 +1147,11 @@ gnupg_sysconfdir (void)
     }
   return name;
 #else /*!HAVE_W32_SYSTEM*/
-  return GNUPG_SYSCONFDIR;
+  const char *dir = unix_rootdir (1);
+  if (dir)
+    return dir;
+  else
+    return GNUPG_SYSCONFDIR;
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
@@ -822,20 +1159,13 @@ gnupg_sysconfdir (void)
 const char *
 gnupg_bindir (void)
 {
-#if defined (HAVE_W32CE_SYSTEM)
   static char *name;
-
-  if (!name)
-    name = xstrconcat (w32_rootdir (), DIRSEP_S "bin", NULL);
-  return name;
-#elif defined(HAVE_W32_SYSTEM)
   const char *rdir;
 
+#if defined(HAVE_W32_SYSTEM)
   rdir = w32_rootdir ();
   if (w32_bin_is_bin)
     {
-      static char *name;
-
       if (!name)
         name = xstrconcat (rdir, DIRSEP_S "bin", NULL);
       return name;
@@ -843,7 +1173,18 @@ gnupg_bindir (void)
   else
     return rdir;
 #else /*!HAVE_W32_SYSTEM*/
-  return GNUPG_BINDIR;
+  rdir = unix_rootdir (0);
+  if (rdir)
+    {
+      if (!name)
+        {
+          name = xstrconcat (rdir, DIRSEP_S "bin", NULL);
+          gpgrt_annotate_leaked_object (name);
+        }
+      return name;
+    }
+  else
+    return GNUPG_BINDIR;
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
@@ -856,35 +1197,75 @@ gnupg_libexecdir (void)
 #ifdef HAVE_W32_SYSTEM
   return gnupg_bindir ();
 #else /*!HAVE_W32_SYSTEM*/
-  return GNUPG_LIBEXECDIR;
+  static char *name;
+  const char *rdir;
+
+  rdir = unix_rootdir (0);
+  if (rdir)
+    {
+      if (!name)
+        {
+          name = xstrconcat (rdir, DIRSEP_S "libexec", NULL);
+          gpgrt_annotate_leaked_object (name);
+        }
+      return name;
+    }
+  else
+    return GNUPG_LIBEXECDIR;
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
 const char *
 gnupg_libdir (void)
 {
-#ifdef HAVE_W32_SYSTEM
   static char *name;
 
+#ifdef HAVE_W32_SYSTEM
   if (!name)
     name = xstrconcat (w32_rootdir (), DIRSEP_S "lib" DIRSEP_S "gnupg", NULL);
   return name;
 #else /*!HAVE_W32_SYSTEM*/
-  return GNUPG_LIBDIR;
+  const char *rdir;
+
+  rdir = unix_rootdir (0);
+  if (rdir)
+    {
+      if (!name)
+        {
+          name = xstrconcat (rdir, DIRSEP_S "lib", DIRSEP_S, "gnupg", NULL);
+          gpgrt_annotate_leaked_object (name);
+        }
+      return name;
+    }
+  else
+    return GNUPG_LIBDIR;
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
 const char *
 gnupg_datadir (void)
 {
-#ifdef HAVE_W32_SYSTEM
   static char *name;
 
+#ifdef HAVE_W32_SYSTEM
   if (!name)
     name = xstrconcat (w32_rootdir (), DIRSEP_S "share" DIRSEP_S "gnupg", NULL);
   return name;
 #else /*!HAVE_W32_SYSTEM*/
-  return GNUPG_DATADIR;
+  const char *rdir;
+
+  rdir = unix_rootdir (0);
+  if (rdir)
+    {
+      if (!name)
+        {
+          name = xstrconcat (rdir, DIRSEP_S "share" DIRSEP_S "gnupg", NULL);
+          gpgrt_annotate_leaked_object (name);
+        }
+      return name;
+    }
+  else
+    return GNUPG_DATADIR;
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
@@ -892,87 +1273,44 @@ gnupg_datadir (void)
 const char *
 gnupg_localedir (void)
 {
-#ifdef HAVE_W32_SYSTEM
   static char *name;
 
+#ifdef HAVE_W32_SYSTEM
   if (!name)
     name = xstrconcat (w32_rootdir (), DIRSEP_S "share" DIRSEP_S "locale",
                        NULL);
   return name;
 #else /*!HAVE_W32_SYSTEM*/
-  return LOCALEDIR;
+  const char *rdir;
+
+  rdir = unix_rootdir (0);
+  if (rdir)
+    {
+      if (!name)
+        {
+          name = xstrconcat (rdir, DIRSEP_S "share" DIRSEP_S "locale", NULL);
+          gpgrt_annotate_leaked_object (name);
+        }
+      return name;
+    }
+  else
+    return LOCALEDIR;
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
 
-/* Return the name of the cache directory.  The name is allocated in a
-   static area on the first use.  Windows only: If the directory does
-   not exist it is created.  */
+/* Return the standard socket name used by gpg-agent.  */
 const char *
-gnupg_cachedir (void)
+gpg_agent_socket_name (void)
 {
-#ifdef HAVE_W32_SYSTEM
-  static const char *dir;
+  static char *name;
 
-  if (!dir)
+  if (!name)
     {
-      const char *rdir;
-
-      rdir = w32_rootdir ();
-      if (w32_portable_app)
-        {
-          dir = xstrconcat (rdir,
-                            DIRSEP_S, "var",
-                            DIRSEP_S, "cache",
-                            DIRSEP_S, "gnupg", NULL);
-        }
-      else
-        {
-          char *path;
-          const char *s1[] = { "GNU", "cache", "gnupg", NULL };
-          int s1_len;
-          const char **comp;
-
-          s1_len = 0;
-          for (comp = s1; *comp; comp++)
-            s1_len += 1 + strlen (*comp);
-
-          path = w32_shgetfolderpath (NULL,
-                                      CSIDL_LOCAL_APPDATA|CSIDL_FLAG_CREATE,
-                                      NULL, 0);
-          if (path)
-            {
-              char *tmp = xmalloc (strlen (path) + s1_len + 1);
-              char *p;
-
-              p = stpcpy (tmp, path);
-              for (comp = s1; *comp; comp++)
-                {
-                  p = stpcpy (p, "\\");
-                  p = stpcpy (p, *comp);
-
-                  if (gnupg_access (tmp, F_OK))
-                    w32_try_mkdir (tmp);
-                }
-
-              dir = tmp;
-              xfree (path);
-            }
-          else
-            {
-              dir = "c:\\temp\\cache\\gnupg";
-#ifdef HAVE_W32CE_SYSTEM
-              dir += 2;
-              w32_try_mkdir ("\\temp\\cache");
-              w32_try_mkdir ("\\temp\\cache\\gnupg");
-#endif
-            }
-        }
+      name = make_filename (gnupg_socketdir (), GPG_AGENT_SOCK_NAME, NULL);
+      gpgrt_annotate_leaked_object (name);
     }
-  return dir;
-#else /*!HAVE_W32_SYSTEM*/
-  return GNUPG_LOCALSTATEDIR "/cache/" PACKAGE_NAME;
-#endif /*!HAVE_W32_SYSTEM*/
+  return name;
 }
 
 
@@ -1063,7 +1401,10 @@ static int gnupg_module_name_called;
  * be called before any invocation of 'gnupg_module_name', and must
  * not be called twice.  It can be used by test suites to make sure
  * the components from the build directory are used instead of
- * potentially outdated installed ones.  */
+ * potentially outdated installed ones.
+ * Fixme: It might be better to make use of the newer gpgconf.ctl feature
+ *        for regression testing.
+ */
 void
 gnupg_set_builddir (const char *newdir)
 {

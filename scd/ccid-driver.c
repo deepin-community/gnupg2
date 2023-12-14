@@ -111,6 +111,10 @@
 /* CCID command timeout.  */
 #define CCID_CMD_TIMEOUT (5*1000)
 
+/* Number of supported devices.  See MAX_READER in apdu.c. */
+#define CCID_MAX_DEVICE 4
+
+
 /* Depending on how this source is used we either define our error
    output to go to stderr or to the GnuPG based logging functions.  We
    use the latter when GNUPG_MAJOR_VERSION or GNUPG_SCD_MAIN_HEADER
@@ -261,6 +265,19 @@ struct ccid_driver_s
 };
 
 
+/* Object to keep infos about found ccid devices.  */
+struct ccid_dev_table {
+  int n;                        /* Index to ccid_usb_dev_list */
+  int interface_number;
+  int setting_number;
+  unsigned char *ifcdesc_extra;
+  int ep_bulk_out;
+  int ep_bulk_in;
+  int ep_intr;
+  size_t ifcdesc_extra_len;
+};
+
+
 static int initialized_usb; /* Tracks whether USB has been initialized. */
 static int debug_level;     /* Flag to control the debug output.
                                0 = No debugging
@@ -270,6 +287,10 @@ static int debug_level;     /* Flag to control the debug output.
                               */
 static int ccid_usb_thread_is_alive;
 
+static libusb_device **ccid_usb_dev_list;
+static struct ccid_dev_table ccid_dev_table[CCID_MAX_DEVICE];
+
+
 
 static unsigned int compute_edc (const unsigned char *data, size_t datalen,
                                  int use_crc);
@@ -278,7 +299,7 @@ static int bulk_out (ccid_driver_t handle, unsigned char *msg, size_t msglen,
 static int bulk_in (ccid_driver_t handle, unsigned char *buffer, size_t length,
                     size_t *nread, int expected_type, int seqno, int timeout,
                     int no_debug);
-static int abort_cmd (ccid_driver_t handle, int seqno);
+static int abort_cmd (ccid_driver_t handle, int seqno, int init);
 static int send_escape_cmd (ccid_driver_t handle, const unsigned char *data,
                             size_t datalen, unsigned char *result,
                             size_t resultmax, size_t *resultlen);
@@ -1288,7 +1309,7 @@ ccid_vendor_specific_init (ccid_driver_t handle)
        * It seems that SEQ may be out of sync between host and the card reader,
        * and SET_INTERFACE doesn't reset it.  Make sure it works at the init.
        */
-      abort_cmd (handle, 0);
+      abort_cmd (handle, 0, 1);
     }
 
   if (r != 0 && r != CCID_DRIVER_ERR_CARD_INACTIVE
@@ -1304,30 +1325,30 @@ ccid_vendor_specific_setup (ccid_driver_t handle)
 {
   if (handle->id_vendor == VENDOR_SCM && handle->id_product == SCM_SPR532)
     {
-      DEBUGOUT ("sending escape sequence to switch to a case 1 APDU\n");
-      send_escape_cmd (handle, (const unsigned char*)"\x80\x02\x00", 3,
-                       NULL, 0, NULL);
+#ifdef USE_NPTH
+      npth_unprotect ();
+#endif
       libusb_clear_halt (handle->idev, handle->ep_intr);
+#ifdef USE_NPTH
+      npth_protect ();
+#endif
     }
   return 0;
 }
 
 
-#define MAX_DEVICE 4 /* See MAX_READER in apdu.c.  */
+static int
+ccid_vendor_specific_pinpad_setup (ccid_driver_t handle)
+{
+  if (handle->id_vendor == VENDOR_SCM && handle->id_product == SCM_SPR532)
+    {
+      DEBUGOUT ("sending escape sequence to switch to a case 1 APDU\n");
+      send_escape_cmd (handle, (const unsigned char*)"\x80\x02\x00", 3,
+                       NULL, 0, NULL);
+    }
+  return 0;
+}
 
-struct ccid_dev_table {
-  int n;                        /* Index to ccid_usb_dev_list */
-  int interface_number;
-  int setting_number;
-  unsigned char *ifcdesc_extra;
-  int ep_bulk_out;
-  int ep_bulk_in;
-  int ep_intr;
-  size_t ifcdesc_extra_len;
-};
-
-static libusb_device **ccid_usb_dev_list;
-static struct ccid_dev_table ccid_dev_table[MAX_DEVICE];
 
 gpg_error_t
 ccid_dev_scan (int *idx_max_p, void **t_p)
@@ -1413,7 +1434,7 @@ ccid_dev_scan (int *idx_max_p, void **t_p)
                 ccid_dev_table[idx].ep_intr = find_endpoint (ifcdesc, 2);
 
                 idx++;
-                if (idx >= MAX_DEVICE)
+                if (idx >= CCID_MAX_DEVICE)
                   {
                     libusb_free_config_descriptor (config);
                     err = 0;
@@ -1431,15 +1452,15 @@ ccid_dev_scan (int *idx_max_p, void **t_p)
     {
       for (i = 0; i < idx; i++)
         {
-          free (ccid_dev_table[idx].ifcdesc_extra);
-          ccid_dev_table[idx].n = 0;
-          ccid_dev_table[idx].interface_number = 0;
-          ccid_dev_table[idx].setting_number = 0;
-          ccid_dev_table[idx].ifcdesc_extra = NULL;
-          ccid_dev_table[idx].ifcdesc_extra_len = 0;
-          ccid_dev_table[idx].ep_bulk_out = 0;
-          ccid_dev_table[idx].ep_bulk_in = 0;
-          ccid_dev_table[idx].ep_intr = 0;
+          free (ccid_dev_table[i].ifcdesc_extra);
+          ccid_dev_table[i].n = 0;
+          ccid_dev_table[i].interface_number = 0;
+          ccid_dev_table[i].setting_number = 0;
+          ccid_dev_table[i].ifcdesc_extra = NULL;
+          ccid_dev_table[i].ifcdesc_extra_len = 0;
+          ccid_dev_table[i].ep_bulk_out = 0;
+          ccid_dev_table[i].ep_bulk_in = 0;
+          ccid_dev_table[i].ep_intr = 0;
         }
       libusb_free_device_list (ccid_usb_dev_list, 1);
       ccid_usb_dev_list = NULL;
@@ -1580,6 +1601,11 @@ intr_cb (struct libusb_transfer *transfer)
     }
   else if (transfer->status == LIBUSB_TRANSFER_CANCELLED)
     handle->powered_off = 1;
+  else if (transfer->status == LIBUSB_TRANSFER_OVERFLOW)
+    {
+      /* Something goes wrong.  Ignore.  */
+      DEBUGOUT ("CCID: interrupt transfer overflow\n");
+    }
   else
     {
     device_removed:
@@ -1685,6 +1711,7 @@ ccid_open_usb_reader (const char *spec_reader_name,
           *handle = NULL;
           return err;
         }
+      npth_setname_np (thread, "ccid_usb_thread");
 
       npth_attr_destroy (&tattr);
     }
@@ -1729,9 +1756,15 @@ ccid_open_usb_reader (const char *spec_reader_name,
       goto leave;
     }
 
+#ifdef USE_NPTH
+  npth_unprotect ();
+#endif
   rc = libusb_claim_interface (idev, ifc_no);
   if (rc)
     {
+#ifdef USE_NPTH
+      npth_protect ();
+#endif
       DEBUGOUT_1 ("usb_claim_interface failed: %d\n", rc);
       rc = map_libusb_error (rc);
       goto leave;
@@ -1741,10 +1774,17 @@ ccid_open_usb_reader (const char *spec_reader_name,
   rc = libusb_set_interface_alt_setting (idev, ifc_no, set_no);
   if (rc)
     {
+#ifdef USE_NPTH
+      npth_protect ();
+#endif
       DEBUGOUT_1 ("usb_set_interface_alt_setting failed: %d\n", rc);
       rc = map_libusb_error (rc);
       goto leave;
     }
+
+#ifdef USE_NPTH
+  npth_protect ();
+#endif
 
   rc = ccid_vendor_specific_init (*handle);
 
@@ -1892,6 +1932,8 @@ do_close_reader (ccid_driver_t handle)
       libusb_free_transfer (handle->transfer);
       handle->transfer = NULL;
     }
+
+  DEBUGOUT ("libusb_release_interface and libusb_close\n");
   libusb_release_interface (handle->idev, handle->ifc_no);
   --ccid_usb_thread_is_alive;
   libusb_close (handle->idev);
@@ -2085,7 +2127,7 @@ bulk_in (ccid_driver_t handle, unsigned char *buffer, size_t length,
   if (msglen < 10)
     {
       DEBUGOUT_1 ("bulk-in msg too short (%u)\n", (unsigned int)msglen);
-      abort_cmd (handle, seqno);
+      abort_cmd (handle, seqno, 0);
       return CCID_DRIVER_ERR_INV_VALUE;
     }
   if (buffer[5] != 0)
@@ -2131,7 +2173,7 @@ bulk_in (ccid_driver_t handle, unsigned char *buffer, size_t length,
   if (buffer[0] != expected_type && buffer[0] != RDR_to_PC_SlotStatus)
     {
       DEBUGOUT_1 ("unexpected bulk-in msg type (%02x)\n", buffer[0]);
-      abort_cmd (handle, seqno);
+      abort_cmd (handle, seqno, 0);
       return CCID_DRIVER_ERR_INV_VALUE;
     }
 
@@ -2197,7 +2239,7 @@ bulk_in (ccid_driver_t handle, unsigned char *buffer, size_t length,
 
 /* Send an abort sequence and wait until everything settled.  */
 static int
-abort_cmd (ccid_driver_t handle, int seqno)
+abort_cmd (ccid_driver_t handle, int seqno, int init)
 {
   int rc;
   unsigned char dummybuf[8];
@@ -2226,7 +2268,8 @@ abort_cmd (ccid_driver_t handle, int seqno)
   if (rc)
     {
       DEBUGOUT_1 ("usb_control_msg error: %s\n", libusb_error_name (rc));
-      return map_libusb_error (rc);
+      if (!init)
+        return map_libusb_error (rc);
     }
 
   /* Now send the abort command to the bulk out pipe using the same
@@ -2252,7 +2295,7 @@ abort_cmd (ccid_driver_t handle, int seqno)
 #endif
       rc = libusb_bulk_transfer (handle->idev, handle->ep_bulk_out,
                                  msg, msglen, &transferred,
-                                 5000 /* ms timeout */);
+                                 init? 100: 5000 /* ms timeout */);
 #ifdef USE_NPTH
       npth_protect ();
 #endif
@@ -2270,7 +2313,7 @@ abort_cmd (ccid_driver_t handle, int seqno)
 #endif
       rc = libusb_bulk_transfer (handle->idev, handle->ep_bulk_in,
                                  msg, sizeof msg, &msglen,
-                                 5000 /*ms timeout*/);
+                                 init? 100: 5000 /*ms timeout*/);
 #ifdef USE_NPTH
       npth_protect ();
 #endif
@@ -2278,7 +2321,10 @@ abort_cmd (ccid_driver_t handle, int seqno)
         {
           DEBUGOUT_1 ("usb_bulk_read error in abort_cmd: %s\n",
                       libusb_error_name (rc));
-          return map_libusb_error (rc);
+          if (init && rc == LIBUSB_ERROR_TIMEOUT)
+            continue;
+          else
+            return map_libusb_error (rc);
         }
 
       if (msglen < 10)
@@ -2298,7 +2344,8 @@ abort_cmd (ccid_driver_t handle, int seqno)
       if (CCID_COMMAND_FAILED (msg))
         print_command_failed (msg);
     }
-  while (msg[0] != RDR_to_PC_SlotStatus && msg[5] != 0 && msg[6] != seqno);
+  while (rc == LIBUSB_ERROR_TIMEOUT
+         || (msg[0] != RDR_to_PC_SlotStatus && msg[5] != 0 && msg[6] != seqno));
 
   handle->seqno = ((seqno + 1) & 0xff);
   DEBUGOUT ("sending abort sequence succeeded\n");
@@ -2493,7 +2540,7 @@ ccid_slot_status (ccid_driver_t handle, int *statusbits, int on_wire)
 #endif
         }
       else
-          DEBUGOUT ("USB: RETRYING bulk_in AGAIN\n");
+        DEBUGOUT ("USB: RETRYING bulk_in AGAIN\n");
       retries++;
       goto retry;
     }
@@ -3582,6 +3629,8 @@ ccid_transceive_secure (ccid_driver_t handle,
 
   if (pininfo->fixedlen < 0 || pininfo->fixedlen >= 16)
     return CCID_DRIVER_ERR_NOT_SUPPORTED;
+
+  ccid_vendor_specific_pinpad_setup (handle);
 
   msg = send_buffer;
   msg[0] = cherry_mode? 0x89 : PC_to_RDR_Secure;

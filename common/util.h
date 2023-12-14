@@ -183,6 +183,12 @@ gpg_error_t make_canon_sexp_pad (gcry_sexp_t sexp, int secure,
 gpg_error_t keygrip_from_canon_sexp (const unsigned char *key, size_t keylen,
                                      unsigned char *grip);
 int cmp_simple_canon_sexp (const unsigned char *a, const unsigned char *b);
+int cmp_canon_sexp (const unsigned char *a, size_t alen,
+                    const unsigned char *b, size_t blen,
+                    int (*tcmp)(void *ctx, int depth,
+                                const unsigned char *aval, size_t avallen,
+                                const unsigned char *bval, size_t bvallen),
+                    void *tcmpctx);
 unsigned char *make_simple_sexp_from_hexstr (const char *line,
                                              size_t *nscanned);
 int hash_algo_from_sigval (const unsigned char *sigval);
@@ -195,6 +201,14 @@ gpg_error_t get_rsa_pk_from_canon_sexp (const unsigned char *keydata,
                                         size_t *r_nlen,
                                         unsigned char const **r_e,
                                         size_t *r_elen);
+gpg_error_t get_ecc_q_from_canon_sexp (const unsigned char *keydata,
+                                       size_t keydatalen,
+                                       unsigned char const **r_q,
+                                       size_t *r_qlen);
+gpg_error_t uncompress_ecc_q_in_canon_sexp (const unsigned char *keydata,
+                                            size_t keydatalen,
+                                            unsigned char **r_newkeydata,
+                                            size_t *r_newkeydatalen);
 
 int get_pk_algo_from_key (gcry_sexp_t key);
 int get_pk_algo_from_canon_sexp (const unsigned char *keydata,
@@ -202,6 +216,7 @@ int get_pk_algo_from_canon_sexp (const unsigned char *keydata,
 char *pubkey_algo_string (gcry_sexp_t s_pkey, enum gcry_pk_algos *r_algoid);
 const char *pubkey_algo_to_string (int algo);
 const char *hash_algo_to_string (int algo);
+const char *cipher_mode_to_string (int mode);
 
 /*-- convert.c --*/
 int hex2bin (const char *string, void *buffer, size_t length);
@@ -230,7 +245,8 @@ int openpgp_oidbuf_is_ed25519 (const void *buf, size_t len);
 int openpgp_oid_is_ed25519 (gcry_mpi_t a);
 int openpgp_oidbuf_is_cv25519 (const void *buf, size_t len);
 int openpgp_oid_is_cv25519 (gcry_mpi_t a);
-const char *openpgp_curve_to_oid (const char *name, unsigned int *r_nbits);
+const char *openpgp_curve_to_oid (const char *name,
+                                  unsigned int *r_nbits, int *r_algo);
 const char *openpgp_oid_to_curve (const char *oid, int canon);
 const char *openpgp_enum_curves (int *idxp);
 const char *openpgp_is_curve_supported (const char *name,
@@ -252,7 +268,7 @@ const char *gnupg_libexecdir (void);
 const char *gnupg_libdir (void);
 const char *gnupg_datadir (void);
 const char *gnupg_localedir (void);
-const char *gnupg_cachedir (void);
+const char *gpg_agent_socket_name (void);
 const char *dirmngr_socket_name (void);
 
 char *_gnupg_socketdir_internal (int skip_checks, unsigned *r_info);
@@ -298,10 +314,16 @@ void setup_libgcrypt_logging (void);
 /* Print an out of core message and die.  */
 void xoutofcore (void);
 
+/* Array allocation.  */
+void *gnupg_reallocarray (void *a, size_t oldnmemb, size_t nmemb, size_t size);
+void *xreallocarray (void *a, size_t oldnmemb, size_t nmemb, size_t size);
+
 /* Same as estream_asprintf but die on memory failure.  */
 char *xasprintf (const char *fmt, ...) GPGRT_ATTR_PRINTF(1,2);
 /* This is now an alias to estream_asprintf.  */
 char *xtryasprintf (const char *fmt, ...) GPGRT_ATTR_PRINTF(1,2);
+
+void *xtryreallocarray (void *a, size_t oldnmemb, size_t nmemb, size_t size);
 
 /* Replacement for gcry_cipher_algo_name.  */
 const char *gnupg_cipher_algo_name (int algo);
@@ -320,6 +342,7 @@ void print_hexstring (FILE *fp, const void *buffer, size_t length,
                       int reserved);
 char *try_make_printable_string (const void *p, size_t n, int delim);
 char *make_printable_string (const void *p, size_t n, int delim);
+char *decode_c_string (const char *src);
 
 int is_file_compressed (const char *s, int *ret_rc);
 
@@ -334,6 +357,15 @@ struct debug_flags_s
 };
 int parse_debug_flag (const char *string, unsigned int *debugvar,
                       const struct debug_flags_s *flags);
+
+struct compatibility_flags_s
+{
+  unsigned int flag;
+  const char *name;
+  const char *desc;
+};
+int parse_compatibility_flags (const char *string, unsigned int *flagvar,
+                               const struct compatibility_flags_s *flags);
 
 
 /*-- Simple replacement functions. */

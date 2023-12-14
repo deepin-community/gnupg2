@@ -452,8 +452,12 @@ show_notation (PKT_signature * sig, int indent, int mode, int which)
             write_status_text (STATUS_NOTATION_FLAGS,
                                nd->flags.critical && nd->flags.human? "1 1" :
                                nd->flags.critical? "1 0" : "0 1");
-	  write_status_buffer (STATUS_NOTATION_DATA,
-			       nd->value, strlen (nd->value), 50);
+          if (!nd->flags.human && nd->bdat && nd->blen)
+            write_status_buffer (STATUS_NOTATION_DATA,
+                                 nd->bdat, nd->blen, 250);
+          else
+            write_status_buffer (STATUS_NOTATION_DATA,
+                                 nd->value, strlen (nd->value), 50);
 	}
     }
 
@@ -1682,7 +1686,7 @@ list_keyblock_colon (ctrl_t ctrl, kbnode_t keyblock,
           char *reason_text = NULL;
           char *reason_comment = NULL;
           size_t reason_commentlen;
-          int reason_code;
+          int reason_code = 0;  /* init to silence cc warning.  */
 
 	  if (sig->sig_class == 0x20 || sig->sig_class == 0x28
 	      || sig->sig_class == 0x30)

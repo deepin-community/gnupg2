@@ -5,8 +5,7 @@ Maintainer: Debian GnuPG Maintainers <pkg-gnupg-maint@lists.alioth.debian.org>
 Uploaders:
  Eric Dorland <eric@debian.org>,
  Daniel Kahn Gillmor <dkg@fifthhorseman.net>,
- Christoph Biedl <debian.axhn@manchmal.in-ulm.de>,
-Standards-Version: 4.5.1
+Standards-Version: 4.6.1
 Build-Depends:
  automake,
  autopoint,
@@ -26,7 +25,6 @@ Build-Depends:
  libldap2-dev,
  libnpth0-dev (>= 1.2),
  libreadline-dev,
- librsvg2-bin,
  libsqlite3-dev,
  libusb-1.0-0-dev [!hurd-any],
  openssh-client <!nocheck>,
@@ -38,7 +36,7 @@ Build-Depends-Indep:
  binutils-multiarch [!amd64 !i386],
  libassuan-mingw-w64-dev (>= 2.5.0),
  libgcrypt-mingw-w64-dev (>= 1.8.0),
- libgpg-error-mingw-w64-dev (>= 1.26-2~),
+ libgpg-error-mingw-w64-dev (>= 1.45),
  libksba-mingw-w64-dev (>= 1.3.5),
  libnpth-mingw-w64-dev (>= 1.2),
  libz-mingw-w64-dev,

@@ -1,3 +1,480 @@
+Noteworthy changes in version 2.2.40 (2022-10-10)
+-------------------------------------------------
+
+  * gpg: Do not consider unknown public keys as non-compliant while
+    decrypting.  [T6205]
+
+  * gpg: Avoid to emit a compliance mode line if Libgcrypt is
+    non-compliant.  [T6221]
+
+  * gpg: In de-vs mode use AES-128 instead of 3-DES as implicit
+    preference.  [T6063]
+
+  * gpgsm: Fix reporting of bad passphrase error during PKCS#11
+    import.  [T5713,T6037]
+
+  * dirmngr: Fix CRL Distribution Point fallback to other schemes.
+    [rG289fbc550d]
+
+  * dirmngr: New LDAP server flag "areconly" (A-record-only).
+    [rG6300035ba1]
+
+  * dirmngr: Fix upload of multiple keys for an LDAP server specified
+    using the colon format.  [rG32ce7ac0c6]
+
+  * dirmngr: Use LDAP schema v2 when a Base DN is specified.  [T6047]
+
+  * wkd: New command --mirror for gpg-wks-client.  [T6224]
+
+  Release-info: https://dev.gnupg.org/T6181
+
+
+Noteworthy changes in version 2.2.39 (2022-09-02)
+-------------------------------------------------
+
+  * agent: Fix regression in 2.2.37 related to non-extended format
+    private keys.  [T6176]
+
+  Release-info: https://dev.gnupg.org/T6175
+
+
+Noteworthy changes in version 2.2.38 (2022-09-01)
+-------------------------------------------------
+
+  * gpg: Make --require-compliance work for sign+encrypt.  [T6174]
+
+  * gpg: Fix an encoding problem under Windows in the printed
+    timezone.  [T5073]
+
+  * gpg: Emit a FAILURE status for --require-compliance errors.
+    [rGe05fb5ca37]
+
+  * dirmngr: Avoid caching expired certificates.  [T6142]
+
+  Release-info: https://dev.gnupg.org/T6159
+
+
+Noteworthy changes in version 2.2.37 (2022-08-24)
+-------------------------------------------------
+
+  * gpg: In de-vs mode use SHA-256 instead of SHA-1 as implicit
+    preference.  [T6043, T6063]
+
+  * gpg: Actually show symmetric+pubkey encrypted data as de-vs
+    compliant.  Add extra compliance checks for symkey_enc packets.
+    [T6119]
+
+  * gpg: Request keygrip of key to be added via command-fd interface.
+    [T5771]
+
+  * gpg: Look up user ID to revoke by UID hash.  [T5936]
+
+  * gpg: Fix wrong error message for "keytocard".  [T6122]
+
+  * gpg: --card-status shows the application type for non-openpgp
+    cards again.  [rG8e393e2592]
+
+  * gpg: The options --auto-key-import and --include-key-block are
+    again listed by gpgconf.  [T6138]
+
+  * gpgsm: New option --compatibility-flags.  [rG77b6896f7a]
+
+  * agent: New options --no-user-trustlist and --sys-trustlist-name.
+    [T5990]
+
+  * agent: Track and update the Display-S/N of cards so that the
+    "please insert card" prompt may now show more information.  Use
+    "gpg --card-status" to update stored card meta data.  [T6135]
+
+  * scd:openpgp: Fix problem with ECC algorithm attributes on
+    Yubikeys.  [rG225c66f13b87]
+
+  * scd:openpgp: Fix problem with Yubikey 5.4 firmware.  [T6070]
+
+  * dirmngr: Ask keyservers to provide the key fingerprints.  [T5741]
+
+  * ssh: Allow authentication as used by OpenSSH's PQ crypto support.
+    [T5935]
+
+  * wkd: Fix path traversal attack in gpg-wks-server.  Add the mail
+    address to the pending request data.  [rGc1489ca0e1, T6098]
+
+  * gpgconf: Improve registry dumping.  [rG6bc9592318]
+
+  * Silence warnings from AllowSetForegroundWindow.  [rG6583abedf3]
+
+  Release-info: https://dev.gnupg.org/T6105
+
+
+Noteworthy changes in version 2.2.36 (2022-07-06)
+-------------------------------------------------
+
+  * g10: Fix possibly garbled status messages in NOTATION_DATA.  This
+    bug could trick GPGME and other parsers to accept faked status
+    lines.  [T6027, CVE-2022-34903]
+
+  * gpg: Handle leading zeroes in Ed25519 private keys and reverse
+    change regarding Ed25519 SOS encoding as introduced with 2.2.34.
+    [T5120]
+
+  * gpg: Allow Unicode file names for iobuf_cancel under Windows.
+
+  * gpgsm: Improve pkcs#12 import.  [T6037,T5793,T4921,T4757]
+
+  * scd,p15: Fix reading certificates w/o length info.
+
+  * scd,p15: Improve the displayed S/N for Technology Nexus cards.
+
+  * scd,openpgp: Add workaround for ECC attribute on Yubikey. [T5963]
+
+  * scd: Fix use of SCardListReaders for PC/SC.  [T5979]
+
+  * gpgconf: New short options -X and -V.
+
+  * Make sure to always set CONFIDENTIAL flag in Assuan.  [T5977]
+
+  Release-info: https://dev.gnupg.org/T5949
+
+
+Noteworthy changes in version 2.2.35 (2022-04-25)
+-------------------------------------------------
+
+  * gpg,gpgsm: New option --require-compliance.  [17890d4318]
+
+  * gpgtar: New option --with-log.  [rGce69d55f70]
+
+  * gpg: Threefold decryption speedup for large files.
+    [T5820,rG9116fd1e9a]
+
+  * gpgtar: Support file names longer than MAX_PATH.  [rG5492079def]
+
+  * scdaemon: Add support for GeNUA cards.  [rG44ec383cde]
+
+  * gpg: Allow decryption of symmetric encrypted data even for
+    non-compliant cipher.  [rGe081a601f7]
+
+  * gpg: Avoid possible race condition in --edit-card/factory-reset.
+    [T5831]
+
+  * gpg: Emit an ERROR status as hint for a bad passphrase.  [T5943]
+
+  * gpg: Avoid NULL-ptr access due to corrupted packets.  [T5940]
+
+  * gpgsm: Fix parsing of certain PKCS#12 files.  [T5793]
+
+  * gpgtar: Use a pipe for decryption and thus avoid memory
+    exhaustion.  [rGd431feb307]
+
+  * scdaemon: Use extended mode for pkcs#15 already for rsa2048.
+    [rGa2db490de5]
+
+  * dirmngr: Make WKD lookups work for resolvers not handling SRV
+    records.  [T4729]
+
+  * dirmngr: Escape more characters in WKD requests.  [T5902]
+
+  * gpgconf: Silence warnings from parsing the option files.  [T5874]
+
+  * Improve removing of stale lockfiles under Unix.  [T5884]
+
+  Release-info: https://dev.gnupg.org/T5928
+
+
+Noteworthy changes in version 2.2.34 (2022-02-07)
+-------------------------------------------------
+
+  * gpgconf: Backport the improved option reading and writing code
+    from 2.3.  [rG7a3a1ef370,T4788]
+
+  * gpgconf: Do not list ignored options and mark forced options as
+    read-only.  [T5732]
+
+  * gpgconf: Correctly show registry entries with --show-configs.
+    [T5724]
+
+  * gpgconf: Add command aliases -L, -K, and -R.  [rGf16c535eee]
+
+  * gpgconf: Tweak the use of the ldapserver option.  [T5801]
+
+  * gpgconf: Make "--launch gpg-agent" work again.  [rG5a7ed6dd8f]
+
+  * gpg: Accept Ed25519 private keys in modernized encoding.  [T5120]
+
+  * gpg: Fix adding the list of ultimate trusted keys.  [T5742]
+
+  * gpgsm: New option --ignore-cert-with-oid.  [rGbcf446b70c]
+
+  * dirmngr: Avoid initial delay on the first keyserver access in
+    presence of --no-use-tor.  [rGdde88897e2]
+
+  * scdaemon: Also prefer Yubikeys if no reader port is given.
+    [rG38c666ec3f]
+
+  * agent: Make missing strings translatable and update German and
+    Japanese translations.  [T4777]
+
+  * ssh: Fix adding an ed25519 key with a zero length comment.  [T5794]
+
+  * gpgtar: Create and handle extended headers to support long file
+    names.  [T5754]
+
+  * Fix the creation of socket directories under Windows for non-ascii
+    account names.  [rG7d1215cb9c]
+
+  * Improve the registry HKCU->HKLM fallback.  [rG96db487a4d]
+
+  * Prettify the --help output of most commands.
+
+  Release-info: https://dev.gnupg.org/T5703
+  See-also: gnupg-announce/2022q1/000470.html
+
+
+Noteworthy changes in version 2.2.33 (2021-11-23)
+-------------------------------------------------
+
+  * gpg: New option --min-rsa-length.  [rG6ee01c1d26]
+
+  * gpg: New option --forbid-gen-key.  [rG985fb25c46]
+
+  * gpg: New option --override-compliance-check.  [T5655]
+
+  * gpgconf: New command --show-configs.  [rG8fe3f57643]
+
+  * agent,dirmngr: New option --steal-socket.  [rG6507c6ab10]
+
+  * scd: Improve the selection of the default PC/SC reader.  [T5644]
+
+  * gpg: Fix printing of binary notations.  [T5667]
+
+  * gpg: Remove stale ultimately trusted keys from the trustdb.  [T5685]
+
+  * gpgsm: Detect circular chains in --list-chain.  [rGc9343bec83]
+
+  * gpgconf: Create the local option file even if the global file
+    exists.  [T5650]
+
+  * dirmngr: Make reading resolv.conf more robust.  [T5657]
+
+  * gpg-wks-server: Fix created file permissions.  [rGf54feb4470]
+
+  * scd: Support longer data for ssh-agent authentication with openpgp
+    cards.  [T5682]
+
+  * Support gpgconf.ctl for NetBSD and Solaris.  [T5656,T5671]
+
+  * Silence "Garbled console data" warning under Windows in most
+    cases.
+
+  * Silence warning about the rootdir under Unices w/o a mounted /proc
+    file system.
+
+  * Fix possible build problems about missing include files.  [T5592]
+
+  * i18n: Replace the term "PIN-Cache" by "Passswort-Cache" in the
+    German translation. [rgf453d52e53]
+
+  * i18n: Update the Russian translation.
+
+  Release-info: https://dev.gnupg.org/T5641
+  See-also: gnupg-announce/2021q4/000467.html
+
+
+Noteworthy changes in version 2.2.32 (2021-10-06)
+-------------------------------------------------
+
+  * dirmngr: Fix Let's Encrypt certificate chain validation.  [T5639]
+
+  * dirmngr: New option --ignore-cert.  [323a20399d]
+
+  * gpg: Fix --list-packets for AEAD packets with unknown key.  [T5584]
+
+  Release-info: https://dev.gnupg.org/T5601
+  See-also: gnupg-announce/2021q4/000465.html
+
+
+Noteworthy changes in version 2.2.31 (2021-09-15)
+-------------------------------------------------
+
+  * agent: Fix a regression in GET_PASSPHRASE.  [#5577]
+
+  * scd: Fix an assertion failure in close_pcsc_reader.  [67e1834ad4]
+
+  * scd: Add support for PC/SC in "GETINFO reader_list".
+
+  Release-info: https://dev.gnupg.org/T5571
+  See-also: gnupg-announce/2021q3/000464.html
+
+
+Noteworthy changes in version 2.2.30 (2021-08-26)
+-------------------------------------------------
+
+  * gpg: Extended gpg-check-pattern to support accept rules,
+    conjunctions, and case-sensitive matching.  [5ca15e58b2]
+
+  * agent: New option --pinentry-formatted-passphrase.  [#5553]
+
+  * agent: New option --check-sym-passphrase-pattern.  [#5517]
+
+  * agent: Use the sysconfdir for the pattern files.  [5ed8e598fa]
+
+  * agent: Add "checkpin" inquiry for use by pinentry.  [#5532]
+
+  * wkd: Fix client issue with leading or trailing spaces in
+    user-ids.  [576e429d41]
+
+  * Pass XDG_SESSION_TYPE and QT_QPA_PLATFORM envvars to Pinentry.
+    [#3659]
+
+  * Under Windows use LOCAL_APPDATA for the socket directory.  [#5537]
+
+  Release-info: https://dev.gnupg.org/T5519
+  See-also: gnupg-announce/2021q3/000463.html
+
+
+Noteworthy changes in version 2.2.29 (2021-07-04)
+-------------------------------------------------
+
+  * Fix regression in 2.2.28 for Yubikey NEO.  [#5487]
+
+  * Change the default keyserver to keyserver.ubuntu.com.  This is a
+    temporary change due to the shutdown of the SKS keyserver pools.
+    [47c4e3e00a]
+
+  * gpg: Let --fetch-key return an exit code on failure.  [#5376]
+
+  * dirmngr: Fix regression in KS_GET for mail address pattern.
+    [#5497]
+
+  * Add fallback in case the Windows console can't cope with Unicode.
+    [#5491]
+
+  * Improve initialization of SPR532 in the CCID driver and make the
+    driver more robust.  [#5297,b90c55fa66db]
+
+  * Make test suite work in presence of a broken Libgcrypt
+    installation.  [#5502]
+
+  * Make configure option --disable-ldap work again.
+
+  Release-info: https://dev.gnupg.org/T5498
+  See-also: gnupg-announce/2021q3/000461.html
+
+
+Noteworthy changes in version 2.2.28 (2021-06-10)
+-------------------------------------------------
+
+  * gpg: Auto import keys specified with --trusted-keys.
+    [e7251be84c79]
+
+  * gpg: Allow decryption w/o public key but with correct card
+    inserted.  [e53f6037283e]
+
+  * gpg: Allow fingerprint based lookup with --locate-external-key.
+    [2af217ecd7e4]
+
+  * gpg: Lookup a missing public key of the current card via LDAP.
+    [b59af0e2a05a]
+
+  * gpg: New option --force-sign-key.  [#4584]
+
+  * gpg: Use a more descriptive password prompt for symmetric
+    decryption.  [03f83bcda5d1]
+
+  * gpg: Do not use the self-sigs-only option for LDAP keyserver
+    imports.  [#5387]
+
+  * gpg: Keep temp files when opening images via xdg-open.
+    [0441ed6e1c]
+
+  * gpg: Fix mailbox based search via AKL keyserver method.
+    [22fe23f46d31]
+
+  * gpg: Fix sending an OpenPGP key with umlaut to an LDAP keyserver.
+    [7bf8530e75d0]
+
+  * gpg: Allow ECDH with a smartcard returning only the x-coordinate.
+    [b203325ce1]
+
+  * gpgsm: New option --ldapserver as an alias for --keyserver.  Note
+    that configuring servers in gpgsm and gpg is deprecated; please
+    use the dirmngr configuration options.
+
+  * gpgsm: Support AES-GCM decryption.  [b722fd755c77]
+
+  * gpgsm: Support decryption of password protected files.
+    [6f31acac767f]
+
+  * gpgsm: Lock keyboxes also during a search to fix lockups on
+    Windows.  [#4505]
+
+  * agent: Skip unknown unknown ssh curves seen on
+    cards. [bbf4bd3bfcb5]
+
+  * scdaemon: New option --pcsc-shared.  [5eec40f3d827]
+
+  * scdaemon: Backport PKCS#15 card support from GnuPG 2.3
+    [7637d39fe20e]
+
+  * scdaemon: Fix CCID driver for SCM SPR332/SPR532.  [#5297]
+
+  * scdaemon: Fix possible PC/SC removed card problem.  [9d83bfb63968]
+
+  * scdaemon: Fix unblock PIN by a Reset Code with KDF.  [#5413]
+
+  * scdaemon: Support compressed points.  [96577e2e46e4]
+
+  * scdaemon: Prettify S/N for Yubikeys and fix reading for early
+    Yubikey 5 tokens.  [f8588369bcb0,#5442]
+
+  * dirmngr: New option --ldapserver to avoid the need for the
+    separate dirmngr_ldapservers.conf file.
+
+  * dirmngr: The dirmngr_ldap wrapper has been rewritten to properly
+    support ldap-over-tls and starttls for X.509 certificates and
+    CRLs.  [39815c023f03]
+
+  * dirmngr: OpenPGP LDAP keyservers may now also be configured using
+    the same syntax as used for X.509 and CRL LDAP servers.  This
+    avoids the former cumbersome quoting rules and adds a flexible set
+    of flags to control the connection.  [2b4cddf9086f]
+
+  * dirmngr: The "ldaps" scheme of an OpenPGP keyserver URL is now
+    interpreted as ldap-with-starttls on port 389.  To use the
+    non-standardized ldap-over-tls the new LDAP configuration method
+    of the new attribute "gpgNtds" needs to be used.  [55f46b33df08]
+
+  * dirmngr: Return the fingerprint as search result also for LDAP
+    OpenPGP keyservers.  This requires the modernized LDAP schema.
+    [#5441]
+
+  * dirmngr: An OpenPGP LDAP search by a mailbox now ignores revoked
+    keys.  [b6f8cd7eef4b]
+
+  * gpgconf: Make runtime changes with non-default homedir work.
+    [c8f0b02936c7]
+
+  * gpgconf: Do not translate an empty string to the PO file's meta
+    data.  [#5363]
+
+  * gpgconf: Fix argv overflow if --homedir is used.  [#5366]
+
+  * gpgconf: Return a new pseudo option "compliance_de_vs".
+    [9feffc03f364]
+
+  * gpgtar: Fix file size computation under Windows.  [198b240b1955]
+
+  * Full Unicode support for the Windows command line.  [#4398]
+
+  * Fix problem with Windows Job objects and auto start of our
+    daemons.  [#4333]
+
+  * i18n: In German always use "Passwort" instead of "Passphrase" in
+    prompts.
+
+  Release-info: https://dev.gnupg.org/T5482
+  See-also: gnupg-announce/2021q2/000460.html
+
+
 Noteworthy changes in version 2.2.27 (2021-01-11)
 -------------------------------------------------
 

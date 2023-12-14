@@ -58,7 +58,6 @@ static int any_registered;
 
 
 struct keydb_handle {
-  int locked;
   int found;
   int saved_found;
   int current;
@@ -147,7 +146,7 @@ maybe_create_keybox (char *filename, int force, int *r_created)
     }
   *last_slash_in_filename = save_slash;
 
-  /* To avoid races with other instances of gpg trying to create or
+  /* To avoid races with other instances of gpg/gpgsm trying to create or
      update the keybox (it is removed during an update for a short
      time), we do the next stuff in a locked state. */
   lockhd = dotlock_create (filename, 0);
@@ -175,7 +174,7 @@ maybe_create_keybox (char *filename, int force, int *r_created)
     }
 
   /* Now the real test while we are locked. */
-  if (!access(filename, F_OK))
+  if (!gnupg_access(filename, F_OK))
     {
       rc = 0;  /* Okay, we may access the file now.  */
       goto leave;
@@ -375,6 +374,23 @@ keydb_add_resource (ctrl_t ctrl, const char *url, int force, int *auto_created)
 }
 
 
+/* This is a helper requyired under Windows to close all files so that
+ * a rename will work.  */
+void
+keydb_close_all_files (void)
+{
+#ifdef HAVE_W32_SYSTEM
+  int i;
+
+  log_assert (used_resources <= MAX_KEYDB_RESOURCES);
+  for (i=0; i < used_resources; i++)
+    if (all_resources[i].type == KEYDB_RESOURCE_TYPE_KEYBOX)
+      keybox_close_all_files (all_resources[i].token);
+#endif
+}
+
+
+
 KEYDB_HANDLE
 keydb_new (void)
 {
@@ -505,22 +521,22 @@ keydb_set_ephemeral (KEYDB_HANDLE hd, int yes)
 }
 
 
+
 /* If the keyring has not yet been locked, lock it now.  This
-   operation is required before any update operation; it is optional
-   for an insert operation.  The lock is released with
-   keydb_released. */
+   operation is required before any update operation; On Windows it is
+   always required to disallow other processes to open the file which
+   in turn would inhibit our copy+update+rename method.  The lock is
+   released with keydb_released. */
 gpg_error_t
 keydb_lock (KEYDB_HANDLE hd)
 {
   if (!hd)
     return gpg_error (GPG_ERR_INV_HANDLE);
-  if (hd->locked)
-    return 0; /* Already locked. */
   return lock_all (hd);
 }
 
 
-
+/* Same as keydb_lock but no check for an invalid HD.  */
 static int
 lock_all (KEYDB_HANDLE hd)
 {
@@ -560,8 +576,6 @@ lock_all (KEYDB_HANDLE hd)
               }
           }
       }
-    else
-      hd->locked = 1;
 
     /* make_dotlock () does not yet guarantee that errno is set, thus
        we can't rely on the error reason and will simply use
@@ -569,13 +583,11 @@ lock_all (KEYDB_HANDLE hd)
     return rc? gpg_error (GPG_ERR_EACCES) : 0;
 }
 
+
 static void
 unlock_all (KEYDB_HANDLE hd)
 {
   int i;
-
-  if (!hd->locked)
-    return;
 
   for (i=hd->used-1; i >= 0; i--)
     {
@@ -589,7 +601,6 @@ unlock_all (KEYDB_HANDLE hd)
           break;
         }
     }
-  hd->locked = 0;
 }
 
 
@@ -719,7 +730,7 @@ keydb_set_flags (KEYDB_HANDLE hd, int which, int idx, unsigned int value)
   if ( hd->found < 0 || hd->found >= hd->used)
     return gpg_error (GPG_ERR_NOTHING_FOUND);
 
-  if (!hd->locked)
+  if (!dotlock_is_locked (hd->active[hd->found].lockhandle))
     return gpg_error (GPG_ERR_NOT_LOCKED);
 
   switch (hd->active[hd->found].type)
@@ -758,7 +769,7 @@ keydb_insert_cert (KEYDB_HANDLE hd, ksba_cert_t cert)
   else
     return gpg_error (GPG_ERR_GENERAL);
 
-  if (!hd->locked)
+  if (!dotlock_is_locked (hd->active[idx].lockhandle))
     return gpg_error (GPG_ERR_NOT_LOCKED);
 
   gpgsm_get_fingerprint (cert, GCRY_MD_SHA1, digest, NULL); /* kludge*/
@@ -770,44 +781,6 @@ keydb_insert_cert (KEYDB_HANDLE hd, ksba_cert_t cert)
       break;
     case KEYDB_RESOURCE_TYPE_KEYBOX:
       rc = keybox_insert_cert (hd->active[idx].u.kr, cert, digest);
-      break;
-    }
-
-  unlock_all (hd);
-  return rc;
-}
-
-
-
-/* Update the current keyblock with KB.  */
-int
-keydb_update_cert (KEYDB_HANDLE hd, ksba_cert_t cert)
-{
-  int rc = 0;
-  unsigned char digest[20];
-
-  if (!hd)
-    return gpg_error (GPG_ERR_INV_VALUE);
-
-  if ( hd->found < 0 || hd->found >= hd->used)
-    return -1; /* nothing found */
-
-  if (opt.dry_run)
-    return 0;
-
-  rc = lock_all (hd);
-  if (rc)
-    return rc;
-
-  gpgsm_get_fingerprint (cert, GCRY_MD_SHA1, digest, NULL); /* kludge*/
-
-  switch (hd->active[hd->found].type)
-    {
-    case KEYDB_RESOURCE_TYPE_NONE:
-      rc = gpg_error (GPG_ERR_GENERAL); /* oops */
-      break;
-    case KEYDB_RESOURCE_TYPE_KEYBOX:
-      rc = keybox_update_cert (hd->active[hd->found].u.kr, cert, digest);
       break;
     }
 
@@ -833,7 +806,7 @@ keydb_delete (KEYDB_HANDLE hd, int unlock)
   if( opt.dry_run )
     return 0;
 
-  if (!hd->locked)
+  if (!dotlock_is_locked (hd->active[hd->found].lockhandle))
     return gpg_error (GPG_ERR_NOT_LOCKED);
 
   switch (hd->active[hd->found].type)
@@ -952,7 +925,7 @@ int
 keydb_search (ctrl_t ctrl, KEYDB_HANDLE hd,
               KEYDB_SEARCH_DESC *desc, size_t ndesc)
 {
-  int rc = -1;
+  int rc;
   unsigned long skipped;
 
   if (!hd)
@@ -964,6 +937,11 @@ keydb_search (ctrl_t ctrl, KEYDB_HANDLE hd,
                                gpg_error (GPG_ERR_KEYRING_OPEN));
       return gpg_error (GPG_ERR_NOT_FOUND);
     }
+
+  rc = lock_all (hd);
+  if (rc)
+    return rc;
+  rc = -1;
 
   while (rc == -1 && hd->current >= 0 && hd->current < hd->used)
     {
@@ -1118,6 +1096,7 @@ keydb_store_cert (ctrl_t ctrl, ksba_cert_t cert, int ephemeral, int *existed)
      records.  */
   keydb_set_ephemeral (kh, 1);
 
+  keydb_close_all_files ();
   rc = lock_all (kh);
   if (rc)
     return rc;
@@ -1203,7 +1182,8 @@ keydb_set_cert_flags (ctrl_t ctrl, ksba_cert_t cert, int ephemeral,
   if (ephemeral)
     keydb_set_ephemeral (kh, 1);
 
-  err = keydb_lock (kh);
+  keydb_close_all_files ();
+  err = lock_all (kh);
   if (err)
     {
       log_error (_("error locking keybox: %s\n"), gpg_strerror (err));
@@ -1301,7 +1281,8 @@ keydb_clear_some_cert_flags (ctrl_t ctrl, strlist_t names)
         }
     }
 
-  err = keydb_lock (hd);
+  keydb_close_all_files ();
+  err = lock_all (hd);
   if (err)
     {
       log_error (_("error locking keybox: %s\n"), gpg_strerror (err));
@@ -1333,7 +1314,7 @@ keydb_clear_some_cert_flags (ctrl_t ctrl, strlist_t names)
         }
     }
   if (rc && rc != -1)
-    log_error ("keydb_search failed: %s\n", gpg_strerror (rc));
+    log_error ("%s failed: %s\n", __func__, gpg_strerror (rc));
 
  leave:
   xfree (desc);

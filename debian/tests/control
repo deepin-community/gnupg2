@@ -1,6 +1,7 @@
 Tests: gpgv-win32
 Depends: gpgv-win32, gnupg2, gpgv2, wine32, diffutils
-Restrictions: allow-stderr, skip-not-installable
+Restrictions: allow-stderr
+Architecture: i386
 
 Tests: simple-tests
 Depends: gnupg2, gpgv2

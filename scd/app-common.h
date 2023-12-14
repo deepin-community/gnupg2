@@ -33,11 +33,56 @@
 /* Flags used with app_genkey.  */
 #define APP_GENKEY_FLAG_FORCE    1  /* Force overwriting existing key.  */
 
+/* Flags used with app_writekey.  */
+#define APP_WRITEKEY_FLAG_FORCE  1  /* Force overwriting existing key.  */
+
+/* Flags used with app_readkey.  */
+#define APP_READKEY_FLAG_INFO    1  /* Send also a KEYPAIRINFO line.  */
+#define APP_READKEY_FLAG_ADVANCED 2 /* (gnupg 2.2 only)  */
+
 /* Bit flags set by the decipher function into R_INFO.  */
 #define APP_DECIPHER_INFO_NOPAD  1  /* Padding has been removed.  */
 
+/* Flags used by the app_write_learn_status.  */
+#define APP_LEARN_FLAG_KEYPAIRINFO  1 /* Return only keypair infos.  */
+#define APP_LEARN_FLAG_MULTI        2 /* Return info for all apps.  */
+#define APP_LEARN_FLAG_REREAD       4 /* Re-read infos from the token.  */
 
+
+/* List of supported card types.  Generic is the usual ISO7817-4
+ * compliant card.  More specific card or token versions can be given
+ * here.  Introduced in 2.2 for easier backporting from 2.3.  */
+typedef enum
+  {
+   CARDTYPE_GENERIC = 0,
+   CARDTYPE_GNUK,
+   CARDTYPE_YUBIKEY,
+   CARDTYPE_ZEITCONTROL
+  } cardtype_t;
+
+
+/* List of supported card applications.  The source code for each
+ * application can usually be found in an app-NAME.c file.  Introduced
+ * in 2.2 for easier backporting from 2.3.  */
+typedef enum
+  {
+   APPTYPE_NONE = 0,
+   APPTYPE_UNDEFINED,
+   APPTYPE_OPENPGP,
+   APPTYPE_PIV,
+   APPTYPE_NKS,
+   APPTYPE_P15,
+   APPTYPE_GELDKARTE,
+   APPTYPE_DINSIG,
+   APPTYPE_SC_HSM
+  } apptype_t;
+
+
+/* Forward declarations.  */
+struct app_ctx_s;
 struct app_local_s;  /* Defined by all app-*.c.  */
+
+typedef struct app_ctx_s *app_t;
 
 struct app_ctx_s {
   struct app_ctx_s *next;
@@ -55,8 +100,10 @@ struct app_ctx_s {
 
   unsigned char *serialno; /* Serialnumber in raw form, allocated. */
   size_t serialnolen;      /* Length in octets of serialnumber. */
-  const char *apptype;
-  unsigned int card_version;
+  apptype_t apptype;
+  unsigned int appversion; /* Version of the application or 0.     */
+  cardtype_t cardtype;     /* The token's type.  */
+  unsigned int cardversion;/* Firmware version of the token or 0.  */
   unsigned int card_status;
   unsigned int reset_requested:1;
   unsigned int periodical_check_needed:1;
@@ -67,28 +114,34 @@ struct app_ctx_s {
   struct app_local_s *app_local;  /* Local to the application. */
   struct {
     void (*deinit) (app_t app);
+
+    /* prep_reselect and reselect are not used in this version of scd.  */
+    gpg_error_t (*prep_reselect) (app_t app, ctrl_t ctrl);
+    gpg_error_t (*reselect) (app_t app, ctrl_t ctrl);
+
     gpg_error_t (*learn_status) (app_t app, ctrl_t ctrl, unsigned int flags);
     gpg_error_t (*readcert) (app_t app, const char *certid,
                      unsigned char **cert, size_t *certlen);
-    gpg_error_t (*readkey) (app_t app, int advanced, const char *certid,
-                    unsigned char **pk, size_t *pklen);
+    gpg_error_t (*readkey) (app_t app, ctrl_t ctrl,
+                            const char *certid, unsigned int flags,
+                            unsigned char **pk, size_t *pklen);
     gpg_error_t (*getattr) (app_t app, ctrl_t ctrl, const char *name);
-    gpg_error_t (*setattr) (app_t app, const char *name,
+    gpg_error_t (*setattr) (app_t app, ctrl_t ctrl, const char *name,
                     gpg_error_t (*pincb)(void*, const char *, char **),
                     void *pincb_arg,
                     const unsigned char *value, size_t valuelen);
-    gpg_error_t (*sign) (app_t app,
+    gpg_error_t (*sign) (app_t app, ctrl_t ctrl,
                  const char *keyidstr, int hashalgo,
                  gpg_error_t (*pincb)(void*, const char *, char **),
                  void *pincb_arg,
                  const void *indata, size_t indatalen,
                  unsigned char **outdata, size_t *outdatalen );
-    gpg_error_t (*auth) (app_t app, const char *keyidstr,
+    gpg_error_t (*auth) (app_t app, ctrl_t ctrl, const char *keyidstr,
                  gpg_error_t (*pincb)(void*, const char *, char **),
                  void *pincb_arg,
                  const void *indata, size_t indatalen,
                  unsigned char **outdata, size_t *outdatalen);
-    gpg_error_t (*decipher) (app_t app, const char *keyidstr,
+    gpg_error_t (*decipher) (app_t app, ctrl_t ctrl, const char *keyidstr,
                              gpg_error_t (*pincb)(void*, const char *, char **),
                              void *pincb_arg,
                              const void *indata, size_t indatalen,
@@ -113,11 +166,25 @@ struct app_ctx_s {
                        const char *chvnostr, unsigned int flags,
                        gpg_error_t (*pincb)(void*, const char *, char **),
                        void *pincb_arg);
-    gpg_error_t (*check_pin) (app_t app, const char *keyidstr,
+    gpg_error_t (*check_pin) (app_t app, ctrl_t ctrl, const char *keyidstr,
                       gpg_error_t (*pincb)(void*, const char *, char **),
                       void *pincb_arg);
+
+    /* with_keygrip is not used in this version of scd but having it
+     * makes back porting app-*.c from later versions easier.  */
+    gpg_error_t (*with_keygrip) (app_t app, ctrl_t ctrl, int action,
+                                 const char *keygrip_str, int capability);
   } fnc;
 };
+
+
+/* Action values for app_do_with_keygrip.  */
+enum
+ {
+  KEYGRIP_ACTION_SEND_DATA,
+  KEYGRIP_ACTION_WRITE_STATUS,
+  KEYGRIP_ACTION_LOOKUP
+ };
 
 
 /* Helper to get the slot from an APP object. */
@@ -131,20 +198,28 @@ app_get_slot (app_t app)
   return -1;
 }
 
+/* Macro to access members in app_t which are found in 2.3 in a linked
+ * card_t member.  */
+#define APP_CARD(a) (a)
+
 
 /*-- app-help.c --*/
 unsigned int app_help_count_bits (const unsigned char *a, size_t len);
 gpg_error_t app_help_get_keygrip_string_pk (const void *pk, size_t pklen,
                                             char *hexkeygrip,
-                                            gcry_sexp_t *r_pkey);
+                                            gcry_sexp_t *r_pkey,
+                                            int *r_algo, char **r_algostr);
 gpg_error_t app_help_get_keygrip_string (ksba_cert_t cert, char *hexkeygrip,
-                                         gcry_sexp_t *r_pkey);
+                                         gcry_sexp_t *r_pkey, int *r_algo);
+gpg_error_t app_help_pubkey_from_cert (const void *cert, size_t certlen,
+                                       unsigned char **r_pk, size_t *r_pklen);
 size_t app_help_read_length_of_cert (int slot, int fid, size_t *r_certoff);
 
 
 /*-- app.c --*/
 void app_send_card_list (ctrl_t ctrl);
 char *app_get_serialno (app_t app);
+char *app_get_dispserialno (app_t app, int nofallback);
 
 void app_dump_state (void);
 void application_notify_card_reset (int slot);

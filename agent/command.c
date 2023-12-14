@@ -978,8 +978,8 @@ cmd_genkey (assuan_context_t ctx, char *line)
 
 
 static const char hlp_readkey[] =
-  "READKEY <hexstring_with_keygrip>\n"
-  "        --card <keyid>\n"
+  "READKEY [--no-data] <hexstring_with_keygrip>\n"
+  "                    --card <keyid>\n"
   "\n"
   "Return the public key for the given keygrip or keyid.\n"
   "With --card, private key file with card information will be created.";
@@ -992,18 +992,21 @@ cmd_readkey (assuan_context_t ctx, char *line)
   gcry_sexp_t s_pkey = NULL;
   unsigned char *pkbuf = NULL;
   char *serialno = NULL;
+  char *keyidbuf = NULL;
   size_t pkbuflen;
-  const char *opt_card;
+  int opt_card, opt_no_data;
+  char *dispserialno = NULL;
 
   if (ctrl->restricted)
     return leave_cmd (ctx, gpg_error (GPG_ERR_FORBIDDEN));
 
-  opt_card = has_option_name (line, "--card");
+  opt_no_data = has_option (line, "--no-data");
+  opt_card = has_option (line, "--card");
   line = skip_options (line);
 
   if (opt_card)
     {
-      const char *keyid = opt_card;
+      const char *keyid = line;
 
       rc = agent_card_getattr (ctrl, "SERIALNO", &serialno);
       if (rc)
@@ -1012,6 +1015,12 @@ cmd_readkey (assuan_context_t ctx, char *line)
                      gpg_strerror (rc));
           goto leave;
         }
+
+      /* Hack to create the shadow key for the standard keys.  */
+      if ((!strcmp (keyid, "$SIGNKEYID") || !strcmp (keyid, "$ENCRKEYID")
+           || !strcmp (keyid, "$AUTHKEYID"))
+          && !agent_card_getattr (ctrl, keyid, &keyidbuf))
+        keyid = keyidbuf;
 
       rc = agent_card_readkey (ctrl, keyid, &pkbuf);
       if (rc)
@@ -1030,11 +1039,25 @@ cmd_readkey (assuan_context_t ctx, char *line)
           goto leave;
         }
 
-      rc = agent_write_shadow_key (grip, serialno, keyid, pkbuf, 0);
+      agent_card_getattr (ctrl, "$DISPSERIALNO", &dispserialno);
+      if (agent_key_available (grip))
+        {
+          /* Shadow-key is not available in our key storage.  */
+          rc = agent_write_shadow_key (0, grip, serialno, keyid, pkbuf, 0,
+                                       dispserialno);
+        }
+      else
+        {
+          /* Shadow-key is available in our key storage but ne check
+           * whether we need to update it with a new display-s/n or
+           * whatever.  */
+          rc = agent_write_shadow_key (1, grip, serialno, keyid, pkbuf, 0,
+                                       dispserialno);
+        }
       if (rc)
         goto leave;
 
-      rc = assuan_send_data (ctx, pkbuf, pkbuflen);
+      rc = opt_no_data? 0 : assuan_send_data (ctx, pkbuf, pkbuflen);
     }
   else
     {
@@ -1054,14 +1077,16 @@ cmd_readkey (assuan_context_t ctx, char *line)
             {
               pkbuflen = gcry_sexp_sprint (s_pkey, GCRYSEXP_FMT_CANON,
                                            pkbuf, pkbuflen);
-              rc = assuan_send_data (ctx, pkbuf, pkbuflen);
+              rc = opt_no_data? 0 : assuan_send_data (ctx, pkbuf, pkbuflen);
             }
         }
     }
 
  leave:
+  xfree (keyidbuf);
   xfree (serialno);
   xfree (pkbuf);
+  xfree (dispserialno);
   gcry_sexp_release (s_pkey);
   return leave_cmd (ctx, rc);
 }
@@ -1482,6 +1507,7 @@ cmd_get_passphrase (assuan_context_t ctx, char *line)
   char *entry_errtext = NULL;
   struct pin_entry_info_s *pi = NULL;
   struct pin_entry_info_s *pi2 = NULL;
+  int is_generated;
 
   if (ctrl->restricted)
     return leave_cmd (ctx, gpg_error (GPG_ERR_FORBIDDEN));
@@ -1593,6 +1619,8 @@ cmd_get_passphrase (assuan_context_t ctx, char *line)
       pi->max_tries = 3;
       pi->with_qualitybar = opt_qualbar;
       pi->with_repeat = opt_repeat;
+      pi->constraints_flags = (CHECK_CONSTRAINTS_NOT_EMPTY
+                               | CHECK_CONSTRAINTS_NEW_SYMKEY);
       pi2->max_length = MAX_PASSPHRASE_LEN + 1;
       pi2->max_tries = 3;
       pi2->check_cb = reenter_passphrase_cmp_cb;
@@ -1612,8 +1640,13 @@ cmd_get_passphrase (assuan_context_t ctx, char *line)
             goto leave;
           xfree (entry_errtext);
           entry_errtext = NULL;
+          is_generated = !!(pi->status & PINENTRY_STATUS_PASSWORD_GENERATED);
+
           /* We don't allow an empty passpharse in this mode.  */
-          if (check_passphrase_constraints (ctrl, pi->pin, 1, &entry_errtext))
+          if (!is_generated
+              && check_passphrase_constraints (ctrl, pi->pin,
+                                               pi->constraints_flags,
+                                               &entry_errtext))
             {
               pi->failed_tries = 0;
               pi2->failed_tries = 0;
@@ -1669,12 +1702,18 @@ cmd_get_passphrase (assuan_context_t ctx, char *line)
                                  opt_qualbar, cacheid, CACHE_MODE_USER, NULL);
       xfree (entry_errtext);
       entry_errtext = NULL;
+      is_generated = 0;
+
       if (!rc)
         {
           int i;
 
           if (opt_check
-	      && check_passphrase_constraints (ctrl, response,0,&entry_errtext))
+              && !is_generated
+	      && check_passphrase_constraints
+              (ctrl, response,
+               (opt_newsymkey? CHECK_CONSTRAINTS_NEW_SYMKEY:0),
+               &entry_errtext))
             {
               goto next_try;
             }
@@ -2094,7 +2133,11 @@ cmd_preset_passphrase (assuan_context_t ctx, char *line)
 
       rc = print_assuan_status (ctx, "INQUIRE_MAXLEN", "%zu", maxlen);
       if (!rc)
-	rc = assuan_inquire (ctx, "PASSPHRASE", &passphrase, &len, maxlen);
+        {
+          assuan_begin_confidential (ctx);
+          rc = assuan_inquire (ctx, "PASSPHRASE", &passphrase, &len, maxlen);
+          assuan_end_confidential (ctx);
+        }
     }
   else
     rc = set_error (GPG_ERR_NOT_IMPLEMENTED, "passphrase is required");
@@ -2103,7 +2146,10 @@ cmd_preset_passphrase (assuan_context_t ctx, char *line)
     {
       rc = agent_put_cache (ctrl, grip_clear, CACHE_MODE_ANY, passphrase, ttl);
       if (opt_inquire)
-	xfree (passphrase);
+        {
+	  wipememory (passphrase, len);
+          xfree (passphrase);
+        }
     }
 
 leave:
@@ -2392,11 +2438,11 @@ cmd_import_key (assuan_context_t ctx, char *line)
                            ctrl->s2k_count, -1);
       if (!err)
         err = agent_write_private_key (grip, finalkey, finalkeylen, force,
-                                       opt_timestamp);
+                                       opt_timestamp, NULL, NULL, NULL);
     }
   else
     err = agent_write_private_key (grip, key, realkeylen, force,
-                                   opt_timestamp);
+                                   opt_timestamp, NULL, NULL, NULL);
 
  leave:
   gcry_sexp_release (openpgp_sexp);

@@ -974,9 +974,7 @@ agent_keytocard (const char *hexgrip, int keyno, int force,
 
   rc = assuan_transact (agent_ctx, line, NULL, NULL, default_inq_cb, &parm,
                         NULL, NULL);
-  if (rc)
-    return rc;
-
+  status_sc_op_failure (rc);
   return rc;
 }
 
@@ -1097,6 +1095,19 @@ agent_scd_getattr (const char *name, struct agent_card_info_s *info)
   parm.ctx = agent_ctx;
   rc = assuan_transact (agent_ctx, line, NULL, NULL, default_inq_cb, &parm,
                         learn_status_cb, info);
+  if (!rc && !strcmp (name, "KEY-FPR"))
+    {
+      /* Let the agent create the shadow keys if not yet done.  */
+      if (info->fpr1valid)
+        assuan_transact (agent_ctx, "READKEY --card --no-data -- $SIGNKEYID",
+                         NULL, NULL, NULL, NULL, NULL, NULL);
+      if (info->fpr2valid)
+        assuan_transact (agent_ctx, "READKEY --card --no-data -- $ENCRKEYID",
+                         NULL, NULL, NULL, NULL, NULL, NULL);
+      if (info->fpr3valid)
+        assuan_transact (agent_ctx, "READKEY --card --no-data -- $AUTHKEYID",
+                         NULL, NULL, NULL, NULL, NULL, NULL);
+    }
 
   return rc;
 }
@@ -1404,6 +1415,29 @@ agent_scd_readkey (const char *keyrefstr, gcry_sexp_t *r_result)
 
   return err;
 }
+
+
+/* This can be called for a quick and dirty update/creation of the
+ * shadow key stubs.   */
+gpg_error_t
+agent_update_shadow_keys (void)
+{
+  gpg_error_t err;
+
+  err = start_agent (NULL, 1);
+  if (err)
+    return err;
+
+  assuan_transact (agent_ctx, "READKEY --card --no-data -- $SIGNKEYID",
+                   NULL, NULL, NULL, NULL, NULL, NULL);
+  assuan_transact (agent_ctx, "READKEY --card --no-data -- $ENCRKEYID",
+                   NULL, NULL, NULL, NULL, NULL, NULL);
+  assuan_transact (agent_ctx, "READKEY --card --no-data -- $AUTHKEYID",
+                   NULL, NULL, NULL, NULL, NULL, NULL);
+
+  return err;
+}
+
 
 
 

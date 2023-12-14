@@ -347,6 +347,15 @@ Outputs additional information while running.
 You can increase the verbosity by giving several
 verbose commands to @command{gpgsm}, such as @samp{-vv}.
 
+@item --keyserver @var{string}
+@opindex keyserver
+This is a deprecated option.  It was used to add an LDAP server to use
+for X.509 certificate and CRL lookup.  The alias @option{--ldapserver}
+existed from version 2.2.28 to 2.2.33 but is now entirely ignored.
+
+LDAP servers must be given in the configuration for @command{dirmngr}.
+
+
 @item --policy-file @var{filename}
 @opindex policy-file
 Change the default name of the policy file to @var{filename}.
@@ -656,6 +665,37 @@ such broken signatures.  If @command{gpgsm} prints an error like
 ``digest algo 8 has not been enabled'' you may want to try this option,
 with @samp{SHA256} for @var{name}.
 
+@item --compliance @var{string}
+@opindex compliance
+Set the compliance mode.  Valid values are shown when using "help" for
+@var{string}.
+
+@item --min-rsa-length @var{n}
+@opindex min-rsa-length
+This option adjusts the compliance mode "de-vs" for stricter key size
+requirements.  For example, a value of 3000 turns rsa2048 and dsa2048
+keys into non-VS-NfD compliant keys.
+
+@item --require-compliance
+@opindex require-compliance
+To check that data has been encrypted according to the rules of the
+current compliance mode, a gpgsm user needs to evaluate the status
+lines.  This is allows frontends to handle compliance check in a more
+flexible way.  However, for scripted use the required evaluation of
+the status-line requires quite some effort; this option can be used
+instead to make sure that the gpgsm process exits with a failure if
+the compliance rules are not fulfilled.  Note that this option has
+currently an effect only in "de-vs" mode.
+
+@item --ignore-cert-with-oid @var{oid}
+@opindex ignore-cert-with-oid
+Add @var{oid} to the list of OIDs to be checked while reading
+certificates from smartcards. The @var{oid} is expected to be in
+dotted decimal form, like @code{2.5.29.3}.  This option may be used
+more than once.  As of now certificates with an extended key usage
+matching one of those OIDs are ignored during a @option{--learn-card}
+operation and not imported.  This option can help to keep the local
+key database clear of unneeded certificates stored on smartcards.
 
 @item --faked-system-time @var{epoch}
 @opindex faked-system-time
@@ -669,6 +709,14 @@ forth to @var{epoch} which is the number of seconds elapsed since the year
 Include ephemeral flagged keys in the output of key listings.  Note
 that they are included anyway if the key specification for a listing
 is given as fingerprint or keygrip.
+
+@item --compatibility-flags @var{flags}
+@opindex compatibility-flags
+Set compatibility flags to work around problems due to non-compliant
+certificates or data.  The @var{flags} are given as a comma separated
+list of flag names and are OR-ed together.  The special flag "none"
+clears the list and allows to start over with an empty list.  To get a
+list of available flags the sole word "help" can be used.
 
 @item --debug-level @var{level}
 @opindex debug-level

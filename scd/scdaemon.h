@@ -30,6 +30,8 @@
 #include <gcrypt.h>
 #include "../common/util.h"
 #include "../common/sysutils.h"
+#include "app-common.h"
+
 
 /* To convey some special hash algorithms we use algorithm numbers
    reserved for application use. */
@@ -60,6 +62,7 @@ struct
   int enable_pinpad_varlen;  /* Use variable length input for pinpad. */
   int allow_admin;     /* Allow the use of admin commands for certain
                           cards. */
+  int pcsc_shared;     /* Use shared PC/SC access.  */
   strlist_t disabled_applications;  /* Card applications we do not
                                        want to use. */
   unsigned long card_timeout; /* Disconnect after N seconds of inactivity.  */
@@ -68,12 +71,13 @@ struct
 
 #define DBG_MPI_VALUE	  2	/* debug mpi details */
 #define DBG_CRYPTO_VALUE  4	/* debug low level crypto */
+#define DBG_CARD_VALUE    16    /* debug card info  */
 #define DBG_MEMORY_VALUE  32	/* debug memory allocation stuff */
 #define DBG_CACHE_VALUE   64	/* debug the caching */
 #define DBG_MEMSTAT_VALUE 128	/* show memory statistics */
 #define DBG_HASHING_VALUE 512	/* debug hashing operations */
 #define DBG_IPC_VALUE     1024
-#define DBG_CARD_IO_VALUE 2048
+#define DBG_CARD_IO_VALUE 2048  /* debug card I/O (e.g. APDUs).  */
 #define DBG_READER_VALUE  4096  /* Trace reader related functions.  */
 
 #define DBG_CRYPTO  (opt.debug & DBG_CRYPTO_VALUE)
@@ -81,6 +85,7 @@ struct
 #define DBG_CACHE   (opt.debug & DBG_CACHE_VALUE)
 #define DBG_HASHING (opt.debug & DBG_HASHING_VALUE)
 #define DBG_IPC     (opt.debug & DBG_IPC_VALUE)
+#define DBG_CARD    (opt.debug & DBG_CARD_VALUE)
 #define DBG_CARD_IO (opt.debug & DBG_CARD_IO_VALUE)
 #define DBG_READER  (opt.debug & DBG_READER_VALUE)
 
@@ -112,7 +117,6 @@ struct server_control_s
   } in_data;
 };
 
-typedef struct app_ctx_s *app_t;
 
 /*-- scdaemon.c --*/
 void scd_exit (int rc);
@@ -121,9 +125,12 @@ const char *scd_get_socket_name (void);
 /*-- command.c --*/
 gpg_error_t initialize_module_command (void);
 int  scd_command_handler (ctrl_t, int);
+void send_keyinfo (ctrl_t ctrl, int data, const char *keygrip_str,
+                   const char *serialno, const char *idstr);
 void send_status_info (ctrl_t ctrl, const char *keyword, ...)
      GPGRT_ATTR_SENTINEL(1);
-void send_status_direct (ctrl_t ctrl, const char *keyword, const char *args);
+gpg_error_t send_status_direct (ctrl_t ctrl, const char *keyword,
+                                const char *args);
 gpg_error_t send_status_printf (ctrl_t ctrl, const char *keyword,
                                 const char *format, ...) GPGRT_ATTR_PRINTF(3,4);
 

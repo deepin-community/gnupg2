@@ -613,7 +613,7 @@ stream_read_string (estream_t stream, unsigned int secure,
         }
 
       /* Read data.  */
-      err = stream_read_data (stream, buffer, length);
+      err = length? stream_read_data (stream, buffer, length) : 0;
       if (err)
         goto out;
 
@@ -623,7 +623,7 @@ stream_read_string (estream_t stream, unsigned int secure,
     }
   else  /* Dummy read requested.  */
     {
-      err = stream_read_skip (stream, length);
+      err = length? stream_read_skip (stream, length) : 0;
       if (err)
         goto out;
     }
@@ -1725,6 +1725,11 @@ sexp_key_construct (gcry_sexp_t *r_sexp,
   estream_t format = NULL;
   char *algo_name = NULL;
 
+  /* We can't encode an empty string in an S-expression, thus to keep
+   * the code simple we use "(none)" instead.  */
+  if (!comment || !*comment)
+    comment = "(none)";
+
   if ((key_spec.flags & SPEC_FLAG_IS_EdDSA))
     {
       /* It is much easier and more readable to use a separate code
@@ -1744,7 +1749,7 @@ sexp_key_construct (gcry_sexp_t *r_sexp,
                                "(comment%s))",
                                curve_name,
                                mpis[0], mpis[1],
-                               comment? comment:"");
+                               comment);
       else
         err = gcry_sexp_build (&sexp_new, NULL,
                                "(public-key(ecc(curve %s)"
@@ -1752,7 +1757,8 @@ sexp_key_construct (gcry_sexp_t *r_sexp,
                                "(comment%s))",
                                curve_name,
                                mpis[0],
-                               comment? comment:"");
+                               comment);
+
     }
   else
     {
@@ -2489,8 +2495,13 @@ card_key_available (ctrl_t ctrl, gcry_sexp_t *r_pk, char **cardsn)
 
   if ( agent_key_available (grip) )
     {
+      char *dispserialno;
+
       /* (Shadow)-key is not available in our key storage.  */
-      err = agent_write_shadow_key (grip, serialno, authkeyid, pkbuf, 0);
+      agent_card_getattr (ctrl, "$DISPSERIALNO", &dispserialno);
+      err = agent_write_shadow_key (0, grip, serialno, authkeyid, pkbuf, 0,
+                                    dispserialno);
+      xfree (dispserialno);
       if (err)
         {
           xfree (pkbuf);
@@ -2608,19 +2619,29 @@ ssh_handler_request_identities (ctrl_t ctrl,
             continue;
 
           err = ssh_send_key_public (key_blobs, key_public, cardsn);
-          if (err && opt.verbose)
-            gcry_log_debugsxp ("pubkey", key_public);
           gcry_sexp_release (key_public);
           key_public = NULL;
           xfree (cardsn);
           if (err)
             {
-              xfree (serialno);
-              free_strlist (card_list);
-              goto out;
+              if (opt.verbose)
+                gcry_log_debugsxp ("pubkey", key_public);
+              if (gpg_err_code (err) == GPG_ERR_UNKNOWN_CURVE
+                  || gpg_err_code (err) == GPG_ERR_INV_CURVE)
+                {
+                  /* For example a Brainpool curve or a curve we don't
+                   * support at all but a smartcard lists that curve.
+                   * We ignore them.  */
+                }
+              else
+                {
+                  xfree (serialno);
+                  free_strlist (card_list);
+                  goto out;
+                }
             }
-
-          key_counter++;
+          else
+            key_counter++;
         }
 
       xfree (serialno);
@@ -3138,7 +3159,8 @@ ssh_identity_register (ctrl_t ctrl, ssh_key_type_spec_t *spec,
 
   /* Store this key to our key storage.  We do not store a creation
    * timestamp because we simply do not know.  */
-  err = agent_write_private_key (key_grip_raw, buffer, buffer_n, 0, 0);
+  err = agent_write_private_key (key_grip_raw, buffer, buffer_n, 0, 0,
+                                 NULL, NULL, NULL);
   if (err)
     goto out;
 

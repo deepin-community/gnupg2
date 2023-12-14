@@ -25,6 +25,7 @@
 #include <string.h>
 #include <ctype.h>
 #include <assert.h>
+#include <unistd.h>
 
 #include "agent.h"
 #include "../common/i18n.h"
@@ -68,7 +69,8 @@ store_key (gcry_sexp_t private, const char *passphrase, int force,
       buf = p;
     }
 
-  rc = agent_write_private_key (grip, buf, len, force, timestamp);
+  rc = agent_write_private_key (grip, buf, len, force, timestamp,
+                                NULL, NULL, NULL);
   xfree (buf);
   return rc;
 }
@@ -90,60 +92,82 @@ nonalpha_count (const char *s)
 
 
 /* Check PW against a list of pattern.  Return 0 if PW does not match
-   these pattern.  */
+   these pattern.  If CHECK_CONSTRAINTS_NEW_SYMKEY is set in flags and
+   --check-sym-passphrase-pattern has been configured, use the pattern
+   file from that option.  */
 static int
-check_passphrase_pattern (ctrl_t ctrl, const char *pw)
+do_check_passphrase_pattern (ctrl_t ctrl, const char *pw, unsigned int flags)
 {
   gpg_error_t err = 0;
   const char *pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CHECK_PATTERN);
-  FILE *infp;
+  estream_t stream_to_check_pattern = NULL;
   const char *argv[10];
   pid_t pid;
   int result, i;
+  const char *pattern;
+  char *patternfname;
 
   (void)ctrl;
 
-  infp = gnupg_tmpfile ();
-  if (!infp)
+  pattern = opt.check_passphrase_pattern;
+  if ((flags & CHECK_CONSTRAINTS_NEW_SYMKEY)
+      && opt.check_sym_passphrase_pattern)
+    pattern = opt.check_sym_passphrase_pattern;
+  if (!pattern)
+    return 1; /* Oops - Assume password should not be used  */
+
+  if (strchr (pattern, '/') || strchr (pattern, '\\')
+      || (*pattern == '~' && pattern[1] == '/'))
+    patternfname = make_absfilename_try (pattern, NULL);
+  else
+    patternfname = make_filename_try (gnupg_sysconfdir (), pattern, NULL);
+  if (!patternfname)
     {
-      err = gpg_error_from_syserror ();
-      log_error (_("error creating temporary file: %s\n"), gpg_strerror (err));
-      return 1; /* Error - assume password should not be used.  */
+      log_error ("error making filename from '%s': %s\n",
+                 pattern, gpg_strerror (gpg_error_from_syserror ()));
+      return 1; /* Do not pass the check.  */
     }
 
-  if (fwrite (pw, strlen (pw), 1, infp) != 1)
+  /* Make debugging a broken config easier by printing a useful error
+   * message.  */
+  if (gnupg_access (patternfname, F_OK))
     {
-      err = gpg_error_from_syserror ();
-      log_error (_("error writing to temporary file: %s\n"),
-                 gpg_strerror (err));
-      fclose (infp);
-      return 1; /* Error - assume password should not be used.  */
+      log_error ("error accessing '%s': %s\n",
+                 patternfname, gpg_strerror (gpg_error_from_syserror ()));
+      xfree (patternfname);
+      return 1; /* Do not pass the check.  */
     }
-  fseek (infp, 0, SEEK_SET);
-  clearerr (infp);
 
   i = 0;
   argv[i++] = "--null";
   argv[i++] = "--",
-  argv[i++] = opt.check_passphrase_pattern,
+  argv[i++] = patternfname,
   argv[i] = NULL;
   assert (i < sizeof argv);
 
-  if (gnupg_spawn_process_fd (pgmname, argv, fileno (infp), -1, -1, &pid))
+  if (gnupg_spawn_process (pgmname, argv, NULL, NULL, 0,
+                           &stream_to_check_pattern, NULL, NULL, &pid))
     result = 1; /* Execute error - assume password should no be used.  */
-  else if (gnupg_wait_process (pgmname, pid, 1, NULL))
-    result = 1; /* Helper returned an error - probably a match.  */
   else
-    result = 0; /* Success; i.e. no match.  */
-  gnupg_release_process (pid);
+    {
+      es_set_binary (stream_to_check_pattern);
+      if (es_fwrite (pw, strlen (pw), 1, stream_to_check_pattern) != 1)
+        {
+          err = gpg_error_from_syserror ();
+          log_error (_("error writing to pipe: %s\n"), gpg_strerror (err));
+          result = 1; /* Error - assume password should not be used.  */
+        }
+      else
+        es_fflush (stream_to_check_pattern);
+      es_fclose (stream_to_check_pattern);
+      if (gnupg_wait_process (pgmname, pid, 1, NULL))
+        result = 1; /* Helper returned an error - probably a match.  */
+      else
+        result = 0; /* Success; i.e. no match.  */
+      gnupg_release_process (pid);
+    }
 
-  /* Overwrite our temporary file. */
-  fseek (infp, 0, SEEK_SET);
-  clearerr (infp);
-  for (i=((strlen (pw)+99)/100)*100; i > 0; i--)
-    putc ('\xff', infp);
-  fflush (infp);
-  fclose (infp);
+  xfree (patternfname);
   return result;
 }
 
@@ -174,12 +198,17 @@ take_this_one_anyway (ctrl_t ctrl, const char *desc)
 
 
 /* Check whether the passphrase PW is suitable. Returns 0 if the
-   passphrase is suitable and true if it is not and the user should be
-   asked to provide a different one.  If FAILED_CONSTRAINT is set, a
-   message describing the problem is returned in
-   *FAILED_CONSTRAINT.  */
+ * passphrase is suitable and true if it is not and the user should be
+ * asked to provide a different one.  If FAILED_CONSTRAINT is set, a
+ * message describing the problem is returned at FAILED_CONSTRAINT.
+ * The FLAGS are:
+ *   CHECK_CONSTRAINTS_NOT_EMPTY
+ *       Do not allow an empty passphrase
+ *   CHECK_CONSTRAINTS_NEW_SYMKEY
+ *       Hint that the passphrase is used for a new symmetric key.
+ */
 int
-check_passphrase_constraints (ctrl_t ctrl, const char *pw, int no_empty,
+check_passphrase_constraints (ctrl_t ctrl, const char *pw, unsigned int flags,
 			      char **failed_constraint)
 {
   gpg_error_t err = 0;
@@ -188,6 +217,7 @@ check_passphrase_constraints (ctrl_t ctrl, const char *pw, int no_empty,
   char *msg1 = NULL;
   char *msg2 = NULL;
   char *msg3 = NULL;
+  int no_empty = !!(flags & CHECK_CONSTRAINTS_NOT_EMPTY);
 
   if (ctrl && ctrl->pinentry_mode == PINENTRY_MODE_LOOPBACK)
     return 0;
@@ -265,8 +295,9 @@ check_passphrase_constraints (ctrl_t ctrl, const char *pw, int no_empty,
      and pattern.  The actual test is done by an external program.
      The warning message is generic to give the user no hint on how to
      circumvent this list.  */
-  if (*pw && opt.check_passphrase_pattern &&
-      check_passphrase_pattern (ctrl, pw))
+  if (*pw
+      && (opt.check_passphrase_pattern || opt.check_sym_passphrase_pattern)
+      && do_check_passphrase_pattern (ctrl, pw, flags))
     {
       if (!failed_constraint)
         {
@@ -381,7 +412,7 @@ agent_ask_new_passphrase (ctrl_t ctrl, const char *prompt,
   if (!pi2)
     {
       err = gpg_error_from_syserror ();
-      xfree (pi2);
+      xfree (pi);
       return err;
     }
   pi->max_length = MAX_PASSPHRASE_LEN + 1;

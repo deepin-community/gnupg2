@@ -771,13 +771,14 @@ parse_p12 (ctrl_t ctrl, ksba_reader_t reader, struct stats_s *stats)
 
   err = gpgsm_agent_ask_passphrase
     (ctrl,
-     i18n_utf8 ("Please enter the passphrase to unprotect the PKCS#12 object."),
+     i18n_utf8 (N_("Please enter the passphrase to unprotect the PKCS#12 object.")),
      0, &passphrase);
   if (err)
     goto leave;
 
   kparms = p12_parse (p12buffer + p12bufoff, p12buflen - p12bufoff,
-                      passphrase, store_cert_cb, &store_cert_parm, &bad_pass);
+                      passphrase, store_cert_cb, &store_cert_parm,
+                      &bad_pass, NULL);
 
   xfree (passphrase);
   passphrase = NULL;
@@ -836,7 +837,8 @@ parse_p12 (ctrl_t ctrl, ksba_reader_t reader, struct stats_s *stats)
       log_error ("can't calculate keygrip\n");
       goto leave;
     }
-  log_printhex (grip, 20, "keygrip=");
+  if (DBG_X509)
+    log_printhex (grip, 20, "keygrip=");
 
   /* Convert to canonical encoding using a function which pads it to a
      multiple of 64 bits.  We need this padding for AESWRAP.  */

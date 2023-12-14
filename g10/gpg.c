@@ -1,7 +1,7 @@
 /* gpg.c - The GnuPG utility (main for gpg)
  * Copyright (C) 1998-2020 Free Software Foundation, Inc.
  * Copyright (C) 1997-2019 Werner Koch
- * Copyright (C) 2015-2020 g10 Code GmbH
+ * Copyright (C) 2015-2021 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -73,10 +73,6 @@
 #endif
 #else
 #define MY_O_BINARY  0
-#endif
-
-#ifdef __MINGW32__
-int _dowildcard = -1;
 #endif
 
 enum cmd_and_opt_values
@@ -246,6 +242,7 @@ enum cmd_and_opt_values
     oPGP7,
     oPGP8,
     oDE_VS,
+    oMinRSALength,
     oRFC2440Text,
     oNoRFC2440Text,
     oCipherAlgo,
@@ -351,6 +348,7 @@ enum cmd_and_opt_values
     oShowSessionKey,
     oOverrideSessionKey,
     oOverrideSessionKeyFD,
+    oOverrideComplianceCheck,
     oNoRandomSeedFile,
     oAutoKeyRetrieve,
     oNoAutoKeyRetrieve,
@@ -430,6 +428,9 @@ enum cmd_and_opt_values
     oUseOnlyOpenPGPCard,
     oIncludeKeyBlock,
     oNoIncludeKeyBlock,
+    oForceSignKey,
+    oForbidGenKey,
+    oRequireCompliance,
 
     oNoop
   };
@@ -537,6 +538,7 @@ static ARGPARSE_OPTS opts[] = {
               N_("update the trust database")),
   ARGPARSE_c (aCheckTrustDB, "check-trustdb", "@"),
   ARGPARSE_c (aFixTrustDB, "fix-trustdb", "@"),
+  ARGPARSE_c (aListTrustDB, "list-trustdb", "@"),
 #endif
 
   ARGPARSE_c (aDeArmor, "dearmor", "@"),
@@ -544,115 +546,64 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_c (aEnArmor, "enarmor", "@"),
   ARGPARSE_c (aEnArmor, "enarmour", "@"),
   ARGPARSE_c (aPrintMD, "print-md", N_("print message digests")),
+  ARGPARSE_c (aPrintMDs, "print-mds", "@"), /* old */
   ARGPARSE_c (aPrimegen, "gen-prime", "@" ),
   ARGPARSE_c (aGenRandom,"gen-random", "@" ),
   ARGPARSE_c (aServer,   "server",  N_("run in server mode")),
   ARGPARSE_c (aTOFUPolicy, "tofu-policy",
 	      N_("|VALUE|set the TOFU policy for a key")),
+  /* Not yet used:
+     ARGPARSE_c (aListTrustPath, "list-trust-path", "@"), */
+  ARGPARSE_c (aDeleteSecretAndPublicKeys,
+              "delete-secret-and-public-keys", "@"),
+  ARGPARSE_c (aRebuildKeydbCaches, "rebuild-keydb-caches", "@"),
+  ARGPARSE_c (aListKeys, "list-key", "@"),   /* alias */
+  ARGPARSE_c (aListSigs, "list-sig", "@"),   /* alias */
+  ARGPARSE_c (aCheckKeys, "check-sig", "@"), /* alias */
+  ARGPARSE_c (aShowKeys,  "show-key", "@"), /* alias */
 
-  ARGPARSE_group (301, N_("@\nOptions:\n ")),
 
-  ARGPARSE_s_n (oArmor, "armor", N_("create ascii armored output")),
-  ARGPARSE_s_n (oArmor, "armour", "@"),
-
-  ARGPARSE_s_s (oRecipient, "recipient", N_("|USER-ID|encrypt for USER-ID")),
-  ARGPARSE_s_s (oHiddenRecipient, "hidden-recipient", "@"),
-  ARGPARSE_s_s (oRecipientFile, "recipient-file", "@"),
-  ARGPARSE_s_s (oHiddenRecipientFile, "hidden-recipient-file", "@"),
-  ARGPARSE_s_s (oRecipient, "remote-user", "@"),  /* (old option name) */
-  ARGPARSE_s_s (oDefRecipient, "default-recipient", "@"),
-  ARGPARSE_s_n (oDefRecipientSelf,  "default-recipient-self", "@"),
-  ARGPARSE_s_n (oNoDefRecipient, "no-default-recipient", "@"),
-
-  ARGPARSE_s_s (oTempDir,  "temp-directory", "@"),
-  ARGPARSE_s_s (oExecPath, "exec-path", "@"),
-  ARGPARSE_s_s (oEncryptTo,      "encrypt-to", "@"),
-  ARGPARSE_s_n (oNoEncryptTo, "no-encrypt-to", "@"),
-  ARGPARSE_s_s (oHiddenEncryptTo, "hidden-encrypt-to", "@"),
-  ARGPARSE_s_n (oEncryptToDefaultKey, "encrypt-to-default-key", "@"),
-  ARGPARSE_s_s (oLocalUser, "local-user",
-                N_("|USER-ID|use USER-ID to sign or decrypt")),
-  ARGPARSE_s_s (oSender, "sender", "@"),
-
-  ARGPARSE_s_s (oTrySecretKey, "try-secret-key", "@"),
-
-  ARGPARSE_s_i (oCompress, NULL,
-                N_("|N|set compress level to N (0 disables)")),
-  ARGPARSE_s_i (oCompressLevel, "compress-level", "@"),
-  ARGPARSE_s_i (oBZ2CompressLevel, "bzip2-compress-level", "@"),
-  ARGPARSE_s_n (oBZ2DecompressLowmem, "bzip2-decompress-lowmem", "@"),
-
-  ARGPARSE_s_n (oMimemode, "mimemode", "@"),
-  ARGPARSE_s_n (oTextmodeShort, NULL, "@"),
-  ARGPARSE_s_n (oTextmode,   "textmode", N_("use canonical text mode")),
-  ARGPARSE_s_n (oNoTextmode, "no-textmode", "@"),
-
-  ARGPARSE_s_n (oExpert,      "expert", "@"),
-  ARGPARSE_s_n (oNoExpert, "no-expert", "@"),
-
-  ARGPARSE_s_s (oDefSigExpire, "default-sig-expire", "@"),
-  ARGPARSE_s_n (oAskSigExpire,      "ask-sig-expire", "@"),
-  ARGPARSE_s_n (oNoAskSigExpire, "no-ask-sig-expire", "@"),
-  ARGPARSE_s_s (oDefCertExpire, "default-cert-expire", "@"),
-  ARGPARSE_s_n (oAskCertExpire,      "ask-cert-expire", "@"),
-  ARGPARSE_s_n (oNoAskCertExpire, "no-ask-cert-expire", "@"),
-  ARGPARSE_s_i (oDefCertLevel, "default-cert-level", "@"),
-  ARGPARSE_s_i (oMinCertLevel, "min-cert-level", "@"),
-  ARGPARSE_s_n (oAskCertLevel,      "ask-cert-level", "@"),
-  ARGPARSE_s_n (oNoAskCertLevel, "no-ask-cert-level", "@"),
-
-  ARGPARSE_s_s (oOutput, "output", N_("|FILE|write output to FILE")),
-  ARGPARSE_p_u (oMaxOutput, "max-output", "@"),
-  ARGPARSE_s_s (oInputSizeHint, "input-size-hint", "@"),
+  ARGPARSE_header ("Monitor", N_("Options controlling the diagnostic output")),
 
   ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
-  ARGPARSE_s_n (oQuiet,	  "quiet",   "@"),
+  ARGPARSE_s_n (oNoVerbose, "no-verbose", "@"),
+  ARGPARSE_s_n (oQuiet,	  "quiet",   N_("be somewhat more quiet")),
   ARGPARSE_s_n (oNoTTY,   "no-tty",  "@"),
-
-  ARGPARSE_s_n (oDisableSignerUID, "disable-signer-uid", "@"),
-
-  ARGPARSE_s_n (oDryRun, "dry-run", N_("do not make any changes")),
-  ARGPARSE_s_n (oInteractive, "interactive", N_("prompt before overwriting")),
-
-  ARGPARSE_s_n (oBatch, "batch", "@"),
-  ARGPARSE_s_n (oAnswerYes, "yes", "@"),
-  ARGPARSE_s_n (oAnswerNo, "no", "@"),
-  ARGPARSE_s_s (oKeyring, "keyring", "@"),
-  ARGPARSE_s_s (oPrimaryKeyring, "primary-keyring", "@"),
-  ARGPARSE_s_s (oSecretKeyring, "secret-keyring", "@"),
-  ARGPARSE_s_n (oShowKeyring, "show-keyring", "@"),
-  ARGPARSE_s_s (oDefaultKey, "default-key", "@"),
-
-  ARGPARSE_s_s (oKeyServer, "keyserver", "@"),
-  ARGPARSE_s_s (oKeyServerOptions, "keyserver-options", "@"),
-  ARGPARSE_s_s (oKeyOrigin, "key-origin", "@"),
-  ARGPARSE_s_s (oImportOptions, "import-options", "@"),
-  ARGPARSE_s_s (oImportFilter,  "import-filter", "@"),
-  ARGPARSE_s_s (oExportOptions, "export-options", "@"),
-  ARGPARSE_s_s (oExportFilter,  "export-filter", "@"),
-  ARGPARSE_s_s (oListOptions,   "list-options", "@"),
-  ARGPARSE_s_s (oVerifyOptions, "verify-options", "@"),
-
-  ARGPARSE_s_s (oDisplayCharset, "display-charset", "@"),
-  ARGPARSE_s_s (oDisplayCharset, "charset", "@"),
-  ARGPARSE_conffile (oOptions, "options", "@"),
-
+  ARGPARSE_s_n (oNoGreeting, "no-greeting", "@"),
   ARGPARSE_s_s (oDebug, "debug", "@"),
   ARGPARSE_s_s (oDebugLevel, "debug-level", "@"),
   ARGPARSE_s_n (oDebugAll, "debug-all", "@"),
   ARGPARSE_s_n (oDebugIOLBF, "debug-iolbf", "@"),
-  ARGPARSE_s_i (oStatusFD, "status-fd", "@"),
-  ARGPARSE_s_s (oStatusFile, "status-file", "@"),
-  ARGPARSE_s_i (oAttributeFD, "attribute-fd", "@"),
-  ARGPARSE_s_s (oAttributeFile, "attribute-file", "@"),
+  ARGPARSE_s_s (oDisplayCharset, "display-charset", "@"),
+  ARGPARSE_s_s (oDisplayCharset, "charset", "@"),
+  ARGPARSE_conffile (oOptions, "options", N_("|FILE|read options from FILE")),
+  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
+  ARGPARSE_s_i (oLoggerFD,   "logger-fd", "@"),
+  ARGPARSE_s_s (oLoggerFile, "log-file",
+                N_("|FILE|write server mode logs to FILE")),
+  ARGPARSE_s_s (oLoggerFile, "logger-file", "@"),  /* 1.4 compatibility.  */
+  ARGPARSE_s_n (oQuickRandom, "debug-quick-random", "@"),
 
-  ARGPARSE_s_i (oCompletesNeeded, "completes-needed", "@"),
-  ARGPARSE_s_i (oMarginalsNeeded, "marginals-needed", "@"),
-  ARGPARSE_s_i (oMaxCertDepth,	"max-cert-depth", "@" ),
-  ARGPARSE_s_s (oTrustedKey, "trusted-key", "@"),
 
-  ARGPARSE_s_s (oLoadExtension, "load-extension", "@"),  /* Dummy.  */
+  ARGPARSE_header ("Configuration",
+                   N_("Options controlling the configuration")),
 
+  ARGPARSE_s_s (oHomedir, "homedir", "@"),
+  ARGPARSE_s_s (oFakedSystemTime, "faked-system-time", "@"),
+  ARGPARSE_s_s (oDefaultKey, "default-key",
+                N_("|NAME|use NAME as default secret key")),
+  ARGPARSE_s_s (oEncryptTo,      "encrypt-to",
+                N_("|NAME|encrypt to user ID NAME as well")),
+  ARGPARSE_s_n (oNoEncryptTo, "no-encrypt-to", "@"),
+  ARGPARSE_s_s (oHiddenEncryptTo, "hidden-encrypt-to", "@"),
+  ARGPARSE_s_n (oEncryptToDefaultKey, "encrypt-to-default-key", "@"),
+  ARGPARSE_s_s (oDefRecipient, "default-recipient", "@"),
+  ARGPARSE_s_n (oDefRecipientSelf,  "default-recipient-self", "@"),
+  ARGPARSE_s_n (oNoDefRecipient, "no-default-recipient", "@"),
+  ARGPARSE_s_s (oGroup,      "group",
+                N_("|SPEC|set up email aliases")),
+  ARGPARSE_s_s (oUnGroup,    "ungroup",    "@"),
+  ARGPARSE_s_n (oNoGroups,   "no-groups",  "@"),
   ARGPARSE_s_s (oCompliance, "compliance",   "@"),
   ARGPARSE_s_n (oGnuPG, "gnupg",   "@"),
   ARGPARSE_s_n (oGnuPG, "no-pgp2", "@"),
@@ -666,62 +617,67 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oPGP6, "pgp6", "@"),
   ARGPARSE_s_n (oPGP7, "pgp7", "@"),
   ARGPARSE_s_n (oPGP8, "pgp8", "@"),
-
-  ARGPARSE_s_n (oRFC2440Text,      "rfc2440-text", "@"),
-  ARGPARSE_s_n (oNoRFC2440Text, "no-rfc2440-text", "@"),
-  ARGPARSE_s_i (oS2KMode, "s2k-mode", "@"),
-  ARGPARSE_s_s (oS2KDigest, "s2k-digest-algo", "@"),
-  ARGPARSE_s_s (oS2KCipher, "s2k-cipher-algo", "@"),
-  ARGPARSE_s_i (oS2KCount, "s2k-count", "@"),
-  ARGPARSE_s_s (oCipherAlgo, "cipher-algo", "@"),
-  ARGPARSE_s_s (oDigestAlgo, "digest-algo", "@"),
-  ARGPARSE_s_s (oCertDigestAlgo, "cert-digest-algo", "@"),
+  ARGPARSE_s_s (oDefaultNewKeyAlgo, "default-new-key-algo", "@"),
+  ARGPARSE_p_u (oMinRSALength, "min-rsa-length", "@"),
+#ifndef NO_TRUST_MODELS
+  ARGPARSE_s_n (oAlwaysTrust, "always-trust", "@"),
+#endif
+  ARGPARSE_s_s (oTrustModel, "trust-model", "@"),
+  ARGPARSE_s_s (oPhotoViewer,  "photo-viewer", "@"),
+  ARGPARSE_s_s (oKnownNotation, "known-notation", "@"),
+  ARGPARSE_s_s (oAgentProgram, "agent-program", "@"),
+  ARGPARSE_s_s (oDirmngrProgram, "dirmngr-program", "@"),
+  ARGPARSE_s_n (oExitOnStatusWriteError, "exit-on-status-write-error", "@"),
+  ARGPARSE_s_i (oLimitCardInsertTries, "limit-card-insert-tries", "@"),
+  ARGPARSE_s_n (oEnableProgressFilter, "enable-progress-filter", "@"),
+  ARGPARSE_s_s (oTempDir,  "temp-directory", "@"),
+  ARGPARSE_s_s (oExecPath, "exec-path", "@"),
+  ARGPARSE_s_n (oExpert,      "expert", "@"),
+  ARGPARSE_s_n (oNoExpert, "no-expert", "@"),
+  ARGPARSE_s_n (oNoSecmemWarn, "no-secmem-warning", "@"),
+  ARGPARSE_s_n (oRequireSecmem, "require-secmem", "@"),
+  ARGPARSE_s_n (oNoRequireSecmem, "no-require-secmem", "@"),
+  ARGPARSE_s_n (oNoPermissionWarn, "no-permission-warning", "@"),
+  ARGPARSE_s_n (oDryRun, "dry-run", N_("do not make any changes")),
+  ARGPARSE_s_n (oInteractive, "interactive", N_("prompt before overwriting")),
+  ARGPARSE_s_s (oDefSigExpire, "default-sig-expire", "@"),
+  ARGPARSE_s_n (oAskSigExpire,      "ask-sig-expire", "@"),
+  ARGPARSE_s_n (oNoAskSigExpire, "no-ask-sig-expire", "@"),
+  ARGPARSE_s_s (oDefCertExpire, "default-cert-expire", "@"),
+  ARGPARSE_s_n (oAskCertExpire,      "ask-cert-expire", "@"),
+  ARGPARSE_s_n (oNoAskCertExpire, "no-ask-cert-expire", "@"),
+  ARGPARSE_s_i (oDefCertLevel, "default-cert-level", "@"),
+  ARGPARSE_s_i (oMinCertLevel, "min-cert-level", "@"),
+  ARGPARSE_s_n (oAskCertLevel,      "ask-cert-level", "@"),
+  ARGPARSE_s_n (oNoAskCertLevel, "no-ask-cert-level", "@"),
+  ARGPARSE_s_n (oOnlySignTextIDs, "only-sign-text-ids", "@"),
+  ARGPARSE_s_n (oEnableLargeRSA, "enable-large-rsa", "@"),
+  ARGPARSE_s_n (oDisableLargeRSA, "disable-large-rsa", "@"),
+  ARGPARSE_s_n (oEnableDSA2, "enable-dsa2", "@"),
+  ARGPARSE_s_n (oDisableDSA2, "disable-dsa2", "@"),
+  ARGPARSE_s_s (oPersonalCipherPreferences, "personal-cipher-preferences","@"),
+  ARGPARSE_s_s (oPersonalDigestPreferences, "personal-digest-preferences","@"),
+  ARGPARSE_s_s (oPersonalCompressPreferences,
+                                         "personal-compress-preferences", "@"),
+  ARGPARSE_s_s (oDefaultPreferenceList,  "default-preference-list", "@"),
+  ARGPARSE_s_s (oDefaultKeyserverURL,  "default-keyserver-url", "@"),
+  ARGPARSE_s_n (oNoExpensiveTrustChecks, "no-expensive-trust-checks", "@"),
+  ARGPARSE_s_n (oAllowNonSelfsignedUID,      "allow-non-selfsigned-uid", "@"),
+  ARGPARSE_s_n (oNoAllowNonSelfsignedUID, "no-allow-non-selfsigned-uid", "@"),
+  ARGPARSE_s_n (oAllowFreeformUID,      "allow-freeform-uid", "@"),
+  ARGPARSE_s_n (oNoAllowFreeformUID, "no-allow-freeform-uid", "@"),
+  ARGPARSE_s_n (oPreservePermissions, "preserve-permissions", "@"),
+  ARGPARSE_s_i (oDefCertLevel, "default-cert-check-level", "@"), /* old */
+  ARGPARSE_s_s (oTOFUDefaultPolicy, "tofu-default-policy", "@"),
+  ARGPARSE_s_n (oLockOnce,     "lock-once", "@"),
+  ARGPARSE_s_n (oLockMultiple, "lock-multiple", "@"),
+  ARGPARSE_s_n (oLockNever,    "lock-never", "@"),
   ARGPARSE_s_s (oCompressAlgo,"compress-algo", "@"),
   ARGPARSE_s_s (oCompressAlgo, "compression-algo", "@"), /* Alias */
-  ARGPARSE_s_n (oThrowKeyids, "throw-keyids", "@"),
-  ARGPARSE_s_n (oNoThrowKeyids, "no-throw-keyids", "@"),
-  ARGPARSE_s_n (oShowPhotos,   "show-photos", "@"),
-  ARGPARSE_s_n (oNoShowPhotos, "no-show-photos", "@"),
-  ARGPARSE_s_s (oPhotoViewer,  "photo-viewer", "@"),
-  ARGPARSE_s_s (oSetNotation,  "set-notation", "@"),
-  ARGPARSE_s_s (oSigNotation,  "sig-notation", "@"),
-  ARGPARSE_s_s (oCertNotation, "cert-notation", "@"),
-  ARGPARSE_s_s (oKnownNotation, "known-notation", "@"),
-
-  ARGPARSE_group (302, N_(
-  "@\n(See the man page for a complete listing of all commands and options)\n"
-		      )),
-
-  ARGPARSE_group (303, N_("@\nExamples:\n\n"
-    " -se -r Bob [file]          sign and encrypt for user Bob\n"
-    " --clear-sign [file]        make a clear text signature\n"
-    " --detach-sign [file]       make a detached signature\n"
-    " --list-keys [names]        show keys\n"
-    " --fingerprint [names]      show fingerprints\n")),
-
-  /* More hidden commands and options. */
-  ARGPARSE_c (aPrintMDs, "print-mds", "@"), /* old */
-#ifndef NO_TRUST_MODELS
-  ARGPARSE_c (aListTrustDB, "list-trustdb", "@"),
-#endif
-
-  /* Not yet used:
-     ARGPARSE_c (aListTrustPath, "list-trust-path", "@"), */
-  ARGPARSE_c (aDeleteSecretAndPublicKeys,
-              "delete-secret-and-public-keys", "@"),
-  ARGPARSE_c (aRebuildKeydbCaches, "rebuild-keydb-caches", "@"),
-
-  ARGPARSE_o_s (oPassphrase,      "passphrase", "@"),
-  ARGPARSE_s_i (oPassphraseFD,    "passphrase-fd", "@"),
-  ARGPARSE_s_s (oPassphraseFile,  "passphrase-file", "@"),
-  ARGPARSE_s_i (oPassphraseRepeat,"passphrase-repeat", "@"),
-  ARGPARSE_s_s (oPinentryMode,    "pinentry-mode", "@"),
-  ARGPARSE_s_s (oRequestOrigin,   "request-origin", "@"),
-  ARGPARSE_s_i (oCommandFD, "command-fd", "@"),
-  ARGPARSE_s_s (oCommandFile, "command-file", "@"),
-  ARGPARSE_s_n (oQuickRandom, "debug-quick-random", "@"),
-  ARGPARSE_s_n (oNoVerbose, "no-verbose", "@"),
-
+  ARGPARSE_s_n (oBZ2DecompressLowmem, "bzip2-decompress-lowmem", "@"),
+  ARGPARSE_s_i (oCompletesNeeded, "completes-needed", "@"),
+  ARGPARSE_s_i (oMarginalsNeeded, "marginals-needed", "@"),
+  ARGPARSE_s_i (oMaxCertDepth,	"max-cert-depth", "@" ),
 #ifndef NO_TRUST_MODELS
   ARGPARSE_s_s (oTrustDBName, "trustdb-name", "@"),
   ARGPARSE_s_n (oAutoCheckTrustDB, "auto-check-trustdb", "@"),
@@ -729,47 +685,33 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oForceOwnertrust, "force-ownertrust", "@"),
 #endif
 
-  ARGPARSE_s_n (oNoSecmemWarn, "no-secmem-warning", "@"),
-  ARGPARSE_s_n (oRequireSecmem, "require-secmem", "@"),
-  ARGPARSE_s_n (oNoRequireSecmem, "no-require-secmem", "@"),
-  ARGPARSE_s_n (oNoPermissionWarn, "no-permission-warning", "@"),
-  ARGPARSE_s_n (oNoArmor, "no-armor", "@"),
-  ARGPARSE_s_n (oNoArmor, "no-armour", "@"),
-  ARGPARSE_s_n (oNoDefKeyring, "no-default-keyring", "@"),
-  ARGPARSE_s_n (oNoKeyring, "no-keyring", "@"),
-  ARGPARSE_s_n (oNoGreeting, "no-greeting", "@"),
-  ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
-  ARGPARSE_s_s (oHomedir, "homedir", "@"),
-  ARGPARSE_s_n (oNoBatch, "no-batch", "@"),
-  ARGPARSE_s_n (oWithColons, "with-colons", "@"),
-  ARGPARSE_s_n (oWithTofuInfo,"with-tofu-info", "@"),
-  ARGPARSE_s_n (oWithKeyData,"with-key-data", "@"),
-  ARGPARSE_s_n (oWithSigList,"with-sig-list", "@"),
-  ARGPARSE_s_n (oWithSigCheck,"with-sig-check", "@"),
-  ARGPARSE_c (aListKeys, "list-key", "@"),   /* alias */
-  ARGPARSE_c (aListSigs, "list-sig", "@"),   /* alias */
-  ARGPARSE_c (aCheckKeys, "check-sig", "@"), /* alias */
-  ARGPARSE_c (aShowKeys,  "show-key", "@"), /* alias */
-  ARGPARSE_s_n (oSkipVerify, "skip-verify", "@"),
-  ARGPARSE_s_n (oSkipHiddenRecipients, "skip-hidden-recipients", "@"),
-  ARGPARSE_s_n (oNoSkipHiddenRecipients, "no-skip-hidden-recipients", "@"),
-  ARGPARSE_s_i (oDefCertLevel, "default-cert-check-level", "@"), /* old */
-#ifndef NO_TRUST_MODELS
-  ARGPARSE_s_n (oAlwaysTrust, "always-trust", "@"),
-#endif
-  ARGPARSE_s_s (oTrustModel, "trust-model", "@"),
-  ARGPARSE_s_s (oTOFUDefaultPolicy, "tofu-default-policy", "@"),
-  ARGPARSE_s_s (oSetFilename, "set-filename", "@"),
-  ARGPARSE_s_n (oForYourEyesOnly, "for-your-eyes-only", "@"),
-  ARGPARSE_s_n (oNoForYourEyesOnly, "no-for-your-eyes-only", "@"),
+
+  ARGPARSE_header ("Input", N_("Options controlling the input")),
+
+  ARGPARSE_s_n (oMultifile, "multifile", "@"),
+  ARGPARSE_s_s (oInputSizeHint, "input-size-hint", "@"),
+  ARGPARSE_s_n (oUtf8Strings,      "utf8-strings", "@"),
+  ARGPARSE_s_n (oNoUtf8Strings, "no-utf8-strings", "@"),
+  ARGPARSE_p_u (oSetFilesize, "set-filesize", "@"),
+  ARGPARSE_s_n (oNoLiteral, "no-literal", "@"),
+  ARGPARSE_s_s (oSetNotation,  "set-notation", "@"),
+  ARGPARSE_s_s (oSigNotation,  "sig-notation", "@"),
+  ARGPARSE_s_s (oCertNotation, "cert-notation", "@"),
   ARGPARSE_s_s (oSetPolicyURL,  "set-policy-url", "@"),
   ARGPARSE_s_s (oSigPolicyURL,  "sig-policy-url", "@"),
   ARGPARSE_s_s (oCertPolicyURL, "cert-policy-url", "@"),
-  ARGPARSE_s_n (oShowPolicyURL,      "show-policy-url", "@"),
-  ARGPARSE_s_n (oNoShowPolicyURL, "no-show-policy-url", "@"),
   ARGPARSE_s_s (oSigKeyserverURL, "sig-keyserver-url", "@"),
-  ARGPARSE_s_n (oShowNotation,      "show-notation", "@"),
-  ARGPARSE_s_n (oNoShowNotation, "no-show-notation", "@"),
+
+
+
+  ARGPARSE_header ("Output", N_("Options controlling the output")),
+
+  ARGPARSE_s_n (oArmor, "armor", N_("create ascii armored output")),
+  ARGPARSE_s_n (oArmor, "armour", "@"),
+  ARGPARSE_s_n (oNoArmor, "no-armor", "@"),
+  ARGPARSE_s_n (oNoArmor, "no-armour", "@"),
+  ARGPARSE_s_s (oOutput, "output", N_("|FILE|write output to FILE")),
+  ARGPARSE_p_u (oMaxOutput, "max-output", "@"),
   ARGPARSE_s_s (oComment, "comment", "@"),
   ARGPARSE_s_n (oDefaultComment, "default-comment", "@"),
   ARGPARSE_s_n (oNoComments, "no-comments", "@"),
@@ -779,16 +721,70 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oNotDashEscaped, "not-dash-escaped", "@"),
   ARGPARSE_s_n (oEscapeFrom,      "escape-from-lines", "@"),
   ARGPARSE_s_n (oNoEscapeFrom, "no-escape-from-lines", "@"),
-  ARGPARSE_s_n (oLockOnce,     "lock-once", "@"),
-  ARGPARSE_s_n (oLockMultiple, "lock-multiple", "@"),
-  ARGPARSE_s_n (oLockNever,    "lock-never", "@"),
-  ARGPARSE_s_i (oLoggerFD,   "logger-fd", "@"),
-  ARGPARSE_s_s (oLoggerFile, "log-file", "@"),
-  ARGPARSE_s_s (oLoggerFile, "logger-file", "@"),  /* 1.4 compatibility.  */
+  ARGPARSE_s_n (oMimemode, "mimemode", "@"),
+  ARGPARSE_s_n (oTextmodeShort, NULL, "@"),
+  ARGPARSE_s_n (oTextmode,   "textmode", N_("use canonical text mode")),
+  ARGPARSE_s_n (oNoTextmode, "no-textmode", "@"),
+  ARGPARSE_s_s (oSetFilename, "set-filename", "@"),
+  ARGPARSE_s_n (oForYourEyesOnly, "for-your-eyes-only", "@"),
+  ARGPARSE_s_n (oNoForYourEyesOnly, "no-for-your-eyes-only", "@"),
+  ARGPARSE_s_n (oShowNotation,      "show-notation", "@"),
+  ARGPARSE_s_n (oNoShowNotation, "no-show-notation", "@"),
+  ARGPARSE_s_n (oShowSessionKey, "show-session-key", "@"),
   ARGPARSE_s_n (oUseEmbeddedFilename,      "use-embedded-filename", "@"),
   ARGPARSE_s_n (oNoUseEmbeddedFilename, "no-use-embedded-filename", "@"),
-  ARGPARSE_s_n (oUtf8Strings,      "utf8-strings", "@"),
-  ARGPARSE_s_n (oNoUtf8Strings, "no-utf8-strings", "@"),
+  ARGPARSE_s_n (oUnwrap, "unwrap", "@"),
+  ARGPARSE_s_n (oMangleDosFilenames,      "mangle-dos-filenames", "@"),
+  ARGPARSE_s_n (oNoMangleDosFilenames, "no-mangle-dos-filenames", "@"),
+  ARGPARSE_s_n (oNoSymkeyCache, "no-symkey-cache", "@"),
+  ARGPARSE_s_n (oSkipVerify, "skip-verify", "@"),
+  ARGPARSE_s_n (oListOnly, "list-only", "@"),
+  ARGPARSE_s_i (oCompress, NULL,
+                N_("|N|set compress level to N (0 disables)")),
+  ARGPARSE_s_i (oCompressLevel, "compress-level", "@"),
+  ARGPARSE_s_i (oBZ2CompressLevel, "bzip2-compress-level", "@"),
+  ARGPARSE_s_n (oDisableSignerUID, "disable-signer-uid", "@"),
+
+
+  ARGPARSE_header ("ImportExport",
+                   N_("Options controlling key import and export")),
+
+  ARGPARSE_s_s (oAutoKeyLocate, "auto-key-locate",
+              N_("|MECHANISMS|use MECHANISMS to locate keys by mail address")),
+  ARGPARSE_s_n (oNoAutoKeyLocate, "no-auto-key-locate", "@"),
+  ARGPARSE_s_n (oAutoKeyImport,   "auto-key-import",
+                N_("import missing key from a signature")),
+  ARGPARSE_s_n (oNoAutoKeyImport, "no-auto-key-import", "@"),
+  ARGPARSE_s_n (oAutoKeyRetrieve, "auto-key-retrieve", "@"),
+  ARGPARSE_s_n (oNoAutoKeyRetrieve, "no-auto-key-retrieve", "@"),
+  ARGPARSE_s_n (oIncludeKeyBlock, "include-key-block",
+                N_("include the public key in signatures")),
+  ARGPARSE_s_n (oNoIncludeKeyBlock, "no-include-key-block", "@"),
+  ARGPARSE_s_n (oDisableDirmngr, "disable-dirmngr",
+                N_("disable all access to the dirmngr")),
+  ARGPARSE_s_s (oKeyServer, "keyserver", "@"), /* Deprecated.  */
+  ARGPARSE_s_s (oKeyServerOptions, "keyserver-options", "@"),
+  ARGPARSE_s_s (oKeyOrigin, "key-origin", "@"),
+  ARGPARSE_s_s (oImportOptions, "import-options", "@"),
+  ARGPARSE_s_s (oImportFilter,  "import-filter", "@"),
+  ARGPARSE_s_s (oExportOptions, "export-options", "@"),
+  ARGPARSE_s_s (oExportFilter,  "export-filter", "@"),
+  ARGPARSE_s_n (oMergeOnly,	  "merge-only", "@" ),
+  ARGPARSE_s_n (oAllowSecretKeyImport, "allow-secret-key-import", "@"),
+
+
+  ARGPARSE_header ("Keylist", N_("Options controlling key listings")),
+
+  ARGPARSE_s_s (oListOptions,   "list-options", "@"),
+  ARGPARSE_s_n (oShowPhotos,   "show-photos", "@"),
+  ARGPARSE_s_n (oNoShowPhotos, "no-show-photos", "@"),
+  ARGPARSE_s_n (oShowPolicyURL,      "show-policy-url", "@"),
+  ARGPARSE_s_n (oNoShowPolicyURL, "no-show-policy-url", "@"),
+  ARGPARSE_s_n (oWithColons, "with-colons", "@"),
+  ARGPARSE_s_n (oWithTofuInfo,"with-tofu-info", "@"),
+  ARGPARSE_s_n (oWithKeyData,"with-key-data", "@"),
+  ARGPARSE_s_n (oWithSigList,"with-sig-list", "@"),
+  ARGPARSE_s_n (oWithSigCheck,"with-sig-check", "@"),
   ARGPARSE_s_n (oWithFingerprint, "with-fingerprint", "@"),
   ARGPARSE_s_n (oWithSubkeyFingerprint, "with-subkey-fingerprint", "@"),
   ARGPARSE_s_n (oWithSubkeyFingerprint, "with-subkey-fingerprints", "@"),
@@ -797,87 +793,122 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oWithSecret,      "with-secret", "@"),
   ARGPARSE_s_n (oWithWKDHash,     "with-wkd-hash", "@"),
   ARGPARSE_s_n (oWithKeyOrigin,   "with-key-origin", "@"),
-  ARGPARSE_s_s (oDisableCipherAlgo,  "disable-cipher-algo", "@"),
-  ARGPARSE_s_s (oDisablePubkeyAlgo,  "disable-pubkey-algo", "@"),
-  ARGPARSE_s_n (oAllowNonSelfsignedUID,      "allow-non-selfsigned-uid", "@"),
-  ARGPARSE_s_n (oNoAllowNonSelfsignedUID, "no-allow-non-selfsigned-uid", "@"),
-  ARGPARSE_s_n (oAllowFreeformUID,      "allow-freeform-uid", "@"),
-  ARGPARSE_s_n (oNoAllowFreeformUID, "no-allow-freeform-uid", "@"),
-  ARGPARSE_s_n (oNoLiteral, "no-literal", "@"),
-  ARGPARSE_p_u (oSetFilesize, "set-filesize", "@"),
   ARGPARSE_s_n (oFastListMode, "fast-list-mode", "@"),
   ARGPARSE_s_n (oFixedListMode, "fixed-list-mode", "@"),
   ARGPARSE_s_n (oLegacyListMode, "legacy-list-mode", "@"),
-  ARGPARSE_s_n (oListOnly, "list-only", "@"),
   ARGPARSE_s_n (oPrintPKARecords, "print-pka-records", "@"),
   ARGPARSE_s_n (oPrintDANERecords, "print-dane-records", "@"),
+  ARGPARSE_s_s (oKeyidFormat, "keyid-format", "@"),
+  ARGPARSE_s_n (oShowKeyring, "show-keyring", "@"),
+
+
+  ARGPARSE_header (NULL, N_("Options to specify keys")),
+
+  ARGPARSE_s_s (oRecipient, "recipient", N_("|USER-ID|encrypt for USER-ID")),
+  ARGPARSE_s_s (oHiddenRecipient, "hidden-recipient", "@"),
+  ARGPARSE_s_s (oRecipientFile, "recipient-file", "@"),
+  ARGPARSE_s_s (oHiddenRecipientFile, "hidden-recipient-file", "@"),
+  ARGPARSE_s_s (oRecipient, "remote-user", "@"),  /* (old option name) */
+  ARGPARSE_s_n (oThrowKeyids, "throw-keyids", "@"),
+  ARGPARSE_s_n (oNoThrowKeyids, "no-throw-keyids", "@"),
+  ARGPARSE_s_s (oLocalUser, "local-user",
+                N_("|USER-ID|use USER-ID to sign or decrypt")),
+  ARGPARSE_s_s (oTrustedKey, "trusted-key", "@"),
+  ARGPARSE_s_s (oSender, "sender", "@"),
+  ARGPARSE_s_s (oTrySecretKey, "try-secret-key", "@"),
+  ARGPARSE_s_n (oTryAllSecrets,  "try-all-secrets", "@"),
+  ARGPARSE_s_n (oNoDefKeyring, "no-default-keyring", "@"),
+  ARGPARSE_s_n (oNoKeyring, "no-keyring", "@"),
+  ARGPARSE_s_s (oKeyring, "keyring", "@"),
+  ARGPARSE_s_s (oPrimaryKeyring, "primary-keyring", "@"),
+  ARGPARSE_s_s (oSecretKeyring, "secret-keyring", "@"),
+  ARGPARSE_s_n (oSkipHiddenRecipients, "skip-hidden-recipients", "@"),
+  ARGPARSE_s_n (oNoSkipHiddenRecipients, "no-skip-hidden-recipients", "@"),
+  ARGPARSE_s_s (oOverrideSessionKey, "override-session-key", "@"),
+  ARGPARSE_s_i (oOverrideSessionKeyFD, "override-session-key-fd", "@"),
+
+
+  ARGPARSE_header ("Security", N_("Options controlling the security")),
+
+  ARGPARSE_s_i (oS2KMode, "s2k-mode", "@"),
+  ARGPARSE_s_s (oS2KDigest, "s2k-digest-algo", "@"),
+  ARGPARSE_s_s (oS2KCipher, "s2k-cipher-algo", "@"),
+  ARGPARSE_s_i (oS2KCount, "s2k-count", "@"),
+  ARGPARSE_s_n (oRequireCrossCert, "require-backsigs", "@"),
+  ARGPARSE_s_n (oRequireCrossCert, "require-cross-certification", "@"),
+  ARGPARSE_s_n (oNoRequireCrossCert, "no-require-backsigs", "@"),
+  ARGPARSE_s_n (oNoRequireCrossCert, "no-require-cross-certification", "@"),
+  ARGPARSE_s_s (oVerifyOptions, "verify-options", "@"),
+  ARGPARSE_s_n (oEnableSpecialFilenames, "enable-special-filenames", "@"),
+  ARGPARSE_s_n (oNoRandomSeedFile,  "no-random-seed-file", "@"),
+  ARGPARSE_s_n (oNoSigCache,         "no-sig-cache", "@"),
   ARGPARSE_s_n (oIgnoreTimeConflict, "ignore-time-conflict", "@"),
   ARGPARSE_s_n (oIgnoreValidFrom,    "ignore-valid-from", "@"),
   ARGPARSE_s_n (oIgnoreCrcError, "ignore-crc-error", "@"),
   ARGPARSE_s_n (oIgnoreMDCError, "ignore-mdc-error", "@"),
-  ARGPARSE_s_n (oShowSessionKey, "show-session-key", "@"),
-  ARGPARSE_s_s (oOverrideSessionKey, "override-session-key", "@"),
-  ARGPARSE_s_i (oOverrideSessionKeyFD, "override-session-key-fd", "@"),
-  ARGPARSE_s_n (oNoRandomSeedFile,  "no-random-seed-file", "@"),
-  ARGPARSE_s_n (oAutoKeyRetrieve, "auto-key-retrieve", "@"),
-  ARGPARSE_s_n (oNoAutoKeyRetrieve, "no-auto-key-retrieve", "@"),
-  ARGPARSE_s_n (oNoSigCache,         "no-sig-cache", "@"),
-  ARGPARSE_s_n (oMergeOnly,	  "merge-only", "@" ),
-  ARGPARSE_s_n (oAllowSecretKeyImport, "allow-secret-key-import", "@"),
-  ARGPARSE_s_n (oTryAllSecrets,  "try-all-secrets", "@"),
-  ARGPARSE_s_n (oEnableSpecialFilenames, "enable-special-filenames", "@"),
-  ARGPARSE_s_n (oNoExpensiveTrustChecks, "no-expensive-trust-checks", "@"),
-  ARGPARSE_s_n (oPreservePermissions, "preserve-permissions", "@"),
-  ARGPARSE_s_s (oDefaultPreferenceList,  "default-preference-list", "@"),
-  ARGPARSE_s_s (oDefaultKeyserverURL,  "default-keyserver-url", "@"),
-  ARGPARSE_s_s (oPersonalCipherPreferences, "personal-cipher-preferences","@"),
-  ARGPARSE_s_s (oPersonalDigestPreferences, "personal-digest-preferences","@"),
-  ARGPARSE_s_s (oPersonalCompressPreferences,
-                                         "personal-compress-preferences", "@"),
-  ARGPARSE_s_s (oFakedSystemTime, "faked-system-time", "@"),
+  ARGPARSE_s_s (oDisableCipherAlgo,  "disable-cipher-algo", "@"),
+  ARGPARSE_s_s (oDisablePubkeyAlgo,  "disable-pubkey-algo", "@"),
+  ARGPARSE_s_s (oCipherAlgo, "cipher-algo", "@"),
+  ARGPARSE_s_s (oDigestAlgo, "digest-algo", "@"),
+  ARGPARSE_s_s (oCertDigestAlgo, "cert-digest-algo", "@"),
+  ARGPARSE_s_n (oOverrideComplianceCheck, "override-compliance-check", "@"),
+  /* Options to override new security defaults.  */
+  ARGPARSE_s_n (oAllowWeakKeySignatures, "allow-weak-key-signatures", "@"),
+  ARGPARSE_s_n (oAllowWeakDigestAlgos, "allow-weak-digest-algos", "@"),
   ARGPARSE_s_s (oWeakDigest, "weak-digest","@"),
-  ARGPARSE_s_n (oUnwrap, "unwrap", "@"),
-  ARGPARSE_s_n (oOnlySignTextIDs, "only-sign-text-ids", "@"),
+  ARGPARSE_s_n (oAllowMultisigVerification,
+                "allow-multisig-verification", "@"),
+  ARGPARSE_s_n (oAllowMultipleMessages,      "allow-multiple-messages", "@"),
+  ARGPARSE_s_n (oNoAllowMultipleMessages, "no-allow-multiple-messages", "@"),
 
-  /* Aliases.  I constantly mistype these, and assume other people do
-     as well. */
-  ARGPARSE_s_s (oPersonalCipherPreferences, "personal-cipher-prefs", "@"),
-  ARGPARSE_s_s (oPersonalDigestPreferences, "personal-digest-prefs", "@"),
-  ARGPARSE_s_s (oPersonalCompressPreferences, "personal-compress-prefs", "@"),
 
-  ARGPARSE_s_s (oAgentProgram, "agent-program", "@"),
-  ARGPARSE_s_s (oDirmngrProgram, "dirmngr-program", "@"),
-  ARGPARSE_s_n (oDisableDirmngr, "disable-dirmngr", "@"),
+
+  ARGPARSE_header (NULL, N_("Options for unattended use")),
+
+  ARGPARSE_s_n (oBatch, "batch", "@"),
+  ARGPARSE_s_n (oNoBatch, "no-batch", "@"),
+  ARGPARSE_s_n (oAnswerYes, "yes", "@"),
+  ARGPARSE_s_n (oAnswerNo, "no", "@"),
+  ARGPARSE_s_i (oStatusFD, "status-fd", "@"),
+  ARGPARSE_s_s (oStatusFile, "status-file", "@"),
+  ARGPARSE_s_i (oAttributeFD, "attribute-fd", "@"),
+  ARGPARSE_s_s (oAttributeFile, "attribute-file", "@"),
+  ARGPARSE_s_i (oCommandFD, "command-fd", "@"),
+  ARGPARSE_s_s (oCommandFile, "command-file", "@"),
+  ARGPARSE_o_s (oPassphrase,      "passphrase", "@"),
+  ARGPARSE_s_i (oPassphraseFD,    "passphrase-fd", "@"),
+  ARGPARSE_s_s (oPassphraseFile,  "passphrase-file", "@"),
+  ARGPARSE_s_i (oPassphraseRepeat,"passphrase-repeat", "@"),
+  ARGPARSE_s_s (oPinentryMode,    "pinentry-mode", "@"),
+  ARGPARSE_s_n (oForceSignKey,    "force-sign-key", "@"),
+
+  ARGPARSE_header (NULL, N_("Other options")),
+
+  ARGPARSE_s_s (oRequestOrigin,   "request-origin", "@"),
   ARGPARSE_s_s (oDisplay,    "display",    "@"),
   ARGPARSE_s_s (oTTYname,    "ttyname",    "@"),
   ARGPARSE_s_s (oTTYtype,    "ttytype",    "@"),
   ARGPARSE_s_s (oLCctype,    "lc-ctype",   "@"),
   ARGPARSE_s_s (oLCmessages, "lc-messages","@"),
   ARGPARSE_s_s (oXauthority, "xauthority", "@"),
-  ARGPARSE_s_s (oGroup,      "group",      "@"),
-  ARGPARSE_s_s (oUnGroup,    "ungroup",    "@"),
-  ARGPARSE_s_n (oNoGroups,   "no-groups",  "@"),
-  ARGPARSE_s_n (oStrict,     "strict",     "@"),
-  ARGPARSE_s_n (oNoStrict,   "no-strict",  "@"),
-  ARGPARSE_s_n (oMangleDosFilenames,      "mangle-dos-filenames", "@"),
-  ARGPARSE_s_n (oNoMangleDosFilenames, "no-mangle-dos-filenames", "@"),
-  ARGPARSE_s_n (oEnableProgressFilter, "enable-progress-filter", "@"),
-  ARGPARSE_s_n (oMultifile, "multifile", "@"),
-  ARGPARSE_s_s (oKeyidFormat, "keyid-format", "@"),
-  ARGPARSE_s_n (oExitOnStatusWriteError, "exit-on-status-write-error", "@"),
-  ARGPARSE_s_i (oLimitCardInsertTries, "limit-card-insert-tries", "@"),
+  ARGPARSE_s_n (oNoAutostart, "no-autostart", "@"),
+  ARGPARSE_s_n (oForbidGenKey,  "forbid-gen-key", "@"),
+  ARGPARSE_s_n (oRequireCompliance, "require-compliance", "@"),
+  /* Options which can be used in special circumstances. They are not
+   * published and we hope they are never required.  */
+  ARGPARSE_s_n (oUseOnlyOpenPGPCard, "use-only-openpgp-card", "@"),
+  /* Esoteric compatibility options.  */
+  ARGPARSE_s_n (oRFC2440Text,      "rfc2440-text", "@"),
+  ARGPARSE_s_n (oNoRFC2440Text, "no-rfc2440-text", "@"),
 
-  ARGPARSE_s_n (oAllowMultisigVerification,
-                "allow-multisig-verification", "@"),
-  ARGPARSE_s_n (oEnableLargeRSA, "enable-large-rsa", "@"),
-  ARGPARSE_s_n (oDisableLargeRSA, "disable-large-rsa", "@"),
-  ARGPARSE_s_n (oEnableDSA2, "enable-dsa2", "@"),
-  ARGPARSE_s_n (oDisableDSA2, "disable-dsa2", "@"),
-  ARGPARSE_s_n (oAllowMultipleMessages,      "allow-multiple-messages", "@"),
-  ARGPARSE_s_n (oNoAllowMultipleMessages, "no-allow-multiple-messages", "@"),
-  ARGPARSE_s_n (oAllowWeakDigestAlgos, "allow-weak-digest-algos", "@"),
+  ARGPARSE_header (NULL, ""),  /* Stop the header group.  */
 
-  ARGPARSE_s_s (oDefaultNewKeyAlgo, "default-new-key-algo", "@"),
+
+  /* Aliases.  I constantly mistype these, and assume other people do
+     as well. */
+  ARGPARSE_s_s (oPersonalCipherPreferences, "personal-cipher-prefs", "@"),
+  ARGPARSE_s_s (oPersonalDigestPreferences, "personal-digest-prefs", "@"),
+  ARGPARSE_s_s (oPersonalCompressPreferences, "personal-compress-prefs", "@"),
 
   /* These two are aliases to help users of the PGP command line
      product use gpg with minimal pain.  Many commands are common
@@ -886,27 +917,6 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oLocalUser, "sign-with", "@"),
   ARGPARSE_s_s (oRecipient, "user", "@"),
 
-  ARGPARSE_s_n (oRequireCrossCert, "require-backsigs", "@"),
-  ARGPARSE_s_n (oRequireCrossCert, "require-cross-certification", "@"),
-  ARGPARSE_s_n (oNoRequireCrossCert, "no-require-backsigs", "@"),
-  ARGPARSE_s_n (oNoRequireCrossCert, "no-require-cross-certification", "@"),
-
-  /* New options.  Fixme: Should go more to the top.  */
-  ARGPARSE_s_s (oAutoKeyLocate, "auto-key-locate", "@"),
-  ARGPARSE_s_n (oNoAutoKeyLocate, "no-auto-key-locate", "@"),
-  ARGPARSE_s_n (oNoAutostart, "no-autostart", "@"),
-  ARGPARSE_s_n (oNoSymkeyCache, "no-symkey-cache", "@"),
-  ARGPARSE_s_n (oIncludeKeyBlock, "include-key-block", "@"),
-  ARGPARSE_s_n (oNoIncludeKeyBlock, "no-include-key-block", "@"),
-  ARGPARSE_s_n (oAutoKeyImport,   "auto-key-import", "@"),
-  ARGPARSE_s_n (oNoAutoKeyImport, "no-auto-key-import", "@"),
-
-  /* Options to override new security defaults.  */
-  ARGPARSE_s_n (oAllowWeakKeySignatures, "allow-weak-key-signatures", "@"),
-
-  /* Options which can be used in special circumstances. They are not
-   * published and we hope they are never required.  */
-  ARGPARSE_s_n (oUseOnlyOpenPGPCard, "use-only-openpgp-card", "@"),
 
   /* Dummy options with warnings.  */
   ARGPARSE_s_n (oUseAgent,      "use-agent", "@"),
@@ -920,6 +930,10 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oTOFUDBFormat, "tofu-db-format", "@"),
 
   /* Dummy options.  */
+  ARGPARSE_ignore (oStrict,     "strict"),
+  ARGPARSE_ignore (oNoStrict,   "no-strict"),
+  ARGPARSE_ignore (oLoadExtension, "load-extension"),  /* from 1.4. */
+
   ARGPARSE_s_n (oNoop, "sk-comments", "@"),
   ARGPARSE_s_n (oNoop, "no-sk-comments", "@"),
   ARGPARSE_s_n (oNoop, "compress-keys", "@"),
@@ -933,6 +947,18 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oNoop, "no-force-mdc", "@"),
   ARGPARSE_s_n (oNoop, "disable-mdc", "@"),
   ARGPARSE_s_n (oNoop, "no-disable-mdc", "@"),
+
+
+  ARGPARSE_group (302, N_(
+  "@\n(See the man page for a complete listing of all commands and options)\n"
+		      )),
+
+  ARGPARSE_group (303, N_("@\nExamples:\n\n"
+    " -se -r Bob [file]          sign and encrypt for user Bob\n"
+    " --clear-sign [file]        make a clear text signature\n"
+    " --detach-sign [file]       make a detached signature\n"
+    " --list-keys [names]        show keys\n"
+    " --fingerprint [names]      show fingerprints\n")),
 
 
   ARGPARSE_end ()
@@ -972,8 +998,20 @@ static struct debug_flags_s debug_flags [] =
 
 int g10_errors_seen = 0;
 
-static int utf8_strings = 0;
+static int utf8_strings =
+#ifdef HAVE_W32_SYSTEM
+  1
+#else
+  0
+#endif
+  ;
 static int maybe_setuid = 1;
+
+/* Collection of options used only in this module.  */
+static struct {
+  unsigned int forbid_gen_key;
+} mopt;
+
 
 static char *build_list( const char *text, char letter,
 			 const char *(*mapf)(int), int (*chkf)(int) );
@@ -1133,6 +1171,10 @@ my_strusage( int level )
 	p = zips;
 	break;
 
+      case 95:
+        p = "1"; /* <-- Enable globbing under Windows (see init.c) */
+        break;
+
       default:	p = NULL;
     }
     return p;
@@ -1277,6 +1319,12 @@ set_debug (const char *level)
 
   if (opt.debug)
     parse_debug_flag (NULL, &opt.debug, debug_flags);
+
+  /* Make sure that we are --verbose in debug mode.  */
+  if (opt.debug && !opt.verbose)
+    opt.verbose = 1;
+  if (opt.debug && opt.quiet)
+    opt.quiet = 0;
 }
 
 
@@ -1848,7 +1896,7 @@ list_config(char *items)
 	  es_printf ("cfg:curveoid:");
           for (iter=0, first=1; (s = openpgp_enum_curves (&iter)); first = 0)
             {
-              s = openpgp_curve_to_oid (s, NULL);
+              s = openpgp_curve_to_oid (s, NULL, NULL);
               es_printf ("%s%s", first?"":";", s? s:"[?]");
             }
 	  es_printf ("\n");
@@ -1874,36 +1922,18 @@ gpgconf_list (const char *configfile)
 {
   char *configfile_esc = percent_escape (configfile, NULL);
 
-  es_printf ("%s-%s.conf:%lu:\"%s\n",
-             GPGCONF_NAME, GPG_NAME,
-             GC_OPT_FLAG_DEFAULT,
-             configfile_esc ? configfile_esc : "/dev/null");
-  es_printf ("verbose:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("quiet:%lu:\n",   GC_OPT_FLAG_NONE);
-  es_printf ("keyserver:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("reader-port:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("default-key:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("encrypt-to:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("try-secret-key:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("auto-key-locate:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("auto-key-import:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("include-key-block:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("auto-key-retrieve:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("log-file:%lu:\n", GC_OPT_FLAG_NONE);
   es_printf ("debug-level:%lu:\"none:\n", GC_OPT_FLAG_DEFAULT);
-  es_printf ("group:%lu:\n", GC_OPT_FLAG_NONE);
   es_printf ("compliance:%lu:\"%s:\n", GC_OPT_FLAG_DEFAULT, "gnupg");
-  es_printf ("default-new-key-algo:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("trust-model:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("disable-dirmngr:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("max-cert-depth:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("completes-needed:%lu:\n", GC_OPT_FLAG_NONE);
-  es_printf ("marginals-needed:%lu:\n", GC_OPT_FLAG_NONE);
 
   /* The next one is an info only item and should match the macros at
      the top of keygen.c  */
   es_printf ("default_pubkey_algo:%lu:\"%s:\n", GC_OPT_FLAG_DEFAULT,
              get_default_pubkey_algo ());
+  /* This info only mode tells whether the we are running in de-vs
+   * compliance mode.  This does not test all parameters but the basic
+   * conditions like a proper RNG and Libgcrypt.  */
+  es_printf ("compliance_de_vs:%lu:%d:\n", GC_OPT_FLAG_DEFAULT,
+             opt.compliance==CO_DE_VS && gnupg_rng_is_compliant (CO_DE_VS));
 
   xfree (configfile_esc);
 }
@@ -2203,8 +2233,13 @@ set_compliance_option (enum cmd_and_opt_values option)
 }
 
 
-
-
+static void
+gen_key_forbidden (void)
+{
+  write_status_failure ("gen-key", gpg_error (GPG_ERR_NOT_ENABLED));
+  log_error (_("This command is not allowed while in %s mode.\n"),
+             "forbid-gen-key");
+}
 
 
 /* This function called to initialized a new control object.  It is
@@ -2301,7 +2336,7 @@ main (int argc, char **argv)
     gnupg_rl_initialize ();
     set_strusage (my_strusage);
     gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
-    log_set_prefix (GPG_NAME, GPGRT_LOG_WITH_PREFIX);
+    log_set_prefix (GPG_NAME, GPGRT_LOG_WITH_PREFIX|GPGRT_LOG_NO_REGISTRY);
 
     /* Make sure that our subsystems are ready.  */
     i18n_init();
@@ -2674,6 +2709,9 @@ main (int argc, char **argv)
 
 	  case oAnswerYes: opt.answer_yes = 1; break;
 	  case oAnswerNo: opt.answer_no = 1; break;
+
+          case oForceSignKey: opt.flags.force_sign_key = 1; break;
+
 	  case oKeyring: append_to_strlist( &nrings, pargs.r.ret_str); break;
 	  case oPrimaryKeyring:
 	    sl = append_to_strlist (&nrings, pargs.r.ret_str);
@@ -2749,7 +2787,7 @@ main (int argc, char **argv)
             break;
 
 	  case oSecretKeyring:
-            /* Ignore this old option.  */
+	    obsolete_option (configname, pargs.lineno, "secret-keyring");
             break;
 
 	  case oNoArmor: opt.no_armor=1; opt.armor=0; break;
@@ -2846,10 +2884,6 @@ main (int argc, char **argv)
 		opt.force_ownertrust=0;
 	      }
 	    break;
-	  case oLoadExtension:
-            /* Dummy so that gpg 1.4 conf files can work. Should
-               eventually be removed.  */
-	    break;
 
           case oCompliance:
 	    {
@@ -2872,6 +2906,8 @@ main (int argc, char **argv)
           case oGnuPG:
             set_compliance_option (pargs.r_opt);
             break;
+
+	  case oMinRSALength: opt.min_rsa_length = pargs.r.ret_ulong; break;
 
           case oRFC2440Text: opt.rfc2440_text=1; break;
           case oNoRFC2440Text: opt.rfc2440_text=0; break;
@@ -3298,7 +3334,11 @@ main (int argc, char **argv)
 	    opt.verify_options&=~VERIFY_SHOW_NOTATIONS;
 	    break;
 	  case oUtf8Strings: utf8_strings = 1; break;
-	  case oNoUtf8Strings: utf8_strings = 0; break;
+	  case oNoUtf8Strings:
+#ifdef HAVE_W32_SYSTEM
+            utf8_strings = 0;
+#endif
+            break;
 	  case oDisableCipherAlgo:
             {
               int algo = string_to_cipher_algo (pargs.r.ret_str);
@@ -3429,11 +3469,6 @@ main (int argc, char **argv)
 	      }
 	    break;
 
-	  case oStrict:
-	  case oNoStrict:
-	    /* Not used */
-            break;
-
           case oMangleDosFilenames: opt.mangle_dos_filenames = 1; break;
           case oNoMangleDosFilenames: opt.mangle_dos_filenames = 0; break;
           case oEnableProgressFilter: opt.enable_progress_filter = 1; break;
@@ -3527,6 +3562,10 @@ main (int argc, char **argv)
             opt.flags.allow_weak_key_signatures = 1;
             break;
 
+          case oOverrideComplianceCheck:
+            opt.flags.override_compliance_check = 1;
+            break;
+
           case oFakedSystemTime:
             {
               size_t len = strlen (pargs.r.ret_str);
@@ -3555,6 +3594,14 @@ main (int argc, char **argv)
 
           case oUseOnlyOpenPGPCard:
             opt.flags.use_only_openpgp_card = 1;
+            break;
+
+          case oForbidGenKey:
+            mopt.forbid_gen_key = 1;
+            break;
+
+          case oRequireCompliance:
+            opt.flags.require_compliance = 1;
             break;
 
 	  case oNoop: break;
@@ -3715,7 +3762,17 @@ main (int argc, char **argv)
 	g10_exit(2);
       }
 
+    /* We allow overriding the compliance check only in non-batch mode
+     * so that the user has a chance to see the message.  */
+    if (opt.flags.override_compliance_check && opt.batch)
+      {
+        opt.flags.override_compliance_check = 0;
+        log_info ("Note: '%s' ignored due to batch mode\n",
+                  "--override-compliance-check");
+      }
+
     set_debug (debug_level);
+    gnupg_set_compliance_extra_info (opt.min_rsa_length);
     if (DBG_CLOCK)
       log_clock ("start");
 
@@ -3788,7 +3845,8 @@ main (int argc, char **argv)
       log_error(_("invalid min-cert-level; must be 1, 2, or 3\n"));
     switch( opt.s2k_mode ) {
       case 0:
-	log_info(_("Note: simple S2K mode (0) is strongly discouraged\n"));
+        if (!opt.quiet)
+          log_info(_("Note: simple S2K mode (0) is strongly discouraged\n"));
 	break;
       case 1: case 3: break;
       default:
@@ -4468,18 +4526,25 @@ main (int argc, char **argv)
                     }
                 }
             }
-          quick_generate_keypair (ctrl, username, x_algo, x_usage, x_expire);
+          if (mopt.forbid_gen_key)
+            gen_key_forbidden ();
+          else
+            quick_generate_keypair (ctrl, username, x_algo, x_usage, x_expire);
           xfree (username);
         }
         break;
 
       case aKeygen: /* generate a key */
-	if( opt.batch ) {
+        if (mopt.forbid_gen_key)
+          gen_key_forbidden ();
+	else if( opt.batch )
+          {
 	    if( argc > 1 )
 		wrong_args("--generate-key [parameterfile]");
 	    generate_keypair (ctrl, 0, argc? *argv : NULL, NULL, 0);
-	}
-	else {
+          }
+	else
+          {
             if (opt.command_fd != -1 && argc)
               {
                 if( argc > 1 )
@@ -4492,11 +4557,13 @@ main (int argc, char **argv)
               wrong_args ("--generate-key");
             else
               generate_keypair (ctrl, 0, NULL, NULL, 0);
-	}
+          }
 	break;
 
       case aFullKeygen: /* Generate a key with all options. */
-	if (opt.batch)
+        if (mopt.forbid_gen_key)
+          gen_key_forbidden ();
+	else if (opt.batch)
           {
 	    if (argc > 1)
               wrong_args ("--full-generate-key [parameterfile]");
@@ -4544,7 +4611,10 @@ main (int argc, char **argv)
                    }
                 }
             }
-          keyedit_quick_addkey (ctrl, x_fpr, x_algo, x_usage, x_expire);
+          if (mopt.forbid_gen_key)
+            gen_key_forbidden ();
+          else
+            keyedit_quick_addkey (ctrl, x_fpr, x_algo, x_usage, x_expire);
         }
 	break;
 
@@ -4678,12 +4748,14 @@ main (int argc, char **argv)
 	for( ; argc; argc--, argv++ )
 	    append_to_strlist2( &sl, *argv, utf8_strings );
 	rc = keyserver_fetch (ctrl, sl, opt.key_origin);
+	free_strlist (sl);
 	if(rc)
           {
             write_status_failure ("fetch-keys", rc);
             log_error ("key fetch failed: %s\n",gpg_strerror (rc));
+            if (gpg_err_code (rc) == GPG_ERR_NO_DATA)
+              g10_exit (1); /* In this case return 1 and not 2.  */
           }
-	free_strlist(sl);
 	break;
 
       case aExportSecret:

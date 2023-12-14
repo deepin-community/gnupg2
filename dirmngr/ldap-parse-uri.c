@@ -36,26 +36,16 @@ int
 ldap_uri_p (const char *url)
 {
   char *colon = strchr (url, ':');
-  if (! colon)
+
+  if (!colon)
     return 0;
   else
     {
       int offset = (uintptr_t) colon - (uintptr_t) url;
 
-      if (/* All lower case.  */
-	  (offset == 4 && memcmp (url, "ldap", 4) == 0)
-	  || (offset == 5
-	      && (memcmp (url, "ldaps", 5) == 0
-		  && memcmp (url, "ldapi", 5) == 0))
-	  /* Mixed case.  */
-	  || ((url[0] == 'l' || url[0] == 'L')
-	      && (url[1] == 'd' || url[1] == 'D')
-	      && (url[2] == 'a' || url[2] == 'A')
-	      && (url[3] == 'p' || url[3] == 'P')
-	      && (url[4] == ':'
-		  || ((url[4] == 's' || url[4] == 'S'
-		       || url[4] == 'i' || url[4] == 'I')
-		      && url[5] == ':'))))
+      if (   (offset == 4 && !ascii_memcasecmp (url, "ldap", 4))
+	  || (offset == 5 && (!ascii_memcasecmp (url, "ldaps", 5)
+                              || !ascii_memcasecmp (url, "ldapi", 5))))
 	return 1;
       return 0;
     }
@@ -84,6 +74,7 @@ ldap_parse_uri (parsed_uri_t *purip, const char *uri)
   char *dn = NULL;
   char *bindname = NULL;
   char *password = NULL;
+  char *gpg_ntds = NULL;
 
   char **s;
 
@@ -119,6 +110,15 @@ ldap_parse_uri (parsed_uri_t *purip, const char *uri)
 		       uri);
 	  else
 	    password = *s + 9;
+	}
+      else if (!ascii_strncasecmp (*s, "gpgNtds=", 8)
+              || !strncmp (*s, "1.3.6.1.4.1.11591.2.5.1=", 24))
+	{
+	  if (gpg_ntds)
+	    log_error ("gpgNtds given multiple times in URL '%s', ignoring.\n",
+		       uri);
+	  else
+	    gpg_ntds = *s + (**s == 'g'? 8 : 24);
 	}
       else
 	log_error ("Unhandled extension (%s) in URL '%s', ignoring.",
@@ -180,10 +180,14 @@ ldap_parse_uri (parsed_uri_t *purip, const char *uri)
   puri->port = lud->lud_port;
 
   /* On Windows detect whether this is ldap:// or ldaps:// to indicate
-   * that authentication via AD and the current user is requested.  */
+   * that authentication via AD and the current user is requested.
+   * This is shortform of adding "gpgNtDs=1" as extension parameter to
+   * the URL.  */
   puri->ad_current = 0;
+  if (gpg_ntds && atoi (gpg_ntds) == 1)
+    puri->ad_current = 1;
 #ifdef HAVE_W32_SYSTEM
-  if ((!puri->host || !*puri->host)
+  else if ((!puri->host || !*puri->host)
       && (!puri->path || !*puri->path)
       && (!puri->auth || !*puri->auth)
       && !password

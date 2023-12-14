@@ -353,13 +353,18 @@ numbers 1-9 or "T" for 10 and above to indicate trust signature levels
 @opindex locate-keys
 @opindex locate-external-keys
 Locate the keys given as arguments.  This command basically uses the
-same algorithm as used when locating keys for encryption or signing
-and may thus be used to see what keys @command{@gpgname} might use.
-In particular external methods as defined by
-@option{--auto-key-locate} may be used to locate a key.  Only public
-keys are listed.  The variant @option{--locate-external-keys} does not
-consider a locally existing key and can thus be used to force the
-refresh of a key via the defined external methods.
+same algorithm as used when locating keys for encryption and may thus
+be used to see what keys @command{@gpgname} might use.  In particular
+external methods as defined by @option{--auto-key-locate} are used to
+locate a key if the arguments comain valid mail addresses.  Only
+public keys are listed.
+
+The variant @option{--locate-external-keys} does not consider a
+locally existing key and can thus be used to force the refresh of a
+key via the defined external methods.  If a fingerprint is given and
+and the methods defined by --auto-key-locate define LDAP servers, the
+key is fetched from these resources; defined non-LDAP keyservers are
+skipped.
 
 @item --show-keys
 @opindex show-keys
@@ -439,7 +444,7 @@ request a confirmation.
 
 @item --export
 @opindex export
-Either export all keys from all keyrings (default keyrings and those
+Either export all keys from all keyrings (default keyring and those
 registered via option @option{--keyring}), or if at least one name is given,
 those of the given name. The exported keys are written to STDOUT or to the
 file given with option @option{--output}.  Use together with
@@ -686,7 +691,7 @@ used for no expiration date.
 If this command is used with @option{--batch},
 @option{--pinentry-mode} has been set to @code{loopback}, and one of
 the passphrase options (@option{--passphrase},
-@option{--passphrase-fd}, or @option{passphrase-file}) is used, the
+@option{--passphrase-fd}, or @option{--passphrase-file}) is used, the
 supplied passphrase is used for the new key and the agent does not ask
 for it.  To create a key without any protection @code{--passphrase ''}
 may be used.
@@ -1070,12 +1075,12 @@ signing.
 
   @item save
   @opindex keyedit:save
-  Save all changes to the keyrings and quit.
+  Save all changes to the keyring and quit.
 
   @item quit
   @opindex keyedit:quit
   Quit the program without updating the
-  keyrings.
+  keyring.
 @end table
 
 @c man:.RS
@@ -1114,7 +1119,9 @@ If a name is prefixed with a '=' a case sensitive exact match is done.
 
 The command @option{--quick-lsign-key} marks the signatures as
 non-exportable.  If such a non-exportable signature already exists the
-@option{--quick-sign-key} turns it into a exportable signature.
+@option{--quick-sign-key} turns it into a exportable signature.  If
+you need to update an existing signature, for example to add or change
+notation data, you need to use the option @option{--force-sign-key}.
 
 This command uses reasonable defaults and thus does not provide the
 full flexibility of the "sign" subcommand from @option{--edit-key}.
@@ -1212,8 +1219,8 @@ encountered, you can explicitly stop parsing by using the special option
 @node GPG Configuration Options
 @subsection How to change the configuration
 
-These options are used to change the configuration and are usually found
-in the option file.
+These options are used to change the configuration and most of them
+are usually found in the option file.
 
 @table @gnupgtabopt
 
@@ -1242,6 +1249,7 @@ one from the secret keyring or the one set with @option{--default-key}.
 @item --no-default-recipient
 @opindex no-default-recipient
 Reset @option{--default-recipient} and @option{--default-recipient-self}.
+Should not be used in an option file.
 
 @item -v, --verbose
 @opindex verbose
@@ -1250,11 +1258,11 @@ twice, the input data is listed in detail.
 
 @item --no-verbose
 @opindex no-verbose
-Reset verbose level to 0.
+Reset verbose level to 0.  Should not be used in an option file.
 
 @item -q, --quiet
 @opindex quiet
-Try to be as quiet as possible.
+Try to be as quiet as possible.  Should not be used in an option file.
 
 @item --batch
 @itemx --no-batch
@@ -1266,11 +1274,11 @@ filename given on the command line, gpg might still need to read from
 STDIN (in particular if gpg figures that the input is a
 detached signature and no data file has been specified).  Thus if you
 do not want to feed data via STDIN, you should connect STDIN to
-g@file{/dev/null}.
+@file{/dev/null}.
 
 It is highly recommended to use this option along with the options
 @option{--status-fd} and @option{--with-colons} for any unattended use of
-@command{gpg}.
+@command{gpg}.  Should not be used in an option file.
 
 @item --no-tty
 @opindex no-tty
@@ -1280,11 +1288,11 @@ warnings to the TTY even if @option{--batch} is used.
 
 @item --yes
 @opindex yes
-Assume "yes" on most questions.
+Assume "yes" on most questions.  Should not be used in an option file.
 
 @item --no
 @opindex no
-Assume "no" on most questions.
+Assume "no" on most questions.  Should not be used in an option file.
 
 
 @item --list-options @var{parameters}
@@ -1489,7 +1497,7 @@ photo viewers use the @code{PATH} environment variable.
 Add @var{file} to the current list of keyrings. If @var{file} begins
 with a tilde and a slash, these are replaced by the $HOME directory. If
 the filename does not contain a slash, it is assumed to be in the GnuPG
-home directory ("~/.gnupg" if @option{--homedir} or $GNUPGHOME is not
+home directory ("~/.gnupg" unless @option{--homedir} or $GNUPGHOME is
 used).
 
 Note that this adds a keyring to the current list. If the intent is to
@@ -1499,17 +1507,18 @@ use the specified keyring alone, use @option{--keyring} along with
 If the option @option{--no-keyring} has been used no keyrings will
 be used at all.
 
+@item --primary-keyring @var{file}
+@opindex primary-keyring
+This is a varian of @option{--keyring} and designates @var{file} as
+the primary public keyring. This means that newly imported keys (via
+@option{--import} or keyserver @option{--recv-from}) will go to this
+keyring.
+
 
 @item --secret-keyring @var{file}
 @opindex secret-keyring
 This is an obsolete option and ignored.  All secret keys are stored in
 the @file{private-keys-v1.d} directory below the GnuPG home directory.
-
-@item --primary-keyring @var{file}
-@opindex primary-keyring
-Designate @var{file} as the primary public keyring. This means that
-newly imported keys (via @option{--import} or keyserver
-@option{--recv-from}) will go to this keyring.
 
 @item --trustdb-name @var{file}
 @opindex trustdb-name
@@ -1524,13 +1533,14 @@ not used).
 
 @item --display-charset @var{name}
 @opindex display-charset
-Set the name of the native character set. This is used to convert
-some informational strings like user IDs to the proper UTF-8 encoding.
+Set the name of the native character set. This is used to convert some
+informational strings like user IDs to the proper UTF-8 encoding.
 Note that this has nothing to do with the character set of data to be
-encrypted or signed; GnuPG does not recode user-supplied data. If
-this option is not used, the default character set is determined from
-the current locale. A verbosity level of 3 shows the chosen set.
-Valid values for @var{name} are:
+encrypted or signed; GnuPG does not recode user-supplied data. If this
+option is not used, the default character set is determined from the
+current locale. A verbosity level of 3 shows the chosen set.  This
+option should not be used on Windows.  Valid values for @var{name}
+are:
 
 @table @asis
 
@@ -1565,6 +1575,13 @@ default (@option{--no-utf8-strings}) is to assume that arguments are
 encoded in the character set as specified by
 @option{--display-charset}. These options affect all following
 arguments. Both options may be used multiple times.
+This option should not be used in an option file.
+
+This option has no effect on Windows.  There the internal used UTF-8
+encoding is translated for console input and output.  The command line
+arguments are expected as Unicode and translated to UTF-8.  Thus when
+calling this program from another, make sure to use the Unicode
+version of CreateProcess.
 
 @anchor{gpg-option --options}
 @item --options @var{file}
@@ -1660,12 +1677,13 @@ claim" signatures are always accepted.
 
 @item --trusted-key @var{long key ID or fingerprint}
 @opindex trusted-key
-Assume that the specified key (which must be given
-as a full 8 byte key ID or 20 byte fingerprint) is as trustworthy as one of
-your own secret keys. This option is useful if you
-don't want to keep your secret keys (or one of them)
+Assume that the specified key (which should be given as fingerprint)
+is as trustworthy as one of your own secret keys. This option is
+useful if you don't want to keep your secret keys (or one of them)
 online but still want to be able to check the validity of a given
-recipient's or signator's key.
+recipient's or signator's key.  If the given key is not locally
+available but an LDAP keyserver is configured the missing key is
+imported from that server.
 
 @item --trust-model @{pgp|classic|tofu|tofu+pgp|direct|always|auto@}
 @opindex trust-model
@@ -1807,14 +1825,22 @@ list.  The default is "local,wkd".
   PGP Universal method of checking @samp{ldap://keys.(thedomain)}.
 
   @item ntds
-  Locate the key using the Active Directory (Windows only).
+  Locate the key using the Active Directory (Windows only).  This
+  method also allows to search by fingerprint using the command
+  @option{--locate-external-key}.  Note that this mechanism is
+  actually a shortcut for the mechanism @samp{keyserver} but using
+  "ldap:///" as the keyserver.
 
   @item keyserver
-  Locate a key using a keyserver.
+  Locate a key using a keyserver.  This method also allows to search
+  by fingerprint using the command @option{--locate-external-key} if
+  any of the configured keyservers is an LDAP server.
 
   @item keyserver-URL
   In addition, a keyserver URL as used in the @command{dirmngr}
   configuration may be used here to query that particular keyserver.
+  This method also allows to search by fingerprint using the command
+  @option{--locate-external-key} if the URL specifies an LDAP server.
 
   @item local
   Locate the key using the local keyrings.  This mechanism allows the user to
@@ -1910,13 +1936,10 @@ Use @var{name} as your keyserver. This is the server that
 will communicate with to receive keys from, send keys to, and search for
 keys on. The format of the @var{name} is a URI:
 `scheme:[//]keyservername[:port]' The scheme is the type of keyserver:
-"hkp" for the HTTP (or compatible) keyservers, "ldap" for the LDAP
-keyservers, or "mailto" for the Graff email keyserver. Note that your
-particular installation of GnuPG may have other keyserver types
-available as well. Keyserver schemes are case-insensitive. After the
-keyserver name, optional keyserver configuration options may be
-provided. These are the same as the global @option{--keyserver-options}
-from below, but apply only to this particular keyserver.
+"hkp"/"hkps" for the HTTP (or compatible) keyservers or "ldap"/"ldaps"
+for the LDAP keyservers.  Note that your particular installation of
+GnuPG may have other keyserver types available as well. Keyserver
+schemes are case-insensitive.
 
 Most keyservers synchronize with each other, so there is generally no
 need to send keys to more than one server. The keyserver
@@ -1984,7 +2007,9 @@ are available for all keyserver types, some common options are:
 
 The default list of options is: "self-sigs-only, import-clean,
 repair-keys, repair-pks-subkey-bug, export-attributes,
-honor-pka-record".
+honor-pka-record". However, if
+the actual used source is an LDAP server "no-self-sigs-only" is
+assumed unless "self-sigs-only" has been explictly configured.
 
 
 @item --completes-needed @var{n}
@@ -2856,7 +2881,24 @@ SHA224, SHA384, and SHA512 digests.
 @opindex compliance
 This option can be used instead of one of the options above.  Valid
 values for @var{string} are the above option names (without the double
-dash) and possibly others as shown when using "help" for @var{value}.
+dash) and possibly others as shown when using "help" for @var{string}.
+
+@item --min-rsa-length @var{n}
+@opindex min-rsa-length
+This option adjusts the compliance mode "de-vs" for stricter key size
+requirements.  For example, a value of 3000 turns rsa2048 and dsa2048
+keys into non-VS-NfD compliant keys.
+
+@item --require-compliance
+@opindex require-compliance
+To check that data has been encrypted according to the rules of the
+current compliance mode, a gpg user needs to evaluate the status
+lines.  This is allows frontends to handle compliance check in a more
+flexible way.  However, for scripted use the required evaluation of
+the status-line requires quite some effort; this option can be used
+instead to make sure that the gpg process exits with a failure if the
+compliance rules are not fulfilled.  Note that this option has
+currently an effect only in "de-vs" mode.
 
 @end table
 
@@ -3338,13 +3380,21 @@ To avoid a minor risk of collision attacks on third-party key
 signatures made using SHA-1, those key signatures are considered
 invalid.  This options allows to override this restriction.
 
+@item --override-compliance-check
+@opindex --override-compliance-check
+The signature verification only allows the use of keys suitable in the
+current compliance mode.  If the compliance mode has been forced by a
+global option, there might be no way to check certain signature.  This
+option allows to override this and prints an extra warning in such a
+case.  This option is ignored in --batch mode so that no accidental
+unattended verification may happen.
+
 @item --no-default-keyring
 @opindex no-default-keyring
-Do not add the default keyrings to the list of keyrings. Note that
-GnuPG will not operate without any keyrings, so if you use this option
-and do not provide alternate keyrings via @option{--keyring} or
-@option{--secret-keyring}, then GnuPG will still use the default public or
-secret keyrings.
+Do not add the default keyring to the list of keyrings. Note that
+GnuPG needs for almost all operations a keyring. Thus if you use this
+option and do not provide alternate keyrings via @option{--keyring},
+then GnuPG will still use the default keyring.
 
 @item --no-keyring
 @opindex no-keyring
@@ -3468,6 +3518,19 @@ call future default, which is @code{"ed25519/cert,sign+cv25519/encr"}.
 You need to consult the source code to learn the details.  Note that
 the advanced key generation commands can always be used to specify a
 key algorithm directly.
+
+@item --force-sign-key
+@opindex force-sign-key
+This option modifies the behaviour of the commands
+@option{--quick-sign-key}, @option{--quick-lsign-key}, and the "sign"
+sub-commands of @option{--edit-key} by forcing the creation of a key
+signature, even if one already exists.
+
+@item --forbid-gen-key
+@opindex forbid-gen-key
+This option is intended for use in the global config file to disallow
+the use of generate key commands.  Those commands will then fail with
+the error code for Not Enabled.
 
 @item --allow-secret-key-import
 @opindex allow-secret-key-import
@@ -3749,6 +3812,18 @@ Operation is further controlled by a few environment variables:
   loaded the Registry is tried and as last resort the native Windows
   locale system is used.
 
+  @item GNUPG_BUILD_ROOT
+  @efindex GNUPG_BUILD_ROOT
+  This variable is only used by the regression test suite as a helper
+  under operating systems without proper support to figure out the
+  name of a process' text file.
+
+  @item GNUPG_EXEC_DEBUG_FLAGS
+  @efindex GNUPG_EXEC_DEBUG_FLAGS
+  This variable allows to enable diagnostics for process management.
+  A numeric decimal value is expected.  Bit 0 enables general
+  diagnostics, bit 1 enables certain warnings on Windows.
+
 @end table
 
 When calling the gpg-agent component @command{@gpgname} sends a set of
@@ -3915,6 +3990,9 @@ are:
   @var{VALUE} spans to the end of the expression.
   @item -c
   The string match in this part is done case-sensitive.
+  @item -t
+  Leading and trailing spaces are not removed from @var{VALUE}.
+  The optional single space after @var{op} is here required.
 @end table
 
 The filter options concatenate several specifications for a filter of

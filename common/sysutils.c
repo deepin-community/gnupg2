@@ -779,8 +779,12 @@ gnupg_allow_set_foregound_window (pid_t pid)
               "gnupg_allow_set_foregound_window", (unsigned long)pid);
 #if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
   else if (!AllowSetForegroundWindow ((pid_t)pid == (pid_t)(-1)?ASFW_ANY:pid))
-    log_info ("AllowSetForegroundWindow(%lu) failed: %s\n",
-               (unsigned long)pid, w32_strerror (-1));
+    {
+      char *flags = getenv ("GNUPG_EXEC_DEBUG_FLAGS");
+      if (flags && (atoi (flags) & 2))
+        log_info ("AllowSetForegroundWindow(%lu) failed: %s\n",
+                  (unsigned long)pid, w32_strerror (-1));
+    }
 #endif
 }
 
@@ -1006,6 +1010,33 @@ gnupg_chdir (const char *name)
   /* Note that gpgrt_chdir also sets ERRNO in addition to returning a
    * gpg-error style error code.  */
   return gpgrt_chdir (name);
+#endif
+}
+
+
+/* A wrapper around rmdir.  NAME is expected to be utf8 encoded.  */
+int
+gnupg_rmdir (const char *name)
+{
+#ifdef HAVE_W32_SYSTEM
+  int rc;
+  wchar_t *wfname;
+
+  wfname = utf8_to_wchar (name);
+  if (!wfname)
+    rc = 0;
+  else
+    {
+      rc = RemoveDirectoryW (wfname);
+      if (!rc)
+        gnupg_w32_set_errno (-1);
+      xfree (wfname);
+    }
+  if (!rc)
+    return -1;
+  return 0;
+#else
+  return rmdir (name);
 #endif
 }
 

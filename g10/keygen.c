@@ -1160,7 +1160,7 @@ ecckey_from_sexp (gcry_mpi_t *array, gcry_sexp_t sexp, int algo)
       goto leave;
     }
   gcry_sexp_release (l2);
-  oidstr = openpgp_curve_to_oid (curve, &nbits);
+  oidstr = openpgp_curve_to_oid (curve, &nbits, NULL);
   if (!oidstr)
     {
       /* That can't happen because we used one of the curves
@@ -2066,8 +2066,8 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
           for (;;)
             {
               xfree (answer);
-              answer = tty_get (_("Enter the keygrip: "));
-              tty_kill_prompt ();
+              answer = cpr_get ("keygen.keygrip", _("Enter the keygrip: "));
+              cpr_kill_prompt ();
               trim_spaces (answer);
               if (!*answer)
                 {
@@ -5195,9 +5195,6 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
                               & PUBKEY_USAGE_ENC)) );
 
           pk = find_kbnode (pub_root, PKT_PUBLIC_KEY)->pkt->pkt.public_key;
-
-          keyid_from_pk (pk, pk->main_keyid);
-          register_trusted_keyid (pk->main_keyid);
 
 	  update_ownertrust (ctrl, pk,
                              ((get_ownertrust (ctrl, pk) & ~TRUST_MASK)

@@ -13,7 +13,7 @@
 # see also https://dev.gnupg.org/T4866 and https://dev.gnupg.org/T4867
 get_okay='BEGIN{ret=1} /^gpg-agent:/{if ($5 == "1") { ret=0; exit 0 } } END {exit ret}'
 
-if gpgconf --check-programs | awk -F: "$get_okay" && \
+if gpgconf --check-options gpg-agent | awk -F: "$get_okay" && \
        [ -n "$(gpgconf --list-options gpg-agent | \
               awk -F: '/^enable-ssh-support:/{ print $10 }')" ]; then
     echo SSH_AUTH_SOCK=$(gpgconf --list-dirs agent-ssh-socket)

@@ -39,17 +39,6 @@
 
 #define MAX_DIGEST_LEN 64
 
-struct keyserver_spec
-{
-  struct keyserver_spec *next;
-
-  char *host;
-  int port;
-  char *user;
-  char *pass;
-  char *base;
-};
-
 
 /* A large struct named "opt" to keep global flags. */
 EXTERN_UNLESS_MAIN_MODULE
@@ -141,14 +130,28 @@ struct
                                the integrity of the software at
                                runtime. */
 
-  struct keyserver_spec *keyserver;
+  unsigned int min_rsa_length;   /* Used for compliance checks.  */
+
+  strlist_t keyserver;
 
   /* A list of certificate extension OIDs which are ignored so that
      one can claim that a critical extension has been handled.  One
      OID per string.  */
   strlist_t ignored_cert_extensions;
 
+  /* A list of OIDs which will be used to ignore certificates with
+   * sunch an OID during --learn-card.  */
+  strlist_t ignore_cert_with_oid;
+
+  /* The current compliance mode.  */
   enum gnupg_compliance_mode compliance;
+
+  /* Fail if an operation can't be done in the requested compliance
+   * mode.  */
+  int require_compliance;
+
+  /* Compatibility flags (COMPAT_FLAG_xxxx).  */
+  unsigned int compat_flags;
 } opt;
 
 /* Debug values and macros.  */
@@ -167,6 +170,18 @@ struct
 #define DBG_CACHE   (opt.debug & DBG_CACHE_VALUE)
 #define DBG_HASHING (opt.debug & DBG_HASHING_VALUE)
 #define DBG_IPC     (opt.debug & DBG_IPC_VALUE)
+
+
+/* Compatibility flags */
+/* Telesec RSA cards produced for NRW in 2022 came with only the
+ * keyAgreement bit set.  This flag allows there use for encryption
+ * anyway.  Example cert:
+ *    Issuer: /CN=DOI CA 10a/OU=DOI/O=PKI-1-Verwaltung/C=DE
+ * key usage: digitalSignature nonRepudiation keyAgreement
+ *  policies: 1.3.6.1.4.1.7924.1.1:N:
+ */
+#define COMPAT_ALLOW_KA_TO_ENCR   1
+
 
 /* Forward declaration for an object defined in server.c */
 struct server_local_s;
@@ -239,6 +254,8 @@ struct rootca_flags_s
 
 
 /*-- gpgsm.c --*/
+extern int gpgsm_errors_seen;
+
 void gpgsm_exit (int rc);
 void gpgsm_init_default_ctrl (struct server_control_s *ctrl);
 int  gpgsm_parse_validation_model (const char *model);
