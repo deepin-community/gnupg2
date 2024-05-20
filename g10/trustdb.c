@@ -39,16 +39,14 @@
 #include "tofu.h"
 #include "key-clean.h"
 
-static void write_record (ctrl_t ctrl, TRUSTREC *rec);
-static void do_sync(void);
 
 
 typedef struct key_item **KeyHashTable; /* see new_key_hash_table() */
 
 /*
- * Structure to keep track of keys, this is used as an array wherre
- * the item right after the last one has a keyblock set to NULL.
- * Maybe we can drop this thing and replace it by key_item
+ * Structure to keep track of keys, this is used as an array where the
+ * item right after the last one has a keyblock set to NULL.  Maybe we
+ * can drop this thing and replace it by key_item
  */
 struct key_array
 {
@@ -65,12 +63,22 @@ static struct
   int no_trustdb;
 } trustdb_args;
 
+
 /* Some globals.  */
-static struct key_item *user_utk_list; /* temp. used to store --trusted-keys */
 static struct key_item *utk_list;      /* all ultimately trusted keys */
 
+/* A list used to temporary store trusted keys and a flag indicated
+ * whether any --trusted-key option has been seen. */
+static struct key_item *trusted_key_list;
+static int any_trusted_key_seen;
+
+/* Flag whether a trustdb check is pending.  */
 static int pending_check_trustdb;
 
+
+
+static void write_record (ctrl_t ctrl, TRUSTREC *rec);
+static void do_sync (void);
 static int validate_keys (ctrl_t ctrl, int interactive);
 
 
@@ -200,11 +208,19 @@ tdb_register_trusted_keyid (u32 *keyid)
   k = new_key_item ();
   k->kid[0] = keyid[0];
   k->kid[1] = keyid[1];
-  k->next = user_utk_list;
-  user_utk_list = k;
+  k->next = trusted_key_list;
+  trusted_key_list = k;
 }
 
 
+/* This is called for the option --trusted-key to register these keys
+ * for later syncing them into the trustdb.  The special value "none"
+ * may be used to indicate that there is a trusted-key option but no
+ * key shall be inserted for it.  This "none" value is helpful to
+ * distinguish between changing the gpg.conf from a trusted-key to no
+ * trusted-key options at all.  Simply not specify the option would
+ * not allow to distinguish this case from the --no-options case as
+ * used for certain calls of gpg for example by gpg-wks-client.  */
 void
 tdb_register_trusted_key (const char *string)
 {
@@ -212,6 +228,9 @@ tdb_register_trusted_key (const char *string)
   KEYDB_SEARCH_DESC desc;
   u32 kid[2];
 
+  any_trusted_key_seen = 1;
+  if (!strcmp (string, "none"))
+    return;
   err = classify_user_id (string, &desc, 1);
   if (!err)
     {
@@ -333,13 +352,14 @@ verify_own_keys (ctrl_t ctrl)
           fprlen = (!fpr[16] && !fpr[17] && !fpr[18] && !fpr[19])? 16:20;
           keyid_from_fingerprint (ctrl, fpr, fprlen, kid);
           if (!add_utk (kid))
-            log_info(_("key %s occurs more than once in the trustdb\n"),
-                     keystr(kid));
-          else if ((rec.r.trust.flags & 1))
+            log_info (_("key %s occurs more than once in the trustdb\n"),
+                      keystr(kid));
+          else if ((rec.r.trust.flags & 1)
+                   && any_trusted_key_seen)
             {
               /* Record marked as inserted via --trusted-key.  Is this
                * still the case?  */
-              for (k2 = user_utk_list; k2; k2 = k2->next)
+              for (k2 = trusted_key_list; k2; k2 = k2->next)
                 if (k2->kid[0] == kid[0] && k2->kid[1] == kid[1])
                   break;
               if (!k2) /* No - clear the flag.  */
@@ -363,7 +383,7 @@ verify_own_keys (ctrl_t ctrl)
     }
 
   /* Put any --trusted-key keys into the trustdb */
-  for (k = user_utk_list; k; k = k->next)
+  for (k = trusted_key_list; k; k = k->next)
     {
       if ( add_utk (k->kid) )
         { /* not yet in trustDB as ultimately trusted */
@@ -388,9 +408,9 @@ verify_own_keys (ctrl_t ctrl)
         }
     }
 
-  /* release the helper table table */
-  release_key_items (user_utk_list);
-  user_utk_list = NULL;
+  /* Release the helper table.  */
+  release_key_items (trusted_key_list);
+  trusted_key_list = NULL;
   return;
 }
 
@@ -687,7 +707,7 @@ tdb_check_or_update (ctrl_t ctrl)
       if (opt.interactive)
 	update_trustdb (ctrl);
       else if (!opt.no_auto_check_trustdb)
-	check_trustdb (ctrl);
+        check_trustdb (ctrl);
     }
 }
 
@@ -944,6 +964,7 @@ update_min_ownertrust (ctrl_t ctrl, u32 *kid, unsigned int new_trust)
 
 /*
  * Clear the ownertrust and min_ownertrust values.
+ * Also schedule a revalidation if a stale validity record exists.
  *
  * Return: True if a change actually happened.
  */
@@ -976,6 +997,26 @@ tdb_clear_ownertrusts (ctrl_t ctrl, PKT_public_key *pk)
           tdb_revalidation_mark (ctrl);
           do_sync ();
           return 1;
+        }
+      else
+        {
+          /* Check whether we have a stale RECTYPE_VALID for that key
+           * and if its validity ist set, schedule a revalidation.  */
+          ulong recno = rec.r.trust.validlist;
+          while (recno)
+            {
+              read_record (recno, &rec, RECTYPE_VALID);
+              if (rec.r.valid.validity)
+                break;
+              recno = rec.r.valid.next;
+            }
+          if (recno)
+            {
+              if (DBG_TRUST)
+                log_debug ("stale validity value detected"
+                           " - scheduling check\n");
+              tdb_revalidation_mark (ctrl);
+            }
         }
     }
   else if (gpg_err_code (err) != GPG_ERR_NOT_FOUND)
@@ -1669,37 +1710,49 @@ sanitize_regexp(const char *old)
   return new;
 }
 
+
 /* Used by validate_one_keyblock to confirm a regexp within a trust
-   signature.  Returns 1 for match, and 0 for no match or regex
-   error. */
+ * signature.  Returns 1 for match, and 0 for no match or regex
+ * error. */
 static int
-check_regexp(const char *expr,const char *string)
+check_regexp (const char *expr,const char *string)
 {
   int ret;
   char *regexp;
+  char *stringbuf = NULL;
+  regex_t pat;
 
-  regexp=sanitize_regexp(expr);
+  regexp = sanitize_regexp (expr);
 
-  {
-    regex_t pat;
+  ret = regcomp (&pat, regexp, (REG_ICASE|REG_EXTENDED));
+  if (!ret)
+    {
+      if (*regexp == '<' && !strchr (string, '<')
+          && is_valid_mailbox (string))
+        {
+          /* The R.E. starts with an angle bracket but STRING seems to
+           * be a plain mailbox (e.g. "foo@example.org").  The
+           * commonly used R.E. pattern "<[^>]+[@.]example\.org>$"
+           * won't be able to detect this.  Thus we enclose STRING
+           * into angle brackets for checking.  */
+          stringbuf = xstrconcat ("<", string, ">", NULL);
+          string = stringbuf;
+        }
+      ret = regexec (&pat, string, 0, NULL, 0);
+      regfree (&pat);
+    }
 
-    ret=regcomp(&pat,regexp,REG_ICASE|REG_EXTENDED);
-    if(ret==0)
-      {
-	ret=regexec(&pat,string,0,NULL,0);
-	regfree(&pat);
-      }
-    ret=(ret==0);
-  }
+  ret = !ret;
 
-  if(DBG_TRUST)
-    log_debug("regexp '%s' ('%s') on '%s': %s\n",
-	      regexp,expr,string,ret?"YES":"NO");
+  if (DBG_TRUST)
+    log_debug ("regexp '%s' ('%s') on '%s'%s: %s\n",
+               regexp, expr, string, stringbuf? " (fixed)":"", ret? "YES":"NO");
 
-  xfree(regexp);
-
+  xfree (regexp);
+  xfree (stringbuf);
   return ret;
 }
+
 
 /*
  * Return true if the key is signed by one of the keys in the given

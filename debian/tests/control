@@ -1,12 +1,24 @@
 Tests: gpgv-win32
-Depends: gpgv-win32, gnupg2, gpgv2, wine32, diffutils
+Depends:
+ diffutils,
+ gnupg,
+ gpgv,
+ gpgv-win32,
+ wine32,
 Restrictions: allow-stderr
 Architecture: i386
 
 Tests: simple-tests
-Depends: gnupg2, gpgv2
+Depends:
+ gnupg,
+ gpgv,
 Restrictions: allow-stderr
 
 Tests: migration
-Depends: gpg, gnupg1, gnupg-utils, debian-archive-keyring, diffutils
+Depends:
+ debian-archive-keyring,
+ diffutils,
+ gnupg-utils,
+ gnupg1,
+ gpg,
 Restrictions: allow-stderr

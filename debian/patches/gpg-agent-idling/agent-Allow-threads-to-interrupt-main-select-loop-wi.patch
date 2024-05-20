@@ -21,10 +21,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  2 files changed, 17 insertions(+)
 
 diff --git a/agent/agent.h b/agent/agent.h
-index 56e13ec..d1abf26 100644
+index d32b892..4195d0c 100644
 --- a/agent/agent.h
 +++ b/agent/agent.h
-@@ -391,6 +391,7 @@ void *get_agent_scd_notify_event (void);
+@@ -384,6 +384,7 @@ void *get_agent_scd_notify_event (void);
  #endif
  void agent_sighup_action (void);
  int map_pk_openpgp_to_gcry (int openpgp_algo);
@@ -33,10 +33,10 @@ index 56e13ec..d1abf26 100644
  /*-- command.c --*/
  gpg_error_t agent_inq_pinentry_launched (ctrl_t ctrl, unsigned long pid,
 diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
-index 309e87c..2882767 100644
+index 5002abe..7c26aa6 100644
 --- a/agent/gpg-agent.c
 +++ b/agent/gpg-agent.c
-@@ -462,6 +462,9 @@ static int have_homedir_inotify;
+@@ -459,6 +459,9 @@ static int have_homedir_inotify;
   * works reliable.  */
  static int reliable_homedir_inotify;
  
@@ -46,7 +46,7 @@ index 309e87c..2882767 100644
  /* Number of active connections.  */
  static int active_connections;
  
-@@ -2470,6 +2473,10 @@ handle_signal (int signo)
+@@ -2458,6 +2461,10 @@ handle_signal (int signo)
        agent_sigusr2_action ();
        break;
  
@@ -57,7 +57,7 @@ index 309e87c..2882767 100644
      case SIGTERM:
        if (!shutdown_pending)
          log_info ("SIGTERM received - shutting down ...\n");
-@@ -2808,6 +2815,13 @@ start_connection_thread_ssh (void *arg)
+@@ -2796,6 +2803,13 @@ start_connection_thread_ssh (void *arg)
  }
  
  
@@ -71,7 +71,7 @@ index 309e87c..2882767 100644
  /* helper function for readability: test whether a given struct
     timespec is set to all-zeros */
  static inline int
-@@ -2877,8 +2891,10 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -2865,8 +2879,10 @@ handle_connections (gnupg_fd_t listen_fd,
    npth_sigev_add (SIGUSR1);
    npth_sigev_add (SIGUSR2);
    npth_sigev_add (SIGINT);

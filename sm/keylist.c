@@ -247,7 +247,7 @@ print_key_data (ksba_cert_t cert, estream_t fp)
 }
 
 static void
-print_capabilities (ksba_cert_t cert, estream_t fp)
+print_capabilities (ksba_cert_t cert, int algo, estream_t fp)
 {
   gpg_error_t err;
   unsigned int use;
@@ -299,7 +299,7 @@ print_capabilities (ksba_cert_t cert, estream_t fp)
   /* We need to returned the faked key usage to frontends so that they
    * can select the right key.  Note that we don't do this for the
    * human readable keyUsage.  */
-  if ((opt.compat_flags & COMPAT_ALLOW_KA_TO_ENCR)
+  if ((algo == GCRY_PK_ECC || (opt.compat_flags & COMPAT_ALLOW_KA_TO_ENCR))
       && (use & KSBA_KEYUSAGE_KEY_AGREEMENT))
     is_encr = 1;
 
@@ -375,14 +375,14 @@ email_kludge (const char *name)
  * number.  NBITS is the length of the key in bits.  */
 static void
 print_compliance_flags (ksba_cert_t cert, int algo, unsigned int nbits,
-                        estream_t fp)
+                        const char *curvename, estream_t fp)
 {
   int hashalgo;
 
   /* Note that we do not need to test for PK_ALGO_FLAG_RSAPSS because
    * that is not a property of the key but one of the created
    * signature.  */
-  if (gnupg_pk_is_compliant (CO_DE_VS, algo, 0, NULL, nbits, NULL))
+  if (gnupg_pk_is_compliant (CO_DE_VS, algo, 0, NULL, nbits, curvename))
     {
       hashalgo = gcry_md_map_name (ksba_cert_get_digest_algo (cert));
       if (gnupg_digest_is_compliant (CO_DE_VS, hashalgo))
@@ -408,13 +408,15 @@ list_cert_colon (ctrl_t ctrl, ksba_cert_t cert, unsigned int validity,
   gpg_error_t valerr;
   int algo;
   unsigned int nbits;
+  char *curve = NULL;
   const char *chain_id;
   char *chain_id_buffer = NULL;
   int is_root = 0;
   char *kludge_uid;
 
   if (ctrl->with_validation)
-    valerr = gpgsm_validate_chain (ctrl, cert, "", NULL, 1, NULL, 0, NULL);
+    valerr = gpgsm_validate_chain (ctrl, cert,
+                                   GNUPG_ISOTIME_NONE, NULL, 1, NULL, 0, NULL);
   else
     valerr = 0;
 
@@ -432,8 +434,9 @@ list_cert_colon (ctrl_t ctrl, ksba_cert_t cert, unsigned int validity,
         chain_id = chain_id_buffer;
         ksba_cert_release (next);
       }
-    else if (rc == -1)  /* We have reached the root certificate. */
+    else if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
       {
+        /* We have reached the root certificate. */
         chain_id = fpr;
         is_root = 1;
       }
@@ -469,6 +472,8 @@ list_cert_colon (ctrl_t ctrl, ksba_cert_t cert, unsigned int validity,
         {
           if (gpgsm_cert_has_well_known_private_key (cert))
             *truststring = 'w';  /* Well, this is dummy CA.  */
+          else if (gpg_err_code (valerr) == GPG_ERR_NOT_TRUSTED)
+            *truststring = 'n';  /* Likely the root cert is not trusted.  */
           else
             *truststring = 'i';
         }
@@ -499,7 +504,7 @@ list_cert_colon (ctrl_t ctrl, ksba_cert_t cert, unsigned int validity,
   if (*truststring)
     es_fputs (truststring, fp);
 
-  algo = gpgsm_get_key_algo_info (cert, &nbits);
+  algo = gpgsm_get_key_algo_info (cert, &nbits, &curve);
   es_fprintf (fp, ":%u:%d:%s:", nbits, algo, fpr+24);
 
   ksba_cert_get_validity (cert, 0, t);
@@ -538,7 +543,7 @@ list_cert_colon (ctrl_t ctrl, ksba_cert_t cert, unsigned int validity,
   /* Field 11, signature class - not used */
   es_putc (':', fp);
   /* Field 12, capabilities: */
-  print_capabilities (cert, fp);
+  print_capabilities (cert, algo, fp);
   es_putc (':', fp);
   /* Field 13, not used: */
   es_putc (':', fp);
@@ -563,8 +568,10 @@ list_cert_colon (ctrl_t ctrl, ksba_cert_t cert, unsigned int validity,
     }
   es_putc (':', fp);  /* End of field 15. */
   es_putc (':', fp);  /* End of field 16. */
+  if (curve)
+    es_fputs (curve, fp);
   es_putc (':', fp);  /* End of field 17. */
-  print_compliance_flags (cert, algo, nbits, fp);
+  print_compliance_flags (cert, algo, nbits, curve, fp);
   es_putc (':', fp);  /* End of field 18. */
   es_putc ('\n', fp);
 
@@ -626,6 +633,7 @@ list_cert_colon (ctrl_t ctrl, ksba_cert_t cert, unsigned int validity,
       xfree (p);
     }
   xfree (kludge_uid);
+  xfree (curve);
 }
 
 
@@ -829,12 +837,11 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
   es_fprintf (fp, "     hashAlgo: %s%s%s%s\n", oid, s?" (":"",s?s:"",s?")":"");
 
   {
-    const char *algoname;
-    unsigned int nbits;
+    char *algostr;
 
-    algoname = gcry_pk_algo_name (gpgsm_get_key_algo_info (cert, &nbits));
-    es_fprintf (fp, "      keyType: %u bit %s\n",
-                nbits, algoname? algoname:"?");
+    algostr = gpgsm_pubkey_algo_string (cert, NULL);
+    es_fprintf (fp, "      keyType: %s\n", algostr? algostr : "[error]");
+    xfree (algostr);
   }
 
   /* subjectKeyIdentifier */
@@ -1103,7 +1110,8 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
 
   if (with_validation)
     {
-      err = gpgsm_validate_chain (ctrl, cert, "", NULL, 1, fp, 0, NULL);
+      err = gpgsm_validate_chain (ctrl, cert,
+                                  GNUPG_ISOTIME_NONE, NULL, 1, fp, 0, NULL);
       if (!err)
         es_fprintf (fp, "  [certificate is good]\n");
       else
@@ -1192,14 +1200,12 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
 
 
   {
-    const char *algoname;
-    unsigned int nbits;
+    char *algostr;
 
-    algoname = gcry_pk_algo_name (gpgsm_get_key_algo_info (cert, &nbits));
-    es_fprintf (fp, "     key type: %u bit %s\n",
-                nbits, algoname? algoname:"?");
+    algostr = gpgsm_pubkey_algo_string (cert, NULL);
+    es_fprintf (fp, "     key type: %s\n", algostr? algostr : "[error]");
+    xfree (algostr);
   }
-
 
   err = ksba_cert_get_key_usage (cert, &kusage);
   if (gpg_err_code (err) != GPG_ERR_NO_DATA)
@@ -1352,7 +1358,8 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
       size_t buflen;
       char buffer[1];
 
-      err = gpgsm_validate_chain (ctrl, cert, "", NULL, 1, fp, 0, NULL);
+      err = gpgsm_validate_chain (ctrl, cert,
+                                  GNUPG_ISOTIME_NONE, NULL, 1, fp, 0, NULL);
       tmperr = ksba_cert_get_user_data (cert, "is_qualified",
                                         &buffer, sizeof (buffer), &buflen);
       if (!tmperr && buflen)
@@ -1586,7 +1593,7 @@ list_internal_keys (ctrl_t ctrl, strlist_t names, estream_t fp,
       lastcert = cert;
       cert = NULL;
     }
-  if (gpg_err_code (rc) == GPG_ERR_EOF || rc == -1 )
+  if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
     rc = 0;
   if (rc)
     log_error ("keydb_search failed: %s\n", gpg_strerror (rc));

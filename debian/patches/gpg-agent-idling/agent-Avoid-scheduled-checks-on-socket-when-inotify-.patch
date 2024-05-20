@@ -12,10 +12,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  1 file changed, 2 insertions(+)
 
 diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
-index 0801449..45d2e87 100644
+index a0d597f..d18b181 100644
 --- a/agent/gpg-agent.c
 +++ b/agent/gpg-agent.c
-@@ -3044,6 +3044,8 @@ handle_connections (gnupg_fd_t listen_fd,
+@@ -3032,6 +3032,8 @@ handle_connections (gnupg_fd_t listen_fd,
  
        /* avoid a fine-grained timer if we don't need one: */
        timertbl[0].interval.tv_sec = need_tick () ? TIMERTICK_INTERVAL : 0;

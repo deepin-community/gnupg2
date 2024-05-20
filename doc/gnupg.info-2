@@ -1,7 +1,6 @@
-This is gnupg.info, produced by makeinfo version 6.5 from gnupg.texi.
+This is gnupg.info, produced by makeinfo version 6.7 from gnupg.texi.
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.40-beta3,
-October 2022).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -20,6 +19,208 @@ START-INFO-DIR-ENTRY
 * dirmngr: (gnupg).        X.509 CRL and OCSP server.
 * dirmngr-client: (gnupg). X.509 CRL and OCSP client.
 END-INFO-DIR-ENTRY
+
+
+File: gnupg.info,  Node: GPGSM Examples,  Next: Unattended Usage,  Prev: GPGSM Configuration,  Up: Invoking GPGSM
+
+5.4 Examples
+============
+
+     $ gpgsm -er goo@bar.net <plaintext >ciphertext
+
+
+File: gnupg.info,  Node: Unattended Usage,  Next: GPGSM Protocol,  Prev: GPGSM Examples,  Up: Invoking GPGSM
+
+5.5 Unattended Usage
+====================
+
+'gpgsm' is often used as a backend engine by other software.  To help
+with this a machine interface has been defined to have an unambiguous
+way to do this.  This is most likely used with the '--server' command
+but may also be used in the standard operation mode by using the
+'--status-fd' option.
+
+* Menu:
+
+* Automated signature checking::  Automated signature checking.
+* CSR and certificate creation::  CSR and certificate creation.
+
+
+File: gnupg.info,  Node: Automated signature checking,  Next: CSR and certificate creation,  Up: Unattended Usage
+
+5.5.1 Automated signature checking
+----------------------------------
+
+It is very important to understand the semantics used with signature
+verification.  Checking a signature is not as simple as it may sound and
+so the operation is a bit complicated.  In most cases it is required to
+look at several status lines.  Here is a table of all cases a signed
+message may have:
+
+The signature is valid
+     This does mean that the signature has been successfully verified,
+     the certificates are all sane.  However there are two subcases with
+     important information: One of the certificates may have expired or
+     a signature of a message itself as expired.  It is a sound practise
+     to consider such a signature still as valid but additional
+     information should be displayed.  Depending on the subcase 'gpgsm'
+     will issue these status codes:
+     signature valid and nothing did expire
+          'GOODSIG', 'VALIDSIG', 'TRUST_FULLY'
+     signature valid but at least one certificate has expired
+          'EXPKEYSIG', 'VALIDSIG', 'TRUST_FULLY'
+     signature valid but expired
+          'EXPSIG', 'VALIDSIG', 'TRUST_FULLY' Note, that this case is
+          currently not implemented.
+
+The signature is invalid
+     This means that the signature verification failed (this is an
+     indication of a transfer error, a program error or tampering with
+     the message).  'gpgsm' issues one of these status codes sequences:
+     'BADSIG'
+     'GOODSIG, VALIDSIG TRUST_NEVER'
+
+Error verifying a signature
+     For some reason the signature could not be verified, i.e.  it
+     cannot be decided whether the signature is valid or invalid.  A
+     common reason for this is a missing certificate.
+
+
+File: gnupg.info,  Node: CSR and certificate creation,  Prev: Automated signature checking,  Up: Unattended Usage
+
+5.5.2 CSR and certificate creation
+----------------------------------
+
+The command '--generate-key' may be used along with the option '--batch'
+to either create a certificate signing request (CSR) or an X.509
+certificate.  This is controlled by a parameter file; the format of this
+file is as follows:
+
+   * Text only, line length is limited to about 1000 characters.
+   * UTF-8 encoding must be used to specify non-ASCII characters.
+   * Empty lines are ignored.
+   * Leading and trailing while space is ignored.
+   * A hash sign as the first non white space character indicates a
+     comment line.
+   * Control statements are indicated by a leading percent sign, the
+     arguments are separated by white space from the keyword.
+   * Parameters are specified by a keyword, followed by a colon.
+     Arguments are separated by white space.
+   * The first parameter must be 'Key-Type', control statements may be
+     placed anywhere.
+   * The order of the parameters does not matter except for 'Key-Type'
+     which must be the first parameter.  The parameters are only used
+     for the generated CSR/certificate; parameters from previous sets
+     are not used.  Some syntactically checks may be performed.
+   * Key generation takes place when either the end of the parameter
+     file is reached, the next 'Key-Type' parameter is encountered or at
+     the control statement '%commit' is encountered.
+
+Control statements:
+
+%echo TEXT
+     Print TEXT as diagnostic.
+
+%dry-run
+     Suppress actual key generation (useful for syntax checking).
+
+%commit
+     Perform the key generation.  Note that an implicit commit is done
+     at the next Key-Type parameter.
+
+General Parameters:
+
+Key-Type: ALGO
+     Starts a new parameter block by giving the type of the primary key.
+     The algorithm must be capable of signing.  This is a required
+     parameter.  The supported values for ALGO are 'rsa', 'ecdsa', and
+     'eddsa'.
+
+Key-Length: NBITS
+     The requested length of a generated key in bits.  Defaults to 3072.
+     The value is ignored for ECC algorithms.
+
+Key-Grip: HEXSTRING
+     This is optional and used to generate a CSR or certificate for an
+     already existing key.  Key-Length will be ignored when given.
+
+Key-Usage: USAGE-LIST
+     Space or comma delimited list of key usage, allowed values are
+     'encrypt', 'sign' and 'cert'.  This is used to generate the
+     keyUsage extension.  Please make sure that the algorithm is capable
+     of this usage.  Default is to allow encrypt and sign.
+
+Name-DN: SUBJECT-NAME
+     This is the Distinguished Name (DN) of the subject in RFC-2253
+     format.
+
+Name-Email: STRING
+     This is an email address for the altSubjectName.  This parameter is
+     optional but may occur several times to add several email addresses
+     to a certificate.
+
+Name-DNS: STRING
+     The is an DNS name for the altSubjectName.  This parameter is
+     optional but may occur several times to add several DNS names to a
+     certificate.
+
+Name-URI: STRING
+     This is an URI for the altSubjectName.  This parameter is optional
+     but may occur several times to add several URIs to a certificate.
+
+Additional parameters used to create a certificate (in contrast to a
+certificate signing request):
+
+Serial: SN
+     If this parameter is given an X.509 certificate will be generated.
+     SN is expected to be a hex string representing an unsigned integer
+     of arbitrary length.  The special value 'random' can be used to
+     create a 64 bit random serial number.
+
+Issuer-DN: ISSUER-NAME
+     This is the DN name of the issuer in RFC-2253 format.  If it is not
+     set it will default to the subject DN and a special GnuPG extension
+     will be included in the certificate to mark it as a standalone
+     certificate.
+
+Creation-Date: ISO-DATE
+Not-Before: ISO-DATE
+     Set the notBefore date of the certificate.  Either a date like
+     '1986-04-26' or '1986-04-26 12:00' or a standard ISO timestamp like
+     '19860426T042640' may be used.  The time is considered to be UTC.
+     If it is not given the current date is used.
+
+Expire-Date: ISO-DATE
+Not-After: ISO-DATE
+     Set the notAfter date of the certificate.  Either a date like
+     '2063-04-05' or '2063-04-05 17:00' or a standard ISO timestamp like
+     '20630405T170000' may be used.  The time is considered to be UTC.
+     If it is not given a default value in the not too far future is
+     used.
+
+Signing-Key: KEYGRIP
+     This gives the keygrip of the key used to sign the certificate.  If
+     it is not given a self-signed certificate will be created.  For
+     compatibility with future versions, it is suggested to prefix the
+     keygrip with a '&'.
+
+Hash-Algo: HASH-ALGO
+     Use HASH-ALGO for this CSR or certificate.  The supported hash
+     algorithms are: 'sha1', 'sha256', 'sha384' and 'sha512'; they may
+     also be specified with uppercase letters.  The default is 'sha256'.
+
+Authority-Key-Id: HEXSTRING
+     Insert the decoded value of HEXSTRING as authorityKeyIdentifier.
+     If this is not given and an ECC algorithm is used the public part
+     of the certified public key is used as authorityKeyIdentifier.  To
+     inhibit any authorityKeyIdentifier use the special value 'none' for
+     HEXSTRING.
+
+Subject-Key-Id: HEXSTRING
+     Insert the decoded value of HEXSTRING as subjectKeyIdentifier.  If
+     this is not given and an ECC algorithm is used the public part of
+     the signing key is used as authorityKeyIdentifier.  To inhibit any
+     subjectKeyIdentifier use the special value 'none' for HEXSTRING.
 
 
 File: gnupg.info,  Node: GPGSM Protocol,  Prev: Unattended Usage,  Up: Invoking GPGSM
@@ -355,6 +556,9 @@ This is a multipurpose function to return a variety of information.
      Return OK if the connection is in offline mode.  This may be either
      due to a 'OPTION offline=1' or due to 'gpgsm' being started with
      option '--disable-dirmngr'.
+'always-trust'
+     Returns OK of the connection is in always-trust mode.  That is
+     either '--always-trust' or 'GPGSM OPTION always-trust' are active.
 
 
 File: gnupg.info,  Node: GPGSM OPTION,  Prev: GPGSM GETINFO,  Up: GPGSM Protocol
@@ -448,6 +652,18 @@ The standard Assuan option handler supports these options.
      If VALUE is true or VALUE is not given all network access is
      disabled for this session.  This is the same as the command line
      option '--disable-dirmngr'.
+
+'always-trust'
+     If VALUE is true or VALUE is not given encryption to the specified
+     certificates is forced without any validation of the certificate
+     chain.  The only requirement is that the certificates are capable
+     of encryption.  If set to false the standard behaviour is
+     re-established.  This option is cleared by a RESET and after each
+     encrypt operation.  Note that this option is ignored if
+     '--always-trust' or '--require-compliance' are used.
+
+'input-size-hint'
+     This is the same as the '--input-size-hint' command line option.
 
 
 File: gnupg.info,  Node: Invoking SCDAEMON,  Next: Specify a User ID,  Prev: Invoking GPGSM,  Up: Top
@@ -649,7 +865,7 @@ File: gnupg.info,  Node: Scdaemon Options,  Next: Card applications,  Prev: Scda
 
 '--pcsc-shared'
      Use shared mode to access the card via PC/SC. This is a somewhat
-     dangerous option because Scdaemon assumes exclusivbe access to teh
+     dangerous option because Scdaemon assumes exclusive access to the
      card and for example caches certain information from the card.  Use
      this option only if you know what you are doing.
 
@@ -871,7 +1087,7 @@ accounts are hosted on the machine.
 
    A client connects to the SC-Daemon by connecting to the socket named
 '/usr/local/var/run/gnupg/scdaemon/socket', configuration information is
-read from /ETC/GNUPG/SCDAEMON.CONF
+read from /USR/LOCAL/ETC/GNUPG/SCDAEMON.CONF
 
    Each connection acts as one session, SC-Daemon takes care of
 synchronizing access to a token between sessions.
@@ -2930,7 +3146,8 @@ using the same format as used by PGP's PGP Zip.
      Put given files and directories into a vanilla "ustar" archive.
 
 '--extract'
-     Extract all files from a vanilla "ustar" archive.
+     Extract all files from a vanilla "ustar" archive.  If no file name
+     is given (or it is "-") the archive is taken from stdin.
 
 '--encrypt'
 '-e'
@@ -2940,7 +3157,8 @@ using the same format as used by PGP's PGP Zip.
 
 '--decrypt'
 '-d'
-     Extract all files from an encrypted archive.
+     Extract all files from an encrypted archive.  If no file name is
+     given (or it is "-") the archive is taken from stdin.
 
 '--sign'
 '-s'
@@ -2950,7 +3168,8 @@ using the same format as used by PGP's PGP Zip.
 
 '--list-archive'
 '-t'
-     List the contents of the specified archive.
+     List the contents of the specified archive.  If no file name is
+     given (or it is "-") the archive is taken from stdin.
 
 '--symmetric'
 '-c'
@@ -3044,6 +3263,11 @@ using the same format as used by PGP's PGP Zip.
      default is to take the directory name from the input filename.  If
      no input filename is known a directory named 'GPGARCH' is used.
      This option is deprecated in favor of option '--directory'.
+
+'--no-compress'
+     This option tells gpg to disable compression (i.e.  using option
+     -z0).  It is useful for archiving only large files which are are
+     already compressed (e.g.  a set of videos).
 
 '--gpg GPGCMD'
      Use the specified command GPGCMD instead of 'gpg'.
@@ -3279,6 +3503,14 @@ invoked manually to check for a Web Key Directory entry for
      operation.  The format of FILE is one mail address (just the
      addrspec, e.g.  "postel@isi.edu") per line.  Empty lines and lines
      starting with a '#' are ignored.
+
+'--add-revocs'
+'--no-add-revocs'
+     If enabled append revocation certificates for the same addrspec as
+     used in the WKD to the key.  Modern gpg version are able to import
+     and apply them for existing keys.  Note that when used with the
+     '--mirror' command the revocation are searched in the local keyring
+     and not in an LDAP directory.  The default is '--add-revocs'.
 
 '--verbose'
      Enable extra informational output.
@@ -4696,15 +4928,15 @@ are not listed.
    David Shaw, Matthew Skala, Michael Roth, Niklas Hernaeus, Nils
 Ellmenreich, Rémi Guyomarch, Stefan Bellon, Timo Schulz and Werner Koch
 wrote the code.  Birger Langkjer, Daniel Resare, Dokianakis Theofanis,
-Edmund GRIMLEY EVANS, Gaël Quéri, Gregory Steuck, Nagy Ferenc
-László, Ivo Timmermans, Jacobo Tarri'o Barreiro, Janusz Aleksander
-Urbanowicz, Jedi Lin, Jouni Hiltunen, Laurentiu Buzdugan, Magda
-Procha'zkova', Michael Anckaert, Michal Majer, Marco d'Itri, Nilgun
-Belma Buguner, Pedro Morais, Tedi Heriyanto, Thiago Jung Bauermann,
-Rafael Caetano dos Santos, Toomas Soome, Urko Lusa, Walter Koch, Yosiaki
-IIDA did the official translations.  Mike Ashley wrote and maintains the
-GNU Privacy Handbook.  David Scribner is the current FAQ editor.
-Lorenzo Cappelletti maintains the web site.
+Edmund GRIMLEY EVANS, Gaël Quéri, Gregory Steuck, Nagy Ferenc László,
+Ivo Timmermans, Jacobo Tarri'o Barreiro, Janusz Aleksander Urbanowicz,
+Jedi Lin, Jouni Hiltunen, Laurentiu Buzdugan, Magda Procha'zkova',
+Michael Anckaert, Michal Majer, Marco d'Itri, Nilgun Belma Buguner,
+Pedro Morais, Tedi Heriyanto, Thiago Jung Bauermann, Rafael Caetano dos
+Santos, Toomas Soome, Urko Lusa, Walter Koch, Yosiaki IIDA did the
+official translations.  Mike Ashley wrote and maintains the GNU Privacy
+Handbook.  David Scribner is the current FAQ editor.  Lorenzo
+Cappelletti maintains the web site.
 
    The new modularized architecture of gnupg 1.9 as well as the
 X.509/CMS part has been developed as part of the Ägypten project.
@@ -4859,11 +5091,12 @@ Option Index
  [index ]
 * Menu:
 
-* --override-compliance-check:           GPG Esoteric Options.
-                                                              (line 424)
-* add-servers:                           Dirmngr Options.     (line 313)
+* add-desig-revoker:                     GPG Configuration Options.
+                                                              (line 427)
+* add-revocs:                            gpg-wks-client.      (line 133)
+* add-servers:                           Dirmngr Options.     (line 323)
 * agent-program:                         GPG Configuration Options.
-                                                              (line 755)
+                                                              (line 781)
 * agent-program <1>:                     Configuration Options.
                                                               (line  53)
 * agent-program <2>:                     Invoking gpg-connect-agent.
@@ -4871,59 +5104,60 @@ Option Index
 * allow-admin:                           Scdaemon Options.    (line 204)
 * allow-emacs-pinentry:                  Agent Options.       (line 206)
 * allow-freeform-uid:                    GPG Esoteric Options.
-                                                              (line 367)
+                                                              (line 375)
 * allow-loopback-pinentry:               Agent Options.       (line 188)
 * allow-multiple-messages:               GPG Esoteric Options.
-                                                              (line 560)
+                                                              (line 563)
 * allow-non-selfsigned-uid:              GPG Esoteric Options.
-                                                              (line 362)
-* allow-ocsp:                            Dirmngr Options.     (line 330)
+                                                              (line 370)
+* allow-ocsp:                            Dirmngr Options.     (line 340)
 * allow-preset-passphrase:               Agent Options.       (line 183)
 * allow-secret-key-import:               GPG Esoteric Options.
-                                                              (line 556)
-* allow-version-check:                   Dirmngr Options.     (line 138)
+                                                              (line 559)
+* allow-version-check:                   Dirmngr Options.     (line 145)
 * allow-weak-digest-algos:               GPG Esoteric Options.
-                                                              (line 403)
+                                                              (line 411)
 * allow-weak-key-signatures:             GPG Esoteric Options.
-                                                              (line 419)
+                                                              (line 427)
 * always-trust:                          Deprecated Options.  (line  21)
+* always-trust <1>:                      Esoteric Options.    (line  37)
 * armor:                                 GPG Input and Output.
                                                               (line   8)
 * armor <1>:                             Input and Output.    (line   8)
 * ask-cert-expire:                       GPG Esoteric Options.
-                                                              (line 521)
+                                                              (line 524)
 * ask-cert-level:                        GPG Configuration Options.
-                                                              (line 360)
+                                                              (line 372)
 * ask-sig-expire:                        GPG Esoteric Options.
-                                                              (line 507)
+                                                              (line 510)
 * assume-armor:                          Input and Output.    (line  14)
 * assume-base64:                         Input and Output.    (line  18)
 * assume-binary:                         Input and Output.    (line  21)
 * attribute-fd:                          GPG Esoteric Options.
-                                                              (line  92)
+                                                              (line 100)
 * attribute-file:                        GPG Esoteric Options.
-                                                              (line  98)
+                                                              (line 106)
 * auto-check-trustdb:                    GPG Configuration Options.
-                                                              (line 742)
-* auto-expand-secmem:                    Agent Options.       (line 456)
+                                                              (line 768)
+* auto-expand-secmem:                    Agent Options.       (line 449)
 * auto-issuer-key-retrieve:              Certificate Options. (line  62)
 * auto-key-import:                       GPG Configuration Options.
-                                                              (line 578)
+                                                              (line 604)
 * auto-key-locate:                       GPG Configuration Options.
-                                                              (line 509)
+                                                              (line 535)
 * auto-key-retrieve:                     GPG Configuration Options.
-                                                              (line 590)
+                                                              (line 616)
 * base64:                                Input and Output.    (line  11)
 * batch:                                 Agent Options.       (line  48)
 * batch <1>:                             GPG Configuration Options.
                                                               (line  45)
-* batch <2>:                             gpgtar.              (line 104)
+* batch <2>:                             gpgtar.              (line 107)
 * blacklist:                             gpg-wks-client.      (line 126)
 * bzip2-compress-level:                  GPG Configuration Options.
-                                                              (line 334)
+                                                              (line 335)
 * bzip2-decompress-lowmem:               GPG Configuration Options.
-                                                              (line 344)
-* c:                                     Dirmngr Options.     (line  87)
+                                                              (line 356)
+* c:                                     Dirmngr Options.     (line  94)
 * cache-cert:                            dirmngr-client.      (line  72)
 * call-dirmngr:                          Operational GPGSM Commands.
                                                               (line  27)
@@ -4935,13 +5169,13 @@ Option Index
                                                               (line 216)
 * card-timeout:                          Scdaemon Options.    (line 180)
 * cert-digest-algo:                      GPG Esoteric Options.
-                                                              (line 238)
+                                                              (line 246)
 * cert-notation:                         GPG Esoteric Options.
-                                                              (line 124)
+                                                              (line 132)
 * cert-policy-url:                       GPG Esoteric Options.
-                                                              (line 160)
+                                                              (line 168)
 * change-passphrase:                     OpenPGP Key Management.
-                                                              (line 452)
+                                                              (line 464)
 * change-passphrase <1>:                 Certificate Management.
                                                               (line 109)
 * change-pin:                            Operational GPG Commands.
@@ -4956,71 +5190,74 @@ Option Index
 * check-trustdb:                         Operational GPG Commands.
                                                               (line 349)
 * cipher-algo:                           GPG Esoteric Options.
-                                                              (line 199)
+                                                              (line 207)
 * cipher-algo <1>:                       CMS Options.         (line  13)
 * clear-sign:                            Operational GPG Commands.
                                                               (line  17)
 * clearsign:                             Operational GPG Commands.
                                                               (line  18)
-* cms:                                   gpgtar.              (line  99)
+* cms:                                   gpgtar.              (line 102)
 * command-fd:                            GPG Esoteric Options.
-                                                              (line 350)
+                                                              (line 358)
 * command-file:                          GPG Esoteric Options.
-                                                              (line 357)
+                                                              (line 365)
 * comment:                               GPG Esoteric Options.
-                                                              (line 103)
-* compatibility-flags:                   Esoteric Options.    (line  57)
+                                                              (line 111)
+* compatibility-flags:                   Dirmngr Options.     (line  34)
+* compatibility-flags <1>:               GPG Esoteric Options.
+                                                              (line  22)
+* compatibility-flags <2>:               Esoteric Options.    (line  63)
 * compliance:                            Compliance Options.  (line  67)
 * compliance <1>:                        Esoteric Options.    (line  18)
 * compliant-needed:                      GPG Configuration Options.
-                                                              (line 717)
+                                                              (line 743)
 * compress-algo:                         GPG Esoteric Options.
-                                                              (line 215)
+                                                              (line 223)
 * compress-level:                        GPG Configuration Options.
-                                                              (line 334)
-* connect-quick-timeout:                 Dirmngr Options.     (line 125)
-* connect-timeout:                       Dirmngr Options.     (line 125)
+                                                              (line 335)
+* connect-quick-timeout:                 Dirmngr Options.     (line 132)
+* connect-timeout:                       Dirmngr Options.     (line 132)
 * create:                                gpgtar.              (line  16)
 * create-socketdir:                      Invoking gpgconf.    (line  96)
 * csh:                                   Agent Options.       (line 146)
-* csh <1>:                               Dirmngr Options.     (line  87)
+* csh <1>:                               Dirmngr Options.     (line  94)
 * ctapi-driver:                          Scdaemon Options.    (line 157)
 * daemon:                                Agent Commands.      (line  27)
 * daemon <1>:                            Dirmngr Commands.    (line  27)
 * daemon <2>:                            Scdaemon Commands.   (line  31)
 * dearmor:                               Operational GPG Commands.
-                                                              (line 403)
+                                                              (line 404)
 * debug:                                 Agent Options.       (line  82)
-* debug <1>:                             Dirmngr Options.     (line  59)
+* debug <1>:                             Dirmngr Options.     (line  66)
 * debug <2>:                             GPG Esoteric Options.
-                                                              (line  47)
-* debug <3>:                             Esoteric Options.    (line  90)
+                                                              (line  55)
+* debug <3>:                             Esoteric Options.    (line  96)
 * debug <4>:                             Scdaemon Options.    (line  69)
 * debug-all:                             Agent Options.       (line 106)
-* debug-all <1>:                         Dirmngr Options.     (line  66)
+* debug-all <1>:                         Dirmngr Options.     (line  73)
 * debug-all <2>:                         GPG Esoteric Options.
-                                                              (line  53)
-* debug-all <3>:                         Esoteric Options.    (line 117)
+                                                              (line  61)
+* debug-all <3>:                         Esoteric Options.    (line 123)
 * debug-all <4>:                         Scdaemon Options.    (line  96)
-* debug-allow-core-dump:                 Esoteric Options.    (line 120)
+* debug-allow-core-dump:                 Esoteric Options.    (line 126)
 * debug-allow-core-dump <1>:             Scdaemon Options.    (line 113)
 * debug-assuan-log-cats:                 Scdaemon Options.    (line 122)
 * debug-disable-ticker:                  Scdaemon Options.    (line 109)
-* debug-ignore-expiration:               Esoteric Options.    (line 131)
+* debug-ignore-expiration:               Esoteric Options.    (line 137)
 * debug-iolbf:                           GPG Esoteric Options.
-                                                              (line  56)
+                                                              (line  64)
 * debug-level:                           Agent Options.       (line  57)
-* debug-level <1>:                       Dirmngr Options.     (line  34)
+* debug-level <1>:                       Dirmngr Options.     (line  41)
 * debug-level <2>:                       GPG Esoteric Options.
-                                                              (line  22)
-* debug-level <3>:                       Esoteric Options.    (line  65)
+                                                              (line  30)
+* debug-level <3>:                       Esoteric Options.    (line  71)
 * debug-level <4>:                       Scdaemon Options.    (line  40)
 * debug-log-tid:                         Scdaemon Options.    (line 119)
-* debug-no-chain-validation:             Esoteric Options.    (line 127)
+* debug-no-chain-validation:             Esoteric Options.    (line 133)
 * debug-pinentry:                        Agent Options.       (line 126)
 * debug-quick-random:                    Agent Options.       (line 114)
 * debug-wait:                            Agent Options.       (line 109)
-* debug-wait <1>:                        Dirmngr Options.     (line  74)
+* debug-wait <1>:                        Dirmngr Options.     (line  81)
 * debug-wait <2>:                        Scdaemon Options.    (line  99)
 * debug-wait <3>:                        Scdaemon Options.    (line 104)
 * decode:                                Invoking gpg-connect-agent.
@@ -5029,30 +5266,30 @@ Option Index
                                                               (line  59)
 * decrypt <1>:                           Operational GPGSM Commands.
                                                               (line  11)
-* decrypt <2>:                           gpgtar.              (line  29)
+* decrypt <2>:                           gpgtar.              (line  30)
 * decrypt-files:                         Operational GPG Commands.
                                                               (line 114)
 * default-cache-ttl:                     Agent Options.       (line 217)
 * default-cache-ttl <1>:                 Agent Options.       (line 226)
 * default-cert-expire:                   GPG Esoteric Options.
-                                                              (line 527)
+                                                              (line 530)
 * default-cert-level:                    GPG Configuration Options.
-                                                              (line 368)
+                                                              (line 380)
 * default-key:                           GPG Configuration Options.
                                                               (line  10)
-* default-key <1>:                       Input and Output.    (line  34)
+* default-key <1>:                       Input and Output.    (line  40)
 * default-keyserver-url:                 GPG Esoteric Options.
-                                                              (line 589)
+                                                              (line 592)
 * default-new-key-algo STRING:           GPG Esoteric Options.
-                                                              (line 534)
+                                                              (line 537)
 * default-preference-list:               GPG Esoteric Options.
-                                                              (line 584)
+                                                              (line 587)
 * default-recipient:                     GPG Configuration Options.
                                                               (line  19)
 * default-recipient-self:                GPG Configuration Options.
                                                               (line  23)
 * default-sig-expire:                    GPG Esoteric Options.
-                                                              (line 513)
+                                                              (line 516)
 * delete-keys:                           Operational GPG Commands.
                                                               (line 224)
 * delete-keys <1>:                       Certificate Management.
@@ -5067,14 +5304,14 @@ Option Index
 * detach-sign:                           Operational GPG Commands.
                                                               (line  28)
 * digest-algo:                           GPG Esoteric Options.
-                                                              (line 208)
-* directory:                             gpgtar.              (line  76)
+                                                              (line 216)
+* directory:                             gpgtar.              (line  79)
 * directory <1>:                         gpg-wks-client.      (line 122)
 * directory <2>:                         gpg-wks-server.      (line  50)
 * dirmngr:                               Invoking gpg-connect-agent.
                                                               (line  54)
 * dirmngr-program:                       GPG Configuration Options.
-                                                              (line 762)
+                                                              (line 788)
 * dirmngr-program <1>:                   Configuration Options.
                                                               (line  59)
 * dirmngr-program <2>:                   Invoking gpg-connect-agent.
@@ -5082,27 +5319,27 @@ Option Index
 * disable-application:                   Scdaemon Options.    (line 214)
 * disable-ccid:                          Scdaemon Options.    (line 162)
 * disable-check-own-socket:              Agent Options.       (line 342)
-* disable-check-own-socket <1>:          Dirmngr Options.     (line  79)
+* disable-check-own-socket <1>:          Dirmngr Options.     (line  86)
 * disable-cipher-algo:                   GPG Esoteric Options.
-                                                              (line 246)
+                                                              (line 254)
 * disable-crl-checks:                    Certificate Options. (line  13)
 * disable-dsa2:                          GPG Configuration Options.
                                                               (line 196)
 * disable-extended-key-format:           Agent Options.       (line 388)
-* disable-http:                          Dirmngr Options.     (line 217)
-* disable-ipv4:                          Dirmngr Options.     (line 211)
-* disable-ipv6:                          Dirmngr Options.     (line 211)
+* disable-http:                          Dirmngr Options.     (line 225)
+* disable-ipv4:                          Dirmngr Options.     (line 219)
+* disable-ipv6:                          Dirmngr Options.     (line 219)
 * disable-large-rsa:                     GPG Configuration Options.
                                                               (line 187)
-* disable-ldap:                          Dirmngr Options.     (line 214)
-* disable-mdc:                           OpenPGP Options.     (line  25)
+* disable-ldap:                          Dirmngr Options.     (line 222)
+* disable-mdc:                           OpenPGP Options.     (line  32)
 * disable-ocsp:                          Certificate Options. (line  53)
 * disable-pinpad:                        Scdaemon Options.    (line 201)
 * disable-policy-checks:                 Certificate Options. (line   8)
 * disable-pubkey-algo:                   GPG Esoteric Options.
-                                                              (line 251)
+                                                              (line 259)
 * disable-scdaemon:                      Agent Options.       (line 336)
-* disable-signer-uid:                    OpenPGP Options.     (line  31)
+* disable-signer-uid:                    OpenPGP Options.     (line  38)
 * disable-trusted-cert-crl-check:        Certificate Options. (line  24)
 * display:                               Agent Options.       (line 360)
 * display-charset:                       GPG Configuration Options.
@@ -5119,7 +5356,7 @@ Option Index
                                                               (line 303)
 * dry-run:                               GPG Esoteric Options.
                                                               (line   8)
-* dry-run <1>:                           gpgtar.              (line  72)
+* dry-run <1>:                           gpgtar.              (line  75)
 * dump-cert:                             Certificate Management.
                                                               (line  36)
 * dump-chain:                            Certificate Management.
@@ -5142,7 +5379,7 @@ Option Index
 * edit-key:                              OpenPGP Key Management.
                                                               (line 139)
 * emit-version:                          GPG Esoteric Options.
-                                                              (line 114)
+                                                              (line 122)
 * enable-crl-checks:                     Certificate Options. (line  13)
 * enable-dsa2:                           GPG Configuration Options.
                                                               (line 196)
@@ -5155,35 +5392,35 @@ Option Index
 * enable-pinpad-varlen:                  Scdaemon Options.    (line 193)
 * enable-policy-checks:                  Certificate Options. (line   8)
 * enable-progress-filter:                GPG Esoteric Options.
-                                                              (line  69)
-* enable-putty-support:                  Agent Options.       (line 402)
+                                                              (line  77)
+* enable-putty-support:                  Agent Options.       (line 395)
 * enable-special-filenames:              GPG Esoteric Options.
-                                                              (line 571)
+                                                              (line 574)
 * enable-special-filenames <1>:          gpgv.                (line  97)
-* enable-ssh-support:                    Agent Options.       (line 402)
+* enable-ssh-support:                    Agent Options.       (line 395)
 * enable-trusted-cert-crl-check:         Certificate Options. (line  24)
 * enarmor:                               Operational GPG Commands.
-                                                              (line 403)
+                                                              (line 404)
 * encrypt:                               Operational GPG Commands.
                                                               (line  32)
 * encrypt <1>:                           Operational GPGSM Commands.
                                                               (line   7)
-* encrypt <2>:                           gpgtar.              (line  23)
+* encrypt <2>:                           gpgtar.              (line  24)
 * encrypt-files:                         Operational GPG Commands.
                                                               (line 111)
 * encrypt-to:                            GPG Key related Options.
                                                               (line  35)
 * enforce-passphrase-constraints:        Agent Options.       (line 244)
 * escape-from-lines:                     GPG Esoteric Options.
-                                                              (line 276)
+                                                              (line 284)
 * exec:                                  Invoking gpg-connect-agent.
                                                               (line  65)
 * exec-path:                             GPG Configuration Options.
                                                               (line 225)
 * exit-on-status-write-error:            GPG Configuration Options.
-                                                              (line 791)
+                                                              (line 817)
 * expert:                                GPG Configuration Options.
-                                                              (line 846)
+                                                              (line 872)
 * export:                                Operational GPG Commands.
                                                               (line 250)
 * export <1>:                            Certificate Management.
@@ -5211,29 +5448,30 @@ Option Index
 * extract:                               gpgtar.              (line  19)
 * faked-system-time:                     Agent Options.       (line  52)
 * faked-system-time <1>:                 GPG Esoteric Options.
-                                                              (line  60)
-* faked-system-time <2>:                 Esoteric Options.    (line  46)
+                                                              (line  68)
+* faked-system-time <2>:                 Esoteric Options.    (line  52)
 * fast-list-mode:                        GPG Esoteric Options.
-                                                              (line 462)
+                                                              (line 465)
 * fetch-crl:                             Dirmngr Commands.    (line  52)
 * fetch-keys:                            Operational GPG Commands.
                                                               (line 333)
 * fingerprint:                           Operational GPG Commands.
                                                               (line 194)
 * fixed-list-mode:                       GPG Input and Output.
-                                                              (line 284)
+                                                              (line 289)
 * flush:                                 Dirmngr Commands.    (line  62)
 * for-your-eyes-only:                    GPG Esoteric Options.
-                                                              (line 185)
+                                                              (line 193)
 * forbid-gen-key:                        GPG Esoteric Options.
-                                                              (line 551)
-* force:                                 Dirmngr Options.     (line  93)
+                                                              (line 554)
+* force:                                 Dirmngr Options.     (line 100)
 * force <1>:                             watchgnupg.          (line  23)
 * force-crl-refresh:                     Certificate Options. (line  35)
 * force-default-responder:               dirmngr-client.      (line  64)
-* force-mdc:                             OpenPGP Options.     (line  25)
+* force-mdc:                             OpenPGP Options.     (line  32)
+* force-ocb:                             OpenPGP Options.     (line  24)
 * force-sign-key:                        GPG Esoteric Options.
-                                                              (line 545)
+                                                              (line 548)
 * forget:                                Invoking gpg-preset-passphrase.
                                                               (line  26)
 * from:                                  gpg-wks-server.      (line  54)
@@ -5246,7 +5484,7 @@ Option Index
 * gen-key <1>:                           Certificate Management.
                                                               (line   8)
 * gen-prime:                             Operational GPG Commands.
-                                                              (line 398)
+                                                              (line 399)
 * gen-random:                            Operational GPG Commands.
                                                               (line 391)
 * gen-revoke:                            OpenPGP Key Management.
@@ -5260,14 +5498,14 @@ Option Index
 * generate-revocation:                   OpenPGP Key Management.
                                                               (line 119)
 * gnupg:                                 Compliance Options.  (line  12)
-* gpg:                                   gpgtar.              (line 135)
+* gpg:                                   gpgtar.              (line 143)
 * gpg-agent-info:                        GPG Configuration Options.
-                                                              (line 752)
-* gpg-args:                              gpgtar.              (line 138)
+                                                              (line 778)
+* gpg-args:                              gpgtar.              (line 146)
 * gpgconf-list:                          GPG Esoteric Options.
-                                                              (line 605)
+                                                              (line 608)
 * gpgconf-test:                          GPG Esoteric Options.
-                                                              (line 609)
+                                                              (line 612)
 * grab:                                  Agent Options.       (line 153)
 * group:                                 GPG Key related Options.
                                                               (line  55)
@@ -5281,8 +5519,8 @@ Option Index
 * help <4>:                              Scdaemon Commands.   (line  14)
 * help <5>:                              watchgnupg.          (line  39)
 * help <6>:                              dirmngr-client.      (line  44)
-* help <7>:                              gpgtar.              (line 150)
-* help <8>:                              gpg-wks-client.      (line 141)
+* help <7>:                              gpgtar.              (line 158)
+* help <8>:                              gpg-wks-client.      (line 149)
 * help <9>:                              gpg-wks-server.      (line  87)
 * hex:                                   Invoking gpg-connect-agent.
                                                               (line  91)
@@ -5302,25 +5540,26 @@ Option Index
 * homedir <5>:                           Invoking gpgconf.    (line 120)
 * homedir <6>:                           Invoking gpg-connect-agent.
                                                               (line  21)
-* honor-http-proxy:                      Dirmngr Options.     (line 236)
-* http-proxy:                            Dirmngr Options.     (line 240)
+* honor-http-proxy:                      Dirmngr Options.     (line 244)
+* http-proxy:                            Dirmngr Options.     (line 250)
 * ignore-cache-for-signing:              Agent Options.       (line 211)
-* ignore-cert:                           Dirmngr Options.     (line 389)
-* ignore-cert-extension:                 Dirmngr Options.     (line 379)
-* ignore-cert-extension <1>:             Certificate Options. (line  82)
-* ignore-cert-with-oid:                  Esoteric Options.    (line  37)
+* ignore-cert:                           Dirmngr Options.     (line 407)
+* ignore-cert-extension:                 Dirmngr Options.     (line 389)
+* ignore-cert-extension <1>:             Certificate Options. (line  84)
+* ignore-cert-with-oid:                  Esoteric Options.    (line  43)
 * ignore-crc-error:                      GPG Esoteric Options.
-                                                              (line 387)
-* ignore-http-dp:                        Dirmngr Options.     (line 220)
-* ignore-ldap-dp:                        Dirmngr Options.     (line 227)
+                                                              (line 395)
+* ignore-crl-extension:                  Dirmngr Options.     (line 399)
+* ignore-http-dp:                        Dirmngr Options.     (line 228)
+* ignore-ldap-dp:                        Dirmngr Options.     (line 235)
 * ignore-mdc-error:                      GPG Esoteric Options.
-                                                              (line 394)
-* ignore-ocsp-service-url:               Dirmngr Options.     (line 232)
+                                                              (line 402)
+* ignore-ocsp-service-url:               Dirmngr Options.     (line 240)
 * ignore-time-conflict:                  GPG Esoteric Options.
-                                                              (line 373)
+                                                              (line 381)
 * ignore-time-conflict <1>:              gpgv.                (line  63)
 * ignore-valid-from:                     GPG Esoteric Options.
-                                                              (line 380)
+                                                              (line 388)
 * import:                                Operational GPG Commands.
                                                               (line 304)
 * import <1>:                            Certificate Management.
@@ -5332,9 +5571,10 @@ Option Index
 * import-ownertrust:                     Operational GPG Commands.
                                                               (line 370)
 * include-certs:                         CMS Options.         (line   7)
-* include-key-block:                     OpenPGP Options.     (line  38)
+* include-key-block:                     OpenPGP Options.     (line  45)
 * input-size-hint:                       GPG Input and Output.
                                                               (line  29)
+* input-size-hint <1>:                   Input and Output.    (line  24)
 * interactive:                           GPG Esoteric Options.
                                                               (line  19)
 * keep-display:                          Agent Options.       (line 365)
@@ -5344,119 +5584,119 @@ Option Index
 * keydb-clear-some-cert-flags:           Certificate Management.
                                                               (line  52)
 * keyedit:addcardkey:                    OpenPGP Key Management.
-                                                              (line 281)
+                                                              (line 284)
 * keyedit:addkey:                        OpenPGP Key Management.
-                                                              (line 278)
+                                                              (line 281)
 * keyedit:addphoto:                      OpenPGP Key Management.
-                                                              (line 201)
+                                                              (line 202)
 * keyedit:addrevoker:                    OpenPGP Key Management.
-                                                              (line 330)
+                                                              (line 333)
 * keyedit:adduid:                        OpenPGP Key Management.
-                                                              (line 198)
+                                                              (line 199)
 * keyedit:bkuptocard:                    OpenPGP Key Management.
-                                                              (line 295)
+                                                              (line 298)
 * keyedit:change-usage:                  OpenPGP Key Management.
-                                                              (line 357)
+                                                              (line 360)
 * keyedit:check:                         OpenPGP Key Management.
-                                                              (line 194)
+                                                              (line 195)
 * keyedit:clean:                         OpenPGP Key Management.
-                                                              (line 343)
+                                                              (line 346)
 * keyedit:cross-certify:                 OpenPGP Key Management.
-                                                              (line 366)
+                                                              (line 369)
 * keyedit:delkey:                        OpenPGP Key Management.
-                                                              (line 306)
+                                                              (line 309)
 * keyedit:delsig:                        OpenPGP Key Management.
-                                                              (line 184)
+                                                              (line 185)
 * keyedit:deluid:                        OpenPGP Key Management.
-                                                              (line 211)
+                                                              (line 212)
 * keyedit:disable:                       OpenPGP Key Management.
-                                                              (line 326)
+                                                              (line 329)
 * keyedit:enable:                        OpenPGP Key Management.
-                                                              (line 326)
+                                                              (line 329)
 * keyedit:expire:                        OpenPGP Key Management.
-                                                              (line 315)
+                                                              (line 318)
 * keyedit:key:                           OpenPGP Key Management.
                                                               (line 148)
 * keyedit:keyserver:                     OpenPGP Key Management.
-                                                              (line 228)
+                                                              (line 229)
 * keyedit:keytocard:                     OpenPGP Key Management.
-                                                              (line 284)
+                                                              (line 287)
 * keyedit:lsign:                         OpenPGP Key Management.
                                                               (line 159)
 * keyedit:minimize:                      OpenPGP Key Management.
-                                                              (line 352)
+                                                              (line 355)
 * keyedit:notation:                      OpenPGP Key Management.
-                                                              (line 235)
+                                                              (line 236)
 * keyedit:nrsign:                        OpenPGP Key Management.
                                                               (line 164)
 * keyedit:passwd:                        OpenPGP Key Management.
-                                                              (line 336)
+                                                              (line 339)
 * keyedit:pref:                          OpenPGP Key Management.
-                                                              (line 243)
+                                                              (line 244)
 * keyedit:primary:                       OpenPGP Key Management.
-                                                              (line 220)
+                                                              (line 221)
 * keyedit:quit:                          OpenPGP Key Management.
-                                                              (line 377)
+                                                              (line 380)
 * keyedit:revkey:                        OpenPGP Key Management.
-                                                              (line 312)
+                                                              (line 315)
 * keyedit:revsig:                        OpenPGP Key Management.
-                                                              (line 189)
+                                                              (line 190)
 * keyedit:revuid:                        OpenPGP Key Management.
-                                                              (line 217)
+                                                              (line 218)
 * keyedit:save:                          OpenPGP Key Management.
-                                                              (line 374)
+                                                              (line 377)
 * keyedit:setpref:                       OpenPGP Key Management.
-                                                              (line 255)
+                                                              (line 256)
 * keyedit:showphoto:                     OpenPGP Key Management.
-                                                              (line 208)
+                                                              (line 209)
 * keyedit:showpref:                      OpenPGP Key Management.
-                                                              (line 247)
+                                                              (line 248)
 * keyedit:sign:                          OpenPGP Key Management.
                                                               (line 152)
 * keyedit:toggle:                        OpenPGP Key Management.
-                                                              (line 339)
+                                                              (line 342)
 * keyedit:trust:                         OpenPGP Key Management.
-                                                              (line 321)
+                                                              (line 324)
 * keyedit:tsign:                         OpenPGP Key Management.
                                                               (line 168)
 * keyedit:uid:                           OpenPGP Key Management.
                                                               (line 144)
 * keyid-format:                          GPG Configuration Options.
-                                                              (line 627)
+                                                              (line 653)
 * keyring:                               GPG Configuration Options.
                                                               (line 229)
 * keyring <1>:                           gpgv.                (line  38)
-* keyserver:                             Dirmngr Options.     (line 148)
+* keyserver:                             Dirmngr Options.     (line 155)
 * keyserver <1>:                         GPG Configuration Options.
-                                                              (line 636)
+                                                              (line 662)
 * keyserver <2>:                         Configuration Options.
                                                               (line  43)
 * keyserver-options:                     GPG Configuration Options.
-                                                              (line 655)
+                                                              (line 681)
 * kill:                                  Invoking gpgconf.    (line  89)
 * known-notation:                        GPG Esoteric Options.
-                                                              (line 151)
+                                                              (line 159)
 * launch:                                Invoking gpgconf.    (line  80)
 * lc-ctype:                              Agent Options.       (line 360)
 * lc-messages:                           Agent Options.       (line 360)
-* ldap-proxy:                            Dirmngr Options.     (line 245)
-* ldapserver:                            Dirmngr Options.     (line 275)
-* ldapserverlist-file:                   Dirmngr Options.     (line 256)
-* ldaptimeout:                           Dirmngr Options.     (line 309)
+* ldap-proxy:                            Dirmngr Options.     (line 255)
+* ldapserver:                            Dirmngr Options.     (line 285)
+* ldapserverlist-file:                   Dirmngr Options.     (line 266)
+* ldaptimeout:                           Dirmngr Options.     (line 319)
 * learn-card:                            Certificate Management.
                                                               (line 104)
 * legacy-list-mode:                      GPG Input and Output.
-                                                              (line 290)
+                                                              (line 295)
 * limit-card-insert-tries:               GPG Configuration Options.
-                                                              (line 800)
-* list-archive:                          gpgtar.              (line  39)
+                                                              (line 826)
+* list-archive:                          gpgtar.              (line  41)
 * list-chain:                            Certificate Management.
                                                               (line  32)
 * list-config:                           GPG Esoteric Options.
-                                                              (line 594)
+                                                              (line 597)
 * list-crls:                             Dirmngr Commands.    (line  40)
 * list-gcrypt-config:                    GPG Esoteric Options.
-                                                              (line 602)
+                                                              (line 605)
 * list-keys:                             Operational GPG Commands.
                                                               (line 119)
 * list-keys <1>:                         Certificate Management.
@@ -5502,56 +5742,56 @@ Option Index
 * list-secret-keys <1>:                  Certificate Management.
                                                               (line  24)
 * list-signatures:                       GPG Esoteric Options.
-                                                              (line 450)
+                                                              (line 453)
 * list-sigs:                             GPG Esoteric Options.
-                                                              (line 451)
+                                                              (line 454)
 * listen-backlog:                        Agent Options.       (line 370)
-* listen-backlog <1>:                    Dirmngr Options.     (line 134)
+* listen-backlog <1>:                    Dirmngr Options.     (line 141)
 * listen-backlog <2>:                    Scdaemon Options.    (line 135)
 * load-crl:                              Dirmngr Commands.    (line  44)
 * load-crl <1>:                          dirmngr-client.      (line  80)
 * local-user:                            GPG Key related Options.
                                                               (line  77)
-* local-user <1>:                        Input and Output.    (line  41)
-* local-user <2>:                        gpgtar.              (line  53)
+* local-user <1>:                        Input and Output.    (line  47)
+* local-user <2>:                        gpgtar.              (line  56)
 * locate-external-keys:                  Operational GPG Commands.
                                                               (line 170)
 * locate-keys:                           Operational GPG Commands.
                                                               (line 170)
 * lock-multiple:                         GPG Configuration Options.
-                                                              (line 780)
+                                                              (line 806)
 * lock-never:                            GPG Configuration Options.
-                                                              (line 784)
+                                                              (line 810)
 * lock-once:                             GPG Configuration Options.
-                                                              (line 776)
+                                                              (line 802)
 * log-file:                              Agent Options.       (line 159)
 * log-file <1>:                          Dirmngr Options.     (line  30)
 * log-file <2>:                          GPG Esoteric Options.
-                                                              (line  86)
+                                                              (line  94)
 * log-file <3>:                          Configuration Options.
                                                               (line  80)
 * log-file <4>:                          Scdaemon Options.    (line 140)
 * log-file <5>:                          gpgv.                (line  59)
 * logger-fd:                             GPG Esoteric Options.
-                                                              (line  82)
+                                                              (line  90)
 * logger-fd <1>:                         gpgv.                (line  56)
 * lookup:                                dirmngr-client.      (line  86)
 * lsign-key:                             OpenPGP Key Management.
-                                                              (line 392)
+                                                              (line 395)
 * mangle-dos-filenames:                  GPG Configuration Options.
-                                                              (line 352)
+                                                              (line 364)
 * marginals-needed:                      GPG Configuration Options.
-                                                              (line 721)
+                                                              (line 747)
 * max-cache-ttl:                         Agent Options.       (line 232)
 * max-cache-ttl-ssh:                     Agent Options.       (line 238)
 * max-cert-depth:                        GPG Configuration Options.
-                                                              (line 729)
+                                                              (line 755)
 * max-output:                            GPG Input and Output.
                                                               (line  19)
 * max-passphrase-days:                   Agent Options.       (line 278)
-* max-replies:                           Dirmngr Options.     (line 376)
+* max-replies:                           Dirmngr Options.     (line 386)
 * min-cert-level:                        GPG Configuration Options.
-                                                              (line 397)
+                                                              (line 409)
 * min-passphrase-len:                    Agent Options.       (line 248)
 * min-passphrase-nonalpha:               Agent Options.       (line 253)
 * min-rsa-length:                        Compliance Options.  (line  72)
@@ -5559,30 +5799,34 @@ Option Index
 * multi-server:                          Scdaemon Commands.   (line  26)
 * multifile:                             Operational GPG Commands.
                                                               (line 100)
-* nameserver:                            Dirmngr Options.     (line 203)
+* nameserver:                            Dirmngr Options.     (line 211)
 * no:                                    GPG Configuration Options.
                                                               (line  67)
-* no <1>:                                gpgtar.              (line 113)
+* no <1>:                                gpgtar.              (line 116)
+* no-add-revocs:                         gpg-wks-client.      (line 133)
 * no-allow-external-cache:               Agent Options.       (line 196)
 * no-allow-loopback-pinentry:            Agent Options.       (line 188)
 * no-allow-mark-trusted:                 Agent Options.       (line 167)
 * no-armor:                              GPG Input and Output.
                                                               (line  12)
 * no-auto-key-import:                    GPG Configuration Options.
-                                                              (line 578)
+                                                              (line 604)
 * no-auto-key-retrieve:                  GPG Configuration Options.
-                                                              (line 590)
+                                                              (line 616)
 * no-autostart:                          GPG Configuration Options.
-                                                              (line 769)
+                                                              (line 795)
 * no-autostart <1>:                      Configuration Options.
                                                               (line  69)
 * no-autostart <2>:                      Invoking gpg-connect-agent.
                                                               (line  77)
 * no-batch:                              GPG Configuration Options.
                                                               (line  45)
-* no-common-certs-import:                Esoteric Options.    (line 168)
+* no-common-certs-import:                Esoteric Options.    (line 174)
+* no-compress:                           GPG Configuration Options.
+                                                              (line 335)
+* no-compress <1>:                       gpgtar.              (line 138)
 * no-default-keyring:                    GPG Esoteric Options.
-                                                              (line 432)
+                                                              (line 435)
 * no-default-recipient:                  GPG Configuration Options.
                                                               (line  29)
 * no-detach:                             Agent Options.       (line 131)
@@ -5590,54 +5834,54 @@ Option Index
 * no-encrypt-to:                         GPG Key related Options.
                                                               (line  51)
 * no-expensive-trust-checks:             GPG Esoteric Options.
-                                                              (line 576)
+                                                              (line 579)
 * no-ext-connect:                        Invoking gpg-connect-agent.
                                                               (line  72)
 * no-grab:                               Agent Options.       (line 153)
 * no-greeting:                           GPG Configuration Options.
-                                                              (line 814)
+                                                              (line 840)
 * no-groups:                             GPG Key related Options.
                                                               (line  73)
 * no-keyring:                            GPG Esoteric Options.
-                                                              (line 438)
+                                                              (line 441)
 * no-literal:                            GPG Esoteric Options.
-                                                              (line 470)
+                                                              (line 473)
 * no-mangle-dos-filenames:               GPG Configuration Options.
-                                                              (line 352)
+                                                              (line 364)
 * no-options:                            GPG Configuration Options.
                                                               (line 327)
 * no-random-seed-file:                   GPG Configuration Options.
-                                                              (line 808)
+                                                              (line 834)
 * no-secmem-warning:                     GPG Configuration Options.
-                                                              (line 817)
+                                                              (line 843)
 * no-secmem-warning <1>:                 Configuration Options.
                                                               (line  76)
 * no-sig-cache:                          GPG Configuration Options.
-                                                              (line 732)
+                                                              (line 758)
 * no-skip-hidden-recipients:             GPG Key related Options.
                                                               (line 108)
 * no-symkey-cache:                       GPG Esoteric Options.
-                                                              (line 337)
+                                                              (line 345)
 * no-tty:                                GPG Configuration Options.
                                                               (line  58)
 * no-use-standard-socket:                Agent Options.       (line 350)
-* no-use-tor:                            Dirmngr Options.     (line  98)
+* no-use-tor:                            Dirmngr Options.     (line 105)
 * no-user-trustlist:                     Agent Options.       (line 172)
 * no-verbose:                            GPG Configuration Options.
                                                               (line  37)
 * not-dash-escaped:                      GPG Esoteric Options.
-                                                              (line 266)
-* null:                                  gpgtar.              (line  86)
+                                                              (line 274)
+* null:                                  gpgtar.              (line  89)
 * null <1>:                              gpg-check-pattern.   (line  59)
 * ocsp:                                  dirmngr-client.      (line  61)
-* ocsp-current-period:                   Dirmngr Options.     (line 371)
-* ocsp-max-clock-skew:                   Dirmngr Options.     (line 363)
-* ocsp-max-period:                       Dirmngr Options.     (line 367)
-* ocsp-responder:                        Dirmngr Options.     (line 337)
-* ocsp-signer:                           Dirmngr Options.     (line 342)
-* only-ldap-proxy:                       Dirmngr Options.     (line 251)
+* ocsp-current-period:                   Dirmngr Options.     (line 381)
+* ocsp-max-clock-skew:                   Dirmngr Options.     (line 373)
+* ocsp-max-period:                       Dirmngr Options.     (line 377)
+* ocsp-responder:                        Dirmngr Options.     (line 347)
+* ocsp-signer:                           Dirmngr Options.     (line 352)
+* only-ldap-proxy:                       Dirmngr Options.     (line 261)
 * openpgp:                               Compliance Options.  (line  19)
-* openpgp <1>:                           gpgtar.              (line  95)
+* openpgp <1>:                           gpgtar.              (line  98)
 * options:                               Agent Options.       (line  10)
 * options <1>:                           Dirmngr Options.     (line  11)
 * options <2>:                           Dirmngr Options.     (line  16)
@@ -5648,37 +5892,37 @@ Option Index
 * options <5>:                           Scdaemon Options.    (line   7)
 * output:                                GPG Input and Output.
                                                               (line  16)
-* output <1>:                            Input and Output.    (line  51)
+* output <1>:                            Input and Output.    (line  57)
 * output <2>:                            gpgv.                (line  45)
-* output <3>:                            gpgtar.              (line  57)
+* output <3>:                            gpgtar.              (line  60)
 * output <4>:                            gpg-wks-client.      (line 111)
 * output <5>:                            gpg-wks-server.      (line  65)
 * override-session-key:                  GPG Esoteric Options.
-                                                              (line 494)
-* p12-charset:                           Input and Output.    (line  24)
+                                                              (line 497)
+* p12-charset:                           Input and Output.    (line  30)
 * passphrase:                            GPG Esoteric Options.
-                                                              (line 312)
+                                                              (line 320)
 * passphrase <1>:                        Invoking gpg-preset-passphrase.
                                                               (line  36)
 * passphrase-fd:                         GPG Esoteric Options.
-                                                              (line 291)
-* passphrase-fd <1>:                     Esoteric Options.    (line 136)
+                                                              (line 299)
+* passphrase-fd <1>:                     Esoteric Options.    (line 142)
 * passphrase-file:                       GPG Esoteric Options.
-                                                              (line 301)
+                                                              (line 309)
 * passphrase-repeat:                     GPG Esoteric Options.
-                                                              (line 283)
+                                                              (line 291)
 * passwd:                                OpenPGP Key Management.
-                                                              (line 453)
+                                                              (line 465)
 * passwd <1>:                            Certificate Management.
                                                               (line 110)
 * pcsc-driver:                           Scdaemon Options.    (line 150)
 * pcsc-shared:                           Scdaemon Options.    (line 144)
 * pem:                                   dirmngr-client.      (line  58)
 * permission-warning:                    GPG Configuration Options.
-                                                              (line 820)
-* personal-cipher-preferences:           OpenPGP Options.     (line  46)
-* personal-compress-preferences:         OpenPGP Options.     (line  64)
-* personal-digest-preferences:           OpenPGP Options.     (line  55)
+                                                              (line 846)
+* personal-cipher-preferences:           OpenPGP Options.     (line  53)
+* personal-compress-preferences:         OpenPGP Options.     (line  71)
+* personal-digest-preferences:           OpenPGP Options.     (line  62)
 * pgp6:                                  Compliance Options.  (line  44)
 * pgp7:                                  Compliance Options.  (line  54)
 * pgp8:                                  Compliance Options.  (line  60)
@@ -5687,8 +5931,8 @@ Option Index
 * pinentry-formatted-passphrase:         Agent Options.       (line 297)
 * pinentry-invisible-char:               Agent Options.       (line 286)
 * pinentry-mode:                         GPG Esoteric Options.
-                                                              (line 322)
-* pinentry-mode <1>:                     Esoteric Options.    (line 145)
+                                                              (line 330)
+* pinentry-mode <1>:                     Esoteric Options.    (line 151)
 * pinentry-program:                      Agent Options.       (line 310)
 * pinentry-timeout:                      Agent Options.       (line 291)
 * pinentry-touch-file:                   Agent Options.       (line 323)
@@ -5698,7 +5942,7 @@ Option Index
 * prefer-system-dirmngr:                 Configuration Options.
                                                               (line  63)
 * preserve-permissions:                  GPG Esoteric Options.
-                                                              (line 579)
+                                                              (line 582)
 * preset:                                Invoking gpg-preset-passphrase.
                                                               (line  22)
 * primary-keyring:                       GPG Configuration Options.
@@ -5710,23 +5954,25 @@ Option Index
 * quick-add-key:                         OpenPGP Key Management.
                                                               (line  69)
 * quick-add-uid:                         OpenPGP Key Management.
-                                                              (line 420)
+                                                              (line 423)
 * quick-gen-key:                         OpenPGP Key Management.
                                                               (line  10)
 * quick-generate-key:                    OpenPGP Key Management.
                                                               (line  10)
 * quick-lsign-key:                       OpenPGP Key Management.
-                                                              (line 398)
+                                                              (line 401)
 * quick-revoke-sig:                      OpenPGP Key Management.
-                                                              (line 435)
+                                                              (line 438)
 * quick-revoke-uid:                      OpenPGP Key Management.
-                                                              (line 427)
+                                                              (line 430)
 * quick-set-expire:                      OpenPGP Key Management.
                                                               (line  60)
 * quick-set-primary-uid:                 OpenPGP Key Management.
-                                                              (line 445)
+                                                              (line 448)
 * quick-sign-key:                        OpenPGP Key Management.
-                                                              (line 398)
+                                                              (line 401)
+* quick-update-pref:                     OpenPGP Key Management.
+                                                              (line 455)
 * quiet:                                 Agent Options.       (line  45)
 * quiet <1>:                             GPG Configuration Options.
                                                               (line  40)
@@ -5735,8 +5981,8 @@ Option Index
 * quiet <4>:                             Invoking gpg-connect-agent.
                                                               (line  18)
 * quiet <5>:                             dirmngr-client.      (line  48)
-* quiet <6>:                             gpgtar.              (line  65)
-* quiet <7>:                             gpg-wks-client.      (line 135)
+* quiet <6>:                             gpgtar.              (line  68)
+* quiet <7>:                             gpg-wks-client.      (line 143)
 * quiet <8>:                             gpg-wks-server.      (line  81)
 * raw-socket:                            Invoking gpg-connect-agent.
                                                               (line  59)
@@ -5747,11 +5993,11 @@ Option Index
                                                               (line 313)
 * recipient:                             GPG Key related Options.
                                                               (line   8)
-* recipient <1>:                         Input and Output.    (line  46)
-* recipient <2>:                         gpgtar.              (line  49)
+* recipient <1>:                         Input and Output.    (line  52)
+* recipient <2>:                         gpgtar.              (line  52)
 * recipient-file:                        GPG Key related Options.
                                                               (line  22)
-* recursive-resolver:                    Dirmngr Options.     (line 117)
+* recursive-resolver:                    Dirmngr Options.     (line 124)
 * recv-keys:                             Operational GPG Commands.
                                                               (line 314)
 * refresh-keys:                          Operational GPG Commands.
@@ -5759,28 +6005,28 @@ Option Index
 * reload:                                Invoking gpgconf.    (line  74)
 * remove-socketdir:                      Invoking gpgconf.    (line 102)
 * request-origin:                        GPG Esoteric Options.
-                                                              (line 342)
-* request-origin <1>:                    Esoteric Options.    (line 160)
+                                                              (line 350)
+* request-origin <1>:                    Esoteric Options.    (line 166)
 * require-compliance:                    Compliance Options.  (line  77)
 * require-compliance <1>:                Esoteric Options.    (line  27)
-* require-compliance <2>:                gpgtar.              (line 117)
+* require-compliance <2>:                gpgtar.              (line 120)
 * require-cross-certification:           GPG Configuration Options.
-                                                              (line 839)
+                                                              (line 865)
 * require-secmem:                        GPG Configuration Options.
-                                                              (line 834)
-* resolver-timeout:                      Dirmngr Options.     (line 120)
+                                                              (line 860)
+* resolver-timeout:                      Dirmngr Options.     (line 127)
 * rfc2440:                               Compliance Options.  (line  37)
 * rfc4880:                               Compliance Options.  (line  25)
 * rfc4880bis:                            Compliance Options.  (line  30)
 * run:                                   Invoking gpg-connect-agent.
                                                               (line  82)
-* s:                                     Dirmngr Options.     (line  87)
-* s2k-calibration:                       Agent Options.       (line 465)
-* s2k-cipher-algo:                       OpenPGP Options.     (line  74)
-* s2k-count:                             Agent Options.       (line 472)
-* s2k-count <1>:                         OpenPGP Options.     (line  90)
-* s2k-digest-algo:                       OpenPGP Options.     (line  79)
-* s2k-mode:                              OpenPGP Options.     (line  83)
+* s:                                     Dirmngr Options.     (line  94)
+* s2k-calibration:                       Agent Options.       (line 458)
+* s2k-cipher-algo:                       OpenPGP Options.     (line  81)
+* s2k-count:                             Agent Options.       (line 465)
+* s2k-count <1>:                         OpenPGP Options.     (line  97)
+* s2k-digest-algo:                       OpenPGP Options.     (line  86)
+* s2k-mode:                              OpenPGP Options.     (line  90)
 * scdaemon-program:                      Agent Options.       (line 332)
 * search-keys:                           Operational GPG Commands.
                                                               (line 323)
@@ -5798,16 +6044,16 @@ Option Index
                                                               (line  24)
 * server <3>:                            Scdaemon Commands.   (line  22)
 * set-filename:                          GPG Esoteric Options.
-                                                              (line 178)
-* set-filename <1>:                      gpgtar.              (line 129)
+                                                              (line 186)
+* set-filename <1>:                      gpgtar.              (line 132)
 * set-filesize:                          GPG Esoteric Options.
-                                                              (line 474)
+                                                              (line 477)
 * set-notation:                          GPG Esoteric Options.
-                                                              (line 124)
+                                                              (line 132)
 * set-policy-url:                        GPG Esoteric Options.
-                                                              (line 160)
+                                                              (line 168)
 * sh:                                    Agent Options.       (line 146)
-* sh <1>:                                Dirmngr Options.     (line  87)
+* sh <1>:                                Dirmngr Options.     (line  94)
 * show-keyring:                          Deprecated Options.  (line  16)
 * show-keys:                             Operational GPG Commands.
                                                               (line 185)
@@ -5815,36 +6061,36 @@ Option Index
 * show-photos:                           Deprecated Options.  (line   8)
 * show-policy-url:                       Deprecated Options.  (line  33)
 * show-session-key:                      GPG Esoteric Options.
-                                                              (line 478)
+                                                              (line 481)
 * shutdown:                              Dirmngr Commands.    (line  58)
 * sig-keyserver-url:                     GPG Esoteric Options.
-                                                              (line 170)
+                                                              (line 178)
 * sig-notation:                          GPG Esoteric Options.
-                                                              (line 124)
+                                                              (line 132)
 * sig-policy-url:                        GPG Esoteric Options.
-                                                              (line 160)
+                                                              (line 168)
 * sign:                                  Operational GPG Commands.
                                                               (line   8)
 * sign <1>:                              Operational GPGSM Commands.
                                                               (line  16)
 * sign-key:                              OpenPGP Key Management.
-                                                              (line 388)
-* skip-crypto:                           gpgtar.              (line  68)
+                                                              (line 391)
+* skip-crypto:                           gpgtar.              (line  71)
 * skip-hidden-recipients:                GPG Key related Options.
                                                               (line 108)
 * skip-verify:                           GPG Esoteric Options.
-                                                              (line 442)
+                                                              (line 445)
 * squid-mode:                            dirmngr-client.      (line 101)
-* ssh-fingerprint-digest:                Agent Options.       (line 450)
-* standard-resolver:                     Dirmngr Options.     (line 110)
+* ssh-fingerprint-digest:                Agent Options.       (line 443)
+* standard-resolver:                     Dirmngr Options.     (line 117)
 * status-fd:                             GPG Esoteric Options.
-                                                              (line  74)
+                                                              (line  82)
 * status-fd <1>:                         gpgv.                (line  52)
 * status-fd <2>:                         Invoking gpgconf.    (line 158)
-* status-fd <3>:                         gpgtar.              (line 120)
+* status-fd <3>:                         gpgtar.              (line 123)
 * status-fd <4>:                         gpg-wks-client.      (line 115)
 * status-file:                           GPG Esoteric Options.
-                                                              (line  78)
+                                                              (line  86)
 * steal-socket:                          Agent Options.       (line 135)
 * store:                                 Operational GPG Commands.
                                                               (line  55)
@@ -5855,36 +6101,36 @@ Option Index
 * symmetric:                             Operational GPG Commands.
                                                               (line  42)
 * sys-trustlist-name:                    Agent Options.       (line 177)
-* tar-args:                              gpgtar.              (line 141)
+* tar-args:                              gpgtar.              (line 149)
 * textmode:                              OpenPGP Options.     (line   8)
 * throw-keyids:                          GPG Esoteric Options.
-                                                              (line 257)
+                                                              (line 265)
 * time-only:                             watchgnupg.          (line  30)
-* tls-debug:                             Dirmngr Options.     (line  69)
+* tls-debug:                             Dirmngr Options.     (line  76)
 * tofu-default-policy:                   GPG Configuration Options.
-                                                              (line 725)
+                                                              (line 751)
 * tofu-policy:                           Operational GPG Commands.
-                                                              (line 408)
+                                                              (line 409)
 * trust-model:                           GPG Configuration Options.
-                                                              (line 412)
+                                                              (line 438)
 * trust-model:always:                    GPG Configuration Options.
-                                                              (line 493)
+                                                              (line 519)
 * trust-model:auto:                      GPG Configuration Options.
-                                                              (line 502)
+                                                              (line 528)
 * trust-model:classic:                   GPG Configuration Options.
-                                                              (line 420)
+                                                              (line 446)
 * trust-model:direct:                    GPG Configuration Options.
-                                                              (line 485)
+                                                              (line 511)
 * trust-model:pgp:                       GPG Configuration Options.
-                                                              (line 415)
+                                                              (line 441)
 * trust-model:tofu:                      GPG Configuration Options.
-                                                              (line 423)
+                                                              (line 449)
 * trust-model:tofu+pgp:                  GPG Configuration Options.
-                                                              (line 473)
+                                                              (line 499)
 * trustdb-name:                          GPG Configuration Options.
                                                               (line 253)
 * trusted-key:                           GPG Configuration Options.
-                                                              (line 403)
+                                                              (line 415)
 * try-all-secrets:                       GPG Key related Options.
                                                               (line 100)
 * try-secret-key:                        GPG Key related Options.
@@ -5898,22 +6144,22 @@ Option Index
 * url:                                   dirmngr-client.      (line  94)
 * url <1>:                               dirmngr-client.      (line  98)
 * use-agent:                             GPG Configuration Options.
-                                                              (line 749)
+                                                              (line 775)
 * use-embedded-filename:                 GPG Esoteric Options.
-                                                              (line 194)
+                                                              (line 202)
 * use-standard-socket:                   Agent Options.       (line 350)
 * use-standard-socket-p:                 Agent Options.       (line 350)
-* use-tor:                               Dirmngr Options.     (line  98)
+* use-tor:                               Dirmngr Options.     (line 105)
 * utf8-strings:                          GPG Configuration Options.
                                                               (line 308)
-* utf8-strings <1>:                      gpgtar.              (line  90)
+* utf8-strings <1>:                      gpgtar.              (line  93)
 * v:                                     Dirmngr Options.     (line  25)
 * v <1>:                                 Configuration Options.
                                                               (line  38)
 * v <2>:                                 Scdaemon Options.    (line  35)
 * v <3>:                                 dirmngr-client.      (line  53)
 * validate:                              dirmngr-client.      (line  76)
-* validation-model:                      Certificate Options. (line  73)
+* validation-model:                      Certificate Options. (line  75)
 * verbose:                               Agent Options.       (line  39)
 * verbose <1>:                           Dirmngr Options.     (line  25)
 * verbose <2>:                           GPG Configuration Options.
@@ -5928,9 +6174,9 @@ Option Index
 * verbose <8>:                           Invoking gpg-connect-agent.
                                                               (line  14)
 * verbose <9>:                           dirmngr-client.      (line  53)
-* verbose <10>:                          gpgtar.              (line  61)
+* verbose <10>:                          gpgtar.              (line  64)
 * verbose <11>:                          gpg-check-pattern.   (line  53)
-* verbose <12>:                          gpg-wks-client.      (line 132)
+* verbose <12>:                          gpg-wks-client.      (line 140)
 * verbose <13>:                          gpg-wks-server.      (line  78)
 * verify:                                Operational GPG Commands.
                                                               (line  67)
@@ -5971,46 +6217,46 @@ Option Index
 * version <4>:                           Scdaemon Commands.   (line  10)
 * version <5>:                           watchgnupg.          (line  36)
 * version <6>:                           dirmngr-client.      (line  40)
-* version <7>:                           gpgtar.              (line 147)
-* version <8>:                           gpg-wks-client.      (line 138)
+* version <7>:                           gpgtar.              (line 155)
+* version <8>:                           gpg-wks-client.      (line 146)
 * version <9>:                           gpg-wks-server.      (line  84)
 * warranty:                              General GPG Commands.
                                                               (line  17)
 * warranty <1>:                          General GPGSM Commands.
                                                               (line  15)
 * weak-digest:                           GPG Esoteric Options.
-                                                              (line 411)
+                                                              (line 419)
 * weak-digest <1>:                       gpgv.                (line  90)
 * with-colons:                           GPG Input and Output.
-                                                              (line 276)
+                                                              (line 281)
 * with-colons <1>:                       gpg-wks-client.      (line  76)
 * with-dir:                              gpg-wks-server.      (line  69)
-* with-ephemeral-keys:                   Esoteric Options.    (line  52)
+* with-ephemeral-keys:                   Esoteric Options.    (line  58)
 * with-file:                             gpg-wks-server.      (line  73)
 * with-fingerprint:                      GPG Input and Output.
-                                                              (line 296)
+                                                              (line 301)
 * with-icao-spelling:                    GPG Input and Output.
-                                                              (line 307)
+                                                              (line 312)
 * with-key-data:                         GPG Esoteric Options.
-                                                              (line 446)
-* with-key-data <1>:                     Input and Output.    (line  54)
+                                                              (line 449)
+* with-key-data <1>:                     Input and Output.    (line  60)
 * with-key-origin:                       GPG Input and Output.
-                                                              (line 315)
+                                                              (line 320)
 * with-keygrip:                          GPG Input and Output.
-                                                              (line 311)
-* with-log:                              gpgtar.              (line 124)
+                                                              (line 316)
+* with-log:                              gpgtar.              (line 127)
 * with-secret:                           GPG Input and Output.
-                                                              (line 326)
-* with-secret <1>:                       Input and Output.    (line  78)
+                                                              (line 331)
+* with-secret <1>:                       Input and Output.    (line  84)
 * with-subkey-fingerprint:               GPG Input and Output.
-                                                              (line 300)
-* with-validation:                       Input and Output.    (line  60)
+                                                              (line 305)
+* with-validation:                       Input and Output.    (line  66)
 * with-wkd-hash:                         GPG Input and Output.
-                                                              (line 321)
+                                                              (line 326)
 * xauthority:                            Agent Options.       (line 360)
 * yes:                                   GPG Configuration Options.
                                                               (line  63)
-* yes <1>:                               gpgtar.              (line 108)
+* yes <1>:                               gpgtar.              (line 111)
 
 
 File: gnupg.info,  Node: Environment Index,  Next: Index,  Prev: Option Index,  Up: Top
@@ -6021,18 +6267,18 @@ Environment Variable and File Index
  [index ]
 * Menu:
 
-* .gpg-v21-migrated:                     GPG Configuration.   (line  77)
-* ~/.gnupg:                              GPG Configuration.   (line  27)
+* .gpg-v21-migrated:                     GPG Configuration.   (line  78)
+* ~/.gnupg:                              GPG Configuration.   (line  28)
 * ASSUAN_DEBUG:                          Scdaemon Options.    (line 122)
-* COLUMNS:                               GPG Configuration.   (line 118)
-* com-certs.pem:                         GPGSM Configuration. (line  84)
+* COLUMNS:                               GPG Configuration.   (line 119)
+* com-certs.pem:                         GPGSM Configuration. (line  85)
 * dirmngr.conf:                          Dirmngr Configuration.
                                                               (line  12)
 * DISPLAY:                               GPGSM OPTION.        (line  21)
 * GNUPGHOME:                             Agent Options.       (line  17)
 * GNUPGHOME <1>:                         GPG Configuration Options.
                                                               (line 260)
-* GNUPGHOME <2>:                         GPG Configuration.   (line 106)
+* GNUPGHOME <2>:                         GPG Configuration.   (line 107)
 * GNUPGHOME <3>:                         Configuration Options.
                                                               (line  16)
 * GNUPGHOME <4>:                         Scdaemon Options.    (line  13)
@@ -6040,8 +6286,8 @@ Environment Variable and File Index
 * GNUPGHOME <6>:                         Invoking gpgconf.    (line 120)
 * GNUPGHOME <7>:                         Invoking gpg-connect-agent.
                                                               (line  21)
-* GNUPG_BUILD_ROOT:                      GPG Configuration.   (line 130)
-* GNUPG_EXEC_DEBUG_FLAGS:                GPG Configuration.   (line 135)
+* GNUPG_BUILD_ROOT:                      GPG Configuration.   (line 131)
+* GNUPG_EXEC_DEBUG_FLAGS:                GPG Configuration.   (line 136)
 * gpg-agent.conf:                        Agent Configuration. (line  11)
 * gpg.conf:                              GPG Configuration.   (line  11)
 * gpgconf.ctl:                           Agent Options.       (line  28)
@@ -6069,31 +6315,31 @@ Environment Variable and File Index
 * HKCU\Software\GNU\GnuPG:HomeDir <5>:   Invoking gpgconf.    (line 120)
 * HKCU\Software\GNU\GnuPG:HomeDir <6>:   Invoking gpg-connect-agent.
                                                               (line  21)
-* HOME:                                  GPG Configuration.   (line 103)
-* http_proxy:                            Dirmngr Options.     (line 240)
-* LANGUAGE:                              GPG Configuration.   (line 121)
+* HOME:                                  GPG Configuration.   (line 104)
+* http_proxy:                            Dirmngr Options.     (line 250)
+* LANGUAGE:                              GPG Configuration.   (line 122)
 * LC_CTYPE:                              GPGSM OPTION.        (line  27)
 * LC_MESSAGES:                           GPGSM OPTION.        (line  29)
-* LINES:                                 GPG Configuration.   (line 118)
-* openpgp-revocs.d:                      GPG Configuration.   (line  91)
+* LINES:                                 GPG Configuration.   (line 119)
+* openpgp-revocs.d:                      GPG Configuration.   (line  92)
 * PATH:                                  GPG Configuration Options.
                                                               (line 225)
-* PINENTRY_USER_DATA:                    GPG Configuration.   (line 113)
+* PINENTRY_USER_DATA:                    GPG Configuration.   (line 114)
 * PINENTRY_USER_DATA <1>:                GPGSM OPTION.        (line  33)
 * policies.txt:                          GPGSM Configuration. (line  18)
-* private-keys-v1.d:                     Agent Configuration. (line 106)
-* pubring.gpg:                           GPG Configuration.   (line  32)
-* pubring.kbx:                           GPG Configuration.   (line  50)
-* pubring.kbx <1>:                       GPGSM Configuration. (line 100)
+* private-keys-v1.d:                     Agent Configuration. (line 119)
+* pubring.gpg:                           GPG Configuration.   (line  33)
+* pubring.kbx:                           GPG Configuration.   (line  51)
+* pubring.kbx <1>:                       GPGSM Configuration. (line 101)
 * qualified.txt:                         GPGSM Configuration. (line  33)
-* random_seed:                           GPG Configuration.   (line  88)
-* random_seed <1>:                       GPGSM Configuration. (line 106)
-* S.gpg-agent:                           GPGSM Configuration. (line 111)
-* secring.gpg:                           GPG Configuration.   (line  69)
+* random_seed:                           GPG Configuration.   (line  89)
+* random_seed <1>:                       GPGSM Configuration. (line 107)
+* S.gpg-agent:                           GPGSM Configuration. (line 112)
+* secring.gpg:                           GPG Configuration.   (line  70)
 * SHELL:                                 Agent Options.       (line 146)
-* sshcontrol:                            Agent Configuration. (line  76)
+* sshcontrol:                            Agent Configuration. (line  89)
 * TERM:                                  GPGSM OPTION.        (line  25)
-* trustdb.gpg:                           GPG Configuration.   (line  80)
+* trustdb.gpg:                           GPG Configuration.   (line  81)
 * trustlist.txt:                         Agent Configuration. (line  20)
 * XAUTHORITY:                            GPGSM OPTION.        (line  31)
 

@@ -1625,8 +1625,21 @@ start_sig_check (ksba_crl_t crl, gcry_md_hd_t *md, int *algo, int *use_pss)
     }
   else
     *algo = gcry_md_map_name (algoid);
+  if (!*algo && algoid)
+    {
+      if (!strcmp (algoid, "1.2.840.10045.4.3.1"))
+        *algo = GCRY_MD_SHA224; /* ecdsa-with-sha224 */
+      else if (!strcmp (algoid, "1.2.840.10045.4.3.2"))
+        *algo = GCRY_MD_SHA256; /* ecdsa-with-sha256 */
+      else if (!strcmp (algoid, "1.2.840.10045.4.3.3"))
+        *algo = GCRY_MD_SHA384; /* ecdsa-with-sha384 */
+      else if (!strcmp (algoid, "1.2.840.10045.4.3.4"))
+        *algo = GCRY_MD_SHA512; /* ecdsa-with-sha512 */
+    }
   if (!*algo)
     {
+      log_debug ("XXXXX %s: %s <%s>\n",
+                 __func__, gpg_strerror (err), gpg_strsource (err));
       log_error (_("unknown hash algorithm '%s'\n"), algoid? algoid:"?");
       return gpg_error (GPG_ERR_DIGEST_ALGO);
     }
@@ -1660,6 +1673,7 @@ finish_sig_check (ksba_crl_t crl, gcry_md_hd_t md, int algo,
   size_t n;
   gcry_sexp_t s_sig = NULL, s_hash = NULL, s_pkey = NULL;
   unsigned int saltlen = 0;  /* (used only with use_pss)  */
+  int pkalgo;
 
   /* This also stops debugging on the MD.  */
   gcry_md_final (md);
@@ -1784,6 +1798,54 @@ finish_sig_check (ksba_crl_t crl, gcry_md_hd_t md, int algo,
                              gcry_md_read (md, algo),
                              saltlen);
     }
+  else if ((pkalgo = pk_algo_from_sexp (s_pkey)) == GCRY_PK_ECC)
+    {
+      unsigned int qbits0, qbits;
+
+      qbits0 = gcry_pk_get_nbits (s_pkey);
+      qbits = qbits0 == 521? 512 : qbits0;
+
+      if ((qbits%8))
+	{
+	  log_error ("ECDSA requires the hash length to be a"
+                     " multiple of 8 bits\n");
+	  err = gpg_error (GPG_ERR_INTERNAL);
+          goto leave;
+	}
+
+      /* Don't allow any Q smaller than 160 bits.  */
+      if (qbits < 160)
+	{
+	  log_error (_("%s key uses an unsafe (%u bit) hash\n"),
+                     gcry_pk_algo_name (pkalgo), qbits0);
+	  err = gpg_error (GPG_ERR_INTERNAL);
+          goto leave;
+	}
+
+      /* Check if we're too short.  */
+      n = gcry_md_get_algo_dlen (algo);
+      if (n < qbits/8)
+        {
+	  log_error (_("a %u bit hash is not valid for a %u bit %s key\n"),
+                     (unsigned int)n*8,
+                     qbits0,
+                     gcry_pk_algo_name (pkalgo));
+          if (n < 20)
+            {
+              err = gpg_error (GPG_ERR_INTERNAL);
+              goto leave;
+            }
+        }
+
+      /* Truncate.  */
+      if (n > qbits/8)
+        n = qbits/8;
+
+      err = gcry_sexp_build (&s_hash, NULL, "(data(flags raw)(value %b))",
+                             (int)n,
+                             gcry_md_read (md, algo));
+
+    }
   else
     {
       err = gcry_sexp_build (&s_hash, NULL,
@@ -1801,7 +1863,7 @@ finish_sig_check (ksba_crl_t crl, gcry_md_hd_t md, int algo,
   /* Pass this on to the signature verification. */
   err = gcry_pk_verify (s_sig, s_hash, s_pkey);
   if (DBG_X509)
-    log_debug ("gcry_pk_verify: %s\n", gpg_strerror (err));
+    log_debug ("%s: gcry_pk_verify: %s\n", __func__, gpg_strerror (err));
 
  leave:
   xfree (sigval);
@@ -2024,6 +2086,7 @@ crl_parse_insert (ctrl_t ctrl, ksba_crl_t crl,
 
             err = validate_cert_chain (ctrl, crlissuer_cert, NULL,
                                        (VALIDATE_FLAG_TRUST_CONFIG
+                                        | VALIDATE_FLAG_TRUST_SYSTEM
                                         | VALIDATE_FLAG_CRL
                                         | VALIDATE_FLAG_RECURSIVE),
                                        r_trust_anchor);
@@ -2294,11 +2357,21 @@ crl_cache_insert (ctrl_t ctrl, const char *url, ksba_reader_t reader)
   for (idx=0; !(err=ksba_crl_get_extension (crl, idx, &oid, &critical,
                                               NULL, NULL)); idx++)
     {
+      strlist_t sl;
+
       if (!critical
           || !strcmp (oid, oidstr_authorityKeyIdentifier)
           || !strcmp (oid, oidstr_crlNumber) )
         continue;
+
+      for (sl=opt.ignored_crl_extensions;
+           sl && strcmp (sl->d, oid); sl = sl->next)
+        ;
+      if (sl)
+        continue;  /* Is in ignored list.  */
+
       log_error (_("unknown critical CRL extension %s\n"), oid);
+      log_info ("(CRL='%s')\n", url);
       if (!err2)
         err2 = gpg_error (GPG_ERR_INV_CRL);
       invalidate_crl |= 2;

@@ -89,8 +89,10 @@ struct
   int list_packets; /* Option --list-packets active.  */
   int def_cipher_algo;
   int def_digest_algo;
+  int force_ocb;
   int cert_digest_algo;
   int compress_algo;
+  int explicit_compress_option; /* A compress option was explicitly given. */
   int compress_level;
   int bz2_compress_level;
   int bz2_decompress_lowmem;
@@ -102,6 +104,9 @@ struct
   /* A list of mail addresses (addr-spec) provided by the user with
    * the option --sender.  */
   strlist_t sender_list;
+
+  /* A list of fingerprints added as designated revokers to new keys.  */
+  strlist_t desig_revokers;
 
   int def_cert_level;
   int min_cert_level;
@@ -236,7 +241,6 @@ struct
     unsigned int allow_multiple_messages:1;
     unsigned int allow_weak_digest_algos:1;
     unsigned int allow_weak_key_signatures:1;
-    unsigned int override_compliance_check:1;
     unsigned int large_rsa:1;
     unsigned int disable_signer_uid:1;
     unsigned int include_key_block:1;
@@ -290,6 +294,9 @@ struct
   int only_sign_text_ids;
 
   int no_symkey_cache;   /* Disable the cache used for --symmetric.  */
+
+  /* Compatibility flags (COMPAT_FLAG_xxxx).  */
+  unsigned int compat_flags;
 } opt;
 
 /* CTRL is used to keep some global variables we currently can't
@@ -346,8 +353,11 @@ struct {
 EXTERN_UNLESS_MAIN_MODULE int memory_debug_mode;
 EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 
+/* Compatibility flags */
+#define COMPAT_VSD_ALLOW_OCB  1
 
-/* Compatibility flags.  */
+
+/* Compliance test macors.  */
 #define GNUPG   (opt.compliance==CO_GNUPG || opt.compliance==CO_DE_VS)
 #define RFC2440 (opt.compliance==CO_RFC2440)
 #define RFC4880 (opt.compliance==CO_RFC4880)
@@ -384,6 +394,7 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define EXPORT_PKA_FORMAT                (1<<6)
 #define EXPORT_DANE_FORMAT               (1<<7)
 #define EXPORT_BACKUP                    (1<<10)
+#define EXPORT_REVOCS                    (1<<11)
 
 #define LIST_SHOW_PHOTOS                 (1<<0)
 #define LIST_SHOW_POLICY_URLS            (1<<1)
@@ -399,6 +410,8 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define LIST_SHOW_SIG_SUBPACKETS         (1<<10)
 #define LIST_SHOW_USAGE                  (1<<11)
 #define LIST_SHOW_ONLY_FPR_MBOX          (1<<12)
+#define LIST_SHOW_PREF                   (1<<14)
+#define LIST_SHOW_PREF_VERBOSE           (1<<15)
 
 #define VERIFY_SHOW_PHOTOS               (1<<0)
 #define VERIFY_SHOW_POLICY_URLS          (1<<1)

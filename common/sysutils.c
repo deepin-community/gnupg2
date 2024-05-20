@@ -244,6 +244,9 @@ map_w32_to_errno (DWORD w32_err)
     case ERROR_ALREADY_EXISTS:
       return EEXIST;
 
+    case ERROR_FILE_INVALID:
+      return EIO;
+
       /* This mapping has been taken from reactOS.  */
     case ERROR_TOO_MANY_OPEN_FILES: return EMFILE;
     case ERROR_ARENA_TRASHED: return ENOMEM;
@@ -316,15 +319,17 @@ map_w32_to_errno (DWORD w32_err)
 #endif /*HAVE_W32_SYSTEM*/
 
 
-/* Set ERRNO from the Windows error.  EC may be -1 to use the last error.  */
+/* Set ERRNO from the Windows error.  EC may be -1 to use the last
+ * error.  Returns the Windows error code.  */
 #ifdef HAVE_W32_SYSTEM
-void
+int
 gnupg_w32_set_errno (int ec)
 {
   /* FIXME: Replace by gpgrt_w32_set_errno.  */
   if (ec == -1)
     ec = GetLastError ();
   _set_errno (map_w32_to_errno (ec));
+  return ec;
 }
 #endif /*HAVE_W32_SYSTEM*/
 
@@ -809,7 +814,12 @@ gnupg_remove (const char *fname)
     return -1;
   return 0;
 #else
-  return remove (fname);
+  /* It is common to use /dev/null for testing.  We better don't
+   * remove that file.  */
+  if (fname && !strcmp (fname, "/dev/null"))
+    return 0;
+  else
+    return remove (fname);
 #endif
 }
 

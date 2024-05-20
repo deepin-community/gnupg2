@@ -80,6 +80,9 @@
 # AUTHENTICODE_KEY=/home/foo/.gnupg/my-authenticode-key.p12
 # AUTHENTICODE_CERTS=/home/foo/.gnupg/my-authenticode-certs.pem
 #
+# If a tarball has not been published while building a release it
+# may be stored in a directory specified by:
+# OVERRIDE_TARBALLS=/home/foo/override-tarballs
 #--8<---------------cut here---------------end--------------->8---
 
 
@@ -132,7 +135,10 @@ help-wixlib:
 	@echo ''
 	@echo 'Afterwards w32-release will build also a wixlib.'
 
-
+# NB: we can't use +$(MAKE) here because we would need to define the
+# dependencies of our packages.  This does not make much sense given that
+# we have a clear order in how they are build and concurrent builds
+# would anyway clutter up the logs.
 SPEEDOMAKE := $(MAKE) -f $(SPEEDO_MK) UPD_SWDB=1
 
 native: check-tools
@@ -223,7 +229,7 @@ STATIC=0
 # external packages.
 TARBALLS=$(shell pwd)/../tarballs
 
-#  Number of parallel make jobs
+#  Number of parallel make jobs in each package
 MAKE_J=3
 
 # Name to use for the w32 installer and sources
@@ -246,6 +252,7 @@ $(eval $(call READ_AUTOGEN_template,AUTHENTICODE_CERTS))
 $(eval $(call READ_AUTOGEN_template,OSSLSIGNCODE))
 $(eval $(call READ_AUTOGEN_template,OSSLPKCS11ENGINE))
 $(eval $(call READ_AUTOGEN_template,SCUTEMODULE))
+$(eval $(call READ_AUTOGEN_template,OVERRIDE_TARBALLS))
 
 # All files given in AUTHENTICODE_FILES are signed before
 # they are put into the installer.
@@ -489,7 +496,7 @@ gtk__ver = 2.24.17
 gitrep = ${HOME}/s
 
 # The tarball directories
-pkgrep = ftp://ftp.gnupg.org/gcrypt
+pkgrep = https://gnupg.org/ftp/gcrypt
 pkg10rep = ftp://ftp.g10code.com/g10code
 pkg2rep = $(TARBALLS)
 
@@ -681,9 +688,13 @@ speedo_pkg_w64_gpgex_configure = \
 # External packages
 #
 
+# gcc 10.2 takes __udivdi3 from the exception handler DLL and thus
+# requires it.  This is a regression from gcc 8.3 and earlier.  To fix
+# this we need to pass -static-libgcc.
 ifeq ($(TARGETOS),w32)
 speedo_pkg_zlib_make_args = \
-        -fwin32/Makefile.gcc PREFIX=$(host)- IMPLIB=libz.dll.a
+        -fwin32/Makefile.gcc PREFIX=$(host)- IMPLIB=libz.dll.a \
+         LDFLAGS=-static-libgcc
 
 speedo_pkg_zlib_make_args_inst = \
         -fwin32/Makefile.gcc \
@@ -873,16 +884,17 @@ endif
 # The playground area is our scratch area, where we unpack, build and
 # install the packages.
 $(stampdir)/stamp-directories:
-	$(MKDIR) $(root) || true
-	$(MKDIR) $(stampdir) || true
-	$(MKDIR) $(sdir)  || true
-	$(MKDIR) $(bdir)  || true
-	$(MKDIR) $(idir)   || true
+	$(MKDIR) -p $(root)
+	$(MKDIR) -p $(stampdir)
+	$(MKDIR) -p $(sdir)
+	$(MKDIR) -p $(bdir)
+	$(MKDIR) -p $(idir)
 ifeq ($(TARGETOS),w32)
-	$(MKDIR) $(bdir6)  || true
-	$(MKDIR) $(idir6)   || true
+	$(MKDIR) -p $(bdir6)
+	$(MKDIR) -p $(idir6)
 endif
 	touch $(stampdir)/stamp-directories
+
 
 # Frob the name $1 by converting all '-' and '+' characters to '_'.
 define FROB_macro
@@ -977,7 +989,7 @@ endef
 #
 define SPKG_template
 
-$(stampdir)/stamp-$(1)-00-unpack: $(stampdir)/stamp-directories
+$(stampdir)/stamp-$(1)-00-unpack:
 	@echo "speedo: /*"
 	@echo "speedo:  *   $(1)"
 	@echo "speedo:  */"
@@ -999,6 +1011,13 @@ $(stampdir)/stamp-$(1)-00-unpack: $(stampdir)/stamp-directories
 	   cd "$$$${pkg}"; 				\
 	   AUTOGEN_SH_SILENT=1 ./autogen.sh;            \
          elif [ -n "$$$${tar}" ]; then			\
+           tar2="$(OVERRIDE_TARBALLS)/$$$$(basename $$$${tar})";\
+           if [ -f "$$$${tar2}" ]; then                 \
+             tar="$$$$tar2";                            \
+             echo "speedo: /*";                         \
+             echo "speedo:  * Note: using an override"; \
+             echo "speedo:  */";                        \
+           fi;                                          \
 	   echo "speedo: unpacking $(1) from $$$${tar}"; \
            case "$$$${tar}" in				\
              *.gz) pretar=zcat ;;	   		\
@@ -1245,7 +1264,7 @@ endef
 # Insert the template for each source package.
 $(foreach spkg, $(speedo_spkgs), $(eval $(call SPKG_template,$(spkg))))
 
-$(stampdir)/stamp-final: $(stampdir)/stamp-directories clean-pkg-versions
+$(stampdir)/stamp-final: clean-pkg-versions
 ifeq ($(TARGETOS),w32)
 $(stampdir)/stamp-final: $(addprefix $(stampdir)/stamp-w64-final-,$(speedo_w64_build_list))
 endif
@@ -1311,10 +1330,14 @@ $(bdir)/README.txt: $(bdir)/NEWS.tmp $(topsrc)/README $(w32src)/README.txt \
            | sed -e '/^#/d' \
            | awk '{printf "%s\r\n", $$0}' >$(bdir)/README.txt
 
-$(bdir)/g4wihelp.dll: $(w32src)/g4wihelp.c $(w32src)/exdll.h
+$(bdir)/g4wihelp.dll: $(w32src)/g4wihelp.c $(w32src)/exdll.h $(w32src)/exdll.c
 	(set -e; cd $(bdir); \
-	 $(W32CC) -I. -shared -O2 -o g4wihelp.dll $(w32src)/g4wihelp.c \
-	          -lwinmm -lgdi32; \
+         $(W32CC) -DUNICODE -static-libgcc -I . -O2 -c \
+                          -o exdll.o $(w32src)/exdll.c; \
+	 $(W32CC) -DUNICODE -static-libgcc -I. -shared -O2 \
+                          -o g4wihelp.dll $(w32src)/g4wihelp.c exdll.o \
+	                  -lwinmm -lgdi32 -luserenv \
+                          -lshell32 -loleaut32 -lshlwapi -lmsimg32; \
 	 $(STRIP) g4wihelp.dll)
 
 w32_insthelpers: $(bdir)/g4wihelp.dll
@@ -1343,8 +1366,7 @@ installer: all w32_insthelpers $(w32src)/inst-options.ini $(bdir)/README.txt
            done; \
          fi \
         )
-	$(MAKENSIS) -V2 $$($(MAKENSIS) -version \
-                           | grep -q ^v3 && echo "-INPUTCHARSET CP1252 ") \
+	$(MAKENSIS) -V2 \
                     -DINST_DIR=$(idir) \
                     -DINST6_DIR=$(idir6) \
                     -DBUILD_DIR=$(bdir) \
@@ -1511,10 +1533,8 @@ sign-installer:
 	 if [ -e "$${msifile}" ]; then \
 	   $(call MKSWDB_commands,$${msifile},$${reldate},"wixlib_"); \
 	 fi; \
-	 echo "speedo: /*" ;\
-	 echo "speedo:  * Verification result" ;\
-	 echo "speedo:  */" ;\
-         osslsigncode verify $${exefile} \
+	 echo "speedo: /* (osslsigncode verify disabled) */" ;\
+	 echo osslsigncode verify $${exefile} \
 	)
 
 
@@ -1524,9 +1544,9 @@ endif
 
 
 #
-# Check availibility of standard tools
+# Check availibility of standard tools and prepare everything.
 #
-check-tools:
+check-tools: $(stampdir)/stamp-directories
 
 
 #

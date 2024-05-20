@@ -157,17 +157,16 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -641,16 +640,11 @@ libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
-@HAVE_W32_SYSTEM_FALSE@gpgconf_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpgconf_robjs = $(resource_objs) gpgconf-w32info.o
-@HAVE_W32_SYSTEM_FALSE@gpgtar_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpgtar_robjs = $(resource_objs) gpgtar-w32info.o
-@HAVE_W32_SYSTEM_FALSE@gpg_connect_agent_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpg_connect_agent_robjs = $(resource_objs) gpg-connect-agent-w32info.o
-@HAVE_W32_SYSTEM_FALSE@gpg_check_pattern_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpg_check_pattern_robjs = $(resource_objs) gpg-check-pattern-w32info.o
-@HAVE_W32_SYSTEM_FALSE@gpg_wks_client_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpg_wks_client_robjs = $(resource_objs) gpg-wks-client-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpgconf_rc_objs = $(resource_objs) gpgconf-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpgtar_rc_objs = $(resource_objs) gpgtar-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_connect_agent_rc_objs = $(resource_objs) gpg-connect-agent-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_check_pattern_rc_objs = $(resource_objs) gpg-check-pattern-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_wks_client_rc_objs = $(resource_objs) gpg-wks-client-w32info.o
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(LIBASSUAN_CFLAGS)
 sbin_SCRIPTS = addgnupghome applygnupgdefaults
 
@@ -679,7 +673,7 @@ gpgconf_SOURCES = gpgconf.c gpgconf.h gpgconf-comp.c
 gpgconf_LDADD = $(maybe_commonpth_libs) $(opt_libassuan_libs) \
                 $(LIBINTL) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	        $(LIBICONV) $(W32SOCKLIBS) \
-	        $(gpgconf_robjs)
+	        $(gpgconf_rc_objs)
 
 gpgconf_LDFLAGS = $(extra_bin_ldflags)
 gpgconf_w32_SOURCES = $(gpgconf_SOURCES)
@@ -694,14 +688,14 @@ gpg_connect_agent_LDADD = ../common/libgpgrl.a $(common_libs) \
 	                  $(LIBASSUAN_LIBS) $(LIBGCRYPT_LIBS) \
                           $(GPG_ERROR_LIBS) \
                           $(LIBREADLINE) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
-                          $(gpg_connect_agent_robjs)
+                          $(gpg_connect_agent_rc_objs)
 
 gpg_check_pattern_SOURCES = gpg-check-pattern.c
 gpg_check_pattern_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(INCICONV)
 gpg_check_pattern_LDADD = $(common_libs) $(regexp_libs) $(LIBGCRYPT_LIBS) \
 			  $(GPG_ERROR_LIBS) \
 			  $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS) \
-			  $(LIBICONV) $(gpg_check_pattern_robjs)
+			  $(LIBICONV) $(gpg_check_pattern_rc_objs)
 
 gpgtar_SOURCES = \
 	gpgtar.c gpgtar.h \
@@ -712,7 +706,7 @@ gpgtar_SOURCES = \
 gpgtar_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
 gpgtar_LDADD = $(libcommon) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
                $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS) \
-	       $(gpgtar_robjs)
+	       $(gpgtar_rc_objs)
 
 gpg_wks_server_SOURCES = \
 	gpg-wks-server.c \
@@ -745,7 +739,7 @@ gpg_wks_client_CFLAGS = $(LIBASSUAN_CFLAGS) $(LIBGCRYPT_CFLAGS) \
 gpg_wks_client_LDADD = $(libcommon) \
 		       $(LIBASSUAN_LIBS) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
 		       $(LIBINTL) $(LIBICONV) $(NETLIBS) \
-		       $(gpg_wks_client_robjs)
+		       $(gpg_wks_client_rc_objs)
 
 all: all-am
 
@@ -1574,11 +1568,14 @@ uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS \
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
 
-@HAVE_W32_SYSTEM_TRUE@gpgconf-w32info.o:           gpgconf.w32-manifest
-@HAVE_W32_SYSTEM_TRUE@gpgtar-w32info.o:            gpgtar.w32-manifest
-@HAVE_W32_SYSTEM_TRUE@gpg-connect-agent-w32info.o: gpg-connect-agent.w32-manifest
-@HAVE_W32_SYSTEM_TRUE@gpg-check-pattern-w32info.o: gpg-check-pattern.w32-manifest
-@HAVE_W32_SYSTEM_TRUE@gpg-wks-client-w32info.o:    gpg-wks-client.w32-manifest
+@HAVE_W32_SYSTEM_TRUE@gpg-connect-agent-w32info.o  : gpg-connect-agent.w32-manifest \
+@HAVE_W32_SYSTEM_TRUE@                                                     ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@gpgconf-w32info.o            : gpgconf.w32-manifest  ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@gpgtar-w32info.o             : gpgtar.w32-manifest   ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@gpg-check-pattern-w32info.o  : gpg-check-pattern.w32-manifest \
+@HAVE_W32_SYSTEM_TRUE@                                                     ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@gpg-wks-client-w32info.o     : gpg-wks-client.w32-manifest \
+@HAVE_W32_SYSTEM_TRUE@                                                     ../common/w32info-rc.h
 
 # Make sure that all libs are build before we use them.  This is
 # important for things like make -j2.

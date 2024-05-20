@@ -32,6 +32,13 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <errno.h>
+#ifdef HAVE_W32_SYSTEM
+# ifndef WINVER
+#  define WINVER 0x0500  /* Same as in common/sysutils.c */
+# endif
+# include <winsock2.h>
+# include <sddl.h>
+#endif
 
 #include "dirmngr.h"
 #include <assuan.h>
@@ -146,7 +153,7 @@ get_ldapservers_from_ctrl (ctrl_t ctrl)
 }
 
 /* Release an uri_item_t list.  */
-static void
+void
 release_uri_item_list (uri_item_t list)
 {
   while (list)
@@ -2124,13 +2131,6 @@ cmd_validate (assuan_context_t ctx, char *line)
 static gpg_error_t
 make_keyserver_item (const char *uri, uri_item_t *r_item)
 {
-  gpg_error_t err;
-  uri_item_t item;
-  const char *s;
-  char *tmpstr = NULL;
-
-  *r_item = NULL;
-
   /* We used to have DNS CNAME redirection from the URLs below to
    * sks-keyserver. pools.  The idea was to allow for a quick way to
    * switch to a different set of pools.  The problem with that
@@ -2162,78 +2162,7 @@ make_keyserver_item (const char *uri, uri_item_t *r_item)
   else if (!strcmp (uri, "http://http-keys.gnupg.net"))
     uri = "hkp://pgp.surf.nl:80";
 
-  item = xtrymalloc (sizeof *item + strlen (uri));
-  if (!item)
-    return gpg_error_from_syserror ();
-
-  item->next = NULL;
-  item->parsed_uri = NULL;
-  strcpy (item->uri, uri);
-
-#if USE_LDAP
-  if (!strncmp (uri, "ldap:", 5) && !(uri[5] == '/' && uri[6] == '/'))
-    {
-      /* Special ldap scheme given.  This differs from a valid ldap
-       * scheme in that no double slash follows..  Use http_parse_uri
-       * to put it as opaque value into parsed_uri.  */
-      tmpstr = strconcat ("opaque:", uri+5, NULL);
-      if (!tmpstr)
-        err = gpg_error_from_syserror ();
-      else
-        err = http_parse_uri (&item->parsed_uri, tmpstr, 0);
-    }
-  else if ((s=strchr (uri, ':')) && !(s[1] == '/' && s[2] == '/'))
-    {
-      /* No valid scheme given.  Use http_parse_uri to put the string
-       * as opaque value into parsed_uri.  */
-      tmpstr = strconcat ("opaque:", uri, NULL);
-      if (!tmpstr)
-        err = gpg_error_from_syserror ();
-      else
-        err = http_parse_uri (&item->parsed_uri, tmpstr, 0);
-    }
-  else if (ldap_uri_p (uri))
-    {
-      int fixup = 0;
-      /* Fixme: We should get rid of that parser and repalce it with
-       * our generic (http) URI parser.  */
-
-      /* If no port has been specified and the scheme ist ldaps we use
-       * our idea of the default port because the standard LDAP URL
-       * parser would use 636 here.  This is because we redefined
-       * ldaps to mean starttls.  */
-#ifdef HAVE_W32_SYSTEM
-      if (!strcmp (uri, "ldap:///"))
-          fixup = 1;
-      else
-#endif
-        if (!http_parse_uri (&item->parsed_uri,uri,HTTP_PARSE_NO_SCHEME_CHECK))
-        {
-          if (!item->parsed_uri->port
-              && !strcmp (item->parsed_uri->scheme, "ldaps"))
-            fixup = 2;
-          http_release_parsed_uri (item->parsed_uri);
-          item->parsed_uri = NULL;
-        }
-
-      err = ldap_parse_uri (&item->parsed_uri, uri);
-      if (!err && fixup == 1)
-        item->parsed_uri->ad_current = 1;
-      else if (!err && fixup == 2)
-        item->parsed_uri->port = 389;
-    }
-  else
-#endif /* USE_LDAP */
-    {
-      err = http_parse_uri (&item->parsed_uri, uri, HTTP_PARSE_NO_SCHEME_CHECK);
-    }
-
-  xfree (tmpstr);
-  if (err)
-    xfree (item);
-  else
-    *r_item = item;
-  return err;
+  return ks_action_parse_uri (uri, r_item);
 }
 
 
@@ -2250,6 +2179,7 @@ ensure_keyserver (ctrl_t ctrl)
   uri_item_t plain_items = NULL;
   uri_item_t ui;
   strlist_t sl;
+  int none_seen = 1;
 
   if (ctrl->server_local->keyservers)
     return 0; /* Already set for this session.  */
@@ -2262,6 +2192,15 @@ ensure_keyserver (ctrl_t ctrl)
 
   for (sl = opt.keyserver; sl; sl = sl->next)
     {
+      /* Frontends like Kleopatra may prefix option values without a
+       * scheme with "hkps://".  Thus we need to check that too.
+       * Nobody will be mad enough to call a machine "none".  */
+      if (!strcmp (sl->d, "none") || !strcmp (sl->d, "hkp://none")
+          || !strcmp (sl->d, "hkps://none"))
+        {
+          none_seen = 1;
+          continue;
+        }
       err = make_keyserver_item (sl->d, &item);
       if (err)
         goto leave;
@@ -2275,6 +2214,12 @@ ensure_keyserver (ctrl_t ctrl)
           item->next = plain_items;
           plain_items = item;
         }
+    }
+
+  if (none_seen && !plain_items && !onion_items)
+    {
+      err = gpg_error (GPG_ERR_NO_KEYSERVER);
+      goto leave;
     }
 
   /* Decide which to use.  Note that the session has no keyservers
@@ -2347,8 +2292,7 @@ cmd_keyserver (assuan_context_t ctx, char *line)
   gpg_error_t err = 0;
   int clear_flag, add_flag, help_flag, host_flag, resolve_flag;
   int dead_flag, alive_flag;
-  uri_item_t item = NULL; /* gcc 4.4.5 is not able to detect that it
-                             is always initialized.  */
+  uri_item_t item = NULL;
 
   clear_flag = has_option (line, "--clear");
   help_flag = has_option (line, "--help");
@@ -2414,13 +2358,17 @@ cmd_keyserver (assuan_context_t ctx, char *line)
 
   if (add_flag)
     {
-      err = make_keyserver_item (line, &item);
+      if (!strcmp (line, "none") || !strcmp (line, "hkp://none")
+          || !strcmp (line, "hkps://none"))
+        err = 0;
+      else
+        err = make_keyserver_item (line, &item);
       if (err)
         goto leave;
     }
   if (clear_flag)
     release_ctrl_keyservers (ctrl);
-  if (add_flag)
+  if (add_flag && item)
     {
       item->next = ctrl->server_local->keyservers;
       ctrl->server_local->keyservers = item;
@@ -2516,22 +2464,28 @@ cmd_ks_search (assuan_context_t ctx, char *line)
 
 
 static const char hlp_ks_get[] =
-  "KS_GET [--quick] [--ldap] [--first|--next] {<pattern>}\n"
+  "KS_GET [--quick] [--newer=TIME] [--ldap] [--first|--next] {<pattern>}\n"
   "\n"
   "Get the keys matching PATTERN from the configured OpenPGP keyservers\n"
   "(see command KEYSERVER).  Each pattern should be a keyid, a fingerprint,\n"
   "or an exact name indicated by the '=' prefix.  Option --quick uses a\n"
   "shorter timeout; --ldap will use only ldap servers.  With --first only\n"
-  "the first item is returned; --next is used to return the next item";
+  "the first item is returned; --next is used to return the next item\n"
+  "Option --newer works only with certain LDAP servers.";
 static gpg_error_t
 cmd_ks_get (assuan_context_t ctx, char *line)
 {
   ctrl_t ctrl = assuan_get_pointer (ctx);
   gpg_error_t err;
-  strlist_t list, sl;
+  strlist_t list = NULL;
+  strlist_t sl;
+  const char *s;
   char *p;
   estream_t outfp;
   unsigned int flags = 0;
+  gnupg_isotime_t opt_newer;
+
+  *opt_newer = 0;
 
   if (has_option (line, "--quick"))
     ctrl->timeout = opt.connect_quick_timeout;
@@ -2541,13 +2495,18 @@ cmd_ks_get (assuan_context_t ctx, char *line)
     flags |= KS_GET_FLAG_FIRST;
   if (has_option (line, "--next"))
     flags |= KS_GET_FLAG_NEXT;
+  if ((s = option_value (line, "--newer"))
+      && !string2isotime (opt_newer, s))
+    {
+      err = set_error (GPG_ERR_SYNTAX, "invalid time format");
+      goto leave;
+    }
   line = skip_options (line);
 
   /* Break the line into a strlist.  Each pattern is by
      definition percent-plus escaped.  However we only support keyids
      and fingerprints and thus the client has no need to apply the
      escaping.  */
-  list = NULL;
   for (p=line; *p; line = p)
     {
       while (*p && *p != ' ')
@@ -2624,7 +2583,7 @@ cmd_ks_get (assuan_context_t ctx, char *line)
       ctrl->server_local->inhibit_data_logging_now = 0;
       ctrl->server_local->inhibit_data_logging_count = 0;
       err = ks_action_get (ctrl, ctrl->server_local->keyservers,
-                           list, flags, outfp);
+                           list, flags, opt_newer, outfp);
       es_fclose (outfp);
       ctrl->server_local->inhibit_data_logging = 0;
     }
@@ -2744,6 +2703,116 @@ cmd_ks_put (assuan_context_t ctx, char *line)
 
 
 
+static const char hlp_ad_query[] =
+  "AD_QUERY [--first|--next] [--] <filter> \n"
+  "\n"
+  "Query properties from a Windows Active Directory.\n"
+  "Options:\n"
+  "\n"
+  "  --rootdse        - Query the root using serverless binding,\n"
+  "  --subst          - Substitute variables in the filter\n"
+  "  --attr=<attribs> - Comma delimited list of attributes\n"
+  "                     to return.\n"
+  "  --help           - List supported variables\n"
+  "\n"
+  "Extended filter syntax is allowed:\n"
+  "   ^[<base>][&<scope>]&[<filter>]\n"
+  "Usual escaping rules apply.  An ampersand in <base> must\n"
+  "doubled.  <scope> may be \"base\", \"one\", or \"sub\"."
+  ;
+static gpg_error_t
+cmd_ad_query (assuan_context_t ctx, char *line)
+{
+  ctrl_t ctrl = assuan_get_pointer (ctx);
+  gpg_error_t err;
+  unsigned int flags = 0;
+  const char *filter;
+  estream_t outfp = NULL;
+  char *p;
+  char **opt_attr = NULL;
+  const char *s;
+  gnupg_isotime_t opt_newer;
+  int opt_help = 0;
+
+  *opt_newer = 0;
+
+  /* No options for now.  */
+  if (has_option (line, "--first"))
+    flags |= KS_GET_FLAG_FIRST;
+  if (has_option (line, "--next"))
+    flags |= KS_GET_FLAG_NEXT;
+  if (has_option (line, "--rootdse"))
+    flags |= KS_GET_FLAG_ROOTDSE;
+  if (has_option (line, "--subst"))
+    flags |= KS_GET_FLAG_SUBST;
+  if (has_option (line, "--help"))
+    opt_help = 1;
+  if ((s = option_value (line, "--newer"))
+      && !string2isotime (opt_newer, s))
+    {
+      err = set_error (GPG_ERR_SYNTAX, "invalid time format");
+      goto leave;
+    }
+  err = get_option_value (line, "--attr", &p);
+  if (err)
+    goto leave;
+  if (p)
+    {
+      opt_attr = strtokenize (p, ",");
+      if (!opt_attr)
+        {
+          err = gpg_error_from_syserror ();
+          xfree (p);
+          goto leave;
+        }
+      xfree (p);
+    }
+  line = skip_options (line);
+  filter = line;
+
+  if (opt_help)
+    {
+#if USE_LDAP
+      ks_ldap_help_variables (ctrl);
+#endif
+      err = 0;
+      goto leave;
+    }
+
+  if ((flags & KS_GET_FLAG_NEXT))
+    {
+      if (*filter || (flags & ~KS_GET_FLAG_NEXT))
+        {
+          err = PARM_ERROR ("No filter or other options allowed with --next");
+          goto leave;
+        }
+    }
+
+  /* Setup an output stream and perform the get.  */
+  outfp = es_fopencookie (ctx, "w", data_line_cookie_functions);
+  if (!outfp)
+    {
+      err = set_error (GPG_ERR_ASS_GENERAL, "error setting up a data stream");
+      goto leave;
+    }
+
+  ctrl->server_local->inhibit_data_logging = 1;
+  ctrl->server_local->inhibit_data_logging_now = 0;
+  ctrl->server_local->inhibit_data_logging_count = 0;
+
+  err = ks_action_query (ctrl,
+                         (flags & KS_GET_FLAG_ROOTDSE)? NULL : "ldap:///",
+                         flags, filter, opt_attr, opt_newer, outfp);
+
+ leave:
+  es_fclose (outfp);
+  xfree (opt_attr);
+  ctrl->server_local->inhibit_data_logging = 0;
+  return leave_cmd (ctx, err);
+}
+
+
+
 static const char hlp_loadswdb[] =
   "LOADSWDB [--force]\n"
   "\n"
@@ -2854,14 +2923,39 @@ cmd_getinfo (assuan_context_t ctx, char *line)
         {
           const char *s = getenv (line);
           if (!s)
-            err = set_error (GPG_ERR_NOT_FOUND, "No such envvar");
-          else
-            err = assuan_send_data (ctx, s, strlen (s));
+            {
+              err = set_error (GPG_ERR_NOT_FOUND, "No such envvar");
+              goto leave;
+            }
+          err = assuan_send_data (ctx, s, strlen (s));
         }
     }
+#ifdef HAVE_W32_SYSTEM
+  else if (!strcmp (line, "sid"))
+    {
+      PSID mysid;
+      char *sidstr;
+
+      mysid = w32_get_user_sid ();
+      if (!mysid)
+        {
+          err = set_error (GPG_ERR_NOT_FOUND, "Error getting my SID");
+          goto leave;
+        }
+
+      if (!ConvertSidToStringSid (mysid, &sidstr))
+        {
+          err = set_error (GPG_ERR_BUG, "Error converting SID to a string");
+          goto leave;
+        }
+      err = assuan_send_data (ctx, sidstr, strlen (sidstr));
+      LocalFree (sidstr);
+    }
+#endif /*HAVE_W32_SYSTEM*/
   else
     err = set_error (GPG_ERR_ASS_PARAMETER, "unknown value for WHAT");
 
+ leave:
   return leave_cmd (ctx, err);
 }
 
@@ -2941,6 +3035,7 @@ register_commands (assuan_context_t ctx)
     { "KS_GET",     cmd_ks_get,     hlp_ks_get },
     { "KS_FETCH",   cmd_ks_fetch,   hlp_ks_fetch },
     { "KS_PUT",     cmd_ks_put,     hlp_ks_put },
+    { "AD_QUERY",   cmd_ad_query,   hlp_ad_query },
     { "GETINFO",    cmd_getinfo,    hlp_getinfo },
     { "LOADSWDB",   cmd_loadswdb,   hlp_loadswdb },
     { "KILLDIRMNGR",cmd_killdirmngr,hlp_killdirmngr },
@@ -3135,8 +3230,10 @@ start_command_handler (assuan_fd_t fd, unsigned int session_id)
                ctrl->refcount);
   else
     {
+#if USE_LDAP
       ks_ldap_free_state (ctrl->ks_get_state);
       ctrl->ks_get_state = NULL;
+#endif
       release_ctrl_ocsp_certs (ctrl);
       xfree (ctrl->server_local);
       dirmngr_deinit_default_ctrl (ctrl);

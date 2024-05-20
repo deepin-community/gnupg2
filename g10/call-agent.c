@@ -149,6 +149,7 @@ default_inq_cb (void *opaque, const char *line)
             || has_leading_keyword (line, "NEW_PASSPHRASE"))
            && opt.pinentry_mode == PINENTRY_MODE_LOOPBACK)
     {
+      assuan_begin_confidential (parm->ctx);
       if (have_static_passphrase ())
         {
           const char *s = get_static_passphrase ();
@@ -175,6 +176,7 @@ default_inq_cb (void *opaque, const char *line)
             err = assuan_send_data (parm->ctx, pw, strlen (pw));
           xfree (pw);
         }
+      assuan_end_confidential (parm->ctx);
     }
   else
     log_debug ("ignoring gpg-agent inquiry '%s'\n", line);
@@ -525,7 +527,8 @@ learn_status_cb (void *opaque, const char *line)
       xfree (parm->serialno);
       parm->serialno = store_serialno (line);
       parm->is_v2 = (strlen (parm->serialno) >= 16
-                     && xtoi_2 (parm->serialno+12) >= 2 );
+                     && (xtoi_2 (parm->serialno+12) == 0 /* Yubikey */
+                         || xtoi_2 (parm->serialno+12) >= 2));
     }
   else if (keywordlen == 7 && !memcmp (keyword, "APPTYPE", keywordlen))
     {
@@ -742,6 +745,11 @@ learn_status_cb (void *opaque, const char *line)
  *  card-util.c
  *  keyedit_menu
  *  card_store_key_with_backup  (Woth force to remove secret key data)
+ *
+ * If force has the value 2 the --reallyforce option is also used.
+ * This is to make sure the sshadow key overwrites the private key.
+ * Note that this option is gnupg 2.2 specific because since 2.4.4 an
+ * ephemeral private key store is used instead.
  */
 int
 agent_scd_learn (struct agent_card_info_s *info, int force)
@@ -761,6 +769,7 @@ agent_scd_learn (struct agent_card_info_s *info, int force)
 
   parm.ctx = agent_ctx;
   rc = assuan_transact (agent_ctx,
+                        force == 2? "LEARN --sendinfo --force --reallyforce" :
                         force ? "LEARN --sendinfo --force" : "LEARN --sendinfo",
                         dummy_data_cb, NULL, default_inq_cb, &parm,
                         learn_status_cb, info);
@@ -956,7 +965,8 @@ agent_scd_apdu (const char *hexapdu, unsigned int *r_sw)
  */
 int
 agent_keytocard (const char *hexgrip, int keyno, int force,
-                 const char *serialno, const char *timestamp)
+                 const char *serialno, const char *timestamp,
+                 const char *ecdh_param_str)
 {
   int rc;
   char line[ASSUAN_LINELENGTH];
@@ -964,8 +974,9 @@ agent_keytocard (const char *hexgrip, int keyno, int force,
 
   memset (&parm, 0, sizeof parm);
 
-  snprintf (line, DIM(line), "KEYTOCARD %s%s %s OPENPGP.%d %s",
-            force?"--force ": "", hexgrip, serialno, keyno, timestamp);
+  snprintf (line, DIM(line), "KEYTOCARD %s%s %s OPENPGP.%d %s%s%s",
+            force?"--force ": "", hexgrip, serialno, keyno, timestamp,
+            ecdh_param_str? " ":"", ecdh_param_str? ecdh_param_str:"");
 
   rc = start_agent (NULL, 1);
   if (rc)
@@ -1611,7 +1622,7 @@ agent_get_passphrase (const char *cache_id,
   char *arg4 = NULL;
   membuf_t data;
   struct default_inq_parm_s dfltparm;
-  int have_newsymkey;
+  int have_newsymkey, wasconf;
 
   memset (&dfltparm, 0, sizeof dfltparm);
 
@@ -1663,10 +1674,14 @@ agent_get_passphrase (const char *cache_id,
   xfree (arg4);
 
   init_membuf_secure (&data, 64);
+  wasconf = assuan_get_flag (agent_ctx, ASSUAN_CONFIDENTIAL);
+  assuan_begin_confidential (agent_ctx);
   rc = assuan_transact (agent_ctx, line,
                         put_membuf_cb, &data,
                         default_inq_cb, &dfltparm,
                         NULL, NULL);
+  if (!wasconf)
+    assuan_end_confidential (agent_ctx);
 
   if (rc)
     xfree (get_membuf (&data, NULL));
@@ -1781,14 +1796,59 @@ agent_get_s2k_count (unsigned long *r_count)
 
 
 
+struct keyinfo_data_parm_s
+{
+  char *serialno;
+  int is_smartcard;
+  int passphrase_cached;
+  int cleartext;
+};
+
+
+static gpg_error_t
+keyinfo_status_cb (void *opaque, const char *line)
+{
+  struct keyinfo_data_parm_s *data = opaque;
+  char *s;
+
+  if ((s = has_leading_keyword (line, "KEYINFO")) && data)
+    {
+      /* Parse the arguments:
+       *      0        1        2        3       4          5
+       *   <keygrip> <type> <serialno> <idstr> <cached> <protection>
+       *
+       *      6        7        8
+       *   <sshfpr>  <ttl>  <flags>
+       */
+      char *fields[9];
+
+      if (split_fields (s, fields, DIM (fields)) == 9)
+        {
+          data->is_smartcard = (fields[1][0] == 'T');
+          if (data->is_smartcard && !data->serialno && strcmp (fields[2], "-"))
+            data->serialno = xtrystrdup (fields[2]);
+          /* '1' for cached */
+          data->passphrase_cached = (fields[4][0] == '1');
+          /* 'P' for protected, 'C' for clear */
+          data->cleartext = (fields[5][0] == 'C');
+        }
+    }
+  return 0;
+}
+
+
 /* Ask the agent whether a secret key for the given public key is
-   available.  Returns 0 if available.  */
-gpg_error_t
+   available.  Returns 0 if not available.  Bigger value is preferred.  */
+int
 agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk)
 {
   gpg_error_t err;
   char line[ASSUAN_LINELENGTH];
   char *hexgrip;
+
+  struct keyinfo_data_parm_s keyinfo;
+
+  memset (&keyinfo, 0, sizeof keyinfo);
 
   err = start_agent (ctrl, 0);
   if (err)
@@ -1798,11 +1858,22 @@ agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk)
   if (err)
     return err;
 
-  snprintf (line, sizeof line, "HAVEKEY %s", hexgrip);
+  snprintf (line, sizeof line, "KEYINFO %s", hexgrip);
   xfree (hexgrip);
 
-  err = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
-  return err;
+  err = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL,
+                         keyinfo_status_cb, &keyinfo);
+  xfree (keyinfo.serialno);
+  if (err)
+    return 0;
+
+  if (keyinfo.passphrase_cached)
+    return 3;
+
+  if (keyinfo.is_smartcard)
+    return 2;
+
+  return 1;
 }
 
 /* Ask the agent whether a secret key is available for any of the
@@ -1858,41 +1929,6 @@ agent_probe_any_secret_key (ctrl_t ctrl, kbnode_t keyblock)
 
 
 
-struct keyinfo_data_parm_s
-{
-  char *serialno;
-  int cleartext;
-};
-
-
-static gpg_error_t
-keyinfo_status_cb (void *opaque, const char *line)
-{
-  struct keyinfo_data_parm_s *data = opaque;
-  int is_smartcard;
-  char *s;
-
-  if ((s = has_leading_keyword (line, "KEYINFO")) && data)
-    {
-      /* Parse the arguments:
-       *      0        1        2        3       4          5
-       *   <keygrip> <type> <serialno> <idstr> <cached> <protection>
-       */
-      char *fields[6];
-
-      if (split_fields (s, fields, DIM (fields)) == 6)
-        {
-          is_smartcard = (fields[1][0] == 'T');
-          if (is_smartcard && !data->serialno && strcmp (fields[2], "-"))
-            data->serialno = xtrystrdup (fields[2]);
-          /* 'P' for protected, 'C' for clear */
-          data->cleartext = (fields[5][0] == 'C');
-        }
-    }
-  return 0;
-}
-
-
 /* Return the serial number for a secret key.  If the returned serial
    number is NULL, the key is not stored on a smartcard.  Caller needs
    to free R_SERIALNO.

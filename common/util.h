@@ -39,10 +39,6 @@
  * libgpg-error version.  Define them here.
  * Example: (#if GPG_ERROR_VERSION_NUMBER < 0x011500 // 1.21)
  */
-#if GPG_ERROR_VERSION_NUMBER < 0x012400 /* 1.36 */
-# define GPG_ERR_NO_AUTH          314
-# define GPG_ERR_BAD_AUTH         315
-#endif
 
 #ifndef EXTERN_UNLESS_MAIN_MODULE
 # if !defined (INCLUDED_BY_MAIN_MODULE)
@@ -169,6 +165,8 @@ gpg_error_t b64dec_start (struct b64state *state, const char *title);
 gpg_error_t b64dec_proc (struct b64state *state, void *buffer, size_t length,
                          size_t *r_nbytes);
 gpg_error_t b64dec_finish (struct b64state *state);
+gpg_error_t b64decode (const char *string, const char *title,
+                       void **r_buffer, size_t *r_buflen);
 
 /*-- sexputil.c */
 char *canon_sexp_to_string (const unsigned char *canon, size_t canonlen);
@@ -248,9 +246,12 @@ int openpgp_oid_is_cv25519 (gcry_mpi_t a);
 const char *openpgp_curve_to_oid (const char *name,
                                   unsigned int *r_nbits, int *r_algo);
 const char *openpgp_oid_to_curve (const char *oid, int canon);
+const char *openpgp_oid_or_name_to_curve (const char *oidname, int canon);
 const char *openpgp_enum_curves (int *idxp);
 const char *openpgp_is_curve_supported (const char *name,
                                         int *r_algo, unsigned int *r_nbits);
+const char *get_keyalgo_string (enum gcry_pk_algos algo,
+                                unsigned int nbits, const char *curve);
 
 
 /*-- homedir.c --*/
@@ -344,7 +345,7 @@ char *try_make_printable_string (const void *p, size_t n, int delim);
 char *make_printable_string (const void *p, size_t n, int delim);
 char *decode_c_string (const char *src);
 
-int is_file_compressed (const char *s, int *ret_rc);
+int is_file_compressed (const byte *buf, unsigned int buflen);
 
 int match_multistr (const char *multistr,const char *match);
 

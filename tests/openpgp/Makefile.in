@@ -149,17 +149,16 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -560,7 +559,9 @@ priv_keys = privkeys/50B2D4FA4122C212611048BC5FC31BD44393626E.asc \
             privkeys/1E28F20E41B54C2D1234D896096495FF57E08D18.asc \
             privkeys/EB33B687EB8581AB64D04852A54453E85F3DF62D.asc \
 	    privkeys/C6A6390E9388CDBAD71EAEA698233FE5E04F001E.asc \
-	    privkeys/D69102E0F5AC6B6DB8E4D16DA8E18CF46D88CAE3.asc
+	    privkeys/D69102E0F5AC6B6DB8E4D16DA8E18CF46D88CAE3.asc \
+	    privkeys/891067FFFC6D67D37BD4BFC399191C5F3989D1B5.key \
+	    privkeys/F27FC04CB01723A4CB6F5399F7B86CCD82C0169C.key
 
 sample_keys = samplekeys/README \
               samplekeys/ecc-sample-1-pub.asc \
@@ -579,6 +580,7 @@ sample_keys = samplekeys/README \
 	      samplekeys/E657FB607BB4F21C90BB6651BC067AF28BC90111.asc \
               samplekeys/rsa-rsa-sample-1.asc \
               samplekeys/ed25519-cv25519-sample-1.asc \
+              samplekeys/ed25519-cv25519-sample-2.asc \
 	      samplekeys/silent-running.asc \
 	      samplekeys/ssh-dsa.key \
 	      samplekeys/ssh-ecdsa.key \
@@ -925,7 +927,7 @@ check: xcheck
 
 .PHONY: xcheck
 xcheck:
-	$(TESTS_ENVIRONMENT) $(abs_top_builddir)/tests/gpgscm/gpgscm \
+	$(TESTS_ENVIRONMENT) $(abs_top_builddir)/tests/gpgscm/gpgscm$(EXEEXT) \
 	  $(abs_srcdir)/run-tests.scm $(TESTFLAGS) $(TESTS)
 
 clean-local:

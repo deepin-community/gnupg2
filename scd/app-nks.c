@@ -1,5 +1,6 @@
 /* app-nks.c - The Telesec NKS card application.
- * Copyright (C) 2004, 2007, 2008, 2009 Free Software Foundation, Inc.
+ * Copyright (C) 2004, 2007-2009 Free Software Foundation, Inc.
+ * Copyright (C) 2004, 2007-2009, 2013-2015, 2020, 2022 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -18,28 +19,55 @@
  */
 
 /* Notes:
-
-  - We are now targeting TCOS 3 cards and it may happen that there is
-    a regression towards TCOS 2 cards.  Please report.
-
-  - The TKS3 AUT key is not used.  It seems that it is only useful for
-    the internal authentication command and not accessible by other
-    applications.  The key itself is in the encryption class but the
-    corresponding certificate has only the digitalSignature
-    capability.
-
-  - If required, we automagically switch between the NKS application
-    and the SigG application.  This avoids to use the DINSIG
-    application which is somewhat limited, has no support for Secure
-    Messaging as required by TCOS 3 and has no way to change the PIN
-    or even set the NullPIN.
-
-  - We use the prefix NKS-DF01 for TCOS 2 cards and NKS-NKS3 for newer
-    cards.  This is because the NKS application has moved to DF02 with
-    TCOS 3 and thus we better use a DF independent tag.
-
-  - We use only the global PINs for the NKS application.
-
+ *
+ * - We are now targeting TCOS 3 cards and it may happen that there is
+ *   a regression towards TCOS 2 cards.  Please report.
+ *
+ * - The NKS3 AUT key is not used.  It seems that it is only useful for
+ *   the internal authentication command and not accessible by other
+ *   applications.  The key itself is in the encryption class but the
+ *   corresponding certificate has only the digitalSignature
+ *   capability.
+ *   Update: This changed for the Signature Card V2 (nks version 15)
+ *
+ * - If required, we automagically switch between the NKS application
+ *   and the SigG or eSign application.  This avoids to use the DINSIG
+ *   application which is somewhat limited, has no support for Secure
+ *   Messaging as required by TCOS 3 and has no way to change the PIN
+ *   or even set the NullPIN.  With the Signature Card v2 (nks version
+ *   15) the Esign application is used instead of the SigG.
+ *
+ * - We use the prefix NKS-DF01 for TCOS 2 cards and NKS-NKS3 for newer
+ *   cards.  This is because the NKS application has moved to DF02 with
+ *   TCOS 3 and thus we better use a DF independent tag.
+ *
+ * - We use only the global PINs for the NKS application.
+ *
+ *
+ *
+ * Here is a table with PIN stati collected from 3 cards.
+ *
+ *  | app | pwid | NKS3      | SIG_B     | SIG_N     |
+ *  |-----+------+-----------+-----------+-----------|
+ *  | NKS | 0x00 | null -    | -    -    | -    -    |
+ *  |     | 0x01 | 0    3    | -    -    | -    -    |
+ *  |     | 0x02 | 3    null | 15   3    | 15   null |
+ *  |     | 0x03 | -    3    | null -    | 3    -    |
+ *  |     | 0x04 |           | null 0    | 3    3    |
+ *  | SIG | 0x00 | null -    | -    -    | -    -    |
+ *  |     | 0x01 | 0    null | -    null | -    null |
+ *  |     | 0x02 | 3    null | 15   0    | 15   0    |
+ *  |     | 0x03 | -    0    | null null | null null |
+ *  - SIG is either SIGG or ESIGN.
+ *  - "-" indicates reference not found (SW 6A88).
+ *  - "null" indicates a NULLPIN (SW 6985).
+ *  - The first value in each cell is the global PIN;
+ *    the second is the local PIN (high bit of pwid set).
+ *  - The NKS3 card is some older test card.
+ *  - The SIG_B is a Signature Card V2.0 with Brainpool curves.
+ *    Here the PIN 0x82 has been changed from the NULLPIN.
+ *  - The SIG_N is a Signature Card V2.0 with NIST curves.
+ *    The PIN was enabled using the TCOS Windows tool.
  */
 
 #include <config.h>
@@ -47,7 +75,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include <time.h>
 
 #include "scdaemon.h"
@@ -59,66 +86,157 @@
 
 static char const aid_nks[]  = { 0xD2, 0x76, 0x00, 0x00, 0x03, 0x01, 0x02 };
 static char const aid_sigg[] = { 0xD2, 0x76, 0x00, 0x00, 0x66, 0x01 };
+static char const aid_esign[] =
+  { 0xA0, 0x00, 0x00, 0x01, 0x67, 0x45, 0x53, 0x49, 0x47, 0x4E };
+static char const aid_idlm[] = { 0xD2, 0x76, 0x00, 0x00, 0x03, 0x0c, 0x01 };
+
+
+/* The ids of the different apps on our TCOS cards.  */
+#define NKS_APP_NKS   0
+#define NKS_APP_SIGG  1
+#define NKS_APP_ESIGN 2
+#define NKS_APP_IDLM  3
 
 
 static struct
 {
-  int is_sigg;   /* Valid for SigG application.  */
+  int nks_app_id;/* One of NKS_APP_*.  Keep them sorted so that no
+                  * unnecessary application switching is needed.  */
   int fid;       /* File ID. */
-  int nks_ver;   /* 0 for NKS version 2, 3 for version 3. */
+  int nks_ver;   /* 0 for NKS version 2, 3 for version 3, etc.  */
   int certtype;  /* Type of certificate or 0 if it is not a certificate. */
-  int iskeypair; /* If true has the FID of the corresponding certificate. */
+  int iskeypair; /* If true has the FID of the corresponding certificate.
+                  * If no certificate is known a value of -1 is used. */
+  int isauthkey; /* True if file is a key usable for authentication. */
   int issignkey; /* True if file is a key usable for signing. */
-  int isenckey;  /* True if file is a key usable for decryption. */
+  int isencrkey; /* True if file is a key usable for decryption. */
   unsigned char kid;  /* Corresponding key references.  */
 } filelist[] = {
-  { 0, 0x4531, 0, 0,  0xC000, 1, 0, 0x80 }, /* EF_PK.NKS.SIG */
+  { 0, 0x4531, 0, 0,  0xC000, 1,1,0, 0x80}, /* EF_PK.NKS.SIG */
+  /* */                              /* nks15: EF.PK.NKS.ADS */
   { 0, 0xC000, 0, 101 },                    /* EF_C.NKS.SIG  */
-  { 0, 0x4331, 0, 100 },
+  /* */                              /* nks15: EF.C.ICC.ADS  (sign key)  */
+
+  { 0, 0x4331, 0, 100 },                    /* Unnamed.                  */
+  /* */                              /* nks15: EF.C.ICC.RFU1             */
+  /* */                              /* (second cert for sign key)       */
+
   { 0, 0x4332, 0, 100 },
-  { 0, 0xB000, 0, 110 },                    /* EF_PK.RCA.NKS */
-  { 0, 0x45B1, 0, 0,  0xC200, 0, 1, 0x81 }, /* EF_PK.NKS.ENC */
-  { 0, 0xC200, 0, 101 },                    /* EF_C.NKS.ENC  */
-  { 0, 0x43B1, 0, 100 },
+  { 0, 0xB000, 0, 110 },                    /* EF_PK.RCA.NKS             */
+
+  { 0, 0x45B1, 0, 0,  0xC200, 0,0,1, 0x81}, /* EF_PK.NKS.ENC             */
+  /* */                              /* nks15: EF.PK.ICC.ENC1            */
+  { 0, 0xC200, 0, 101 },                    /* EF_C.NKS.ENC              */
+                                     /* nks15: EF.C.ICC.ENC1 (Cert-encr) */
+
+  { 0, 0x43B1, 0, 100 },                    /* Unnamed */
+  /* */                              /* nks15: EF.C.ICC.RFU2             */
+  /* */                              /* (second cert for enc1 key)       */
+
   { 0, 0x43B2, 0, 100 },
-/* The authentication key is not used.  */
-/*   { 0, 0x4571, 3, 0,  0xC500, 0, 0, 0x82 }, /\* EF_PK.NKS.AUT *\/ */
-/*   { 0, 0xC500, 3, 101 },                    /\* EF_C.NKS.AUT  *\/ */
-  { 0, 0x45B2, 3, 0,  0xC201, 0, 1, 0x83 }, /* EF_PK.NKS.ENC1024 */
+  { 0, 0x4371,15, 100 },                    /* EF.C.ICC.RFU3             */
+  /* */                              /* (second cert for auth key)       */
+
+  { 0, 0x45B2, 3, 0,  0xC201, 0,0,1, 0x83}, /* EF_PK.NKS.ENC1024         */
+  /* */                              /* nks15: EF.PK.ICC.ENC2            */
   { 0, 0xC201, 3, 101 },                    /* EF_C.NKS.ENC1024  */
-  { 1, 0x4531, 3, 0,  0xC000, 1, 1, 0x84 }, /* EF_PK.CH.SIG  */
+
+  { 0, 0xC20E,15, 111 },                    /* EF.C.CSP.RCA1 (RootCA 1) */
+  { 0, 0xC208,15, 101 },                    /* EF.C.CSP.SCA1 (SubCA 1) */
+  { 0, 0xC10E,15, 111 },                    /* EF.C.CSP.RCA2 (RootCA 2) */
+  { 0, 0xC108,15, 101 },                    /* EF.C.CSP.SCA2 (SubCA 2) */
+
+  { 0, 0x4571,15, 0,  0xC500, 1,0,0, 0x82}, /* EF.PK.ICC.AUT */
+  { 0, 0xC500,15, 101 },                    /* EF.C.ICC.AUT  (Cert-auth) */
+
+  { 0, 0xC201,15, 101 },                    /* EF.C.ICC.ENC2 (Cert-encr) */
+                                            /* (empty on delivery) */
+
+  { 1, 0x4531, 3, 0,  0xC000, 0,1,1, 0x84}, /* EF_PK.CH.SIG  */
   { 1, 0xC000, 0, 101 },                    /* EF_C.CH.SIG  */
+
   { 1, 0xC008, 3, 101 },                    /* EF_C.CA.SIG  */
   { 1, 0xC00E, 3, 111 },                    /* EF_C.RCA.SIG  */
+
+  { 2, 0x4531, 15, 0, 0xC001, 0,1,0, 0x84}, /* EF_PK.CH.SIG  */
+  { 2, 0xC000, 15,101 },                    /* EF.C.SCA.QES (SubCA) */
+  { 2, 0xC001, 15,100 },                    /* EF.C.ICC.QES (Cert)  */
+  { 2, 0xC00E, 15,111 },                    /* EF.C.RCA.QES (RootCA */
+
+  { 3, 0x4E03,  3, 0, -1 },                 /* EK_PK_03 */
+  { 3, 0x4E04,  3, 0, -1 },                 /* EK_PK_04 */
+  { 3, 0x4E05,  3, 0, -1 },                 /* EK_PK_05 */
+  { 3, 0x4E06,  3, 0, -1 },                 /* EK_PK_06 */
+  { 3, 0x4E07,  3, 0, -1 },                 /* EK_PK_07 */
+  { 3, 0x4E08,  3, 0, -1 },                 /* EK_PK_08 */
+
   { 0, 0 }
 };
 
 
+/* Object to cache information gathered from FIDs. */
+struct fid_cache_s {
+  struct fid_cache_s *next;
+  int nks_app_id;
+  int fid;                          /* Zero for an unused slot.  */
+  unsigned int  got_keygrip:1;      /* The keygrip and algo are valid.  */
+  int algo;
+  char *algostr;                    /* malloced.  */
+  char keygripstr[2*KEYGRIP_LEN+1];
+};
+
 
 /* Object with application (i.e. NKS) specific data.  */
 struct app_local_s {
-  int nks_version;  /* NKS version.  */
+  int active_nks_app;   /* One of the NKS_APP_ constants.  */
 
-  int sigg_active;  /* True if switched to the SigG application.  */
-  int sigg_msig_checked;/*  True if we checked for a mass signature card.  */
-  int sigg_is_msig; /* True if this is a mass signature card.  */
+  int only_idlm;        /* The application is fixed to IDLM (IDKey card).  */
+  int qes_app_id;       /* Either NKS_APP_SIGG or NKS_APP_ESIGN.  */
 
-  int need_app_select; /* Need to re-select the application.  */
+  int sigg_msig_checked;/* True if we checked for a mass signature card.  */
+  int sigg_is_msig;     /* True if this is a mass signature card.  */
 
+  int need_app_select;  /* Need to re-select the application.  */
+
+  struct fid_cache_s *fid_cache; /* Linked list with cached infos.  */
 };
 
 
 
-static gpg_error_t switch_application (app_t app, int enable_sigg);
+static gpg_error_t readcert_from_ef (app_t app, int fid,
+                                     unsigned char **cert, size_t *certlen);
+static gpg_error_t switch_application (app_t app, int nks_app_id);
+static const char *parse_pwidstr (app_t app, const char *pwidstr, int new_mode,
+                                  int *r_nks_app_id, int *r_pwid);
+static gpg_error_t verify_pin (app_t app, int pwid, const char *desc,
+                               gpg_error_t (*pincb)(void*, const char *,
+                                                    char **),
+                               void *pincb_arg);
+static gpg_error_t parse_keyref (app_t app, const char *keyref,
+                                 int want_keypair, int *r_fididx);
 
 
 
+static void
+flush_fid_cache (app_t app)
+{
+  while (app->app_local->fid_cache)
+    {
+      struct fid_cache_s *next = app->app_local->fid_cache->next;
+      if (app->app_local->fid_cache)
+        xfree (app->app_local->fid_cache->algostr);
+      xfree (app->app_local->fid_cache);
+      app->app_local->fid_cache = next;
+    }
+}
+
 /* Release local data. */
 static void
 do_deinit (app_t app)
 {
   if (app && app->app_local)
     {
+      flush_fid_cache (app);
       xfree (app->app_local);
       app->app_local = NULL;
     }
@@ -137,33 +255,78 @@ all_zero_p (void *buffer, size_t length)
 }
 
 
-/* Read the file with FID, assume it contains a public key and return
-   its keygrip in the caller provided 41 byte buffer R_GRIPSTR. */
+/* Return an allocated string with the serial number in a format to be
+ * show to the user.  May return NULL on malloc problem.  */
+static char *
+get_dispserialno (app_t app)
+{
+  char *result;
+
+  /* We only need to strip the last zero which is not printed on the
+   * card.  */
+  result = app_get_serialno (app);
+  if (result && *result && result[strlen(result)-1] == '0')
+    result[strlen(result)-1] = 0;
+  return result;
+}
+
+
 static gpg_error_t
-keygripstr_from_pk_file (app_t app, int fid, char *r_gripstr)
+pubkey_from_pk_file (app_t app, int pkfid, int cfid,
+                     unsigned char **r_pk, size_t *r_pklen)
 {
   gpg_error_t err;
-  unsigned char grip[20];
   unsigned char *buffer[2];
   size_t buflen[2];
-  gcry_sexp_t sexp;
   int i;
   int offset[2] = { 0, 0 };
 
-  err = iso7816_select_file (app->slot, fid, 0);
+  *r_pk = NULL;
+  *r_pklen = 0;
+
+  if (app->appversion == 15)
+    {
+      /* Signature Card v2 - get keygrip from the certificate.  */
+      unsigned char *cert;
+      size_t certlen;
+
+      if (cfid == -1)
+        return gpg_error (GPG_ERR_NOT_SUPPORTED);
+
+      /* Fall back to certificate reading.  */
+      err = readcert_from_ef (app, cfid, &cert, &certlen);
+      if (err)
+        {
+          log_error ("nks: error reading certificate %04X: %s\n",
+                     cfid, gpg_strerror (err));
+          return err;
+        }
+
+      err = app_help_pubkey_from_cert (cert, certlen, r_pk, r_pklen);
+      xfree (cert);
+      if (err)
+        log_error ("nks: error parsing certificate %04X: %s\n",
+                   cfid, gpg_strerror (err));
+
+      return err;
+    }
+
+  err = iso7816_select_file (app_get_slot (app), pkfid, 0);
   if (err)
     return err;
-  err = iso7816_read_record (app->slot, 1, 1, 0, &buffer[0], &buflen[0]);
+  err = iso7816_read_record (app_get_slot (app), 1, 1, 0,
+                             &buffer[0], &buflen[0]);
   if (err)
     return err;
-  err = iso7816_read_record (app->slot, 2, 1, 0, &buffer[1], &buflen[1]);
+  err = iso7816_read_record (app_get_slot (app), 2, 1, 0,
+                             &buffer[1], &buflen[1]);
   if (err)
     {
       xfree (buffer[0]);
       return err;
     }
 
-  if (app->app_local->nks_version < 3)
+  if (app->appversion < 3)
     {
       /* Old versions of NKS store the values in a TLV encoded format.
          We need to do some checks.  */
@@ -179,6 +342,12 @@ keygripstr_from_pk_file (app_t app, int fid, char *r_gripstr)
             err = gpg_error (GPG_ERR_INV_OBJ);
           else
             offset[i] = 2;
+          if (err)
+            {
+              xfree (buffer[0]);
+              xfree (buffer[1]);
+              return err;
+            }
         }
     }
   else
@@ -208,9 +377,10 @@ keygripstr_from_pk_file (app_t app, int fid, char *r_gripstr)
           newbuf = xtrymalloc (newlen);
           if (!newbuf)
             {
+              err = gpg_error_from_syserror ();
               xfree (buffer[0]);
               xfree (buffer[1]);
-              return gpg_error_from_syserror ();
+              return err;
             }
           newbuf[0] = 0;
           memcpy (newbuf+1, buffer[i]+offset[i], buflen[i] - offset[i]);
@@ -221,41 +391,238 @@ keygripstr_from_pk_file (app_t app, int fid, char *r_gripstr)
         }
     }
 
-  if (!err)
-    err = gcry_sexp_build (&sexp, NULL,
-                           "(public-key (rsa (n %b) (e %b)))",
-                           (int)buflen[0]-offset[0], buffer[0]+offset[0],
-                           (int)buflen[1]-offset[1], buffer[1]+offset[1]);
+  *r_pk = make_canon_sexp_from_rsa_pk (buffer[0]+offset[0], buflen[0]-offset[0],
+                                       buffer[1]+offset[1], buflen[1]-offset[1],
+                                       r_pklen);
 
   xfree (buffer[0]);
   xfree (buffer[1]);
-  if (err)
-    return err;
+  return err;
+}
 
-  if (!gcry_pk_get_keygrip (sexp, grip))
+/* Read the file with PKFID, assume it contains a public key and
+ * return its keygrip in the caller provided 41 byte buffer R_GRIPSTR.
+ * This works only for RSA card.  For the Signature Card v2 ECC is
+ * used and Read Record needs to be replaced by read binary.  Given
+ * all the ECC parameters required, we don't do that but rely that the
+ * corresponding certificate at CFID is already available and get the
+ * public key from there.  Note that a CFID of 1 is indicates that a
+ * certificate is not known.  If R_ALGO is not NULL the public key
+ * algorithm for the returned KEYGRIP is stored there.  If R_ALGOSTR
+ * is not NULL the public key algo string (e.g. "rsa2048") is stored
+ * there.  */
+static gpg_error_t
+keygripstr_from_pk_file (app_t app, int pkfid, int cfid, char *r_gripstr,
+                         int *r_algo, char **r_algostr)
+{
+  gpg_error_t err;
+  int algo = 0;  /* Public key algo.  */
+  char *algostr = NULL; /* Public key algo string.  */
+  struct fid_cache_s *ci;
+  unsigned char *pk;
+  size_t pklen;
+
+  for (ci = app->app_local->fid_cache; ci; ci = ci->next)
+    if (ci->fid && ci->nks_app_id == app->app_local->active_nks_app
+        && ci->fid == pkfid)
+      {
+        if (!ci->got_keygrip)
+          return gpg_error (GPG_ERR_NOT_FOUND);
+        if (r_algostr && !ci->algostr)
+          break;  /* Not in the cache - try w/o cache.  */
+        memcpy (r_gripstr, ci->keygripstr, 2*KEYGRIP_LEN+1);
+        if (r_algo)
+          *r_algo = ci->algo;
+        if (r_algostr)
+          {
+            *r_algostr = xtrystrdup (ci->algostr);
+            if (!*r_algostr)
+              return gpg_error_from_syserror ();
+          }
+        return 0;  /* Found in cache.  */
+      }
+
+  err = pubkey_from_pk_file (app, pkfid, cfid, &pk, &pklen);
+  if (!err)
+    err = app_help_get_keygrip_string_pk (pk, pklen, r_gripstr, NULL,
+                                          &algo, &algostr);
+  xfree (pk);
+
+  if (!err)
     {
-      err = gpg_error (GPG_ERR_INTERNAL); /* i.e. RSA not supported by
-                                             libgcrypt. */
+      if (r_algo)
+        *r_algo = algo;
+      if (r_algostr)
+        {
+          *r_algostr = algostr;
+          algostr = NULL;
+        }
+
+      /* FIXME: We need to implement not_found caching.  */
+      for (ci = app->app_local->fid_cache; ci; ci = ci->next)
+        if (ci->fid
+            && ci->nks_app_id == app->app_local->active_nks_app
+            && ci->fid == pkfid)
+          {
+            /* Update the keygrip.  */
+            memcpy (ci->keygripstr, r_gripstr, 2*KEYGRIP_LEN+1);
+            ci->algo = algo;
+            xfree (ci->algostr);
+            ci->algostr = algostr? xtrystrdup (algostr) : NULL;
+            ci->got_keygrip = 1;
+            break;
+          }
+      if (!ci)
+        {
+          for (ci = app->app_local->fid_cache; ci; ci = ci->next)
+            if (!ci->fid)
+              break;
+          if (!ci)
+            ci = xtrycalloc (1, sizeof *ci);
+          if (!ci)
+            ; /* Out of memory - it is a cache, so we ignore it.  */
+          else
+            {
+              ci->nks_app_id = app->app_local->active_nks_app;
+              ci->fid = pkfid;
+              memcpy (ci->keygripstr, r_gripstr, 2*KEYGRIP_LEN+1);
+              ci->algo = algo;
+              ci->got_keygrip = 1;
+              ci->next = app->app_local->fid_cache;
+              app->app_local->fid_cache = ci;
+            }
+        }
     }
-  else
+  xfree (algostr);
+  return err;
+}
+
+
+/* Parse KEYREF and return the index into the FILELIST at R_IDX.
+ * Returns 0 on success and switches to the requested application.
+ * The public key algo is stored at R_ALGO unless it is NULL.  */
+static gpg_error_t
+find_fid_by_keyref (app_t app, const char *keyref, int *r_idx, int *r_algo)
+{
+  gpg_error_t err;
+  int idx;
+  char keygripstr[2*KEYGRIP_LEN+1];
+
+  if (!keyref || !keyref[0])
+    err = gpg_error (GPG_ERR_INV_ID);
+  else if (keyref[0] != 'N' && strlen (keyref) == 40)  /* This is a keygrip.  */
     {
-      bin2hex (grip, 20, r_gripstr);
+      struct fid_cache_s *ci;
+
+      /* FIXME: Our cache structure needs to be revised.  It doesn't
+       * take the app_id into account and we don't have a way to
+       * directly access the FID item if there are several of them
+       * with different app_ids.  We disable the cache for now. */
+      for (ci = app->app_local->fid_cache ; ci; ci = ci->next)
+        if (ci->fid && ci->got_keygrip && !strcmp (ci->keygripstr, keyref))
+          break;
+      if (ci && 0 ) /* Cached (disabled) */
+        {
+          for (idx=0; filelist[idx].fid; idx++)
+            if (filelist[idx].fid == ci->fid)
+              break;
+          if (!filelist[idx].fid)
+            {
+              log_debug ("nks: Ooops: Unkown FID cached!\n");
+              err = gpg_error (GPG_ERR_BUG);
+              goto leave;
+            }
+          err = switch_application (app, filelist[idx].nks_app_id);
+          if (err)
+            goto leave;
+          if (r_algo)
+            *r_algo = ci->algo;
+        }
+      else  /* Not cached.  */
+        {
+          for (idx=0; filelist[idx].fid; idx++)
+            {
+              if (!filelist[idx].iskeypair)
+                continue;
+
+              if (app->app_local->only_idlm)
+                {
+                  if (filelist[idx].nks_app_id != NKS_APP_IDLM)
+                    continue;
+                }
+              else
+                {
+                  if (filelist[idx].nks_app_id != NKS_APP_NKS
+                      && filelist[idx].nks_app_id != app->app_local->qes_app_id)
+                    continue;
+
+                  err = switch_application (app, filelist[idx].nks_app_id);
+                  if (err)
+                    goto leave;
+                }
+
+              err = keygripstr_from_pk_file (app, filelist[idx].fid,
+                                             filelist[idx].iskeypair,
+                                             keygripstr, r_algo, NULL);
+              if (err)
+                {
+                  log_info ("nks: no keygrip for FID 0x%04X: %s - ignored\n",
+                            filelist[idx].fid, gpg_strerror (err));
+                  continue;
+                }
+              if (!strcmp (keygripstr, keyref))
+                break; /* Found */
+            }
+          if (!filelist[idx].fid)
+            {
+              err = gpg_error (GPG_ERR_NOT_FOUND);
+              goto leave;
+            }
+          /* (No need to switch the app as that has already been done
+           * in the loop.)  */
+        }
+      *r_idx = idx;
+      err = 0;
     }
-  gcry_sexp_release (sexp);
+  else /* This is a usual keyref.  */
+    {
+      err = parse_keyref (app, keyref, 1, &idx);
+      if (err)
+        goto leave;
+      *r_idx = idx;
+
+      err = switch_application (app, filelist[idx].nks_app_id);
+      if (err)
+        goto leave;
+      if (r_algo)
+        {
+          /* We need to get the public key algo.  */
+          err = keygripstr_from_pk_file (app, filelist[idx].fid,
+                                         filelist[idx].iskeypair,
+                                         keygripstr, r_algo, NULL);
+          if (err)
+            log_error ("nks: no keygrip for FID 0x%04X: %s\n",
+                       filelist[idx].fid, gpg_strerror (err));
+        }
+    }
+
+ leave:
   return err;
 }
 
 
 /* TCOS responds to a verify with empty data (i.e. without the Lc
- * byte) with the status of the PIN.  PWID is the PIN ID, If SIGG is
- * true, the application is switched into SigG mode.  Returns:
+ * byte) with the status of the PIN.  PWID is the PIN ID. NKS_APP_ID
+ * gives the application to first switch to.  Returns:
  * ISO7816_VERIFY_* codes or non-negative number of verification
  * attempts left.  */
 static int
-get_chv_status (app_t app, int sigg, int pwid)
+get_chv_status (app_t app, int nks_app_id, int pwid)
 {
-  if (switch_application (app, sigg))
-    return sigg? -2 : -1; /* No such PIN / General error.  */
+  if (switch_application (app, nks_app_id))
+    return (nks_app_id == NKS_APP_NKS
+            ? ISO7816_VERIFY_ERROR
+            : ISO7816_VERIFY_NO_PIN);
 
   return iso7816_verify_status (app_get_slot (app), pwid);
 }
@@ -273,33 +640,49 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
     { "$AUTHKEYID",   1 },
     { "$ENCRKEYID",   2 },
     { "$SIGNKEYID",   3 },
-    { "NKS-VERSION",  4 },
+    { "NKS-VERSION",  4 },  /* Legacy (printed decimal)  */
     { "CHV-STATUS",   5 },
-    { NULL, 0 }
+    { "$DISPSERIALNO",6 },
+    { "SERIALNO",     0 }
   };
   gpg_error_t err = 0;
   int idx;
+  char *p, *p2;
   char buffer[100];
+  int nksver = app->appversion;
 
-  err = switch_application (app, 0);
+  err = switch_application (app, NKS_APP_NKS);
   if (err)
     return err;
 
-  for (idx=0; table[idx].name && strcmp (table[idx].name, name); idx++)
+  for (idx=0; (idx < DIM(table)
+               && ascii_strcasecmp (table[idx].name, name)); idx++)
     ;
-  if (!table[idx].name)
+  if (!(idx < DIM (table)))
     return gpg_error (GPG_ERR_INV_NAME);
 
   switch (table[idx].special)
     {
+    case 0: /* SERIALNO */
+      {
+        p = app_get_serialno (app);
+        if (p)
+          {
+            send_status_direct (ctrl, "SERIALNO", p);
+            xfree (p);
+          }
+      }
+      break;
+
     case 1: /* $AUTHKEYID */
       {
         /* NetKey 3.0 cards define an authentication key but according
            to the specs this key is only usable for encryption and not
            signing.  it might work anyway but it has not yet been
            tested - fixme.  Thus for now we use the NKS signature key
-           for authentication.  */
-        char const tmp[] = "NKS-NKS3.4531";
+           for authentication for netkey 3.  For the Signature Card
+           V2.0 the auth key is defined and thus we use it. */
+        const char *tmp = nksver == 15? "NKS-NKS3.4571" : "NKS-NKS3.4531";
         send_status_info (ctrl, table[idx].name, tmp, strlen (tmp), NULL, 0);
       }
       break;
@@ -319,33 +702,65 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
       break;
 
     case 4: /* NKS-VERSION */
-      snprintf (buffer, sizeof buffer, "%d", app->app_local->nks_version);
+      snprintf (buffer, sizeof buffer, "%d", app->appversion);
       send_status_info (ctrl, table[idx].name,
                         buffer, strlen (buffer), NULL, 0);
       break;
 
     case 5: /* CHV-STATUS */
       {
-        /* Returns: PW1.CH PW2.CH PW1.CH.SIG PW2.CH.SIG That are the
-           two global passwords followed by the two SigG passwords.
-           For the values, see the function get_chv_status.  */
+        /* Return the status for the the PINs as described in the
+         * table below.  See the macros ISO7816_VERIFY_* for a list
+         * for each slot.  The order is
+         *
+         * | idx | name       |
+         * |-----+------------|
+         * |   0 | PW1.CH     |
+         * |   1 | PW2.CH     |
+         * |   2 | PW1.CH.SIG |
+         * |   3 | PW2.CH.SIG |
+         *
+         * See parse_pwidstr for details of the mapping.
+         */
         int tmp[4];
 
         /* We use a helper array so that we can control that there is
-           no superfluous application switch.  Note that PW2.CH.SIG
-           really has the identifier 0x83 and not 0x82 as one would
-           expect.  */
-        tmp[0] = get_chv_status (app, 0, 0x00);
-        tmp[1] = get_chv_status (app, 0, 0x01);
-        tmp[2] = get_chv_status (app, 1, 0x81);
-        tmp[3] = get_chv_status (app, 1, 0x83);
-        snprintf (buffer, sizeof buffer,
-                  "%d %d %d %d", tmp[0], tmp[1], tmp[2], tmp[3]);
+         * no superfluous application switches.  */
+        if (app->appversion == 15)
+          {
+            tmp[0] = get_chv_status (app, 0, 0x03);
+            tmp[1] = get_chv_status (app, 0, 0x04);
+          }
+        else
+          {
+            tmp[0] = get_chv_status (app, 0, 0x00);
+            tmp[1] = get_chv_status (app, 0, 0x01);
+          }
+        tmp[2] = get_chv_status (app, app->app_local->qes_app_id, 0x81);
+        if (app->appversion == 15)
+          tmp[3] = get_chv_status (app, app->app_local->qes_app_id, 0x82);
+        else
+          tmp[3] = get_chv_status (app, app->app_local->qes_app_id, 0x83);
+        snprintf (buffer, sizeof buffer, "%d %d %d %d",
+                  tmp[0], tmp[1], tmp[2], tmp[3]);
         send_status_info (ctrl, table[idx].name,
                           buffer, strlen (buffer), NULL, 0);
       }
       break;
 
+    case 6: /* $DISPSERIALNO */
+      {
+        p = app_get_serialno (app);
+        p2 = get_dispserialno (app);
+        if (p && p2 && strcmp (p, p2))
+          send_status_info (ctrl, table[idx].name, p2, strlen (p2),
+                            NULL, (size_t)0);
+        else /* No abbreviated S/N or identical to the full full S/N.  */
+          err = gpg_error (GPG_ERR_INV_NAME);  /* No Abbreviated S/N.  */
+        xfree (p);
+        xfree (p2);
+      }
+      break;
 
     default:
       err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
@@ -356,37 +771,108 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
 }
 
 
-
-static void
-do_learn_status_core (app_t app, ctrl_t ctrl, unsigned int flags, int is_sigg)
+/* Parse a keyref (NKS_*.*) and return the corresponding EF as an
+ * index into the filetable.  With WANT_KEYPAIR set a keypair EF is
+ * requested; otherwise also cert EFs are returned.  */
+static gpg_error_t
+parse_keyref (app_t app, const char *keyref, int want_keypair, int *r_fididx)
 {
-  gpg_error_t err;
-  char ct_buf[100], id_buf[100];
-  int i;
-  const char *tag;
-  const char *usage;
+  int nks_app_id, fid, idx;
 
-  if (is_sigg)
+  if (!ascii_strncasecmp (keyref, "NKS-NKS3.", 9))
+    nks_app_id = NKS_APP_NKS;
+  else if (!ascii_strncasecmp (keyref, "NKS-ESIGN.", 10)
+           && (!want_keypair || app->app_local->qes_app_id == NKS_APP_ESIGN))
+    nks_app_id = NKS_APP_ESIGN;
+  else if (!ascii_strncasecmp (keyref, "NKS-SIGG.", 9)
+           && (!want_keypair || app->app_local->qes_app_id == NKS_APP_SIGG))
+    nks_app_id = NKS_APP_SIGG;
+  else if (!ascii_strncasecmp (keyref, "NKS-IDLM.", 9))
+    nks_app_id = NKS_APP_IDLM;
+  else if (!ascii_strncasecmp (keyref, "NKS-DF01.", 9))
+    nks_app_id = NKS_APP_NKS;
+  else
+    return gpg_error (GPG_ERR_INV_ID);
+
+  keyref += nks_app_id == NKS_APP_ESIGN? 10 : 9;
+
+  if (!hexdigitp (keyref) || !hexdigitp (keyref+1)
+      || !hexdigitp (keyref+2) || !hexdigitp (keyref+3)
+      || keyref[4])
+    return gpg_error (GPG_ERR_INV_ID);
+  fid = xtoi_4 (keyref);
+  for (idx=0; filelist[idx].fid; idx++)
+    if (filelist[idx].fid == fid
+        && filelist[idx].nks_app_id == nks_app_id
+        && ((want_keypair && filelist[idx].iskeypair)
+            || (!want_keypair
+                && (filelist[idx].certtype || filelist[idx].iskeypair > 0))))
+      break;
+  if (!filelist[idx].fid)
+    return gpg_error (GPG_ERR_NOT_FOUND);
+
+  *r_fididx = idx;
+  return 0;
+}
+
+
+const char *
+get_nks_tag (app_t app, int nks_app_id)
+{
+  const char *tag;
+
+  if (nks_app_id == NKS_APP_ESIGN)
+    tag = "ESIGN";
+  else if (nks_app_id == NKS_APP_SIGG)
     tag = "SIGG";
-  else if (app->app_local->nks_version < 3)
+  else if (nks_app_id == NKS_APP_IDLM)
+    tag = "IDLM";
+  else if (app->appversion < 3)
     tag = "DF01";
   else
     tag = "NKS3";
 
+  return tag;
+}
+
+static void
+set_usage_string (char usagebuf[5], int i)
+{
+  int usageidx = 0;
+  if (filelist[i].issignkey)
+    usagebuf[usageidx++] = 's';
+  if (filelist[i].isauthkey)
+    usagebuf[usageidx++] = 'a';
+  if (filelist[i].isencrkey)
+    usagebuf[usageidx++] = 'e';
+  if (!usageidx)
+    usagebuf[usageidx++] = '-';
+  usagebuf[usageidx] = 0;
+}
+
+static void
+do_learn_status_core (app_t app, ctrl_t ctrl, unsigned int flags,
+                      int nks_app_id)
+{
+  gpg_error_t err;
+  char ct_buf[100], id_buf[100];
+  int i;
+  const char *tag = get_nks_tag (app, nks_app_id);
+
   /* Output information about all useful objects in the NKS application. */
   for (i=0; filelist[i].fid; i++)
     {
-      if (filelist[i].nks_ver > app->app_local->nks_version)
+      if (filelist[i].nks_ver > app->appversion)
         continue;
 
-      if (!!filelist[i].is_sigg != !!is_sigg)
+      if (filelist[i].nks_app_id != nks_app_id)
         continue;
 
-      if (filelist[i].certtype && !(flags &1))
+      if (filelist[i].certtype && !(flags & APP_LEARN_FLAG_KEYPAIRINFO))
         {
           size_t len;
 
-          len = app_help_read_length_of_cert (app->slot,
+          len = app_help_read_length_of_cert (app_get_slot (app),
                                               filelist[i].fid, NULL);
           if (len)
             {
@@ -405,8 +891,12 @@ do_learn_status_core (app_t app, ctrl_t ctrl, unsigned int flags, int is_sigg)
       else if (filelist[i].iskeypair)
         {
           char gripstr[40+1];
+          char usagebuf[5];
+          char *algostr = NULL;
 
-          err = keygripstr_from_pk_file (app, filelist[i].fid, gripstr);
+          err = keygripstr_from_pk_file (app, filelist[i].fid,
+                                         filelist[i].iskeypair, gripstr,
+                                         NULL, &algostr);
           if (err)
             log_error ("can't get keygrip from FID 0x%04X: %s\n",
                        filelist[i].fid, gpg_strerror (err));
@@ -414,25 +904,18 @@ do_learn_status_core (app_t app, ctrl_t ctrl, unsigned int flags, int is_sigg)
             {
               snprintf (id_buf, sizeof id_buf, "NKS-%s.%04X",
                         tag, filelist[i].fid);
-              if (filelist[i].issignkey && filelist[i].isenckey)
-                usage = "sae";
-              else if (filelist[i].issignkey)
-                usage = "sa";
-              else if (filelist[i].isenckey)
-                usage = "e";
-              else
-                usage = "";
-
+              set_usage_string (usagebuf, i);
               send_status_info (ctrl, "KEYPAIRINFO",
                                 gripstr, 40,
                                 id_buf, strlen (id_buf),
-                                usage, strlen (usage),
+                                usagebuf, strlen (usagebuf),
+                                "-", (size_t)1,
+                                algostr, strlen (algostr),
                                 NULL, (size_t)0);
             }
+          xfree (algostr);
         }
     }
-
-
 }
 
 
@@ -441,33 +924,32 @@ do_learn_status (app_t app, ctrl_t ctrl, unsigned int flags)
 {
   gpg_error_t err;
 
-  err = switch_application (app, 0);
+  do_getattr (app, ctrl, "CHV-STATUS");
+
+  err = switch_application (app, NKS_APP_NKS);
   if (err)
     return err;
 
-  do_learn_status_core (app, ctrl, flags, 0);
+  do_learn_status_core (app, ctrl, flags, app->app_local->active_nks_app);
 
-  err = switch_application (app, 1);
+  if (app->app_local->only_idlm)
+    return 0;  /* ready.  */
+
+  err = switch_application (app, app->app_local->qes_app_id);
   if (err)
     return 0;  /* Silently ignore if we can't switch to SigG.  */
 
-  do_learn_status_core (app, ctrl, flags, 1);
+  do_learn_status_core (app, ctrl, flags, app->app_local->qes_app_id);
 
   return 0;
 }
 
 
-
-
-/* Read the certificate with id CERTID (as returned by learn_status in
-   the CERTINFO status lines) and return it in the freshly allocated
-   buffer put into CERT and the length of the certificate put into
-   CERTLEN. */
+/* Helper to read a certificate from the file FID.  The function
+ * assumes that the application has already been selected.  */
 static gpg_error_t
-do_readcert (app_t app, const char *certid,
-             unsigned char **cert, size_t *certlen)
+readcert_from_ef (app_t app, int fid, unsigned char **cert, size_t *certlen)
 {
-  int i, fid;
   gpg_error_t err;
   unsigned char *buffer;
   const unsigned char *p;
@@ -475,67 +957,32 @@ do_readcert (app_t app, const char *certid,
   int class, tag, constructed, ndef;
   size_t totobjlen, objlen, hdrlen;
   int rootca = 0;
-  int is_sigg = 0;
 
   *cert = NULL;
   *certlen = 0;
 
-  if (!strncmp (certid, "NKS-NKS3.", 9))
-    ;
-  else if (!strncmp (certid, "NKS-DF01.", 9))
-    ;
-  else if (!strncmp (certid, "NKS-SIGG.", 9))
-    is_sigg = 1;
-  else
-    return gpg_error (GPG_ERR_INV_ID);
-
-  err = switch_application (app, is_sigg);
-  if (err)
-    return err;
-
-  certid += 9;
-  if (!hexdigitp (certid) || !hexdigitp (certid+1)
-      || !hexdigitp (certid+2) || !hexdigitp (certid+3)
-      || certid[4])
-    return gpg_error (GPG_ERR_INV_ID);
-  fid = xtoi_4 (certid);
-  for (i=0; filelist[i].fid; i++)
-    if ((filelist[i].certtype || filelist[i].iskeypair)
-        && filelist[i].fid == fid)
-      break;
-  if (!filelist[i].fid)
-    return gpg_error (GPG_ERR_NOT_FOUND);
-
-  /* If the requested objects is a plain public key, redirect it to
-     the corresponding certificate.  The whole system is a bit messy
-     because we sometime use the key directly or let the caller
-     retrieve the key from the certificate.  The rationale for
-     that is to support not-yet stored certificates. */
-  if (filelist[i].iskeypair)
-    fid = filelist[i].iskeypair;
-
-
   /* Read the entire file.  fixme: This could be optimized by first
      reading the header to figure out how long the certificate
      actually is. */
-  err = iso7816_select_file (app->slot, fid, 0);
+  err = iso7816_select_file (app_get_slot (app), fid, 0);
   if (err)
     {
-      log_error ("error selecting FID 0x%04X: %s\n", fid, gpg_strerror (err));
-      return err;
-    }
-
-  err = iso7816_read_binary (app->slot, 0, 0, &buffer, &buflen);
-  if (err)
-    {
-      log_error ("error reading certificate from FID 0x%04X: %s\n",
+      log_error ("nks: error selecting FID 0x%04X: %s\n",
                  fid, gpg_strerror (err));
       return err;
     }
 
-  if (!buflen || *buffer == 0xff)
+  err = iso7816_read_binary (app_get_slot (app), 0, 0, &buffer, &buflen);
+  if (err)
     {
-      log_info ("no certificate contained in FID 0x%04X\n", fid);
+      log_error ("nks: error reading certificate from FID 0x%04X: %s\n",
+                 fid, gpg_strerror (err));
+      return err;
+    }
+
+  if (!buflen || *buffer == 0xff || all_zero_p (buffer, buflen))
+    {
+      log_info ("nks: no certificate contained in FID 0x%04X\n", fid);
       err = gpg_error (GPG_ERR_NOT_FOUND);
       goto leave;
     }
@@ -554,7 +1001,7 @@ do_readcert (app_t app, const char *certid,
   else
     return gpg_error (GPG_ERR_INV_OBJ);
   totobjlen = objlen + hdrlen;
-  assert (totobjlen <= buflen);
+  log_assert (totobjlen <= buflen);
 
   err = parse_ber_header (&p, &n, &class, &tag, &constructed,
                           &ndef, &objlen, &hdrlen);
@@ -585,7 +1032,7 @@ do_readcert (app_t app, const char *certid,
       if ( !(class == CLASS_UNIVERSAL && tag == TAG_SEQUENCE && constructed) )
         return gpg_error (GPG_ERR_INV_OBJ);
       totobjlen = objlen + hdrlen;
-      assert (save_p + totobjlen <= buffer + buflen);
+      log_assert (save_p + totobjlen <= buffer + buflen);
       memmove (buffer, save_p, totobjlen);
     }
 
@@ -599,12 +1046,178 @@ do_readcert (app_t app, const char *certid,
 }
 
 
+/*
+ * Iterate over FILELIST, supporting two use cases:
+ *
+ * (1) With WANT_KEYGRIPSTR=<GRIP>, finding matching entry.
+ * (2) With WANT_KEYGRIPSTR=NULL, listing entries
+ *     by CAPABILITY (possibly == 0, for all entries).
+ *
+ * Caller supplies an array KEYGRIPSTR.
+ * Caller should start *IDX_P == -1, and keep the index value in IDX_P.
+ *
+ * Returns 0 on success, otherwise returns error value.
+ *
+ * When all entries are tried, returns GPG_ERR_NOT_FOUND for the use
+ * case of (1).  Returns GPG_ERR_TRUE for the use case of (2).
+ */
+static gpg_error_t
+iterate_over_filelist (app_t app, const char *want_keygripstr, int capability,
+                       char keygripstr[2*KEYGRIP_LEN+1], int *idx_p)
+{
+  gpg_error_t err;
+  int idx = *idx_p;
+
+  for (idx++; filelist[idx].fid; idx++)
+    {
+      if (filelist[idx].nks_ver > app->appversion)
+        continue; /* EF not support by this card version.  */
+
+      if (!filelist[idx].iskeypair)
+        continue; /* Skip - We are only interested in keypairs.  */
+
+      if (app->app_local->only_idlm)
+        {
+          /* IDLM cards have no other applications we want to switch
+           * to.  We skip all EFs which are not known for IDLM.  */
+          if (filelist[idx].nks_app_id != NKS_APP_IDLM)
+            continue;
+        }
+      else
+        {
+          /* Skip all EFs which are not for NKS or the card's
+           * implementation for a qualified electoric signature (QES)
+           * which is either the old SIGG or the newer ESIGN.  */
+          if (filelist[idx].nks_app_id != NKS_APP_NKS
+              && filelist[idx].nks_app_id != app->app_local->qes_app_id)
+            continue;
+
+          /* Switch if needed.  Note that the filelist should be
+           * sorted to avoid unnecessary switches.  */
+          err = switch_application (app, filelist[idx].nks_app_id);
+          if (err)
+            {
+              *idx_p = idx;
+              return err;
+            }
+        }
+
+      /* Get the keygrip from the EF.  Note that this functions
+       * consults the cache to avoid computing the keygrip again.  */
+      err = keygripstr_from_pk_file (app, filelist[idx].fid,
+                                     filelist[idx].iskeypair, keygripstr,
+                                     NULL, NULL);
+      if (err)
+        {
+          log_error ("can't get keygrip from FID 0x%04X: %s\n",
+                     filelist[idx].fid, gpg_strerror (err));
+          continue;
+        }
+
+      if (want_keygripstr)
+        {
+          /* If the keygrip matches the requested one we are ready.  */
+          if (!strcmp (keygripstr, want_keygripstr))
+            {
+              /* Found */
+              *idx_p = idx;
+              return 0;
+            }
+        }
+      else /* No keygrip requested - list all .  */
+        {
+          /* If a capability has been requested return only keys with
+           * that capability.  */
+          if (capability == GCRY_PK_USAGE_SIGN)
+            {
+              if (!filelist[idx].issignkey)
+                continue;
+            }
+          if (capability == GCRY_PK_USAGE_ENCR)
+            {
+              if (!filelist[idx].isencrkey)
+                continue;
+            }
+          if (capability == GCRY_PK_USAGE_AUTH)
+            {
+              if (!filelist[idx].isauthkey)
+                continue;
+            }
+
+          /* Found.  Return but save the last idenx of the loop.  */
+          *idx_p = idx;
+          return 0;
+        }
+    }
+
+  if (!want_keygripstr)
+    err = gpg_error (GPG_ERR_TRUE);
+  else
+    err = gpg_error (GPG_ERR_NOT_FOUND);
+
+  return err;
+}
+
+
+/* Read the certificate with id CERTID (as returned by learn_status in
+   the CERTINFO status lines) and return it in the freshly allocated
+   buffer put into CERT and the length of the certificate put into
+   CERTLEN. */
+static gpg_error_t
+do_readcert (app_t app, const char *certid,
+             unsigned char **cert, size_t *certlen)
+{
+  int idx, fid;
+  gpg_error_t err;
+
+  *cert = NULL;
+  *certlen = 0;
+
+  /* Handle the case with KEYGRIP.  We got a keygrip if the string has
+   * a length of 40 and does not start with an N as in NKS-* */
+  if (certid[0] != 'N' && strlen (certid) == 40)
+    {
+      char keygripstr[2*KEYGRIP_LEN+1];
+
+      idx = -1;
+      err = iterate_over_filelist (app, certid, 0, keygripstr, &idx);
+      if (err)
+        return err;
+
+      /* Switching is not required here because iterate_over_filelist
+       * has already done that.  */
+    }
+  else /* This is not a keygrip.  */
+    {
+      err = parse_keyref (app, certid, 0, &idx);
+      if (err)
+        return err;
+
+      err = switch_application (app, filelist[idx].nks_app_id);
+      if (err)
+        return err;
+    }
+
+  /* If the requested objects is a plain public key, redirect it to
+     the corresponding certificate.  The whole system is a bit messy
+     because we sometime use the key directly or let the caller
+     retrieve the key from the certificate.  The rationale for
+     that is to support not-yet stored certificates. */
+  if (filelist[idx].iskeypair > 0)
+    fid = filelist[idx].iskeypair;
+  else
+    fid = filelist[idx].fid;
+
+  return readcert_from_ef (app, fid, cert, certlen);
+}
+
+
 /* Handle the READKEY command. On success a canonical encoded
    S-expression with the public key will get stored at PK and its
    length at PKLEN; the caller must release that buffer.  On error PK
    and PKLEN are not changed and an error code is returned.  As of now
    this function is only useful for the internal authentication key.
-   Other keys are automagically retrieved via by means of the
+   Other keys are automagically retrieved by means of the
    certificate parsing code in commands.c:cmd_readkey.  For internal
    use PK and PKLEN may be NULL to just check for an existing key.  */
 static gpg_error_t
@@ -612,9 +1225,13 @@ do_readkey (app_t app, ctrl_t ctrl, const char *keyid, unsigned int flags,
             unsigned char **pk, size_t *pklen)
 {
   gpg_error_t err;
-  unsigned char *buffer[2];
-  size_t buflen[2];
-  unsigned short path[1] = { 0x4500 };
+  unsigned char *dummy_pk = NULL;
+  size_t  dummy_pklen = 0;
+
+  if (!pk)
+    pk = &dummy_pk;
+  if (!pklen)
+    pklen = &dummy_pklen;
 
   (void)ctrl;
 
@@ -622,45 +1239,198 @@ do_readkey (app_t app, ctrl_t ctrl, const char *keyid, unsigned int flags,
     return GPG_ERR_NOT_SUPPORTED;
 
   /* We use a generic name to retrieve PK.AUT.IFD-SPK.  */
-  if (!strcmp (keyid, "$IFDAUTHKEY") && app->app_local->nks_version >= 3)
-    ;
-  else /* Return the error code expected by cmd_readkey.  */
-    return gpg_error (GPG_ERR_UNSUPPORTED_OPERATION);
+  if (!strcmp (keyid, "$IFDAUTHKEY") && app->appversion >= 3)
+    {
+      unsigned short path[1] = { 0x4500 };
+      unsigned char *buffer[2];
+      size_t buflen[2];
 
-  /* Access the KEYD file which is always in the master directory.  */
-  err = iso7816_select_path (app_get_slot (app), path, DIM (path), 0);
-  if (err)
-    return err;
-  /* Due to the above select we need to re-select our application.  */
-  app->app_local->need_app_select = 1;
-  /* Get the two records.  */
-  err = iso7816_read_record (app->slot, 5, 1, 0, &buffer[0], &buflen[0]);
-  if (err)
-    return err;
-  if (all_zero_p (buffer[0], buflen[0]))
-    {
+      /* Access the KEYD file which is always in the master directory.  */
+      err = iso7816_select_path (app_get_slot (app), path, DIM (path), 0);
+      if (err)
+        goto leave;
+      /* Due to the above select we need to re-select our application.  */
+      app->app_local->need_app_select = 1;
+      /* Get the two records.  */
+      err = iso7816_read_record (app_get_slot (app), 5, 1, 0,
+                                 &buffer[0], &buflen[0]);
+      if (err)
+        goto leave;
+      if (all_zero_p (buffer[0], buflen[0]))
+        {
+          xfree (buffer[0]);
+          err = gpg_error (GPG_ERR_NOT_FOUND);
+          goto leave;
+        }
+      err = iso7816_read_record (app_get_slot (app), 6, 1, 0,
+                                 &buffer[1], &buflen[1]);
+      if (err)
+        {
+          xfree (buffer[0]);
+          goto leave;
+        }
+
+      if ((flags & APP_READKEY_FLAG_INFO))
+        {
+          /* FIXME */
+        }
+
+      if (pk && pklen && pk != &dummy_pk)
+        {
+          *pk = make_canon_sexp_from_rsa_pk (buffer[0], buflen[0],
+                                             buffer[1], buflen[1],
+                                             pklen);
+          if (!*pk)
+            err = gpg_error_from_syserror ();
+        }
+
       xfree (buffer[0]);
-      return gpg_error (GPG_ERR_NOT_FOUND);
+      xfree (buffer[1]);
     }
-  err = iso7816_read_record (app->slot, 6, 1, 0, &buffer[1], &buflen[1]);
+  else if (keyid[0] != 'N' && strlen (keyid) == 40)
+    {
+      char keygripstr[2*KEYGRIP_LEN+1];
+      int i = -1;
+
+      err = iterate_over_filelist (app, keyid, 0, keygripstr, &i);
+      if (err)
+        goto leave;
+
+      err = pubkey_from_pk_file (app, filelist[i].fid, filelist[i].iskeypair,
+                                 pk, pklen);
+      if (!err && (flags & APP_READKEY_FLAG_INFO))
+        {
+          char *algostr;
+          char usagebuf[5];
+          char id_buf[100];
+
+          if (app_help_get_keygrip_string_pk (*pk, *pklen, NULL, NULL, NULL,
+                                              &algostr))
+            algostr = NULL;  /* Ooops.  */
+
+          snprintf (id_buf, sizeof id_buf, "NKS-%s.%04X",
+                    get_nks_tag (app, filelist[i].nks_app_id),
+                    filelist[i].fid);
+          set_usage_string (usagebuf, i);
+          send_status_info (ctrl, "KEYPAIRINFO",
+                            keygripstr, strlen (keygripstr),
+                            id_buf, strlen (id_buf),
+                            usagebuf, strlen (usagebuf),
+                            "-", (size_t)1,
+                            algostr, strlen (algostr?algostr:""),
+                            NULL, (size_t)0);
+          xfree (algostr);
+        }
+    }
+  else if (!strncmp (keyid, "NKS-IDLM.", 9))
+    {
+      keyid += 9;
+      if (!hexdigitp (keyid) || !hexdigitp (keyid+1)
+          || !hexdigitp (keyid+2) || !hexdigitp (keyid+3)
+          || keyid[4])
+        {
+          err = gpg_error (GPG_ERR_INV_ID);
+          goto leave;
+        }
+
+      err = pubkey_from_pk_file (app, xtoi_4 (keyid), -1, pk, pklen);
+      /* FIXME: Implement KEYPAIRINFO.  */
+    }
+  else /* Return the error code expected by cmd_readkey.  */
+    err = gpg_error (GPG_ERR_UNSUPPORTED_OPERATION);
+
+ leave:
+  xfree (dummy_pk);
+  return err;
+}
+
+
+/* Write the certificate (CERT,CERTLEN) to the card at CERTREFSTR.
+ * CERTREFSTR is of the form "NKS_<yyy>.<four_hexdigit_keyref>". */
+static gpg_error_t
+do_writecert (app_t app, ctrl_t ctrl,
+              const char *certid,
+              gpg_error_t (*pincb)(void*, const char *, char **),
+              void *pincb_arg,
+              const unsigned char *cert, size_t certlen)
+{
+  gpg_error_t err;
+  int i, fid, pwid;
+  int nks_app_id, tmp_app_id;
+  const char *desc;
+
+  (void)ctrl;
+
+  if (!strncmp (certid, "NKS-NKS3.", 9))
+    nks_app_id = NKS_APP_NKS;
+  else if (!strncmp (certid, "NKS-ESIGN.", 10))
+    nks_app_id = NKS_APP_ESIGN;
+  else if (!strncmp (certid, "NKS-SIGG.", 9))
+    nks_app_id = NKS_APP_SIGG;
+  else if (!strncmp (certid, "NKS-DF01.", 9))
+    nks_app_id = NKS_APP_NKS;
+  else if (!strncmp (certid, "NKS-IDLM.", 9))
+    nks_app_id = NKS_APP_IDLM;
+  else
+    return gpg_error (GPG_ERR_INV_ID);
+  certid += nks_app_id == NKS_APP_ESIGN? 10 : 9;
+
+  err = switch_application (app, nks_app_id);
+  if (err)
+    return err;
+
+  if (!hexdigitp (certid) || !hexdigitp (certid+1)
+      || !hexdigitp (certid+2) || !hexdigitp (certid+3)
+      || certid[4])
+    return gpg_error (GPG_ERR_INV_ID);
+  fid = xtoi_4 (certid);
+  for (i=0; filelist[i].fid; i++)
+    if ((filelist[i].certtype || filelist[i].iskeypair > 0)
+        && filelist[i].nks_app_id == nks_app_id
+        && filelist[i].fid == fid)
+      break;
+  if (!filelist[i].fid)
+    return gpg_error (GPG_ERR_NOT_FOUND);
+
+  /* If the requested objects is a plain public key, redirect it to
+   * the corresponding certificate.  This makes it easier for the user
+   * to figure out which CERTID to use.  For example gpg-card shows
+   * the id of the key and not of the certificate.  */
+  if (filelist[i].iskeypair > 0)
+    fid = filelist[i].iskeypair;
+
+  /* We have no selective flush mechanism and given the rare use of
+   * writecert it won't harm to flush the entire cache.  */
+  flush_fid_cache (app);
+
+  /* The certificates we support all require PW1.CH.  Note that we
+   * check that the nks_app_id matches which sorts out CERTID values
+   * which are subkeys to a different nks_app_id.  */
+  desc = parse_pwidstr (app, "PW1.CH", 0, &tmp_app_id, &pwid);
+  if (!desc || tmp_app_id != nks_app_id)
+    return gpg_error (GPG_ERR_INV_ID);
+  err = verify_pin (app, pwid, desc, pincb, pincb_arg);
+  if (err)
+    return err;
+
+  /* Select the file and write the certificate.  */
+  err = iso7816_select_file (app_get_slot (app), fid, 0);
   if (err)
     {
-      xfree (buffer[0]);
+      log_error ("nks: error selecting FID 0x%04X: %s\n",
+                 fid, gpg_strerror (err));
       return err;
     }
 
-  if (pk && pklen)
+  err = iso7816_update_binary (app_get_slot (app), 1, 0, cert, certlen);
+  if (err)
     {
-      *pk = make_canon_sexp_from_rsa_pk (buffer[0], buflen[0],
-                                         buffer[1], buflen[1],
-                                         pklen);
-      if (!*pk)
-        err = gpg_error_from_syserror ();
+      log_error ("nks: error updating certificate at FID 0x%04X: %s\n",
+                 fid, gpg_strerror (err));
+      return err;
     }
 
-  xfree (buffer[0]);
-  xfree (buffer[1]);
-  return err;
+  return 0;
 }
 
 
@@ -688,7 +1458,7 @@ do_writekey (app_t app, ctrl_t ctrl,
   (void)pincb;
   (void)pincb_arg;
 
-  if (!strcmp (keyid, "$IFDAUTHKEY") && app->app_local->nks_version >= 3)
+  if (!strcmp (keyid, "$IFDAUTHKEY") && app->appversion >= 3)
     ;
   else
     return gpg_error (GPG_ERR_INV_ID);
@@ -726,6 +1496,7 @@ do_writekey (app_t app, ctrl_t ctrl,
 /*     goto leave; */
 
   /* Send the MSE:Store_Public_Key.  */
+  /* We will need to clear the cache here.  */
   err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
 /*   mse = xtrymalloc (1000); */
 
@@ -746,11 +1517,68 @@ do_writekey (app_t app, ctrl_t ctrl,
 /*   mse[10] = 0x82; /\* RSA public exponent of up to 4 bytes.  *\/ */
 /*   mse[12] = rsa_e_len; */
 /*   memcpy (mse+12, rsa_e, rsa_e_len); */
-/*   err = iso7816_manage_security_env (app->slot, 0x81, 0xB6, */
+/*   err = iso7816_manage_security_env (app_get_slot (app), 0x81, 0xB6, */
 /*                                      mse, sizeof mse); */
 
  leave:
   return err;
+}
+
+
+/* Return an allocated string to be used as prompt.  Returns NULL on
+ * malloc error.  */
+static char *
+make_prompt (app_t app, int remaining, const char *firstline,
+             const char *extraline)
+{
+  char *serial, *tmpbuf, *result;
+
+  serial = get_dispserialno (app);
+
+  /* TRANSLATORS: Put a \x1f right before a colon.  This can be
+   * used by pinentry to nicely align the names and values.  Keep
+   * the %s at the start and end of the string.  */
+  result = xtryasprintf (_("%s"
+                           "Number\x1f: %s%%0A"
+                           "Holder\x1f: %s"
+                           "%s"),
+                         "\x1e",
+                         serial,
+                         "",
+                         "");
+  xfree (serial);
+  if (!result)
+    return NULL; /* Out of core.  */
+
+  /* Append a "remaining attempts" info if needed.  */
+  if (remaining != -1 && remaining < 3)
+    {
+      char *rembuf;
+
+      /* TRANSLATORS: This is the number of remaining attempts to
+       * enter a PIN.  Use %%0A (double-percent,0A) for a linefeed. */
+      rembuf = xtryasprintf (_("Remaining attempts: %d"), remaining);
+      if (rembuf)
+        {
+          tmpbuf = strconcat (firstline, "%0A%0A", result,
+                              "%0A%0A", rembuf, NULL);
+          xfree (rembuf);
+        }
+      else
+        tmpbuf = NULL;
+      xfree (result);
+      result = tmpbuf;
+    }
+  else
+    {
+      tmpbuf = strconcat (firstline, "%0A%0A", result,
+                          extraline? "%0A%0A":"", extraline,
+                          NULL);
+      xfree (result);
+      result = tmpbuf;
+    }
+
+  return result;
 }
 
 
@@ -777,21 +1605,67 @@ verify_pin (app_t app, int pwid, const char *desc,
             gpg_error_t (*pincb)(void*, const char *, char **),
             void *pincb_arg)
 {
-  pininfo_t pininfo;
   int rc;
+  pininfo_t pininfo;
+  char *prompt;
+  const char *extrapromptline = NULL;
+  int remaining, nullpin;
 
   if (!desc)
-    desc = "PIN";
+    desc = "||PIN";
 
   memset (&pininfo, 0, sizeof pininfo);
   pininfo.fixedlen = -1;
-  pininfo.minlen = 6;
-  pininfo.maxlen = 16;
+
+  /* FIXME: TCOS allows to read the min. and max. values - do this.  */
+  if (app->appversion == 15)
+    {
+      if (app->app_local->active_nks_app == NKS_APP_NKS && pwid == 0x03)
+        pininfo.minlen = 6;
+      else if (app->app_local->active_nks_app == NKS_APP_ESIGN && pwid == 0x81)
+        pininfo.minlen = 6;
+      else
+        pininfo.minlen = 8;
+      pininfo.maxlen = 24;
+    }
+  else if (app->app_local->active_nks_app == NKS_APP_IDLM)
+    {
+      if (pwid == 0x00)
+        pininfo.minlen = 6;
+      else
+        pininfo.minlen = 8;
+      pininfo.maxlen = 24;
+    }
+  else
+    {
+      /* For NKS3 we used these fixed values; let's keep this.  */
+      pininfo.minlen = 6;
+      pininfo.maxlen = 16;
+    }
+
+  remaining = iso7816_verify_status (app_get_slot (app), pwid);
+  nullpin = (remaining == ISO7816_VERIFY_NULLPIN);
+  if (remaining < 0)
+    remaining = -1; /* We don't care about the concrete error.  */
+  if (remaining < 3)
+    {
+      if (remaining >= 0)
+        log_info ("nks: PIN has %d attempts left\n", remaining);
+    }
+
+  if (nullpin)
+    {
+      log_info ("nks: The NullPIN for PIN 0x%02x has not yet been changed\n",
+                pwid);
+      extrapromptline = _("Note: PIN has not yet been enabled.");
+    }
 
   if (!opt.disable_pinpad
-      && !iso7816_check_pinpad (app->slot, ISO7816_VERIFY, &pininfo) )
+      && !iso7816_check_pinpad (app_get_slot (app), ISO7816_VERIFY, &pininfo) )
     {
-      rc = pincb (pincb_arg, desc, NULL);
+      prompt = make_prompt (app, remaining, desc, extrapromptline);
+      rc = pincb (pincb_arg, prompt, NULL);
+      xfree (prompt);
       if (rc)
         {
           log_info (_("PIN callback returned error: %s\n"),
@@ -799,14 +1673,16 @@ verify_pin (app_t app, int pwid, const char *desc,
           return rc;
         }
 
-      rc = iso7816_verify_kp (app->slot, pwid, &pininfo);
+      rc = iso7816_verify_kp (app_get_slot (app), pwid, &pininfo);
       pincb (pincb_arg, NULL, NULL);  /* Dismiss the prompt. */
     }
   else
     {
       char *pinvalue;
 
-      rc = pincb (pincb_arg, desc, &pinvalue);
+      prompt = make_prompt (app, remaining, desc, extrapromptline);
+      rc = pincb (pincb_arg, prompt, &pinvalue);
+      xfree (prompt);
       if (rc)
         {
           log_info ("PIN callback returned error: %s\n", gpg_strerror (rc));
@@ -820,7 +1696,8 @@ verify_pin (app_t app, int pwid, const char *desc,
           return rc;
         }
 
-      rc = iso7816_verify (app->slot, pwid, pinvalue, strlen (pinvalue));
+      rc = iso7816_verify (app_get_slot (app), pwid,
+                           pinvalue, strlen (pinvalue));
       xfree (pinvalue);
     }
 
@@ -854,70 +1731,143 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
   static unsigned char rmd160_prefix[15] = /* Object ID is 1.3.36.3.2.1 */
     { 0x30, 0x21, 0x30, 0x09, 0x06, 0x05, 0x2b, 0x24, 0x03,
       0x02, 0x01, 0x05, 0x00, 0x04, 0x14 };
-  int rc, i;
-  int is_sigg = 0;
-  int fid;
+  static unsigned char sha224_prefix[19] = /* (2.16.840.1.101.3.4.2.4) */
+    { 0x30, 0x2D, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48,
+      0x01, 0x65, 0x03, 0x04, 0x02, 0x04, 0x05, 0x00, 0x04,
+      0x1C  };
+  static unsigned char sha256_prefix[19] = /* (2.16.840.1.101.3.4.2.1) */
+    { 0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+      0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x01, 0x05,
+      0x00, 0x04, 0x20  };
+  static unsigned char sha384_prefix[19] = /* (2.16.840.1.101.3.4.2.2) */
+    { 0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+      0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x02, 0x05,
+      0x00, 0x04, 0x30  };
+  static unsigned char sha512_prefix[19] = /* (2.16.840.1.101.3.4.2.3) */
+    { 0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86,
+      0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x03, 0x05,
+      0x00, 0x04, 0x40  };
+  gpg_error_t err;
+  int idx;
+  int pwid;
   unsigned char kid;
   unsigned char data[83];   /* Must be large enough for a SHA-1 digest
                                + the largest OID prefix. */
   size_t datalen;
+  int algo;
+  unsigned int digestlen;   /* Length of the hash.  */
+  unsigned char oidbuf[64];
+  size_t oidbuflen;
 
   (void)ctrl;
 
-  if (!keyidstr || !*keyidstr)
-    return gpg_error (GPG_ERR_INV_VALUE);
   switch (indatalen)
     {
-    case 16: case 20: case 35: case 47: case 51: case 67: case 83: break;
-    default: return gpg_error (GPG_ERR_INV_VALUE);
+    case 20: /* plain SHA-1 or RMD160 digest         */
+    case 28: /* plain SHA-224 digest                 */
+    case 32: /* plain SHA-256 digest                 */
+    case 48: /* plain SHA-384 digest                 */
+    case 64: /* plain SHA-512 digest                 */
+    case 35: /* ASN.1 encoded SHA-1 or RMD160 digest */
+    case 47: /* ASN.1 encoded SHA-224 digest         */
+    case 51: /* ASN.1 encoded SHA-256 digest         */
+    case 67: /* ASN.1 encoded SHA-384 digest         */
+    case 83: /* ASN.1 encoded SHA-512 digest         */
+      break;
+    default:
+      log_info ("nks: invalid length of input data: %zu\n", indatalen);
+      return gpg_error (GPG_ERR_INV_VALUE);
     }
 
-  /* Check that the provided ID is valid.  This is not really needed
-     but we do it to enforce correct usage by the caller. */
-  if (!strncmp (keyidstr, "NKS-NKS3.", 9) )
-    ;
-  else if (!strncmp (keyidstr, "NKS-DF01.", 9) )
-    ;
-  else if (!strncmp (keyidstr, "NKS-SIGG.", 9) )
-    is_sigg = 1;
-  else
-    return gpg_error (GPG_ERR_INV_ID);
-  keyidstr += 9;
+  err = find_fid_by_keyref (app, keyidstr, &idx, &algo);
+  if (err)
+    return err;
 
-  rc = switch_application (app, is_sigg);
-  if (rc)
-    return rc;
-
-  if (is_sigg && app->app_local->sigg_is_msig)
+  if (app->app_local->active_nks_app == NKS_APP_SIGG
+      && app->app_local->sigg_is_msig)
     {
       log_info ("mass signature cards are not allowed\n");
       return gpg_error (GPG_ERR_NOT_SUPPORTED);
     }
 
-  if (!hexdigitp (keyidstr) || !hexdigitp (keyidstr+1)
-      || !hexdigitp (keyidstr+2) || !hexdigitp (keyidstr+3)
-      || keyidstr[4])
-    return gpg_error (GPG_ERR_INV_ID);
-  fid = xtoi_4 (keyidstr);
-  for (i=0; filelist[i].fid; i++)
-    if (filelist[i].iskeypair && filelist[i].fid == fid)
-      break;
-  if (!filelist[i].fid)
-    return gpg_error (GPG_ERR_NOT_FOUND);
-  if (!filelist[i].issignkey)
-    return gpg_error (GPG_ERR_INV_ID);
-  kid = filelist[i].kid;
-
-  /* Prepare the DER object from INDATA.  */
-  if (app->app_local->nks_version > 2 && (indatalen == 35
-                                          || indatalen == 47
-                                          || indatalen == 51
-                                          || indatalen == 67
-                                          || indatalen == 83))
+  if (!filelist[idx].issignkey)
     {
-      /* The caller send data matching the length of the ASN.1 encoded
-         hash for SHA-{1,224,256,384,512}.  Assume that is okay.  */
-      assert (indatalen <= sizeof data);
+      log_debug ("key %s is not a signing key\n", keyidstr);
+      return gpg_error (GPG_ERR_INV_ID);
+    }
+
+  kid = filelist[idx].kid;
+
+  digestlen = gcry_md_get_algo_dlen (hashalgo);
+
+  /* Prepare the input object from INDATA.  */
+  if (algo == GCRY_PK_ECC)
+    {
+      if (digestlen != 32 && digestlen != 48 && digestlen != 64)
+        {
+          log_error ("nks: ECC signing not possible: dlen=%u\n", digestlen);
+          return gpg_error (GPG_ERR_DIGEST_ALGO);
+        }
+
+      if (indatalen == digestlen)
+        {
+          /* Already prepared.  */
+          datalen = indatalen;
+          log_assert (datalen <= sizeof data);
+          memcpy (data, indata, datalen);
+        }
+      else if (indatalen > digestlen)
+        {
+          /* Assume a PKCS#1 prefix and remove it.  */
+          oidbuflen = sizeof oidbuf;
+          err = gcry_md_get_asnoid (hashalgo, &oidbuf, &oidbuflen);
+          if (err)
+            {
+              log_error ("nks: no OID for hash algo %d\n", hashalgo);
+              return gpg_error (GPG_ERR_INTERNAL);
+            }
+          if (indatalen != oidbuflen + digestlen
+              || memcmp (indata, oidbuf, oidbuflen))
+            {
+              log_error ("nks: input data too long for ECC: len=%zu\n",
+                         indatalen);
+              return gpg_error (GPG_ERR_INV_VALUE);
+            }
+          datalen = indatalen - oidbuflen;
+          log_assert (datalen <= sizeof data);
+          memcpy (data, (const char*)indata + oidbuflen, datalen);
+        }
+      else
+        {
+          log_error ("nks: input data too short for ECC: len=%zu\n",
+                     indatalen);
+          return gpg_error (GPG_ERR_INV_VALUE);
+        }
+    }
+  else if (app->appversion > 2 && (indatalen == 35
+                                   || indatalen == 47
+                                   || indatalen == 51
+                                   || indatalen == 67
+                                   || indatalen == 83))
+    {
+      /* Verify that the caller has sent a proper ASN.1 encoded hash
+         for RMD160 or SHA-{1,224,256,384,512}. */
+#define X(algo,prefix,plaindigestlen)                      \
+      if (hashalgo == (algo)                               \
+          && indatalen == sizeof prefix + (plaindigestlen) \
+          && !memcmp (indata, prefix, sizeof prefix))      \
+        ;
+      X(GCRY_MD_RMD160, rmd160_prefix, 20)
+      else X(GCRY_MD_SHA1, sha1_prefix, 20)
+      else X(GCRY_MD_SHA224, sha224_prefix, 28)
+      else X(GCRY_MD_SHA256, sha256_prefix, 32)
+      else X(GCRY_MD_SHA384, sha384_prefix, 48)
+      else X(GCRY_MD_SHA512, sha512_prefix, 64)
+      else
+        return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
+#undef X
+
+      log_assert (indatalen <= sizeof data);
       memcpy (data, indata, indatalen);
       datalen = indatalen;
     }
@@ -934,43 +1884,67 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
       memcpy (data, indata, indatalen);
       datalen = 35;
     }
-  else if (indatalen == 20)
-    {
-      if (hashalgo == GCRY_MD_SHA1)
-        memcpy (data, sha1_prefix, 15);
-      else if (hashalgo == GCRY_MD_RMD160)
-        memcpy (data, rmd160_prefix, 15);
-      else
-        return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
-      memcpy (data+15, indata, indatalen);
-      datalen = 35;
+  /* Concatenate prefix and digest.
+   * Note that the X macro creates an "else if".  Ugly - I know. */
+#define X(algo,prefix,plaindigestlen) \
+  if ((hashalgo == (algo)) && (indatalen == (plaindigestlen))) \
+    {                                                          \
+      datalen = sizeof prefix + indatalen;                     \
+      log_assert (datalen <= sizeof data);                     \
+      memcpy (data, prefix, sizeof prefix);                    \
+      memcpy (data + sizeof prefix, indata, indatalen);        \
     }
+  else X(GCRY_MD_RMD160, rmd160_prefix, 20)
+  else X(GCRY_MD_SHA1, sha1_prefix, 20)
+  else X(GCRY_MD_SHA224, sha224_prefix, 28)
+  else X(GCRY_MD_SHA256, sha256_prefix, 32)
+  else X(GCRY_MD_SHA384, sha384_prefix, 48)
+  else X(GCRY_MD_SHA512, sha512_prefix, 64)
   else
     return gpg_error (GPG_ERR_INV_VALUE);
+#undef X
 
-
-  /* Send an MSE for PSO:Computer_Signature.  */
-  if (app->app_local->nks_version > 2)
+  /* Send an MSE for PSO:Compute_Signature.  */
+  if (app->appversion > 2 && app->app_local->active_nks_app != NKS_APP_ESIGN)
     {
       unsigned char mse[6];
+      unsigned int mselen;
 
-      mse[0] = 0x80; /* Algorithm reference.  */
-      mse[1] = 1;
-      mse[2] = 2;    /* RSA, card does pkcs#1 v1.5 padding, no ASN.1 check.  */
-      mse[3] = 0x84; /* Private key reference.  */
-      mse[4] = 1;
-      mse[5] = kid;
-      rc = iso7816_manage_security_env (app->slot, 0x41, 0xB6,
-                                        mse, sizeof mse);
+      if (algo == GCRY_PK_ECC)
+        {
+          mse[0] = 0x84; /* Private key reference.  */
+          mse[1] = 1;
+          mse[2] = kid;
+          mselen = 3;
+        }
+      else /* RSA */
+        {
+          mse[0] = 0x80; /* Algorithm reference.  */
+          mse[1] = 1;
+          mse[2] = 2;    /* Card does pkcs#1 v1.5 padding, no ASN.1 check.  */
+          mse[3] = 0x84; /* Private key reference.  */
+          mse[4] = 1;
+          mse[5] = kid;
+          mselen = 6;
+        }
+      err = iso7816_manage_security_env (app_get_slot (app), 0x41, 0xB6,
+                                         mse, mselen);
     }
-  /* Verify using PW1.CH.  */
-  if (!rc)
-    rc = verify_pin (app, 0, NULL, pincb, pincb_arg);
+
+  if (app->app_local->active_nks_app == NKS_APP_ESIGN)
+    pwid = 0x81;
+  else if (app->appversion == 15)
+    pwid = 0x03;
+  else
+    pwid = 0x00;
+
+  if (!err)
+    err = verify_pin (app, pwid, NULL, pincb, pincb_arg);
   /* Compute the signature.  */
-  if (!rc)
-    rc = iso7816_compute_ds (app->slot, 0, data, datalen, 0,
-                             outdata, outdatalen);
-  return rc;
+  if (!err)
+    err = iso7816_compute_ds (app_get_slot (app), 0, data, datalen, 0,
+                              outdata, outdatalen);
+  return err;
 }
 
 
@@ -986,48 +1960,53 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
              unsigned char **outdata, size_t *outdatalen,
              unsigned int *r_info)
 {
-  int rc, i;
-  int is_sigg = 0;
-  int fid;
+  gpg_error_t err;
+  int idx;
   int kid;
+  int algo;
+  int pwid;
+  int padind;
+  int extended_mode;
 
   (void)ctrl;
   (void)r_info;
 
-  if (!keyidstr || !*keyidstr || !indatalen)
+  if (!indatalen)
     return gpg_error (GPG_ERR_INV_VALUE);
 
-  /* Check that the provided ID is valid.  This is not really needed
-     but we do it to enforce correct usage by the caller. */
-  if (!strncmp (keyidstr, "NKS-NKS3.", 9) )
-    ;
-  else if (!strncmp (keyidstr, "NKS-DF01.", 9) )
-    ;
-  else if (!strncmp (keyidstr, "NKS-SIGG.", 9) )
-    is_sigg = 1;
+  err = find_fid_by_keyref (app, keyidstr, &idx, &algo);
+  if (err)
+    return err;
+
+  if (!filelist[idx].isencrkey)
+    return gpg_error (GPG_ERR_INV_ID);
+
+  kid = filelist[idx].kid;
+
+  if (app->appversion <= 2)
+    {
+      static const unsigned char mse[] =
+        {
+          0x80, 1, 0x10, /* Select algorithm RSA. */
+          0x84, 1, 0x81  /* Select local secret key 1 for decryption. */
+        };
+      err = iso7816_manage_security_env (app_get_slot (app), 0xC1, 0xB8,
+                                         mse, sizeof mse);
+      extended_mode = 0;
+      padind = 0x81;
+    }
+  else if (algo == GCRY_PK_ECC)
+    {
+      unsigned char mse[3];
+      mse[0] = 0x84; /* Private key reference.  */
+      mse[1] = 1;
+      mse[2] = kid;
+      err = iso7816_manage_security_env (app_get_slot (app), 0x41, 0xB8,
+                                         mse, sizeof mse);
+      extended_mode = 0;
+      padind = 0x00;
+    }
   else
-    return gpg_error (GPG_ERR_INV_ID);
-  keyidstr += 9;
-
-  rc = switch_application (app, is_sigg);
-  if (rc)
-    return rc;
-
-  if (!hexdigitp (keyidstr) || !hexdigitp (keyidstr+1)
-      || !hexdigitp (keyidstr+2) || !hexdigitp (keyidstr+3)
-      || keyidstr[4])
-    return gpg_error (GPG_ERR_INV_ID);
-  fid = xtoi_4 (keyidstr);
-  for (i=0; filelist[i].fid; i++)
-    if (filelist[i].iskeypair && filelist[i].fid == fid)
-      break;
-  if (!filelist[i].fid)
-    return gpg_error (GPG_ERR_NOT_FOUND);
-  if (!filelist[i].isenckey)
-    return gpg_error (GPG_ERR_INV_ID);
-  kid = filelist[i].kid;
-
-  if (app->app_local->nks_version > 2)
     {
       unsigned char mse[6];
       mse[0] = 0x80; /* Algorithm reference.  */
@@ -1036,58 +2015,77 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
       mse[3] = 0x84; /* Private key reference.  */
       mse[4] = 1;
       mse[5] = kid;
-      rc = iso7816_manage_security_env (app->slot, 0x41, 0xB8,
-                                        mse, sizeof mse);
+      err = iso7816_manage_security_env (app_get_slot (app), 0x41, 0xB8,
+                                         mse, sizeof mse);
+      extended_mode = 1;
+      padind = 0x81;
     }
-  else
+  if (err)
     {
-      static const unsigned char mse[] =
-        {
-          0x80, 1, 0x10, /* Select algorithm RSA. */
-          0x84, 1, 0x81  /* Select local secret key 1 for decryption. */
-        };
-      rc = iso7816_manage_security_env (app->slot, 0xC1, 0xB8,
-                                        mse, sizeof mse);
-
+      log_error ("nks: MSE failed: %s\n", gpg_strerror (err));
+      goto leave;
     }
 
-  if (!rc)
-    rc = verify_pin (app, 0, NULL, pincb, pincb_arg);
+  /* We use the Global PIN 1 */
+  if (app->appversion == 15)
+    pwid = 0x03;
+  else
+    pwid = 0x00;
 
-  /* Note that we need to use extended length APDUs for TCOS 3 cards.
-     Command chaining does not work.  */
-  if (!rc)
-    rc = iso7816_decipher (app->slot, app->app_local->nks_version > 2? 1:0,
-                           indata, indatalen, 0, 0x81,
-                           outdata, outdatalen);
-  return rc;
+  err = verify_pin (app, pwid, NULL, pincb, pincb_arg);
+  if (err)
+    goto leave;
+
+  err = iso7816_decipher (app_get_slot (app), extended_mode,
+                          indata, indatalen, 0, padind,
+                          outdata, outdatalen);
+
+ leave:
+  return err;
 }
 
 
 
 /* Parse a password ID string.  Returns NULL on error or a string
-   suitable as passphrase prompt on success.  On success stores the
-   reference value for the password at R_PWID and a flag indicating
-   that the SigG application is to be used at R_SIGG.  If NEW_MODE is
-   true, the returned description is suitable for a new Password.
-   Supported values for PWIDSTR are:
-
-     PW1.CH       - Global password 1
-     PW2.CH       - Global password 2
-     PW1.CH.SIG   - SigG password 1
-     PW2.CH.SIG   - SigG password 2
+ * suitable as passphrase prompt on success.  On success stores the
+ * reference value for the password at R_PWID and a flag indicating
+ * which app is to be used at R_NKS_APP_ID.  If NEW_MODE is true, the
+ * returned description is suitable for a new password.  Here is a
+ * take mapping the PWIDSTR to the used PWIDs:
+ *
+ *  | pwidstr    |              | NKS3 | NKS15 | IDKEY1 |
+ *  |------------+--------------+------+-------+--------|
+ *  | PW1.CH     | Global PIN 1 | 0x00 |  0x03 | 0x00   |
+ *  | PW2.CH     | Global PIN 2 | 0x01 |  0x04 | 0x01   |
+ *  | PW1.CH.SIG | SigG PIN 1   | 0x81 |  0x81 | -      |
+ *  | PW2.CH.SIG | SigG PIN 2   | 0x83 |  0x82 | -      |
+ *
+ * The names for PWIDSTR are taken from the NKS3 specs; the specs of
+ * other cards use different names but we keep using the.  PIN1 can be
+ * used to unlock PIN2 and vice versa; for consistence with other
+ * cards we name PIN2 a "PUK".  The IDKEY card also features a Card
+ * Reset Key (CR Key 0x01) which can also be used to reset PIN1.
+ *
+ * For testing it is possible to specify the PWID directly; the
+ * prompts are then not very descriptive:
+ *
+ *   NKS.0xnn   - Switch to NKS and select id 0xnn
+ *   SIGG.0xnn  - Switch to SigG and select id 0xnn
+ *   ESIGN.0xnn - Switch to ESIGN and select id 0xnn
  */
 static const char *
-parse_pwidstr (const char *pwidstr, int new_mode, int *r_sigg, int *r_pwid)
+parse_pwidstr (app_t app, const char *pwidstr, int new_mode,
+               int *r_nks_app_id, int *r_pwid)
 {
   const char *desc;
+  int nks15 = app->appversion == 15;
 
   if (!pwidstr)
     desc = NULL;
   else if (!strcmp (pwidstr, "PW1.CH"))
     {
-      *r_sigg = 0;
-      *r_pwid = 0x00;
+      *r_nks_app_id = NKS_APP_NKS;
+      *r_pwid = nks15? 0x03 : 0x00;
       /* TRANSLATORS: Do not translate the "|*|" prefixes but keep
          them verbatim at the start of the string.  */
       desc = (new_mode
@@ -1096,32 +2094,73 @@ parse_pwidstr (const char *pwidstr, int new_mode, int *r_sigg, int *r_pwid)
     }
   else if (!strcmp (pwidstr, "PW2.CH"))
     {
-      *r_pwid = 0x01;
+      *r_nks_app_id = NKS_APP_NKS;
+      *r_pwid = nks15? 0x04 : 0x01;
       desc = (new_mode
               ? _("|NP|Please enter a new PIN Unblocking Code (PUK) "
                   "for the standard keys.")
               : _("|P|Please enter the PIN Unblocking Code (PUK) "
                   "for the standard keys."));
     }
-  else if (!strcmp (pwidstr, "PW1.CH.SIG"))
+  else if (!strcmp (pwidstr, "PW1.CH.SIG") && !app->app_local->only_idlm)
     {
+      *r_nks_app_id = app->app_local->qes_app_id;
       *r_pwid = 0x81;
-      *r_sigg = 1;
       desc = (new_mode
               ? _("|N|Please enter a new PIN for the key to create "
                   "qualified signatures.")
               : _("||Please enter the PIN for the key to create "
                   "qualified signatures."));
     }
-  else if (!strcmp (pwidstr, "PW2.CH.SIG"))
+  else if (!strcmp (pwidstr, "PW2.CH.SIG") && !app->app_local->only_idlm)
     {
-      *r_pwid = 0x83;  /* Yes, that is 83 and not 82.  */
-      *r_sigg = 1;
+      *r_nks_app_id = app->app_local->qes_app_id;
+      *r_pwid = nks15? 0x82 : 0x83;
       desc = (new_mode
               ? _("|NP|Please enter a new PIN Unblocking Code (PUK) "
                   "for the key to create qualified signatures.")
               : _("|P|Please enter the PIN Unblocking Code (PUK) "
                   "for the key to create qualified signatures."));
+    }
+  else if (!strncmp (pwidstr, "NKS.0x", 6)
+           && hexdigitp (pwidstr+6) && hexdigitp (pwidstr+7) && !pwidstr[8])
+    {
+      /* Hack to help debugging.  */
+      *r_nks_app_id = NKS_APP_NKS;
+      *r_pwid = xtoi_2 (pwidstr+6);
+      desc = (new_mode
+              ? "|N|Please enter a new PIN for the given NKS pwid"
+              : "||Please enter the PIN for the given NKS pwid" );
+    }
+  else if (!strncmp (pwidstr, "SIGG.0x", 7)
+           && hexdigitp (pwidstr+7) && hexdigitp (pwidstr+8) && !pwidstr[9])
+    {
+      /* Hack to help debugging.  */
+      *r_nks_app_id = NKS_APP_SIGG;
+      *r_pwid = xtoi_2 (pwidstr+7);
+      desc = (new_mode
+              ? "|N|Please enter a new PIN for the given SIGG pwid"
+              : "||Please enter the PIN for the given SIGG pwid" );
+    }
+  else if (!strncmp (pwidstr, "ESIGN.0x", 8)
+           && hexdigitp (pwidstr+8) && hexdigitp (pwidstr+9) && !pwidstr[10])
+    {
+      /* Hack to help debugging.  */
+      *r_nks_app_id = NKS_APP_ESIGN;
+      *r_pwid = xtoi_2 (pwidstr+8);
+      desc = (new_mode
+              ? "|N|Please enter a new PIN for the given ESIGN pwid"
+              : "||Please enter the PIN for the given ESIGN pwid" );
+    }
+  else if (!strncmp (pwidstr, "IDLM.0x", 7)
+           && hexdigitp (pwidstr+7) && hexdigitp (pwidstr+8) && !pwidstr[9])
+    {
+      /* Hack to help debugging.  */
+      *r_nks_app_id = NKS_APP_IDLM;
+      *r_pwid = xtoi_2 (pwidstr+7);
+      desc = (new_mode
+              ? "|N|Please enter a new PIN for the given IDLM pwid"
+              : "||Please enter the PIN for the given IDLM pwid" );
     }
   else
     {
@@ -1146,10 +2185,12 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
   char *oldpin = NULL;
   size_t newpinlen;
   size_t oldpinlen;
-  int is_sigg;
+  int nks_app_id;
   const char *newdesc;
   int pwid;
   pininfo_t pininfo;
+  int remaining;
+  char *prompt;
 
   (void)ctrl;
 
@@ -1159,14 +2200,14 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
   pininfo.minlen = 6;
   pininfo.maxlen = 16;
 
-  newdesc = parse_pwidstr (pwidstr, 1, &is_sigg, &pwid);
+  newdesc = parse_pwidstr (app, pwidstr, 1, &nks_app_id, &pwid);
   if (!newdesc)
     return gpg_error (GPG_ERR_INV_ID);
 
   if ((flags & APP_CHANGE_FLAG_CLEAR))
     return gpg_error (GPG_ERR_UNSUPPORTED_OPERATION);
 
-  err = switch_application (app, is_sigg);
+  err = switch_application (app, nks_app_id);
   if (err)
     return err;
 
@@ -1180,7 +2221,15 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
           err = gpg_error_from_syserror ();
           goto leave;
         }
-      oldpinlen = 6;
+      if (app->appversion == 15)
+        {
+          memset (oldpin, '0', 5);
+          oldpinlen = 5;  /* 5 ascii zeroes.  */
+        }
+      else
+        {
+          oldpinlen = 6;  /* 6 binary Nuls.  */
+        }
     }
   else
     {
@@ -1205,14 +2254,27 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
               err = gpg_error (GPG_ERR_BUG);
               goto leave;
             }
-          desc = parse_pwidstr (altpwidstr, 0, &dummy1, &dummy2);
+          desc = parse_pwidstr (app, altpwidstr, 0, &dummy1, &dummy2);
+          remaining = iso7816_verify_status (app_get_slot (app), dummy2);
         }
       else
         {
           /* Regular change mode:  Ask for the old PIN.  */
-          desc = parse_pwidstr (pwidstr, 0, &dummy1, &dummy2);
+          desc = parse_pwidstr (app, pwidstr, 0, &dummy1, &dummy2);
+          remaining = iso7816_verify_status (app_get_slot (app), pwid);
         }
-      err = pincb (pincb_arg, desc, &oldpin);
+
+      if (remaining < 0)
+        remaining = -1; /* We don't care about the concrete error.  */
+      if (remaining < 3)
+        {
+          if (remaining >= 0)
+            log_info ("nks: PIN has %d attempts left\n", remaining);
+        }
+
+      prompt = make_prompt (app, remaining, desc, NULL);
+      err = pincb (pincb_arg, prompt, &oldpin);
+      xfree (prompt);
       if (err)
         {
           log_error ("error getting old PIN: %s\n", gpg_strerror (err));
@@ -1224,7 +2286,10 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
         goto leave;
     }
 
-  err = pincb (pincb_arg, newdesc, &newpin);
+
+  prompt = make_prompt (app, -1, newdesc, NULL);
+  err = pincb (pincb_arg, prompt, &newpin);
+  xfree (prompt);
   if (err)
     {
       log_error (_("error getting new PIN: %s\n"), gpg_strerror (err));
@@ -1273,20 +2338,87 @@ do_check_pin (app_t app, ctrl_t ctrl, const char *pwidstr,
 {
   gpg_error_t err;
   int pwid;
-  int is_sigg;
+  int nks_app_id;
   const char *desc;
 
   (void)ctrl;
 
-  desc = parse_pwidstr (pwidstr, 0, &is_sigg, &pwid);
+  desc = parse_pwidstr (app, pwidstr, 0, &nks_app_id, &pwid);
   if (!desc)
     return gpg_error (GPG_ERR_INV_ID);
 
-  err = switch_application (app, is_sigg);
+  err = switch_application (app, nks_app_id);
   if (err)
     return err;
 
   return verify_pin (app, pwid, desc, pincb, pincb_arg);
+}
+
+
+/* Process the various keygrip based info requests.  */
+static gpg_error_t
+do_with_keygrip (app_t app, ctrl_t ctrl, int action,
+                 const char *want_keygripstr, int capability)
+{
+  gpg_error_t err;
+  char keygripstr[2*KEYGRIP_LEN+1];
+  char *serialno = NULL;
+  int data = 0;
+  int idx = -1;
+
+  /* First a quick check for valid parameters.  */
+  switch (action)
+    {
+    case KEYGRIP_ACTION_LOOKUP:
+      if (!want_keygripstr)
+        {
+          return gpg_error (GPG_ERR_NOT_FOUND);
+        }
+      break;
+    case KEYGRIP_ACTION_SEND_DATA:
+      data = 1;
+      break;
+    case KEYGRIP_ACTION_WRITE_STATUS:
+      break;
+    default:
+      return gpg_error (GPG_ERR_INV_ARG);
+    }
+
+  /* Allocate the S/N string if needed.  */
+  if (action != KEYGRIP_ACTION_LOOKUP)
+    {
+      serialno = app_get_serialno (app);
+      if (!serialno)
+        return gpg_error_from_syserror ();
+    }
+
+  while (1)
+    {
+      err = iterate_over_filelist (app, want_keygripstr, capability,
+                                   keygripstr, &idx);
+      if (err)
+        break;
+
+      if (want_keygripstr)
+        {
+          if (!err)
+            break;
+        }
+      else
+        {
+          char idbuf[20];
+          char usagebuf[5];
+
+          snprintf (idbuf, sizeof idbuf, "NKS-%s.%04X",
+                    get_nks_tag (app, app->app_local->active_nks_app),
+                    filelist[idx].fid);
+          set_usage_string (usagebuf, idx);
+          send_keyinfo (ctrl, data, keygripstr, serialno, idbuf, usagebuf);
+        }
+    }
+
+  xfree (serialno);
+  return err;
 }
 
 
@@ -1301,48 +2433,67 @@ get_nks_version (int slot)
   if (iso7816_apdu_direct (slot, "\x80\xaa\x06\x00\x00", 5, 0,
                            NULL, &result, &resultlen))
     return 2; /* NKS 2 does not support this command.  */
-
-  /* Example value:    04 11 19 22 21 6A 20 80 03 03 01 01 01 00 00 00
-                       vv tt ccccccccccccccccc aa bb cc vvvvvvvvvvv xx
-     vendor (Philips) -+  |  |                 |  |  |  |           |
-     chip type -----------+  |                 |  |  |  |           |
-     chip id ----------------+                 |  |  |  |           |
-     card type (3 - tcos 3) -------------------+  |  |  |           |
-     OS version of card type ---------------------+  |  |           |
-     OS release of card type ------------------------+  |           |
-     OS vendor internal version ------------------------+           |
-     RFU -----------------------------------------------------------+
-  */
+  /* Example values:   04 11 19 22 21 6A 20 80 03 03 01 01 01 00 00 00
+   *                   05 a0 22 3e c8 0c 04 20 0f 01 b6 01 01 00 00 02
+   *                   vv tt ccccccccccccccccc aa bb cc vv ff rr rr xx
+   * vendor -----------+  |  |                 |  |  |  |  |  |  |  |
+   * chip type -----------+  |                 |  |  |  |  |  |  |  |
+   * chip id ----------------+                 |  |  |  |  |  |  |  |
+   * card type --------------------------------+  |  |  |  |  |  |  |
+   * OS version of card type ---------------------+  |  |  |  |  |  |
+   * OS release of card type ------------------------+  |  |  |  |  |
+   * Completion code version number --------------------+  |  |  |  |
+   * File system version ----------------------------------+  |  |  |
+   * RFU (00) ------------------------------------------------+  |  |
+   * RFU (00) ---------------------------------------------------+  |
+   * Authentication key identifier ---------------------------------+
+   *
+   * vendor    4 := Philips
+   *           5 := Infinion
+   * card type 3 := TCOS 3
+   *          15 := TCOS Signature Card (bb,cc is the ROM mask version)
+   * Completion code version number Bit 7..5 := pre-completion code version
+   *                                Bit 4..0 := completion code version
+   *                                (pre-completion by chip vendor)
+   *                                (completion by OS developer)
+   */
   if (resultlen < 16)
     type = 0;  /* Invalid data returned.  */
   else
     type = result[8];
   xfree (result);
-
   return type;
 }
 
 
-/* If ENABLE_SIGG is true switch to the SigG application if not yet
-   active.  If false switch to the NKS application if not yet active.
-   Returns 0 on success.  */
+/* Switch to the NKS app identified by NKS_APP_ID if not yet done.
+ * Returns 0 on success.  */
 static gpg_error_t
-switch_application (app_t app, int enable_sigg)
+switch_application (app_t app, int nks_app_id)
 {
   gpg_error_t err;
 
-  if (((app->app_local->sigg_active && enable_sigg)
-       || (!app->app_local->sigg_active && !enable_sigg))
+  if (app->app_local->only_idlm)
+    return 0;  /* No switching at all */
+  if (app->app_local->active_nks_app == nks_app_id
       && !app->app_local->need_app_select)
     return 0;  /* Already switched.  */
 
-  log_info ("app-nks: switching to %s\n", enable_sigg? "SigG":"NKS");
-  if (enable_sigg)
-    err = iso7816_select_application (app->slot, aid_sigg, sizeof aid_sigg, 0);
+  log_info ("nks: switching to %s\n",
+            nks_app_id == NKS_APP_ESIGN? "eSign" :
+            nks_app_id == NKS_APP_SIGG?  "SigG"  : "NKS");
+
+  if (nks_app_id == NKS_APP_ESIGN)
+    err = iso7816_select_application (app_get_slot (app),
+                                      aid_esign, sizeof aid_esign, 0);
+  else if (nks_app_id == NKS_APP_SIGG)
+    err = iso7816_select_application (app_get_slot (app),
+                                      aid_sigg, sizeof aid_sigg, 0);
   else
     err = iso7816_select_application (app->slot, aid_nks, sizeof aid_nks, 0);
 
-  if (!err && enable_sigg && app->app_local->nks_version >= 3
+  if (!err && nks_app_id == NKS_APP_SIGG
+      && app->appversion >= 3
       && !app->app_local->sigg_msig_checked)
     {
       /* Check whether this card is a mass signature card.  */
@@ -1367,17 +2518,19 @@ switch_application (app_t app, int enable_sigg)
           xfree (buffer);
         }
       if (app->app_local->sigg_is_msig)
-        log_info ("This is a mass signature card\n");
+        log_info ("nks: This is a mass signature card\n");
     }
 
   if (!err)
     {
       app->app_local->need_app_select = 0;
-      app->app_local->sigg_active = enable_sigg;
+      app->app_local->active_nks_app = nks_app_id;
     }
   else
-    log_error ("app-nks: error switching to %s: %s\n",
-               enable_sigg? "SigG":"NKS", gpg_strerror (err));
+    log_error ("nks: error switching to %s: %s\n",
+               nks_app_id == NKS_APP_ESIGN? "eSign" :
+               nks_app_id == NKS_APP_SIGG?  "SigG"  : "NKS",
+               gpg_strerror (err));
 
   return err;
 }
@@ -1389,8 +2542,14 @@ app_select_nks (app_t app)
 {
   int slot = app->slot;
   int rc;
+  int is_idlm = 0;
 
   rc = iso7816_select_application (slot, aid_nks, sizeof aid_nks, 0);
+  if (rc)
+    {
+      is_idlm = 1;
+      rc = iso7816_select_application (slot, aid_idlm, sizeof aid_idlm, 0);
+    }
   if (!rc)
     {
       app->apptype = APPTYPE_NKS;
@@ -1402,9 +2561,22 @@ app_select_nks (app_t app)
           goto leave;
         }
 
-      app->app_local->nks_version = get_nks_version (slot);
+      app->appversion = get_nks_version (slot);
+      app->app_local->only_idlm = is_idlm;
+      if (is_idlm) /* Set it once, there won't be any switching.  */
+        app->app_local->active_nks_app = NKS_APP_IDLM;
+
       if (opt.verbose)
-        log_info ("Detected NKS version: %d\n", app->app_local->nks_version);
+        {
+          log_info ("Detected NKS version: %d\n", app->appversion);
+          if (is_idlm)
+            log_info ("Using only the IDLM application\n");
+        }
+
+      if (app->appversion == 15)
+        app->app_local->qes_app_id = NKS_APP_ESIGN;
+      else
+        app->app_local->qes_app_id = NKS_APP_SIGG;
 
       app->fnc.deinit = do_deinit;
       app->fnc.learn_status = do_learn_status;
@@ -1412,6 +2584,7 @@ app_select_nks (app_t app)
       app->fnc.readkey = do_readkey;
       app->fnc.getattr = do_getattr;
       app->fnc.setattr = NULL;
+      app->fnc.writecert = do_writecert;
       app->fnc.writekey = do_writekey;
       app->fnc.genkey = NULL;
       app->fnc.sign = do_sign;
@@ -1419,6 +2592,7 @@ app_select_nks (app_t app)
       app->fnc.decipher = do_decipher;
       app->fnc.change_pin = do_change_pin;
       app->fnc.check_pin = do_check_pin;
+      app->fnc.with_keygrip = do_with_keygrip;
    }
 
  leave:

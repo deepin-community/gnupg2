@@ -14,6 +14,7 @@
 
 @SET_MAKE@
 
+# Makefile.am - agent
 # Copyright (C) 2001, 2003, 2004, 2005 Free Software Foundation, Inc.
 #
 # This file is part of GnuPG.
@@ -151,17 +152,16 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -533,8 +533,8 @@ libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
-@HAVE_W32_SYSTEM_FALSE@gpg_agent_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpg_agent_robjs = $(resource_objs) gpg-agent-w32info.o
+@HAVE_W32_SYSTEM_FALSE@gpg_agent_rc_objs = 
+@HAVE_W32_SYSTEM_TRUE@gpg_agent_rc_objs = $(resource_objs) gpg-agent-w32info.o
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
 gpg_agent_SOURCES = \
 	gpg-agent.c agent.h \
@@ -563,10 +563,10 @@ gpg_agent_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) \
 gpg_agent_LDADD = $(commonpth_libs) \
                 $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
 	        $(GPG_ERROR_LIBS) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
-		$(gpg_agent_robjs)
+		$(gpg_agent_rc_objs)
 
 gpg_agent_LDFLAGS = $(extra_bin_ldflags)
-gpg_agent_DEPENDENCIES = $(gpg_agent_robjs)
+gpg_agent_DEPENDENCIES = $(gpg_agent_rc_objs)
 gpg_protect_tool_SOURCES = \
 	protect-tool.c \
 	protect.c cvt-openpgp.c
@@ -1397,7 +1397,7 @@ uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS
 
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
-@HAVE_W32_SYSTEM_TRUE@gpg-agent-w32info.o : gpg-agent.w32-manifest
+@HAVE_W32_SYSTEM_TRUE@gpg-agent-w32info.o : gpg-agent.w32-manifest ../common/w32info-rc.h
 
 # Make sure that all libs are build before we use them.  This is
 # important for things like make -j2.

@@ -1,3 +1,4 @@
+# Makefile.am - g10
 # Copyright (C) 1998, 1999, 2000, 2001, 2002,
 #               2003, 2006, 2010  Free Software Foundation, Inc.
 #
@@ -19,10 +20,9 @@
 ## Process this file with automake to produce Makefile.in
 
 EXTRA_DIST = distsigkey.gpg \
-	     ChangeLog-2011 \
-             gpg-w32info.rc gpg.w32-manifest.in \
-             gpgv-w32info.rc gpgv.w32-manifest.in \
-	     test.c t-keydb-keyring.kbx \
+             gpg-w32info.rc  gpg.w32-manifest.in \
+	     gpgv-w32info.rc gpgv.w32-manifest.in \
+	     ChangeLog-2011 test.c t-keydb-keyring.kbx \
 	     t-keydb-get-keyblock.gpg t-stutter-data.asc \
 	     all-tests.scm
 
@@ -90,13 +90,11 @@ endif
 
 
 if HAVE_W32_SYSTEM
-gpg_robjs = $(resource_objs) gpg-w32info.o
-gpgv_robjs = $(resource_objs) gpgv-w32info.o
-gpg-w32info.o : gpg.w32-manifest
-gpgv-w32info.o : gpgv.w32-manifest
-else
-gpg_robjs =
-gpgv_robjs =
+gpg_rc_objs = gpg-w32info.o
+gpgv_rc_objs = gpgv-w32info.o
+
+gpg-w32info.o  : gpg.w32-manifest   ../common/w32info-rc.h
+gpgv-w32info.o : gpgv.w32-manifest  ../common/w32info-rc.h
 endif
 
 common_source =  \
@@ -180,18 +178,18 @@ gpgv_SOURCES = gpgv.c           \
 #	       $(common_source)
 
 LDADD =  $(needed_libs) ../common/libgpgrl.a \
-         $(ZLIBS) $(LIBINTL) $(CAPLIBS) $(NETLIBS)
+         $(ZLIBS) $(LIBINTL) $(CAPLIBS)
 gpg_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(SQLITE3_LIBS) $(LIBREADLINE) \
-             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
-	     $(LIBICONV) $(gpg_robjs) $(extra_sys_libs)
+             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	     $(LIBICONV) $(gpg_rc_objs) $(extra_sys_libs)
 gpg_LDFLAGS = $(extra_bin_ldflags)
 gpgv_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-              $(GPG_ERROR_LIBS) \
-	      $(LIBICONV) $(gpgv_robjs) $(extra_sys_libs)
+              $(GPG_ERROR_LIBS) $(NETLIBS) \
+	      $(LIBICONV) $(gpgv_rc_objs) $(extra_sys_libs)
 gpgv_LDFLAGS = $(extra_bin_ldflags)
 
 gpgcompose_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
-             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
+             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	     $(LIBICONV) $(extra_sys_libs)
 gpgcompose_LDFLAGS = $(extra_bin_ldflags)
 
@@ -200,15 +198,15 @@ module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter
 t_rmd160_SOURCES = t-rmd160.c rmd160.c
 t_rmd160_LDADD = $(t_common_ldadd)
 t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source)
-t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 t_keydb_get_keyblock_SOURCES = t-keydb-get-keyblock.c test-stubs.c \
 	      $(common_source)
 t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-	      $(LIBICONV) $(t_common_ldadd)
+	      $(NETLIBS) $(LIBICONV) $(t_common_ldadd)
 t_stutter_SOURCES = t-stutter.c test-stubs.c \
 	      $(common_source)
-t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 
 

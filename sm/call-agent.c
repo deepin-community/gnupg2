@@ -246,7 +246,9 @@ default_inq_cb (void *opaque, const char *line)
            && have_static_passphrase ())
     {
       const char *s = get_static_passphrase ();
+      assuan_begin_confidential (parm->ctx);
       err = assuan_send_data (parm->ctx, s, strlen (s));
+      assuan_end_confidential (parm->ctx);
     }
   else
     log_error ("ignoring gpg-agent inquiry '%s'\n", line);
@@ -334,7 +336,7 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
                   unsigned char *digest, size_t digestlen, int digestalgo,
                   unsigned char **r_buf, size_t *r_buflen )
 {
-  int rc, i;
+  int rc, i, pkalgo;
   char *p, line[ASSUAN_LINELENGTH];
   membuf_t data;
   size_t len;
@@ -342,6 +344,7 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
   unsigned char *sigbuf;
   size_t sigbuflen;
   struct default_inq_parm_s inq_parm;
+  gcry_sexp_t sig;
 
   (void)desc;
 
@@ -353,6 +356,8 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
     case GCRY_MD_RMD160:hashopt = "--hash=rmd160"; break;
     case GCRY_MD_MD5:   hashopt = "--hash=md5"; break;
     case GCRY_MD_SHA256:hashopt = "--hash=sha256"; break;
+    case GCRY_MD_SHA384:hashopt = "--hash=sha384"; break;
+    case GCRY_MD_SHA512:hashopt = "--hash=sha512"; break;
     default:
       return gpg_error (GPG_ERR_DIGEST_ALGO);
     }
@@ -365,6 +370,23 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
 
   if (digestlen*2 + 50 > DIM(line))
     return gpg_error (GPG_ERR_GENERAL);
+
+  /* Get the key type from the scdaemon. */
+  snprintf (line, DIM(line), "SCD READKEY %s", keyid);
+  init_membuf (&data, 1024);
+  rc = assuan_transact (agent_ctx, line,
+                        put_membuf_cb, &data, NULL, NULL, NULL, NULL);
+  if (rc)
+    {
+      xfree (get_membuf (&data, &len));
+      return rc;
+    }
+
+  p = get_membuf (&data, &len);
+  pkalgo = get_pk_algo_from_canon_sexp (p, len);
+  xfree (p);
+  if (!pkalgo)
+    return gpg_error (GPG_ERR_WRONG_PUBKEY_ALGO);
 
   p = stpcpy (line, "SCD SETDATA " );
   for (i=0; i < digestlen ; i++, p += 2 )
@@ -386,24 +408,31 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
     }
   sigbuf = get_membuf (&data, &sigbuflen);
 
-  /* Create an S-expression from it which is formatted like this:
-     "(7:sig-val(3:rsa(1:sSIGBUFLEN:SIGBUF)))" Fixme: If a card ever
-     creates non-RSA keys we need to change things. */
-  *r_buflen = 21 + 11 + sigbuflen + 4;
-  p = xtrymalloc (*r_buflen);
-  *r_buf = (unsigned char*)p;
-  if (!p)
+  switch(pkalgo)
     {
-      xfree (sigbuf);
-      return 0;
+    case GCRY_PK_RSA:
+      rc = gcry_sexp_build (&sig, NULL, "(sig-val(rsa(s%b)))",
+                            sigbuflen, sigbuf);
+      break;
+
+    case GCRY_PK_ECC:
+      rc = gcry_sexp_build (&sig, NULL, "(sig-val(ecdsa(r%b)(s%b)))",
+                            sigbuflen/2, sigbuf,
+                            sigbuflen/2, sigbuf + sigbuflen/2);
+      break;
+
+    default:
+      rc = gpg_error (GPG_ERR_WRONG_PUBKEY_ALGO);
+      break;
     }
-  p = stpcpy (p, "(7:sig-val(3:rsa(1:s" );
-  sprintf (p, "%u:", (unsigned int)sigbuflen);
-  p += strlen (p);
-  memcpy (p, sigbuf, sigbuflen);
-  p += sigbuflen;
-  strcpy (p, ")))");
   xfree (sigbuf);
+  if (rc)
+    return rc;
+
+  rc = make_canon_sexp (sig, r_buf, r_buflen);
+  gcry_sexp_release (sig);
+  if (rc)
+    return rc;
 
   assert (gcry_sexp_canon_len (*r_buf, *r_buflen, NULL, NULL));
   return  0;
@@ -845,6 +874,10 @@ istrusted_status_cb (void *opaque, const char *line)
         flags->relax = 1;
       else if (has_leading_keyword (line, "cm"))
         flags->chain_model = 1;
+      else if (has_leading_keyword (line, "qual"))
+        flags->qualified = 1;
+      else if (has_leading_keyword (line, "de-vs"))
+        flags->de_vs = 1;
     }
   return 0;
 }
@@ -1273,6 +1306,7 @@ gpgsm_agent_ask_passphrase (ctrl_t ctrl, const char *desc_msg, int repeat,
   char *arg4 = NULL;
   membuf_t data;
   struct default_inq_parm_s inq_parm;
+  int wasconf;
 
   *r_passphrase = NULL;
 
@@ -1291,9 +1325,13 @@ gpgsm_agent_ask_passphrase (ctrl_t ctrl, const char *desc_msg, int repeat,
   xfree (arg4);
 
   init_membuf_secure (&data, 64);
+  wasconf = assuan_get_flag (agent_ctx, ASSUAN_CONFIDENTIAL);
+  assuan_begin_confidential (agent_ctx);
   err = assuan_transact (agent_ctx, line,
                          put_membuf_cb, &data,
                          default_inq_cb, &inq_parm, NULL, NULL);
+  if (!wasconf)
+    assuan_end_confidential (agent_ctx);
 
   if (err)
     xfree (get_membuf (&data, NULL));

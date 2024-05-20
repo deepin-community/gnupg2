@@ -801,7 +801,6 @@ change_name (void)
     {
       tty_printf (_("Error: Combined name too long "
                     "(limit is %d characters).\n"), 39);
-      xfree (isoname);
       rc = gpg_error (GPG_ERR_TOO_LARGE);
       goto leave;
     }
@@ -1735,12 +1734,13 @@ card_generate_subkey (ctrl_t ctrl, kbnode_t pub_keyblock)
 }
 
 
-/* Store the key at NODE into the smartcard and modify NODE to
-   carry the serialno stuff instead of the actual secret key
-   parameters.  USE is the usage for that key; 0 means any
-   usage. */
+/* Store the key at NODE into the smartcard and modify NODE to carry
+   the serialno stuff instead of the actual secret key parameters.
+   USE is the usage for that key; 0 means any usage.  If
+   PROCESSED_KEYS is not NULL it is a poiter to an strlist which will
+   be filled with the keygrips of successfully stored keys.  */
 int
-card_store_subkey (KBNODE node, int use)
+card_store_subkey (KBNODE node, int use, strlist_t *processed_keys)
 {
   struct agent_card_info_s info;
   int okay = 0;
@@ -1749,8 +1749,9 @@ card_store_subkey (KBNODE node, int use)
   int  keyno;
   PKT_public_key *pk;
   gpg_error_t err;
-  char *hexgrip;
+  char *hexgrip = NULL;
   int rc;
+  char *ecdh_param_str = NULL;
   gnupg_isotime_t timebuf;
 
   log_assert (node->pkt->pkttype == PKT_PUBLIC_KEY
@@ -1824,15 +1825,29 @@ card_store_subkey (KBNODE node, int use)
     goto leave;
 
   epoch2isotime (timebuf, (time_t)pk->timestamp);
-  rc = agent_keytocard (hexgrip, keyno, rc, info.serialno, timebuf);
-
+  if (pk->pubkey_algo == PUBKEY_ALGO_ECDH)
+    {
+      ecdh_param_str = ecdh_param_str_from_pk (pk);
+      if (!ecdh_param_str)
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
+    }
+  rc = agent_keytocard (hexgrip, keyno, rc, info.serialno,
+                        timebuf, ecdh_param_str);
   if (rc)
     log_error (_("KEYTOCARD failed: %s\n"), gpg_strerror (rc));
   else
-    okay = 1;
-  xfree (hexgrip);
+    {
+      okay = 1;
+      if (processed_keys)
+        add_to_strlist (processed_keys, hexgrip);
+    }
 
  leave:
+  xfree (hexgrip);
+  xfree (ecdh_param_str);
   agent_release_card_info (&info);
   return okay;
 }

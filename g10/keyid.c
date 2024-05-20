@@ -88,7 +88,10 @@ pubkey_letter( int algo )
    "256E"  - ECDSA using a curve with 256 bit
 
    The macro PUBKEY_STRING_SIZE may be used to allocate a buffer with
-   a suitable size.*/
+   a suitable size.  Note that a more general version of this function
+   exists as get_keyalgo_string.  However, that has no special
+   treatment for the old and unsupported Elgamal which we here print as
+   xxxNNNN.  */
 char *
 pubkey_string (PKT_public_key *pk, char *buffer, size_t bufsize)
 {
@@ -323,11 +326,12 @@ keyid_copy (u32 *dest, const u32 *src)
 char *
 format_keyid (u32 *keyid, int format, char *buffer, int len)
 {
-  char tmp[KEYID_STR_SIZE];
   if (! buffer)
     {
-      buffer = tmp;
-      len = sizeof (tmp);
+      len = KEYID_STR_SIZE;
+      buffer = xtrymalloc (len);
+      if (!buffer)
+        return NULL;
     }
 
   if (format == KF_DEFAULT)
@@ -362,8 +366,6 @@ format_keyid (u32 *keyid, int format, char *buffer, int len)
       BUG();
     }
 
-  if (buffer == tmp)
-    return xstrdup (buffer);
   return buffer;
 }
 
@@ -709,6 +711,13 @@ usagestr_from_pk (PKT_public_key *pk, int fill)
   if ( (use & PUBKEY_USAGE_AUTH) )
     buffer[i++] = 'A';
 
+  if ( (use & PUBKEY_USAGE_RENC) )
+    buffer[i++] = 'R';
+  if ( (use & PUBKEY_USAGE_TIME) )
+    buffer[i++] = 'T';
+  if ( (use & PUBKEY_USAGE_GROUP) )
+    buffer[i++] = 'G';
+
   while (fill && i < 4)
     buffer[i++] = ' ';
 
@@ -984,4 +993,26 @@ hexkeygrip_from_pk (PKT_public_key *pk, char **r_grip)
         }
     }
   return err;
+}
+
+
+/* Return a hexfied malloced string of the ECDH parameters for an ECDH
+ * key from the public key PK.  Returns NULL on error.  */
+char *
+ecdh_param_str_from_pk (PKT_public_key *pk)
+{
+  const unsigned char *s;
+  unsigned int n;
+
+  if (!pk
+      || pk->pubkey_algo != PUBKEY_ALGO_ECDH
+      || !gcry_mpi_get_flag (pk->pkey[2], GCRYMPI_FLAG_OPAQUE)
+      || !(s = gcry_mpi_get_opaque (pk->pkey[2], &n)) || !n)
+    {
+      gpg_err_set_errno (EINVAL);
+      return NULL;  /* Invalid parameter */
+    }
+
+  n = (n+7)/8;
+  return bin2hex (s, n, NULL);
 }

@@ -43,6 +43,7 @@
 
 
 #define CMD_SELECT_FILE 0xA4
+#define CMD_SELECT_DATA 0xA5
 #define CMD_VERIFY                ISO7816_VERIFY
 #define CMD_CHANGE_REFERENCE_DATA ISO7816_CHANGE_REFERENCE_DATA
 #define CMD_RESET_RETRY_COUNTER   ISO7816_RESET_RETRY_COUNTER
@@ -56,6 +57,7 @@
 #define CMD_GET_CHALLENGE         0x84
 #define CMD_READ_BINARY 0xB0
 #define CMD_READ_RECORD 0xB2
+#define CMD_UPDATE_BINARY 0xD6
 
 static gpg_error_t
 map_sw (int sw)
@@ -443,6 +445,44 @@ iso7816_reset_retry_counter (int slot, int chvno,
   return map_sw (sw);
 }
 
+
+/* Perform a SELECT DATA command to OCCURANCE of TAG.  */
+gpg_error_t
+iso7816_select_data (int slot, int occurrence, int tag)
+{
+  int sw;
+  int datalen;
+  unsigned char data[7];
+
+  data[0] = 0x60;
+  data[2] = 0x5c;
+  if (tag <= 0xff)
+    {
+      data[3] = 1;
+      data[4] = tag;
+      datalen = 5;
+    }
+  else if (tag <= 0xffff)
+    {
+      data[3] = 2;
+      data[4] = (tag >> 8);
+      data[5] = tag;
+      datalen = 6;
+    }
+  else
+    {
+      data[3] = 3;
+      data[4] = (tag >> 16);
+      data[5] = (tag >> 8);
+      data[6] = tag;
+      datalen = 7;
+    }
+  data[1] = datalen - 2;
+
+  sw = apdu_send_le (slot, 0, 0x00, CMD_SELECT_DATA,
+                     occurrence, 0x04, datalen, data, 0, NULL, NULL);
+  return map_sw (sw);
+}
 
 
 /* Perform a GET DATA command requesting TAG and storing the result in
@@ -905,7 +945,7 @@ iso7816_read_binary_ext (int slot, int extended_mode,
       if (r_sw)
         *r_sw = sw;
 
-      if (*result && sw == SW_BAD_P0_P1)
+      if (*result && (sw == SW_BAD_P0_P1 || sw == SW_INCORRECT_P0_P1))
         {
           /* Bad Parameter means that the offset is outside of the
              EF. When reading all data we take this as an indication
@@ -1025,10 +1065,31 @@ iso7816_read_record_ext (int slot, int recno, int reccount, int short_ef,
   return 0;
 }
 
+
 gpg_error_t
 iso7816_read_record (int slot, int recno, int reccount, int short_ef,
                      unsigned char **result, size_t *resultlen)
 {
   return iso7816_read_record_ext (slot, recno, reccount, short_ef,
                                   result, resultlen, NULL);
+}
+
+
+/* Perform an UPDATE BINARY command on card in SLOT.  Write DATA of
+ * length DATALEN to a transparent file at OFFSET.  */
+gpg_error_t
+iso7816_update_binary (int slot, int extended_mode, size_t offset,
+                       const void *data, size_t datalen)
+{
+  int sw;
+
+  /* We can only encode 15 bits in p0,p1 to indicate an offset. Thus
+   * we check for this limit. */
+  if (offset > 32767)
+    return gpg_error (GPG_ERR_INV_VALUE);
+
+  sw = apdu_send_simple (slot, extended_mode, 0x00, CMD_UPDATE_BINARY,
+                         ((offset>>8) & 0xff), (offset & 0xff),
+                         datalen, (const char*)data);
+  return map_sw (sw);
 }

@@ -77,49 +77,53 @@ enum cmd_and_opt_values
 /* The list of commands and options. */
 static ARGPARSE_OPTS opts[] =
   {
-    { 300, NULL, 0, N_("@Commands:\n ") },
+    ARGPARSE_group (300, N_("@Commands:\n ")),
 
-    { aListComponents, "list-components", 256, N_("list all components") },
-    { aCheckPrograms, "check-programs", 256, N_("check all programs") },
-    { aListOptions, "list-options", 256, N_("|COMPONENT|list options") },
-    { aChangeOptions, "change-options", 256, N_("|COMPONENT|change options") },
-    { aCheckOptions, "check-options", 256, N_("|COMPONENT|check options") },
-    { aApplyDefaults, "apply-defaults", 256,
-      N_("apply global default values") },
-    { aApplyProfile, "apply-profile", 256,
-      N_("|FILE|update configuration files using FILE") },
-    { aListDirs, "list-dirs", 256,
-      N_("get the configuration directories for @GPGCONF@") },
-    { aListConfig,   "list-config", 256,
-      N_("list global configuration file") },
-    { aCheckConfig,   "check-config", 256,
-      N_("check global configuration file") },
-    { aQuerySWDB,     "query-swdb", 256,
-      N_("query the software version database") },
-    { aReload,        "reload", 256, N_("reload all or a given component")},
-    { aLaunch,        "launch", 256, N_("launch a given component")},
-    { aKill,          "kill", 256,   N_("kill a given component")},
-    { aCreateSocketDir, "create-socketdir", 256, "@"},
-    { aRemoveSocketDir, "remove-socketdir", 256, "@"},
+    ARGPARSE_c (aListComponents, "list-components", N_("list all components")),
+    ARGPARSE_c (aCheckPrograms, "check-programs", N_("check all programs")),
+    ARGPARSE_c (aListOptions, "list-options", N_("|COMPONENT|list options")),
+    ARGPARSE_c (aChangeOptions, "change-options",
+                N_("|COMPONENT|change options")),
+    ARGPARSE_c (aCheckOptions, "check-options", N_("|COMPONENT|check options")),
+    ARGPARSE_c (aApplyDefaults, "apply-defaults",
+                N_("apply global default values")),
+    ARGPARSE_c (aApplyProfile, "apply-profile",
+                N_("|FILE|update configuration files using FILE")),
+    ARGPARSE_c (aListDirs, "list-dirs",
+                N_("get the configuration directories for @GPGCONF@")),
+    ARGPARSE_c (aListConfig, "list-config",
+                N_("list global configuration file")),
+    ARGPARSE_c (aCheckConfig, "check-config",
+                N_("check global configuration file")),
+    ARGPARSE_c (aQuerySWDB, "query-swdb",
+                N_("query the software version database")),
+    ARGPARSE_c (aReload, "reload", N_("reload all or a given component")),
+    ARGPARSE_c (aLaunch, "launch", N_("launch a given component")),
+    ARGPARSE_c (aKill, "kill", N_("kill a given component")),
+    ARGPARSE_c (aCreateSocketDir, "create-socketdir", "@"),
+    ARGPARSE_c (aRemoveSocketDir, "remove-socketdir", "@"),
     ARGPARSE_c (aShowVersions, "show-versions", ""),
     ARGPARSE_c (aShowConfigs,  "show-configs", ""),
 
-    { 301, NULL, 0, N_("@\nOptions:\n ") },
+    ARGPARSE_header (NULL, N_("@\nOptions:\n ")),
 
-    { oOutput, "output",    2, N_("use as output file") },
-    { oVerbose, "verbose",  0, N_("verbose") },
-    { oQuiet, "quiet",      0, N_("quiet") },
-    { oDryRun, "dry-run",   0, N_("do not make any changes") },
-    { oRuntime, "runtime",  0, N_("activate changes at runtime, if possible") },
-  ARGPARSE_s_i (oStatusFD, "status-fd", N_("|FD|write status info to this FD")),
+    ARGPARSE_s_s (oOutput, "output", N_("use as output file")),
+    ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
+    ARGPARSE_s_n (oQuiet, "quiet", N_("quiet")),
+    ARGPARSE_s_n (oDryRun, "dry-run", N_("do not make any changes")),
+    ARGPARSE_s_n (oRuntime, "runtime",
+                  N_("activate changes at runtime, if possible")),
+    ARGPARSE_s_i (oStatusFD, "status-fd",
+                  N_("|FD|write status info to this FD")),
+
     /* hidden options */
-    { oHomedir, "homedir", 2, "@" },
-    { oBuilddir, "build-prefix", 2, "@" },
-    { oNull, "null", 0, "@" },
-    { oNoVerbose, "no-verbose",  0, "@"},
+    ARGPARSE_s_s (oHomedir, "homedir", "@"),
+    ARGPARSE_s_s (oBuilddir, "build-prefix", "@"),
+    ARGPARSE_s_n (oNull, "null", "@"),
+    ARGPARSE_s_n (oNoVerbose, "no-verbose", "@"),
     ARGPARSE_s_n (oShowSocket, "show-socket", "@"),
 
-    ARGPARSE_end(),
+    ARGPARSE_end ()
   };
 
 
@@ -243,10 +247,10 @@ gpgconf_write_status (int no, const char *format, ...)
 
 
 static void
-list_dirs (estream_t fp, char **names, int special)
+list_dirs (estream_t fp, char **names, int show_config_mode)
 {
   static struct {
-    const char *name;
+    const char *name; /* If NULL only a file check will be done.  */
     const char *(*fnc)(void);
     const char *extra;
   } list[] = {
@@ -262,13 +266,16 @@ list_dirs (estream_t fp, char **names, int special)
     { "agent-extra-socket", gnupg_socketdir,  GPG_AGENT_EXTRA_SOCK_NAME },
     { "agent-browser-socket",gnupg_socketdir, GPG_AGENT_BROWSER_SOCK_NAME },
     { "agent-socket",       gnupg_socketdir,  GPG_AGENT_SOCK_NAME },
+    { NULL,                 gnupg_socketdir,  "S.uiserver" },
     { "homedir",            gnupg_homedir,    NULL }
   };
   int idx, j;
   char *tmp;
   const char *s;
+  gpg_error_t err;
 
-
+  if (show_config_mode)
+    es_fprintf (fp, "#+begin_example\n");
   for (idx = 0; idx < DIM (list); idx++)
     {
       s = list[idx].fnc ();
@@ -279,20 +286,45 @@ list_dirs (estream_t fp, char **names, int special)
         }
       else
         tmp = NULL;
-      if (!names)
-        es_fprintf (fp, "%s:%s\n", list[idx].name, gc_percent_escape (s));
+
+      if (!list[idx].name)
+        ;
+      else if (!names)
+        es_fprintf (fp, "%s%s:%s\n", show_config_mode? "  ":"",
+                    list[idx].name, gc_percent_escape (s));
       else
         {
           for (j=0; names[j]; j++)
             if (!strcmp (names[j], list[idx].name))
               {
+                if (show_config_mode)
+                  es_fputs ("  ", fp);
                 es_fputs (s, fp);
                 es_putc (opt.null? '\0':'\n', fp);
               }
         }
 
+      /* In show config mode check that the socket files are accessible.  */
+      if (list[idx].extra && show_config_mode)
+        {
+          estream_t tmpfp;
+
+          tmpfp = es_fopen (s, "rb");
+          if (tmpfp)
+            es_fclose (tmpfp);  /* All fine - we can read that file.  */
+          else if ((err=gpg_error_from_syserror ()) == GPG_ERR_ENOENT
+                   || err == GPG_ERR_ENXIO)
+            ; /* No such file/ No such device or address - this is okay.  */
+          else
+            es_fprintf (fp,
+                        "# Warning: error reading existing file '%s': %s\n",
+                        s, gpg_strerror (err));
+        }
+
       xfree (tmp);
     }
+  if (show_config_mode)
+    es_fprintf (fp, "#+end_example\n");
 
 
 #ifdef HAVE_W32_SYSTEM
@@ -321,9 +353,9 @@ list_dirs (estream_t fp, char **names, int special)
         }
 
       es_fflush (fp);
-      if (special)
+      if (show_config_mode)
         es_fprintf (fp, "\n"
-                    "### Note: homedir taken from registry key %s%s\\%s:%s\n"
+                    "Note: homedir taken from registry key %s%s\\%s:%s\n"
                     "\n",
                     hkcu?" HKCU":"", hklm?" HKLM":"",
                     GNUPG_REGISTRY_DIR, "HomeDir");
@@ -339,9 +371,9 @@ list_dirs (estream_t fp, char **names, int special)
     {
       xfree (tmp);
       es_fflush (fp);
-      if (special)
+      if (show_config_mode)
         es_fprintf (fp, "\n"
-                    "### Note: registry key %s without value in HKCU or HKLM\n"
+                    "Note: registry key %s without value in HKCU or HKLM\n"
                     "\n", GNUPG_REGISTRY_DIR);
       else
         log_info ("Warning: registry key (%s) without value in HKCU or HKLM\n",
@@ -349,7 +381,7 @@ list_dirs (estream_t fp, char **names, int special)
     }
 
 #else /*!HAVE_W32_SYSTEM*/
-  (void)special;
+  (void)show_config_mode;
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
@@ -1042,16 +1074,18 @@ get_revision_from_blurb (const char *blurb, int *r_len)
 static void
 show_version_gnupg (estream_t fp, const char *prefix)
 {
-  char *fname, *p;
+  char *fname, *p, *p0;
   size_t n;
   estream_t verfp;
-  char line[100];
+  char *line = NULL;
+  size_t line_len = 0;
+  ssize_t length;
 
   es_fprintf (fp, "%s%sGnuPG %s (%s)\n%s%s\n", prefix, *prefix?"":"* ",
               strusage (13), BUILD_REVISION, prefix, strusage (17));
 
   /* Show the GnuPG VS-Desktop version in --show-configs mode  */
-  if (prefix && *prefix == '#')
+  if (prefix && *prefix)
     {
       fname = make_filename (gnupg_bindir (), NULL);
       n = strlen (fname);
@@ -1064,20 +1098,46 @@ show_version_gnupg (estream_t fp, const char *prefix)
           verfp = es_fopen (fname, "r");
           if (!verfp)
             es_fprintf (fp, "%s[VERSION file not found]\n", prefix);
-          else if (!es_fgets (line, sizeof line, verfp))
-            es_fprintf (fp, "%s[VERSION file is empty]\n", prefix);
           else
             {
-              trim_spaces (line);
-              for (p=line; *p; p++)
-                if (*p < ' ' || *p > '~' || *p == '[')
-                  *p = '?';
-              es_fprintf (fp, "%s%s\n", prefix, line);
+              int lnr = 0;
+
+              p0 = NULL;
+              while ((length = es_read_line (verfp, &line, &line_len, NULL))>0)
+                {
+                  lnr++;
+                  trim_spaces (line);
+                  if (lnr == 1 && *line != '[')
+                    {
+                      /* Old file format where we look only at the
+                       * first line.  */
+                      p0 = line;
+                      break;
+                    }
+                  else if (!strncmp (line, "version=", 8))
+                    {
+                      p0 = line + 8;
+                      break;
+                    }
+                }
+              if (length < 0 || es_ferror (verfp))
+                es_fprintf (fp, "%s[VERSION file read error]\n", prefix);
+              else if (p0)
+                {
+                  for (p=p0; *p; p++)
+                    if (*p < ' ' || *p > '~' || *p == '[')
+                      *p = '?';
+                  es_fprintf (fp, "%s%s\n", prefix, p0);
+                }
+              else
+                es_fprintf (fp, "%s[VERSION file is empty]\n", prefix);
+
+              es_fclose (verfp);
             }
-          es_fclose (verfp);
         }
       xfree (fname);
     }
+  xfree (line);
 
 #ifdef HAVE_W32_SYSTEM
   {
@@ -1203,7 +1263,7 @@ show_versions (estream_t fp)
 
 /* Copy data from file SRC to DST.  Returns 0 on success or an error
  * code on failure.  If LISTP is not NULL, that strlist is updated
- * with the variabale or registry key names detected.  Flag bit 0
+ * with the variable or registry key names detected.  Flag bit 0
  * indicates a registry entry.  */
 static gpg_error_t
 my_copy_file (estream_t src, estream_t dst, strlist_t *listp)
@@ -1216,7 +1276,14 @@ my_copy_file (estream_t src, estream_t dst, strlist_t *listp)
 
   while ((length = es_read_line (src, &line, &line_len, NULL)) > 0)
     {
-      /* Strip newline and carriage return, if present.  */
+      /* Prefix each line with two spaces but use a comma if the line
+       * starts with a special org-mode character.  */
+      if (*line == '*' || (*line == '#' && line[1] == '+'))
+        es_fputc (',', dst);
+      else
+        es_fputc (' ', dst);
+      es_fputc (' ', dst);
+
       written = gpgrt_fwrite (line, 1, length, dst);
       if (written != length)
 	return gpg_error_from_syserror ();
@@ -1284,21 +1351,19 @@ show_configs_one_file (const char *fname, int global, estream_t outfp,
   if (!fp)
     {
       err = gpg_error_from_syserror ();
-      es_fprintf (outfp, "###\n### %s config \"%s\": %s\n###\n",
-                  global? "global":"local", fname,
-                  (gpg_err_code (err) == GPG_ERR_ENOENT)?
-                  "not installed" : gpg_strerror (err));
+      if (gpg_err_code (err) != GPG_ERR_ENOENT)
+        es_fprintf (outfp, "** %s config \"%s\": %s\n",
+                    global? "global":"local", fname, gpg_strerror (err));
     }
   else
     {
-      es_fprintf (outfp, "###\n### %s config \"%s\"\n###\n",
+      es_fprintf (outfp, "** %s config \"%s\"\n#+begin_src\n",
                   global? "global":"local", fname);
-      es_fprintf (outfp, CUTLINE_FMT, "start");
       err = my_copy_file (fp, outfp, listp);
+      es_fprintf (outfp, "\n#+end_src\n");
       if (err)
-        log_error ("error copying file \"%s\": %s\n",
+        log_error ("Error copying file \"%s\": %s\n",
                    fname, gpg_strerror (err));
-      es_fprintf (outfp, CUTLINE_FMT, "end--");
       es_fclose (fp);
     }
 }
@@ -1315,9 +1380,10 @@ show_other_registry_entries (estream_t outfp)
     const char *name;
   } names[] =
   {
-    { 1, "HKLM\\Software\\Gpg4win:Install Directory" },
     { 1, "HKLM\\Software\\Gpg4win:Desktop-Version" },
     { 1, "HKLM\\Software\\Gpg4win:VS-Desktop-Version" },
+    { 1, "\\Software\\Gpg4win:Install Directory" },
+    { 1, "\\Software\\GnuPG:Install Directory" },
     { 1, "\\" GNUPG_REGISTRY_DIR ":HomeDir" },
     { 1, "\\" GNUPG_REGISTRY_DIR ":DefaultLogFile" },
     { 2, "\\Software\\Microsoft\\Office\\Outlook\\Addins\\GNU.GpgOL"
@@ -1373,7 +1439,7 @@ show_other_registry_entries (estream_t outfp)
       if (names[idx].group != group)
         {
           group = names[idx].group;
-          es_fprintf (outfp, "###\n### %s related:\n",
+          es_fprintf (outfp, "\n%s related:\n",
                       group == 1 ? "GnuPG Desktop" :
                       group == 2 ? "Outlook" :
                       group == 3 ? "\\Software\\GNU\\GpgOL"
@@ -1381,16 +1447,15 @@ show_other_registry_entries (estream_t outfp)
         }
 
       if (group == 3)
-        es_fprintf (outfp, "### %s=%s%s\n", names[idx].name, value,
+        es_fprintf (outfp, "  %s=%s%s\n", names[idx].name, value,
                     from_hklm? " [hklm]":"");
       else
-        es_fprintf (outfp, "### %s\n###   ->%s<-%s\n", name, value,
+        es_fprintf (outfp, "  %s\n    ->%s<-%s\n", name, value,
                     from_hklm? " [hklm]":"");
 
       xfree (value);
     }
 
-  es_fprintf (outfp, "###\n");
   xfree (namebuf);
 }
 
@@ -1441,10 +1506,10 @@ show_registry_entries_from_file (estream_t outfp)
       if (!any)
         {
           any = 1;
-          es_fprintf (outfp, "### Taken from gpgconf.rnames:\n");
+          es_fprintf (outfp, "Taken from gpgconf.rnames:\n");
         }
 
-      es_fprintf (outfp, "### %s\n###   ->%s<-%s\n", line, value,
+      es_fprintf (outfp, "  %s\n    ->%s<-%s\n", line, value,
                   from_hklm? " [hklm]":"");
 
     }
@@ -1455,8 +1520,6 @@ show_registry_entries_from_file (estream_t outfp)
     }
 
  leave:
-  if (any)
-    es_fprintf (outfp, "###\n");
   xfree (value);
   xfree (line);
   es_fclose (fp);
@@ -1472,23 +1535,32 @@ show_configs (estream_t outfp)
   static const char *names[] = { "common.conf", "gpg-agent.conf",
                                  "scdaemon.conf", "dirmngr.conf",
                                  "gpg.conf", "gpgsm.conf" };
+  static const char *envvars[] = { "PATH",
+                                   "http_proxy", "HTTP_PROXY",
+                                   "https_proxy", "HTTPS_PROXY",
+                                   "LD_LIBRARY_PATH", "LD_PRELOAD",
+                                   "LD_AUDIT", "LD_ORIGIN_PATH" };
   gpg_error_t err;
   int idx;
   char *fname;
   gnupg_dir_t dir;
   gnupg_dirent_t dir_entry;
   size_t n;
-  int any;
+  int any, anywarn;
   strlist_t list = NULL;
   strlist_t sl;
   const char *s;
+  int got_gpgconfconf = 0;
 
-  es_fprintf (outfp, "### Dump of all standard config files\n");
-  show_version_gnupg (outfp, "### ");
-  es_fprintf (outfp, "### Libgcrypt %s\n", gcry_check_version (NULL));
-  es_fprintf (outfp, "### GpgRT %s\n", gpg_error_check_version (NULL));
+  es_fprintf (outfp, "# gpgconf -X invoked %s%*s-*- org -*-\n\n",
+              isotimestamp (time (NULL)), 28, "");
+  es_fprintf (outfp, "* General information\n");
+  es_fprintf (outfp, "** Versions\n");
+  show_version_gnupg (outfp, "  ");
+  es_fprintf (outfp, "  Libgcrypt %s\n", gcry_check_version (NULL));
+  es_fprintf (outfp, "  GpgRT %s\n", gpg_error_check_version (NULL));
 #ifdef HAVE_W32_SYSTEM
-  es_fprintf (outfp, "### Codepages:");
+  es_fprintf (outfp, "  Codepages:");
   if (GetConsoleCP () != GetConsoleOutputCP ())
     es_fprintf (outfp, " %u/%u", GetConsoleCP (), GetConsoleOutputCP ());
   else
@@ -1496,10 +1568,27 @@ show_configs (estream_t outfp)
   es_fprintf (outfp, " %u", GetACP ());
   es_fprintf (outfp, " %u\n", GetOEMCP ());
 #endif
-  es_fprintf (outfp, "###\n\n");
+  es_fprintf (outfp, "\n\n");
 
+  es_fprintf (outfp, "** Directories\n");
   list_dirs (outfp, NULL, 1);
   es_fprintf (outfp, "\n");
+
+  es_fprintf (outfp, "** Environment\n#+begin_example\n");
+  for (idx=0; idx < DIM(envvars); idx++)
+    if ((s = getenv (envvars[idx])))
+      es_fprintf (outfp, "%s=%s\n", envvars[idx], s);
+  es_fprintf (outfp, "#+end_example\n");
+
+  es_fprintf (outfp, "* Config files\n");
+  fname = make_filename (gnupg_sysconfdir (), "gpgconf.conf", NULL);
+  if (!gnupg_access (fname, F_OK))
+    {
+      got_gpgconfconf = 1;
+      show_configs_one_file (fname, 1, outfp, &list);
+      es_fprintf (outfp, "\n");
+    }
+  xfree (fname);
 
   for (idx = 0; idx < DIM (names); idx++)
     {
@@ -1513,6 +1602,7 @@ show_configs (estream_t outfp)
     }
 
   /* Print the encountered registry values and envvars.  */
+  es_fprintf (outfp, "* Other info\n");
   if (list)
     {
       any = 0;
@@ -1523,20 +1613,21 @@ show_configs (estream_t outfp)
               {
                 any = 1;
                 es_fprintf (outfp,
-                            "###\n"
-                            "### List of encountered environment variables:\n");
+                            "** List of encountered environment variables\n"
+                            "#+begin_example\n");
               }
             if ((s = getenv (sl->d)))
-              es_fprintf (outfp, "### %-12s ->%s<-\n", sl->d, s);
+              es_fprintf (outfp, "   %-12s ->%s<-\n", sl->d, s);
             else
-              es_fprintf (outfp, "### %-12s [not set]\n", sl->d);
+              es_fprintf (outfp, "   %-12s [not set]\n", sl->d);
           }
       if (any)
-        es_fprintf (outfp, "###\n");
+        es_fprintf (outfp, "#+end_example\n");
     }
 
 #ifdef HAVE_W32_SYSTEM
-  es_fprintf (outfp, "###\n### Registry entries:\n");
+  es_fprintf (outfp, "** Registry entries\n");
+  es_fprintf (outfp, "#+begin_example\n");
   any = 0;
   if (list)
     {
@@ -1549,23 +1640,32 @@ show_configs (estream_t outfp)
             if (!any)
               {
                 any = 1;
-                es_fprintf (outfp, "###\n### Encountered in config files:\n");
+                es_fprintf (outfp, "Encountered in config files:\n");
               }
             if ((p = read_w32_reg_string (sl->d, &from_hklm)))
-              es_fprintf (outfp, "### %s ->%s<-%s\n", sl->d, p,
+              es_fprintf (outfp, "  %s ->%s<-%s\n", sl->d, p,
                           from_hklm? " [hklm]":"");
             else
-              es_fprintf (outfp, "### %s [not set]\n", sl->d);
+              es_fprintf (outfp, "  %s [not set]\n", sl->d);
             xfree (p);
           }
     }
-  if (!any)
-    es_fprintf (outfp, "###\n");
   show_other_registry_entries (outfp);
   show_registry_entries_from_file (outfp);
+  es_fprintf (outfp, "#+end_example\n");
 #endif /*HAVE_W32_SYSTEM*/
 
   free_strlist (list);
+
+  /* Additional warning.  */
+  anywarn = 0;
+  if (got_gpgconfconf)
+    {
+      anywarn = 1;
+      es_fprintf (outfp, "* Warnings\n");
+      es_fprintf (outfp,
+                  "- Legacy config file \"gpgconf.conf\" found\n");
+    }
 
   /* Check for uncommon files in the home directory.  */
   dir = gnupg_opendir (gnupg_homedir ());
@@ -1587,19 +1687,22 @@ show_configs (estream_t outfp)
               && dir_entry->d_name[n] == '-'
               && ascii_strncasecmp (dir_entry->d_name, "gpg.conf-1", 10))
             {
+              if (!anywarn)
+                {
+                  anywarn = 1;
+                  es_fprintf (outfp, "* Warnings\n");
+                }
               if (!any)
                 {
                   any = 1;
                   es_fprintf (outfp,
-                              "###\n"
-                              "### Warning: suspicious files in \"%s\":\n",
+                              "- Suspicious files in \"%s\":\n",
                               gnupg_homedir ());
                 }
-              es_fprintf (outfp, "### %s\n", dir_entry->d_name);
+              es_fprintf (outfp, "  - %s\n", dir_entry->d_name);
             }
         }
     }
-  if (any)
-    es_fprintf (outfp, "###\n");
   gnupg_closedir (dir);
+  es_fprintf (outfp, "# eof #\n");
 }

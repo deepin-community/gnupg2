@@ -134,6 +134,7 @@ enum cmd_and_opt_values {
   oAssumeArmor,
   oAssumeBase64,
   oAssumeBinary,
+  oInputSizeHint,
 
   oBase64,
   oNoArmor,
@@ -201,6 +202,8 @@ enum cmd_and_opt_values {
   oIgnoreCertWithOID,
   oRequireCompliance,
   oCompatibilityFlags,
+  oKbxBufferSize,
+  oAlwaysTrust,
   oNoAutostart
  };
 
@@ -309,6 +312,7 @@ static ARGPARSE_OPTS opts[] = {
                 N_("assume input is in base-64 format")),
   ARGPARSE_s_n (oAssumeBinary, "assume-binary",
                 N_("assume input is in binary format")),
+  ARGPARSE_s_s (oInputSizeHint, "input-size-hint", "@"),
 
 
   ARGPARSE_header ("Output", N_("Options controlling the output")),
@@ -391,6 +395,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oIgnoreTimeConflict, "ignore-time-conflict", "@"),
   ARGPARSE_s_n (oNoRandomSeedFile,  "no-random-seed-file", "@"),
   ARGPARSE_s_n (oRequireCompliance, "require-compliance", "@"),
+  ARGPARSE_s_n (oAlwaysTrust,       "always-trust", "@"),
 
 
   ARGPARSE_header (NULL, N_("Options for unattended use")),
@@ -424,6 +429,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oLCmessages, "lc-messages", "@"),
   ARGPARSE_s_s (oXauthority, "xauthority", "@"),
   ARGPARSE_s_s (oCompatibilityFlags, "compatibility-flags", "@"),
+  ARGPARSE_p_u (oKbxBufferSize,  "kbx-buffer-size", "@"),
 
   ARGPARSE_header (NULL, ""),  /* Stop the header group.  */
 
@@ -463,6 +469,7 @@ static struct debug_flags_s debug_flags [] =
 static struct compatibility_flags_s compatibility_flags [] =
   {
     { COMPAT_ALLOW_KA_TO_ENCR, "allow-ka-to-encr" },
+    { COMPAT_ALLOW_ECC_ENCR,   "allow-ecc-encr" },
     { 0, NULL }
   };
 
@@ -494,7 +501,7 @@ static int default_include_certs = DEFAULT_INCLUDE_CERTS;
 static int default_validation_model;
 
 /* The default cipher algo.  */
-#define DEFAULT_CIPHER_ALGO "AES"
+#define DEFAULT_CIPHER_ALGO "AES256"
 
 
 static char *build_list (const char *text,
@@ -515,6 +522,7 @@ our_pk_test_algo (int algo)
     {
     case GCRY_PK_RSA:
     case GCRY_PK_ECDSA:
+    case GCRY_PK_EDDSA:
       return gcry_pk_test_algo (algo);
     default:
       return 1;
@@ -767,7 +775,7 @@ set_debug (void)
 
   /* minip12.c may be used outside of GnuPG, thus we don't have the
    * opt structure over there.  */
-  p12_set_verbosity (opt.verbose);
+  p12_set_verbosity (opt.verbose, opt.debug);
 }
 
 
@@ -1144,6 +1152,10 @@ main ( int argc, char **argv)
           ctrl.is_base64 = 0;
           break;
 
+        case oInputSizeHint:
+          ctrl.input_size_hint = string_to_u64 (pargs.r.ret_str);
+          break;
+
         case oDisableCRLChecks:
           opt.no_crl_check = 1;
           break;
@@ -1431,6 +1443,11 @@ main ( int argc, char **argv)
         case oMinRSALength: opt.min_rsa_length = pargs.r.ret_ulong; break;
 
         case oRequireCompliance: opt.require_compliance = 1;  break;
+        case oAlwaysTrust: opt.always_trust = 1;  break;
+
+        case oKbxBufferSize:
+          keybox_set_buffersize (pargs.r.ret_ulong, 0);
+          break;
 
         default:
           if (configname)
@@ -1491,6 +1508,15 @@ main ( int argc, char **argv)
   if (may_coredump && !opt.quiet)
     log_info (_("WARNING: program may create a core file!\n"));
 
+  if (opt.require_compliance && opt.always_trust)
+    {
+      opt.always_trust = 0;
+      if (opt.quiet)
+        log_info (_("WARNING: %s overrides %s\n"),
+                  "--require-compliance","--always-trust");
+    }
+
+
 /*   if (opt.qualsig_approval && !opt.quiet) */
 /*     log_info (_("This software has officially been approved to " */
 /*                 "create and verify\n" */
@@ -1530,7 +1556,7 @@ main ( int argc, char **argv)
   set_debug ();
   if (opt.verbose) /* Print the compatibility flags.  */
     parse_compatibility_flags (NULL, &opt.compat_flags, compatibility_flags);
-  gnupg_set_compliance_extra_info (opt.min_rsa_length);
+  gnupg_set_compliance_extra_info (CO_EXTRA_INFO_MIN_RSA, opt.min_rsa_length);
 
   /* Although we always use gpgsm_exit, we better install a regualr
      exit handler so that at least the secure memory gets wiped
@@ -1829,11 +1855,17 @@ main ( int argc, char **argv)
       break;
 
     case aSignEncr: /* sign and encrypt the given file */
-      log_error ("this command has not yet been implemented\n");
+      log_error ("the command '%s' has not yet been implemented\n",
+                 "--sign --encrypt");
+      gpgsm_status_with_error (&ctrl, STATUS_FAILURE, "option-parser",
+                               gpg_error (GPG_ERR_NOT_IMPLEMENTED));
       break;
 
     case aClearsign: /* make a clearsig */
-      log_error ("this command has not yet been implemented\n");
+      log_error ("the command '%s' has not yet been implemented\n",
+                 "--clearsign");
+      gpgsm_status_with_error (&ctrl, STATUS_FAILURE, "option-parser",
+                               gpg_error (GPG_ERR_NOT_IMPLEMENTED));
       break;
 
     case aVerify:
@@ -2060,8 +2092,10 @@ main ( int argc, char **argv)
 
 
     default:
-        log_error (_("invalid command (there is no implicit command)\n"));
-	break;
+      log_error (_("invalid command (there is no implicit command)\n"));
+      gpgsm_status_with_error (&ctrl, STATUS_FAILURE, "option-parser",
+                               gpg_error (GPG_ERR_MISSING_ACTION));
+      break;
     }
 
   /* Print the audit result if needed.  */

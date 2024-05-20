@@ -160,6 +160,36 @@ ascii_memistr ( const void *buffer, size_t buflen, const char *sub )
   return NULL;
 }
 
+
+/* This is a case-sensitive version of our memistr.  I wonder why no
+ * standard function memstr exists but we better do not use the name
+ * memstr to avoid future conflicts.
+ */
+const char *
+gnupg_memstr (const void *buffer, size_t buflen, const char *sub)
+{
+  const unsigned char *buf = buffer;
+  const unsigned char *t = (const unsigned char *)buf;
+  const unsigned char *s = (const unsigned char *)sub;
+  size_t n = buflen;
+
+  for ( ; n ; t++, n-- )
+    {
+      if (*t == *s)
+        {
+          for (buf = t++, buflen = n--, s++; n && *t ==*s; t++, s++, n--)
+            ;
+          if (!*s)
+            return (const char*)buf;
+          t = (const unsigned char *)buf;
+          s = (const unsigned char *)sub ;
+          n = buflen;
+	}
+    }
+  return NULL;
+}
+
+
 /* This function is similar to strncpy().  However it won't copy more
    than N - 1 characters and makes sure that a '\0' is appended. With
    N given as 0, nothing will happen.  With DEST given as NULL, memory
@@ -694,7 +724,7 @@ compare_filenames (const char *a, const char *b)
 
 /* Convert a base-10 number in STRING into a 64 bit unsigned int
  * value.  Leading white spaces are skipped but no error checking is
- * done.  Thus it is similar to atoi(). */
+ * done.  Thus it is similar to atoi().  See also scan_secondsstr.  */
 uint64_t
 string_to_u64 (const char *string)
 {
@@ -1691,10 +1721,16 @@ format_text (const char *text_in, int target_cols, int max_cols)
 }
 
 
-/* Substitute environment variables in STRING and return a new string.
- * On error the function returns NULL.  */
+/* Substitute variables in STRING and return a new string.  GETVAL is
+ * a function which maps NAME to its value; that value is a string
+ * which may not change during the execution time of this function.
+ * If GETVAL returns NULL substitute_vars returns NULL and the caller
+ * may inspect ERRNO for the reason.  In all other error cases this
+ * function also returns NULL.  Caller must free the returned string.  */
 char *
-substitute_envvars (const char *string)
+substitute_vars (const char *string,
+                 const char *(*getval)(void *cookie, const char *name),
+                 void *cookie)
 {
   char *line, *p, *pend;
   const char *value;
@@ -1745,19 +1781,22 @@ substitute_envvars (const char *string)
         {
           int save = *pend;
           *pend = 0;
-          value = getenv (p+2);
+          value = getval (cookie, p+2);
           *pend++ = save;
         }
       else
         {
           int save = *pend;
           *pend = 0;
-          value = getenv (p+1);
+          value = getval (cookie, p+1);
           *pend = save;
         }
 
       if (!value)
-        value = "";
+        {
+          xfree (result);
+          return NULL;
+        }
       valuelen = strlen (value);
       if (valuelen <= pend - p)
         {
@@ -1792,4 +1831,27 @@ substitute_envvars (const char *string)
 
  leave:
   return result;
+}
+
+
+/* Helper for substitute_envvars.  */
+static const char *
+subst_getenv (void *cookie, const char *name)
+{
+  const char *s;
+
+  (void)cookie;
+
+  s = getenv (name);
+  return s? s : "";
+}
+
+
+/* Substitute environment variables in STRING and return a new string.
+ * On error the function returns NULL.  */
+char *
+substitute_envvars (const char *string)
+{
+  return substitute_vars (string, subst_getenv, NULL);
+
 }

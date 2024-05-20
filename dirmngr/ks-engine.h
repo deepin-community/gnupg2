@@ -27,6 +27,9 @@
 #define KS_GET_FLAG_ONLY_LDAP 1
 #define KS_GET_FLAG_FIRST     2
 #define KS_GET_FLAG_NEXT      4
+#define KS_GET_FLAG_ONLY_AD   8  /* Do this only if we have an AD.  */
+#define KS_GET_FLAG_ROOTDSE  16  /* Get the rootDSE.  */
+#define KS_GET_FLAG_SUBST    32  /* Substiture variables.  */
 
 
 /*-- ks-action.c --*/
@@ -68,16 +71,21 @@ gpg_error_t ks_kdns_help (ctrl_t ctrl, parsed_uri_t uri);
 gpg_error_t ks_kdns_fetch (ctrl_t ctrl, parsed_uri_t uri, estream_t *r_fp);
 
 /*-- ks-engine-ldap.c --*/
+void ks_ldap_help_variables (ctrl_t ctrl);
 gpg_error_t ks_ldap_help (ctrl_t ctrl, parsed_uri_t uri);
 void ks_ldap_free_state (struct ks_engine_ldap_local_s *state);
 gpg_error_t ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 			    estream_t *r_fp);
 gpg_error_t ks_ldap_get (ctrl_t ctrl, parsed_uri_t uri,
 			 const char *keyspec, unsigned int ks_get_flags,
-                         estream_t *r_fp);
+                         gnupg_isotime_t newer, estream_t *r_fp);
 gpg_error_t ks_ldap_put (ctrl_t ctrl, parsed_uri_t uri,
 			 void *data, size_t datalen,
 			 void *info, size_t infolen);
+gpg_error_t ks_ldap_query (ctrl_t ctrl, parsed_uri_t uri,
+                           unsigned int ks_get_flags,
+                           const char *filter, char **attrs,
+                           gnupg_isotime_t newer, estream_t *r_fp);
 
 
 #endif /*DIRMNGR_KS_ENGINE_H*/

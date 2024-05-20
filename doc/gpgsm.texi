@@ -480,8 +480,10 @@ This usually means that Dirmngr is employed to search for the
 certificate.  Note that this option makes a "web bug" like behavior
 possible.  LDAP server operators can see which keys you request, so by
 sending you a message signed by a brand new key (which you naturally
-will not have on your local keybox), the operator can tell both your IP
-address and the time when you verified the signature.
+will not have on your local keybox), the operator can tell both your
+IP address and the time when you verified the signature.  Note that if
+CRL checking is not disabled issuer certificates are retrieved in any
+case using the caIssuers authorityInfoAccess method.
 
 
 @anchor{gpgsm-option --validation-model}
@@ -535,6 +537,13 @@ Assume the input data is plain base-64 encoded.
 @item --assume-binary
 @opindex assume-binary
 Assume the input data is binary encoded.
+
+@item --input-size-hint @var{n}
+@opindex input-size-hint
+This option can be used to tell GPGSM the size of the input data in
+bytes.  @var{n} must be a positive base-10 number.  It is used by the
+@option{--status-fd} line ``PROGRESS'' to provide a value for
+``total'' if that is not available by other means.
 
 @anchor{option --p12-charset}
 @item --p12-charset @var{name}
@@ -686,6 +695,13 @@ the status-line requires quite some effort; this option can be used
 instead to make sure that the gpgsm process exits with a failure if
 the compliance rules are not fulfilled.  Note that this option has
 currently an effect only in "de-vs" mode.
+
+@item --always-trust
+@opindex always-trust
+Force encryption to the specified certificates without any validation
+of the certificate chain.  The only requirement is that the
+certificate is capable of encryption.  Note that this option is
+ineffective if @option{--require-compliance} is used.
 
 @item --ignore-cert-with-oid @var{oid}
 @opindex ignore-cert-with-oid
@@ -1140,10 +1156,12 @@ General Parameters:
 @item Key-Type: @var{algo}
 Starts a new parameter block by giving the type of the primary
 key. The algorithm must be capable of signing.  This is a required
-parameter.  The only supported value for @var{algo} is @samp{rsa}.
+parameter.  The supported values for @var{algo} are @samp{rsa},
+@samp{ecdsa}, and @samp{eddsa}.
 
 @item Key-Length: @var{nbits}
-The requested length of a generated key in bits.  Defaults to 3072.
+The requested length of a generated key in bits.  Defaults to
+3072. The value is ignored for ECC algorithms.
 
 @item Key-Grip: @var{hexstring}
 This is optional and used to generate a CSR or certificate for an
@@ -1215,6 +1233,20 @@ Use @var{hash-algo} for this CSR or certificate.  The supported hash
 algorithms are: @samp{sha1}, @samp{sha256}, @samp{sha384} and
 @samp{sha512}; they may also be specified with uppercase letters.  The
 default is @samp{sha256}.
+
+@item Authority-Key-Id: @var{hexstring}
+Insert the decoded value of @var{hexstring} as authorityKeyIdentifier.
+If this is not given and an ECC algorithm is used the public part of
+the certified public key is used as authorityKeyIdentifier.  To
+inhibit any authorityKeyIdentifier use the special value @code{none}
+for @var{hexstring}.
+
+@item Subject-Key-Id: @var{hexstring}
+Insert the decoded value of @var{hexstring} as subjectKeyIdentifier.
+If this is not given and an ECC algorithm is used the public part of
+the signing key is used as authorityKeyIdentifier.  To inhibit any
+subjectKeyIdentifier use the special value @code{none} for
+@var{hexstring}.
 
 @end table
 
@@ -1580,6 +1612,10 @@ The leading two dashes usually used with @var{opt} shall not be given.
 Return OK if the connection is in offline mode.  This may be either
 due to a @code{OPTION offline=1} or due to @command{gpgsm} being
 started with option @option{--disable-dirmngr}.
+@item always-trust
+Returns OK of the connection is in always-trust mode.  That is either
+@option{--always-trust} or @option{GPGSM OPTION always-trust} are
+active.
 @end table
 
 @node GPGSM OPTION
@@ -1685,6 +1721,18 @@ If this option is used all keys set by the command line option
 If @var{value} is true or @var{value} is not given all network access
 is disabled for this session.  This is the same as the command line
 option @option{--disable-dirmngr}.
+
+@item always-trust
+If @var{value} is true or @var{value} is not given encryption to the
+specified certificates is forced without any validation of the
+certificate chain.  The only requirement is that the certificates are
+capable of encryption.  If set to false the standard behaviour is
+re-established.  This option is cleared by a RESET and after each
+encrypt operation.  Note that this option is ignored if
+@option{--always-trust} or @option{--require-compliance} are used.
+
+@item input-size-hint
+This is the same as the @option{--input-size-hint} command line option.
 
 @end table
 

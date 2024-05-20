@@ -25,7 +25,7 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  4 files changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/agent/command.c b/agent/command.c
-index b682c55..ea65290 100644
+index 940e017..4b3634f 100644
 --- a/agent/command.c
 +++ b/agent/command.c
 @@ -843,7 +843,7 @@ static const char hlp_genkey[] =
@@ -38,10 +38,10 @@ index b682c55..ea65290 100644
    "  S: D (public-key\n"
    "  S: D   (rsa (n 326487324683264) (e 10001)))\n"
 diff --git a/doc/wks.texi b/doc/wks.texi
-index e398ccb..68ed117 100644
+index e8d026f..11bd1eb 100644
 --- a/doc/wks.texi
 +++ b/doc/wks.texi
-@@ -447,10 +447,10 @@ the submission address:
+@@ -457,10 +457,10 @@ the submission address:
  The output of the last command looks similar to this:
  
  @example
@@ -55,10 +55,10 @@ index e398ccb..68ed117 100644
  
  Take the fingerprint from that output and manually publish the key:
 diff --git a/g10/keygen.c b/g10/keygen.c
-index 80d65c4..5b4a785 100644
+index 52fd97a..1e9249e 100644
 --- a/g10/keygen.c
 +++ b/g10/keygen.c
-@@ -1436,7 +1436,7 @@ gen_elg (int algo, unsigned int nbits, KBNODE pub_root,
+@@ -1565,7 +1565,7 @@ gen_elg (int algo, unsigned int nbits, KBNODE pub_root,
  
    if (nbits < 1024)
      {
@@ -68,7 +68,7 @@ index 80d65c4..5b4a785 100644
      }
    else if (nbits > 4096)
 diff --git a/g10/keyid.c b/g10/keyid.c
-index 69d85da..2987287 100644
+index 7823f0d..f0db298 100644
 --- a/g10/keyid.c
 +++ b/g10/keyid.c
 @@ -73,7 +73,7 @@ pubkey_letter( int algo )

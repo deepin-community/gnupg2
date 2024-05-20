@@ -14,6 +14,7 @@
 
 @SET_MAKE@
 
+# Makefile.am - g10
 # Copyright (C) 1998, 1999, 2000, 2001, 2002,
 #               2003, 2006, 2010  Free Software Foundation, Inc.
 #
@@ -151,17 +152,16 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -218,14 +218,11 @@ am_gpg_OBJECTS = gpg.$(OBJEXT) keyedit.$(OBJEXT) $(am__objects_6)
 gpg_OBJECTS = $(am_gpg_OBJECTS)
 am__DEPENDENCIES_1 =
 am__DEPENDENCIES_2 = $(needed_libs) ../common/libgpgrl.a \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_3 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpg-w32info.o
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 gpg_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_3) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) $(gpg_rc_objs) \
 	$(am__DEPENDENCIES_1)
 gpg_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpg_LDFLAGS) $(LDFLAGS) -o \
 	$@
@@ -249,7 +246,8 @@ gpgcompose_OBJECTS = $(am_gpgcompose_OBJECTS)
 gpgcompose_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1)
 gpgcompose_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgcompose_LDFLAGS) \
 	$(LDFLAGS) -o $@
 am__gpgv_SOURCES_DIST = gpgv.c gpg.h dek.h build-packet.c compress.c \
@@ -261,11 +259,9 @@ am__gpgv_SOURCES_DIST = gpgv.c gpg.h dek.h build-packet.c compress.c \
 	ecdh.c verify.c
 am_gpgv_OBJECTS = gpgv.$(OBJEXT) $(am__objects_2) verify.$(OBJEXT)
 gpgv_OBJECTS = $(am_gpgv_OBJECTS)
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_4 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpgv-w32info.o
 gpgv_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_4) $(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(gpgv_rc_objs) $(am__DEPENDENCIES_1)
 gpgv_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgv_LDFLAGS) $(LDFLAGS) \
 	-o $@
 am__t_keydb_SOURCES_DIST = t-keydb.c test-stubs.c gpg.h dek.h \
@@ -280,7 +276,7 @@ am_t_keydb_OBJECTS = t-keydb.$(OBJEXT) test-stubs.$(OBJEXT) \
 t_keydb_OBJECTS = $(am_t_keydb_OBJECTS)
 t_keydb_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 am__t_keydb_get_keyblock_SOURCES_DIST = t-keydb-get-keyblock.c \
 	test-stubs.c gpg.h dek.h build-packet.c compress.c \
 	compress-bz2.c filter.h free-packet.c getkey.c keydb.c keydb.h \
@@ -294,7 +290,8 @@ am_t_keydb_get_keyblock_OBJECTS = t-keydb-get-keyblock.$(OBJEXT) \
 t_keydb_get_keyblock_OBJECTS = $(am_t_keydb_get_keyblock_OBJECTS)
 t_keydb_get_keyblock_DEPENDENCIES = $(am__DEPENDENCIES_2) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1)
 am_t_rmd160_OBJECTS = t-rmd160.$(OBJEXT) rmd160.$(OBJEXT)
 t_rmd160_OBJECTS = $(am_t_rmd160_OBJECTS)
 t_rmd160_DEPENDENCIES = $(am__DEPENDENCIES_1)
@@ -310,7 +307,7 @@ am_t_stutter_OBJECTS = t-stutter.$(OBJEXT) test-stubs.$(OBJEXT) \
 t_stutter_OBJECTS = $(am_t_stutter_OBJECTS)
 t_stutter_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -617,10 +614,9 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 EXTRA_DIST = distsigkey.gpg \
-	     ChangeLog-2011 \
-             gpg-w32info.rc gpg.w32-manifest.in \
-             gpgv-w32info.rc gpgv.w32-manifest.in \
-	     test.c t-keydb-keyring.kbx \
+             gpg-w32info.rc  gpg.w32-manifest.in \
+	     gpgv-w32info.rc gpgv.w32-manifest.in \
+	     ChangeLog-2011 test.c t-keydb-keyring.kbx \
 	     t-keydb-get-keyblock.gpg t-stutter-data.asc \
 	     all-tests.scm
 
@@ -670,10 +666,8 @@ TESTS_ENVIRONMENT = \
 @NO_TRUST_MODELS_TRUE@trust_source = 
 @USE_TOFU_FALSE@tofu_source = 
 @USE_TOFU_TRUE@tofu_source = tofu.h tofu.c gpgsql.c gpgsql.h
-@HAVE_W32_SYSTEM_FALSE@gpg_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpg_robjs = $(resource_objs) gpg-w32info.o
-@HAVE_W32_SYSTEM_FALSE@gpgv_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpgv_robjs = $(resource_objs) gpgv-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_rc_objs = gpg-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpgv_rc_objs = gpgv-w32info.o
 common_source = \
 	      gpg.h             \
 	      dek.h             \
@@ -755,20 +749,20 @@ gpgv_SOURCES = gpgv.c           \
 #	       ks-db.h \
 #	       $(common_source)
 LDADD = $(needed_libs) ../common/libgpgrl.a \
-         $(ZLIBS) $(LIBINTL) $(CAPLIBS) $(NETLIBS)
+         $(ZLIBS) $(LIBINTL) $(CAPLIBS)
 
 gpg_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(SQLITE3_LIBS) $(LIBREADLINE) \
-             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
-	     $(LIBICONV) $(gpg_robjs) $(extra_sys_libs)
+             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	     $(LIBICONV) $(gpg_rc_objs) $(extra_sys_libs)
 
 gpg_LDFLAGS = $(extra_bin_ldflags)
 gpgv_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-              $(GPG_ERROR_LIBS) \
-	      $(LIBICONV) $(gpgv_robjs) $(extra_sys_libs)
+              $(GPG_ERROR_LIBS) $(NETLIBS) \
+	      $(LIBICONV) $(gpgv_rc_objs) $(extra_sys_libs)
 
 gpgv_LDFLAGS = $(extra_bin_ldflags)
 gpgcompose_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
-             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
+             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	     $(LIBICONV) $(extra_sys_libs)
 
 gpgcompose_LDFLAGS = $(extra_bin_ldflags)
@@ -777,19 +771,19 @@ module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter
 t_rmd160_SOURCES = t-rmd160.c rmd160.c
 t_rmd160_LDADD = $(t_common_ldadd)
 t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source)
-t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 
 t_keydb_get_keyblock_SOURCES = t-keydb-get-keyblock.c test-stubs.c \
 	      $(common_source)
 
 t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-	      $(LIBICONV) $(t_common_ldadd)
+	      $(NETLIBS) $(LIBICONV) $(t_common_ldadd)
 
 t_stutter_SOURCES = t-stutter.c test-stubs.c \
 	      $(common_source)
 
-t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 
 all: all-am
@@ -1392,8 +1386,9 @@ uninstall-am: uninstall-local
 
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
-@HAVE_W32_SYSTEM_TRUE@gpg-w32info.o : gpg.w32-manifest
-@HAVE_W32_SYSTEM_TRUE@gpgv-w32info.o : gpgv.w32-manifest
+
+@HAVE_W32_SYSTEM_TRUE@gpg-w32info.o  : gpg.w32-manifest   ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@gpgv-w32info.o : gpgv.w32-manifest  ../common/w32info-rc.h
 
 $(PROGRAMS): $(needed_libs) ../common/libgpgrl.a
 

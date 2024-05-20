@@ -124,6 +124,8 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = gpgsm$(EXEEXT)
+noinst_PROGRAMS = $(am__EXEEXT_1) $(am__EXEEXT_2)
+@DISABLE_TESTS_FALSE@TESTS = $(am__EXEEXT_1)
 @HAVE_DOSISH_SYSTEM_FALSE@am__append_1 = -DGNUPG_BINDIR="\"$(bindir)\""            \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBEXECDIR="\"$(libexecdir)\""    \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBDIR="\"$(libdir)/@PACKAGE@\""  \
@@ -146,17 +148,16 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -165,7 +166,9 @@ CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = gpgsm.w32-manifest
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
-PROGRAMS = $(bin_PROGRAMS)
+am__EXEEXT_1 = t-minip12$(EXEEXT)
+am__EXEEXT_2 =
+PROGRAMS = $(bin_PROGRAMS) $(noinst_PROGRAMS)
 am_gpgsm_OBJECTS = gpgsm.$(OBJEXT) misc.$(OBJEXT) keydb.$(OBJEXT) \
 	server.$(OBJEXT) call-agent.$(OBJEXT) call-dirmngr.$(OBJEXT) \
 	fingerprint.$(OBJEXT) certlist.$(OBJEXT) certdump.$(OBJEXT) \
@@ -178,13 +181,17 @@ gpgsm_OBJECTS = $(am_gpgsm_OBJECTS)
 am__DEPENDENCIES_1 =
 @HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1) \
 @HAVE_W32_SYSTEM_TRUE@	gpgsm-w32info.o
-gpgsm_DEPENDENCIES = $(common_libs) ../common/libgpgrl.a \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 gpgsm_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgsm_LDFLAGS) \
+	$(LDFLAGS) -o $@
+am__objects_1 =
+am_t_minip12_OBJECTS = $(am__objects_1) t_minip12-t-minip12.$(OBJEXT) \
+	t_minip12-minip12.$(OBJEXT)
+t_minip12_OBJECTS = $(am_t_minip12_OBJECTS)
+am__DEPENDENCIES_3 = $(libcommon) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+t_minip12_DEPENDENCIES = $(am__DEPENDENCIES_3) $(am__DEPENDENCIES_1)
+t_minip12_LINK = $(CCLD) $(t_minip12_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -213,8 +220,13 @@ am__depfiles_remade = ./$(DEPDIR)/call-agent.Po \
 	./$(DEPDIR)/minip12.Po ./$(DEPDIR)/misc.Po \
 	./$(DEPDIR)/passphrase.Po ./$(DEPDIR)/qualified.Po \
 	./$(DEPDIR)/server.Po ./$(DEPDIR)/sign.Po \
-	./$(DEPDIR)/verify.Po
+	./$(DEPDIR)/t_minip12-minip12.Po \
+	./$(DEPDIR)/t_minip12-t-minip12.Po ./$(DEPDIR)/verify.Po
 am__mv = mv -f
+AM_V_lt = $(am__v_lt_@AM_V@)
+am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
+am__v_lt_0 = --silent
+am__v_lt_1 = 
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
 AM_V_CC = $(am__v_CC_@AM_V@)
@@ -227,8 +239,8 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(gpgsm_SOURCES)
-DIST_SOURCES = $(gpgsm_SOURCES)
+SOURCES = $(gpgsm_SOURCES) $(t_minip12_SOURCES)
+DIST_SOURCES = $(gpgsm_SOURCES) $(t_minip12_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -253,6 +265,28 @@ am__define_uniq_tagged_files = \
   done | $(am__uniquify_input)`
 ETAGS = etags
 CTAGS = ctags
+am__tty_colors_dummy = \
+  mgn= red= grn= lgn= blu= brg= std=; \
+  am__color_tests=no
+am__tty_colors = { \
+  $(am__tty_colors_dummy); \
+  if test "X$(AM_COLOR_TESTS)" = Xno; then \
+    am__color_tests=no; \
+  elif test "X$(AM_COLOR_TESTS)" = Xalways; then \
+    am__color_tests=yes; \
+  elif test "X$$TERM" != Xdumb && { test -t 1; } 2>/dev/null; then \
+    am__color_tests=yes; \
+  fi; \
+  if test $$am__color_tests = yes; then \
+    red='[0;31m'; \
+    grn='[0;32m'; \
+    lgn='[1;32m'; \
+    blu='[1;34m'; \
+    mgn='[0;35m'; \
+    brg='[1m'; \
+    std='[m'; \
+  fi; \
+}
 am__DIST_COMMON = $(srcdir)/Makefile.in \
 	$(srcdir)/gpgsm.w32-manifest.in $(top_srcdir)/am/cmacros.am \
 	$(top_srcdir)/build-aux/depcomp \
@@ -443,7 +477,9 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = ChangeLog-2011 gpgsm-w32info.rc gpgsm.w32-manifest.in
+EXTRA_DIST = ChangeLog-2011 \
+             gpgsm-w32info.rc gpgsm.w32-manifest.in
+
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS)
 
 # NB: AM_CFLAGS may also be used by tools running on the build
@@ -469,8 +505,7 @@ libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
-@HAVE_W32_SYSTEM_FALSE@gpgsm_robjs = 
-@HAVE_W32_SYSTEM_TRUE@gpgsm_robjs = $(resource_objs) gpgsm-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpgsm_rc_objs = $(resource_objs) gpgsm-w32info.o
 gpgsm_SOURCES = \
 	gpgsm.c	gpgsm.h \
 	misc.c \
@@ -501,9 +536,21 @@ common_libs = ../kbx/libkeybox509.a $(libcommon)
 gpgsm_LDADD = $(common_libs) ../common/libgpgrl.a \
               $(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) \
               $(GPG_ERROR_LIBS) $(LIBREADLINE) $(LIBINTL) \
-	      $(LIBICONV) $(gpgsm_robjs) $(extra_sys_libs) $(NETLIBS)
+	      $(LIBICONV) $(gpgsm_rc_objs) $(extra_sys_libs) $(NETLIBS)
 
 gpgsm_LDFLAGS = $(extra_bin_ldflags)
+gpgsm_DEPENDENCIES = $(gpgsm_rc_objs)
+module_tests = t-minip12
+module_maint_tests = 
+t_common_src = 
+t_common_ldadd = $(libcommon) $(LIBGCRYPT_LIBS) $(KSBA_LIBS) \
+                 $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV)
+
+t_minip12_CFLAGS = -DWITHOUT_NPTH=1 \
+	           $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS) $(GPG_ERROR_CFLAGS)
+
+t_minip12_SOURCES = $(t_common_src) t-minip12.c minip12.c
+t_minip12_LDADD = $(t_common_ldadd) $(NETLIBS)
 all: all-am
 
 .SUFFIXES:
@@ -583,9 +630,16 @@ uninstall-binPROGRAMS:
 clean-binPROGRAMS:
 	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
 
+clean-noinstPROGRAMS:
+	-test -z "$(noinst_PROGRAMS)" || rm -f $(noinst_PROGRAMS)
+
 gpgsm$(EXEEXT): $(gpgsm_OBJECTS) $(gpgsm_DEPENDENCIES) $(EXTRA_gpgsm_DEPENDENCIES) 
 	@rm -f gpgsm$(EXEEXT)
 	$(AM_V_CCLD)$(gpgsm_LINK) $(gpgsm_OBJECTS) $(gpgsm_LDADD) $(LIBS)
+
+t-minip12$(EXEEXT): $(t_minip12_OBJECTS) $(t_minip12_DEPENDENCIES) $(EXTRA_t_minip12_DEPENDENCIES) 
+	@rm -f t-minip12$(EXEEXT)
+	$(AM_V_CCLD)$(t_minip12_LINK) $(t_minip12_OBJECTS) $(t_minip12_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -616,6 +670,8 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/qualified.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/server.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/sign.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t_minip12-minip12.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t_minip12-t-minip12.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/verify.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
@@ -637,6 +693,34 @@ am--depfiles: $(am__depfiles_remade)
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='$<' object='$@' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(COMPILE) -c -o $@ `$(CYGPATH_W) '$<'`
+
+t_minip12-t-minip12.o: t-minip12.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -MT t_minip12-t-minip12.o -MD -MP -MF $(DEPDIR)/t_minip12-t-minip12.Tpo -c -o t_minip12-t-minip12.o `test -f 't-minip12.c' || echo '$(srcdir)/'`t-minip12.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_minip12-t-minip12.Tpo $(DEPDIR)/t_minip12-t-minip12.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='t-minip12.c' object='t_minip12-t-minip12.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -c -o t_minip12-t-minip12.o `test -f 't-minip12.c' || echo '$(srcdir)/'`t-minip12.c
+
+t_minip12-t-minip12.obj: t-minip12.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -MT t_minip12-t-minip12.obj -MD -MP -MF $(DEPDIR)/t_minip12-t-minip12.Tpo -c -o t_minip12-t-minip12.obj `if test -f 't-minip12.c'; then $(CYGPATH_W) 't-minip12.c'; else $(CYGPATH_W) '$(srcdir)/t-minip12.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_minip12-t-minip12.Tpo $(DEPDIR)/t_minip12-t-minip12.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='t-minip12.c' object='t_minip12-t-minip12.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -c -o t_minip12-t-minip12.obj `if test -f 't-minip12.c'; then $(CYGPATH_W) 't-minip12.c'; else $(CYGPATH_W) '$(srcdir)/t-minip12.c'; fi`
+
+t_minip12-minip12.o: minip12.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -MT t_minip12-minip12.o -MD -MP -MF $(DEPDIR)/t_minip12-minip12.Tpo -c -o t_minip12-minip12.o `test -f 'minip12.c' || echo '$(srcdir)/'`minip12.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_minip12-minip12.Tpo $(DEPDIR)/t_minip12-minip12.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='minip12.c' object='t_minip12-minip12.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -c -o t_minip12-minip12.o `test -f 'minip12.c' || echo '$(srcdir)/'`minip12.c
+
+t_minip12-minip12.obj: minip12.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -MT t_minip12-minip12.obj -MD -MP -MF $(DEPDIR)/t_minip12-minip12.Tpo -c -o t_minip12-minip12.obj `if test -f 'minip12.c'; then $(CYGPATH_W) 'minip12.c'; else $(CYGPATH_W) '$(srcdir)/minip12.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_minip12-minip12.Tpo $(DEPDIR)/t_minip12-minip12.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='minip12.c' object='t_minip12-minip12.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_minip12_CFLAGS) $(CFLAGS) -c -o t_minip12-minip12.obj `if test -f 'minip12.c'; then $(CYGPATH_W) 'minip12.c'; else $(CYGPATH_W) '$(srcdir)/minip12.c'; fi`
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -690,6 +774,99 @@ cscopelist-am: $(am__tagged_files)
 distclean-tags:
 	-rm -f TAGS ID GTAGS GRTAGS GSYMS GPATH tags
 
+check-TESTS: $(TESTS)
+	@failed=0; all=0; xfail=0; xpass=0; skip=0; \
+	srcdir=$(srcdir); export srcdir; \
+	list=' $(TESTS) '; \
+	$(am__tty_colors); \
+	if test -n "$$list"; then \
+	  for tst in $$list; do \
+	    if test -f ./$$tst; then dir=./; \
+	    elif test -f $$tst; then dir=; \
+	    else dir="$(srcdir)/"; fi; \
+	    if $(TESTS_ENVIRONMENT) $${dir}$$tst $(AM_TESTS_FD_REDIRECT); then \
+	      all=`expr $$all + 1`; \
+	      case " $(XFAIL_TESTS) " in \
+	      *[\ \	]$$tst[\ \	]*) \
+		xpass=`expr $$xpass + 1`; \
+		failed=`expr $$failed + 1`; \
+		col=$$red; res=XPASS; \
+	      ;; \
+	      *) \
+		col=$$grn; res=PASS; \
+	      ;; \
+	      esac; \
+	    elif test $$? -ne 77; then \
+	      all=`expr $$all + 1`; \
+	      case " $(XFAIL_TESTS) " in \
+	      *[\ \	]$$tst[\ \	]*) \
+		xfail=`expr $$xfail + 1`; \
+		col=$$lgn; res=XFAIL; \
+	      ;; \
+	      *) \
+		failed=`expr $$failed + 1`; \
+		col=$$red; res=FAIL; \
+	      ;; \
+	      esac; \
+	    else \
+	      skip=`expr $$skip + 1`; \
+	      col=$$blu; res=SKIP; \
+	    fi; \
+	    echo "$${col}$$res$${std}: $$tst"; \
+	  done; \
+	  if test "$$all" -eq 1; then \
+	    tests="test"; \
+	    All=""; \
+	  else \
+	    tests="tests"; \
+	    All="All "; \
+	  fi; \
+	  if test "$$failed" -eq 0; then \
+	    if test "$$xfail" -eq 0; then \
+	      banner="$$All$$all $$tests passed"; \
+	    else \
+	      if test "$$xfail" -eq 1; then failures=failure; else failures=failures; fi; \
+	      banner="$$All$$all $$tests behaved as expected ($$xfail expected $$failures)"; \
+	    fi; \
+	  else \
+	    if test "$$xpass" -eq 0; then \
+	      banner="$$failed of $$all $$tests failed"; \
+	    else \
+	      if test "$$xpass" -eq 1; then passes=pass; else passes=passes; fi; \
+	      banner="$$failed of $$all $$tests did not behave as expected ($$xpass unexpected $$passes)"; \
+	    fi; \
+	  fi; \
+	  dashes="$$banner"; \
+	  skipped=""; \
+	  if test "$$skip" -ne 0; then \
+	    if test "$$skip" -eq 1; then \
+	      skipped="($$skip test was not run)"; \
+	    else \
+	      skipped="($$skip tests were not run)"; \
+	    fi; \
+	    test `echo "$$skipped" | wc -c` -le `echo "$$banner" | wc -c` || \
+	      dashes="$$skipped"; \
+	  fi; \
+	  report=""; \
+	  if test "$$failed" -ne 0 && test -n "$(PACKAGE_BUGREPORT)"; then \
+	    report="Please report to $(PACKAGE_BUGREPORT)"; \
+	    test `echo "$$report" | wc -c` -le `echo "$$banner" | wc -c` || \
+	      dashes="$$report"; \
+	  fi; \
+	  dashes=`echo "$$dashes" | sed s/./=/g`; \
+	  if test "$$failed" -eq 0; then \
+	    col="$$grn"; \
+	  else \
+	    col="$$red"; \
+	  fi; \
+	  echo "$${col}$$dashes$${std}"; \
+	  echo "$${col}$$banner$${std}"; \
+	  test -z "$$skipped" || echo "$${col}$$skipped$${std}"; \
+	  test -z "$$report" || echo "$${col}$$report$${std}"; \
+	  echo "$${col}$$dashes$${std}"; \
+	  test "$$failed" -eq 0; \
+	else :; fi
+
 distdir: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) distdir-am
 
@@ -724,6 +901,7 @@ distdir-am: $(DISTFILES)
 	  fi; \
 	done
 check-am: all-am
+	$(MAKE) $(AM_MAKEFLAGS) check-TESTS
 check: check-am
 all-am: Makefile $(PROGRAMS)
 installdirs:
@@ -762,7 +940,8 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
+clean-am: clean-binPROGRAMS clean-generic clean-noinstPROGRAMS \
+	mostlyclean-am
 
 distclean: distclean-am
 		-rm -f ./$(DEPDIR)/call-agent.Po
@@ -788,6 +967,8 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/qualified.Po
 	-rm -f ./$(DEPDIR)/server.Po
 	-rm -f ./$(DEPDIR)/sign.Po
+	-rm -f ./$(DEPDIR)/t_minip12-minip12.Po
+	-rm -f ./$(DEPDIR)/t_minip12-t-minip12.Po
 	-rm -f ./$(DEPDIR)/verify.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
@@ -857,6 +1038,8 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/qualified.Po
 	-rm -f ./$(DEPDIR)/server.Po
 	-rm -f ./$(DEPDIR)/sign.Po
+	-rm -f ./$(DEPDIR)/t_minip12-minip12.Po
+	-rm -f ./$(DEPDIR)/t_minip12-t-minip12.Po
 	-rm -f ./$(DEPDIR)/verify.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
@@ -875,28 +1058,28 @@ ps-am:
 
 uninstall-am: uninstall-binPROGRAMS
 
-.MAKE: install-am install-strip
+.MAKE: check-am install-am install-strip
 
-.PHONY: CTAGS GTAGS TAGS all all-am am--depfiles check check-am clean \
-	clean-binPROGRAMS clean-generic cscopelist-am ctags ctags-am \
-	distclean distclean-compile distclean-generic distclean-tags \
-	distdir dvi dvi-am html html-am info info-am install \
-	install-am install-binPROGRAMS install-data install-data-am \
-	install-dvi install-dvi-am install-exec install-exec-am \
-	install-html install-html-am install-info install-info-am \
-	install-man install-pdf install-pdf-am install-ps \
-	install-ps-am install-strip installcheck installcheck-am \
-	installdirs maintainer-clean maintainer-clean-generic \
-	mostlyclean mostlyclean-compile mostlyclean-generic pdf pdf-am \
-	ps ps-am tags tags-am uninstall uninstall-am \
-	uninstall-binPROGRAMS
+.PHONY: CTAGS GTAGS TAGS all all-am am--depfiles check check-TESTS \
+	check-am clean clean-binPROGRAMS clean-generic \
+	clean-noinstPROGRAMS cscopelist-am ctags ctags-am distclean \
+	distclean-compile distclean-generic distclean-tags distdir dvi \
+	dvi-am html html-am info info-am install install-am \
+	install-binPROGRAMS install-data install-data-am install-dvi \
+	install-dvi-am install-exec install-exec-am install-html \
+	install-html-am install-info install-info-am install-man \
+	install-pdf install-pdf-am install-ps install-ps-am \
+	install-strip installcheck installcheck-am installdirs \
+	maintainer-clean maintainer-clean-generic mostlyclean \
+	mostlyclean-compile mostlyclean-generic pdf pdf-am ps ps-am \
+	tags tags-am uninstall uninstall-am uninstall-binPROGRAMS
 
 .PRECIOUS: Makefile
 
 
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
-@HAVE_W32_SYSTEM_TRUE@gpgsm-w32info.o : gpgsm.w32-manifest
+@HAVE_W32_SYSTEM_TRUE@gpgsm-w32info.o : gpgsm.w32-manifest ../common/w32info-rc.h
 
 # Make sure that all libs are build before we use them.  This is
 # important for things like make -j2.

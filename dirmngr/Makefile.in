@@ -150,38 +150,39 @@ noinst_PROGRAMS = $(am__EXEEXT_2) $(am__EXEEXT_3) $(am__EXEEXT_4)
 @GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
 @GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
 @GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-@USE_LIBDNS_TRUE@am__append_8 = dns.c dns.h
-@USE_LDAP_TRUE@am__append_9 = ldapserver.h ldapserver.c ldap.c w32-ldap-help.h \
+@HAVE_W32_SYSTEM_TRUE@am__append_8 = -lwinhttp -lsecurity
+@USE_LIBDNS_TRUE@am__append_9 = dns.c dns.h
+@USE_LDAP_TRUE@am__append_10 = ldapserver.h ldapserver.c ldap.c w32-ldap-help.h \
 @USE_LDAP_TRUE@                   ldap-wrapper.h ldap-parse-uri.c ldap-parse-uri.h \
 @USE_LDAP_TRUE@                   ldap-misc.c ldap-misc.h \
 @USE_LDAP_TRUE@                   ks-engine-ldap.c $(ldap_url) ldap-wrapper.c
 
-@USE_LDAP_TRUE@am__append_10 = $(ldaplibs) $(LBER_LIBS)
-@USE_LIBDNS_TRUE@am__append_11 = dns.c dns.h
-@USE_LDAP_TRUE@am__append_12 = t-ldap-parse-uri t-ldap-misc
+@USE_LDAP_TRUE@am__append_11 = $(ldaplibs) $(LBER_LIBS)
+@USE_LIBDNS_TRUE@am__append_12 = dns.c dns.h
+@USE_LDAP_TRUE@am__append_13 = t-ldap-parse-uri t-ldap-misc
 subdir = dirmngr
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(dist_pkgdata_DATA) \
 	$(noinst_HEADERS) $(am__DIST_COMMON)
 mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
-CONFIG_CLEAN_FILES = dirmngr.w32-manifest
+CONFIG_CLEAN_FILES = dirmngr.w32-manifest dirmngr_ldap.w32-manifest \
+	dirmngr-client.w32-manifest
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)" \
 	"$(DESTDIR)$(pkgdatadir)"
@@ -219,24 +220,14 @@ am_dirmngr_OBJECTS = dirmngr.$(OBJEXT) server.$(OBJEXT) \
 	ks-engine-kdns.$(OBJEXT) $(am__objects_1) $(am__objects_3)
 dirmngr_OBJECTS = $(am_dirmngr_OBJECTS)
 am__DEPENDENCIES_1 =
-@USE_LDAP_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1)
-@USE_LDAP_TRUE@am__DEPENDENCIES_3 = $(am__DEPENDENCIES_2) \
+am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1)
+@USE_LDAP_TRUE@am__DEPENDENCIES_3 = $(am__DEPENDENCIES_1)
+@USE_LDAP_TRUE@am__DEPENDENCIES_4 = $(am__DEPENDENCIES_3) \
 @USE_LDAP_TRUE@	$(am__DEPENDENCIES_1)
-dirmngr_DEPENDENCIES = $(libcommonpth) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_3)
 dirmngr_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(dirmngr_LDFLAGS) \
 	$(LDFLAGS) -o $@
 am_dirmngr_client_OBJECTS = dirmngr-client.$(OBJEXT)
 dirmngr_client_OBJECTS = $(am_dirmngr_client_OBJECTS)
-dirmngr_client_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
 dirmngr_client_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(dirmngr_client_LDFLAGS) $(LDFLAGS) -o $@
 am__dirmngr_ldap_SOURCES_DIST = dirmngr_ldap.c ldap-misc.c ldap-misc.h \
@@ -247,11 +238,6 @@ am__dirmngr_ldap_SOURCES_DIST = dirmngr_ldap.c ldap-misc.c ldap-misc.h \
 @USE_LDAP_TRUE@	dirmngr_ldap-ldap-misc.$(OBJEXT) \
 @USE_LDAP_TRUE@	$(am__objects_4)
 dirmngr_ldap_OBJECTS = $(am_dirmngr_ldap_OBJECTS)
-@USE_LDAP_TRUE@dirmngr_ldap_DEPENDENCIES = $(libcommon) \
-@USE_LDAP_TRUE@	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-@USE_LDAP_TRUE@	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-@USE_LDAP_TRUE@	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-@USE_LDAP_TRUE@	$(am__DEPENDENCIES_1)
 dirmngr_ldap_LINK = $(CCLD) $(dirmngr_ldap_CFLAGS) $(CFLAGS) \
 	$(dirmngr_ldap_LDFLAGS) $(LDFLAGS) -o $@
 am__t_dns_stuff_SOURCES_DIST = t-support.h t-support.c dns.c dns.h \
@@ -262,12 +248,12 @@ am_t_dns_stuff_OBJECTS = $(am__objects_6) \
 	t_dns_stuff-t-dns-stuff.$(OBJEXT) \
 	t_dns_stuff-dns-stuff.$(OBJEXT)
 t_dns_stuff_OBJECTS = $(am_t_dns_stuff_OBJECTS)
-am__DEPENDENCIES_4 = $(libcommon) $(am__DEPENDENCIES_1) \
+am__DEPENDENCIES_5 = $(libcommon) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
-t_dns_stuff_DEPENDENCIES = $(am__DEPENDENCIES_4) $(am__DEPENDENCIES_1)
+t_dns_stuff_DEPENDENCIES = $(am__DEPENDENCIES_5) $(am__DEPENDENCIES_1)
 t_dns_stuff_LINK = $(CCLD) $(t_dns_stuff_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am__t_http_SOURCES_DIST = t-support.h t-support.c dns.c dns.h t-http.c \
@@ -278,7 +264,7 @@ am_t_http_OBJECTS = $(am__objects_8) t_http-t-http.$(OBJEXT) \
 	t_http-http.$(OBJEXT) t_http-dns-stuff.$(OBJEXT) \
 	t_http-http-common.$(OBJEXT)
 t_http_OBJECTS = $(am_t_http_OBJECTS)
-t_http_DEPENDENCIES = $(am__DEPENDENCIES_4) $(am__DEPENDENCIES_1) \
+t_http_DEPENDENCIES = $(am__DEPENDENCIES_5) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
 t_http_LINK = $(CCLD) $(t_http_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
@@ -292,7 +278,7 @@ am_t_http_basic_OBJECTS = $(am__objects_10) \
 	t_http_basic-http.$(OBJEXT) t_http_basic-dns-stuff.$(OBJEXT) \
 	t_http_basic-http-common.$(OBJEXT)
 t_http_basic_OBJECTS = $(am_t_http_basic_OBJECTS)
-t_http_basic_DEPENDENCIES = $(am__DEPENDENCIES_4) \
+t_http_basic_DEPENDENCIES = $(am__DEPENDENCIES_5) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
@@ -308,7 +294,7 @@ t_ldap_misc_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2)
 t_ldap_misc_LINK = $(CCLD) $(t_ldap_misc_CFLAGS) $(CFLAGS) \
 	$(t_ldap_misc_LDFLAGS) $(LDFLAGS) -o $@
 am__t_ldap_parse_uri_SOURCES_DIST = t-ldap-parse-uri.c \
@@ -329,8 +315,8 @@ am_t_ldap_parse_uri_OBJECTS =  \
 	t_ldap_parse_uri-ldap-misc.$(OBJEXT) $(am__objects_12) \
 	$(am__objects_14)
 t_ldap_parse_uri_OBJECTS = $(am_t_ldap_parse_uri_OBJECTS)
-t_ldap_parse_uri_DEPENDENCIES = $(am__DEPENDENCIES_2) \
-	$(am__DEPENDENCIES_4) $(am__DEPENDENCIES_1) \
+t_ldap_parse_uri_DEPENDENCIES = $(am__DEPENDENCIES_3) \
+	$(am__DEPENDENCIES_5) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
 t_ldap_parse_uri_LINK = $(CCLD) $(t_ldap_parse_uri_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
@@ -494,8 +480,10 @@ am__tty_colors = { \
   fi; \
 }
 am__DIST_COMMON = $(srcdir)/Makefile.in \
-	$(srcdir)/dirmngr.w32-manifest.in $(top_srcdir)/am/cmacros.am \
-	$(top_srcdir)/build-aux/depcomp \
+	$(srcdir)/dirmngr-client.w32-manifest.in \
+	$(srcdir)/dirmngr.w32-manifest.in \
+	$(srcdir)/dirmngr_ldap.w32-manifest.in \
+	$(top_srcdir)/am/cmacros.am $(top_srcdir)/build-aux/depcomp \
 	$(top_srcdir)/build-aux/mkinstalldirs
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
 ACLOCAL = @ACLOCAL@
@@ -588,7 +576,7 @@ MKDIR_P = @MKDIR_P@
 MSGFMT = @MSGFMT@
 MSGFMT_015 = @MSGFMT_015@
 MSGMERGE = @MSGMERGE@
-NETLIBS = @NETLIBS@
+NETLIBS = @NETLIBS@ $(am__append_8)
 NPTH_CFLAGS = @NPTH_CFLAGS@
 NPTH_CONFIG = @NPTH_CONFIG@
 NPTH_LIBS = @NPTH_LIBS@
@@ -684,7 +672,9 @@ top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
 EXTRA_DIST = OAUTHORS ONEWS ChangeLog-2011 tls-ca.pem \
-             dirmngr-w32info.rc dirmngr.w32-manifest.in
+             dirmngr-w32info.rc dirmngr.w32-manifest.in \
+             dirmngr_ldap-w32info.rc dirmngr_ldap.w32-manifest.in \
+             dirmngr-client-w32info.rc dirmngr-client.w32-manifest.in
 
 dist_pkgdata_DATA = sks-keyservers.netCA.pem
 
@@ -710,6 +700,9 @@ libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
+@HAVE_W32_SYSTEM_TRUE@dirmngr_rc_objs = dirmngr-w32info.o
+@HAVE_W32_SYSTEM_TRUE@dirmngr_ldap_rc_objs = dirmngr_ldap-w32info.o
+@HAVE_W32_SYSTEM_TRUE@dirmngr_client_rc_objs = dirmngr-client-w32info.o
 AM_CFLAGS = $(USE_C99_CFLAGS) \
             $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS)	\
             $(GPG_ERROR_CFLAGS) $(NPTH_CFLAGS) $(NTBTLS_CFLAGS)		\
@@ -724,37 +717,40 @@ dirmngr_SOURCES = dirmngr.c dirmngr.h server.c crlcache.c crlfetch.c \
 	ocsp.h validate.c validate.h dns-stuff.c dns-stuff.h http.c \
 	http.h http-common.c http-common.h http-ntbtls.c ks-action.c \
 	ks-action.h ks-engine.h ks-engine-hkp.c ks-engine-http.c \
-	ks-engine-finger.c ks-engine-kdns.c $(am__append_8) \
-	$(am__append_9)
+	ks-engine-finger.c ks-engine-kdns.c $(am__append_9) \
+	$(am__append_10)
 @USE_LDAP_FALSE@ldaplibs = 
 @USE_LDAP_TRUE@ldaplibs = $(LDAPLIBS)
-@HAVE_W32_SYSTEM_FALSE@dirmngr_robjs = 
-@HAVE_W32_SYSTEM_TRUE@dirmngr_robjs = $(resource_objs) dirmngr-w32info.o
 dirmngr_LDADD = $(libcommonpth) $(DNSLIBS) $(LIBASSUAN_LIBS) \
 	$(KSBA_LIBS) $(NPTH_LIBS) $(NTBTLS_LIBS) $(LIBGNUTLS_LIBS) \
 	$(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV) \
-	$(NETLIBS) $(dirmngr_robj) $(am__append_10)
+	$(NETLIBS) $(dirmngr_rc_objs) $(am__append_11)
 dirmngr_LDFLAGS = $(extra_bin_ldflags)
+dirmngr_DEPENDENCIES = $(dirmngr_rc_objs)
 @USE_LDAP_TRUE@dirmngr_ldap_SOURCES = dirmngr_ldap.c ldap-misc.c ldap-misc.h $(ldap_url)
 @USE_LDAP_TRUE@dirmngr_ldap_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
 @USE_LDAP_TRUE@dirmngr_ldap_LDFLAGS = 
 @USE_LDAP_TRUE@dirmngr_ldap_LDADD = $(libcommon) \
 @USE_LDAP_TRUE@		     $(GPG_ERROR_LIBS) $(LIBGCRYPT_LIBS) $(LDAPLIBS) \
-@USE_LDAP_TRUE@		     $(LBER_LIBS) $(LIBINTL) $(LIBICONV) $(NETLIBS)
+@USE_LDAP_TRUE@		     $(LBER_LIBS) $(LIBINTL) $(LIBICONV) $(NETLIBS)  \
+@USE_LDAP_TRUE@                     $(dirmngr_ldap_rc_objs)
 
+@USE_LDAP_TRUE@dirmngr_ldap_DEPENDENCIES = $(dirmngr_ldap_rc_objs)
 dirmngr_client_SOURCES = dirmngr-client.c
 dirmngr_client_LDADD = $(libcommon) \
                        $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) \
-                       $(LIBGCRYPT_LIBS) $(NETLIBS) $(LIBINTL) $(LIBICONV)
+                       $(LIBGCRYPT_LIBS) $(NETLIBS) $(LIBINTL) $(LIBICONV) \
+                       $(dirmngr_client_rc_objs)
 
-dirmngr_client_LDFLAGS = $(extra_bin_ldflags)
-t_common_src = t-support.h t-support.c $(am__append_11)
+dirmngr_client_LDFLAGS = 
+dirmngr_client_DEPENDENCIES = $(dirmngr_client_rc_objs)
+t_common_src = t-support.h t-support.c $(am__append_12)
 t_common_ldadd = $(libcommon) $(LIBASSUAN_LIBS) \
                  $(NTBTLS_LIBS) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
                  $(LIBGNUTLS_LIBS) \
                  $(NETLIBS) $(DNSLIBS) $(LIBINTL) $(LIBICONV)
 
-module_tests = t-http-basic $(am__append_12)
+module_tests = t-http-basic $(am__append_13)
 @MAINTAINER_MODE_FALSE@module_net_tests = 
 
 # Test which need a network connections are only used in maintainer mode.
@@ -847,6 +843,10 @@ $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
 dirmngr.w32-manifest: $(top_builddir)/config.status $(srcdir)/dirmngr.w32-manifest.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+dirmngr_ldap.w32-manifest: $(top_builddir)/config.status $(srcdir)/dirmngr_ldap.w32-manifest.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+dirmngr-client.w32-manifest: $(top_builddir)/config.status $(srcdir)/dirmngr-client.w32-manifest.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
@@ -1942,7 +1942,10 @@ uninstall-am: uninstall-binPROGRAMS uninstall-dist_pkgdataDATA \
 
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
-@HAVE_W32_SYSTEM_TRUE@dirmngr-w32info.o : dirmngr.w32-manifest
+
+@HAVE_W32_SYSTEM_TRUE@dirmngr-w32info.o        : dirmngr.w32-manifest        ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@dirmngr_ldap-w32info.o   : dirmngr_ldap.w32-manifest   ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@dirmngr-client-w32info.o : dirmngr-client.w32-manifest ../common/w32info-rc.h
 
 $(PROGRAMS) : $(libcommon) $(libcommonpth)
 

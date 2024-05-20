@@ -36,6 +36,7 @@
 #include "../common/sysutils.h" /* (gnupg_fd_t) */
 #include "../common/asshelp.h"  /* (assuan_context_t) */
 #include "../common/i18n.h"
+#include "../common/name-value.h"
 #include "dirmngr-status.h"
 #include "http.h"     /* (parsed_uri_t) */
 
@@ -131,6 +132,11 @@ struct
      OID per string.  */
   strlist_t ignored_cert_extensions;
 
+  /* A list of CRL extension OIDs which are ignored so that one can
+   * claim that a critical extension has been handled.  One OID per
+   * string.  */
+  strlist_t ignored_crl_extensions;
+
   /* Allow expired certificates in the cache.  */
   int debug_cache_expired_certs;
 
@@ -153,6 +159,9 @@ struct
                                        current after nextUpdate. */
 
   strlist_t keyserver;              /* List of default keyservers.  */
+
+  /* Compatibility flags (COMPAT_FLAG_xxxx).  */
+  unsigned int compat_flags;
 } opt;
 
 
@@ -178,6 +187,10 @@ struct
 #define DBG_NETWORK (opt.debug & DBG_NETWORK_VALUE)
 #define DBG_LOOKUP  (opt.debug & DBG_LOOKUP_VALUE)
 #define DBG_EXTPROG (opt.debug & DBG_EXTPROG_VALUE)
+
+/* Compatibility flags */
+/* None so far.  */
+
 
 /* A simple list of certificate references.  FIXME: Better use
    certlist_t also for references (Store NULL at .cert) */
@@ -218,9 +231,12 @@ struct server_control_s
   int audit_events;  /* Send audit events to client.  */
   char *http_proxy;  /* The used http_proxy or NULL.  */
 
+  nvc_t rootdse;     /* Container wit the rootDSE properties.  */
+
   unsigned int timeout; /* Timeout for connect calls in ms.  */
 
   unsigned int http_no_crl:1;  /* Do not check CRLs for https.  */
+  unsigned int rootdse_tried:1;/* Already tried to get the rootDSE.  */
 };
 
 
@@ -239,6 +255,8 @@ void ks_hkp_reload (void);
 
 
 /*-- server.c --*/
+void release_uri_item_list (uri_item_t list);
+
 ldap_server_t get_ldapservers_from_ctrl (ctrl_t ctrl);
 ksba_cert_t get_cert_local (ctrl_t ctrl, const char *issuer);
 ksba_cert_t get_issuing_cert_local (ctrl_t ctrl, const char *issuer);

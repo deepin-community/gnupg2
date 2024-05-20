@@ -92,17 +92,16 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -322,11 +321,11 @@ EXTRA_DIST = intl.m4 intldir.m4 glibc2.m4 lock.m4 visibility.m4 \
 	intmax.m4 longdouble.m4 printf-posix.m4 signed.m4 size_max.m4 \
 	wchar_t.m4 wint_t.m4 xsize.m4 codeset.m4 gettext.m4 glibc21.m4 \
 	iconv.m4 intdiv0.m4 inttypes.m4 inttypes_h.m4 inttypes-pri.m4 \
-	isc-posix.m4 lcmessage.m4 lib-ld.m4 lib-link.m4 lib-prefix.m4 \
-	progtest.m4 stdint_h.m4 uintmax_t.m4 ldap.m4 libcurl.m4 \
-	libusb.m4 tar-ustar.m4 readline.m4 pkg.m4 gnupg-pth.m4 \
-	gpg-error.m4 libgcrypt.m4 libassuan.m4 ksba.m4 ntbtls.m4 \
-	autobuild.m4 sys_socket_h.m4 socklen.m4 ChangeLog-2011
+	lcmessage.m4 lib-ld.m4 lib-link.m4 lib-prefix.m4 progtest.m4 \
+	stdint_h.m4 uintmax_t.m4 ldap.m4 libcurl.m4 libusb.m4 \
+	tar-ustar.m4 readline.m4 pkg.m4 gnupg-pth.m4 gpg-error.m4 \
+	libgcrypt.m4 libassuan.m4 ksba.m4 ntbtls.m4 autobuild.m4 \
+	sys_socket_h.m4 socklen.m4 ChangeLog-2011
 all: all-am
 
 .SUFFIXES:
