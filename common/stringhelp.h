@@ -40,6 +40,7 @@
 char *has_leading_keyword (const char *string, const char *keyword);
 
 const char *memistr (const void *buf, size_t buflen, const char *sub);
+const char *gnupg_memstr (const void *buffer, size_t buflen, const char *sub);
 char *mem2str( char *, const void *, size_t);
 char *trim_spaces( char *string );
 char *ascii_trim_spaces (char *string);
@@ -169,7 +170,10 @@ int compare_version_strings (const char *my_version, const char *req_version);
 /* Format a string so that it fits within about TARGET_COLS columns.  */
 char *format_text (const char *text, int target_cols, int max_cols);
 
-/* Substitute environmen variabales in STRING.  */
+/* Substitute variables in STRING.  */
+char *substitute_vars (const char *string,
+                       const char *(*getval)(void *cookie, const char *name),
+                       void *cookie);
 char *substitute_envvars (const char *string);
 
 

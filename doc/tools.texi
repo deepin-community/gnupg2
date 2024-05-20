@@ -1846,6 +1846,8 @@ Put given files and directories into a vanilla ``ustar'' archive.
 @item --extract
 @opindex extract
 Extract all files from a vanilla ``ustar'' archive.
+If no file name is given (or it is "-") the archive is taken from
+stdin.
 
 @item --encrypt
 @itemx -e
@@ -1857,7 +1859,8 @@ be decrypted via a secret key or a passphrase.
 @item --decrypt
 @itemx -d
 @opindex decrypt
-Extract all files from an encrypted archive.
+Extract all files from an encrypted archive.   If no file name is given
+(or it is "-") the archive is taken from stdin.
 
 @item --sign
 @itemx -s
@@ -1868,7 +1871,8 @@ encrypted archive.
 @item --list-archive
 @itemx -t
 @opindex list-archive
-List the contents of the specified archive.
+List the contents of the specified archive.  If no file name is given
+(or it is "-") the archive is taken from stdin.
 
 @item --symmetric
 @itemx -c
@@ -1983,6 +1987,12 @@ Use the last component of @var{file} as the output directory.  The
 default is to take the directory name from the input filename.  If no
 input filename is known a directory named @file{GPGARCH} is used.
 This option is deprecated in favor of option @option{--directory}.
+
+@item --no-compress
+@opindex no-compress
+This option tells gpg to disable compression (i.e. using option -z0).
+It is useful for archiving only large files which are are already
+compressed (e.g. a set of videos).
 
 @item --gpg @var{gpgcmd}
 @opindex gpg

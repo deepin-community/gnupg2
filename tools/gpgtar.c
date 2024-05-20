@@ -75,6 +75,7 @@ enum cmd_and_opt_values
     oSetFilename,
     oNull,
     oUtf8Strings,
+    oNoCompress,
 
     oBatch,
     oAnswerYes,
@@ -118,6 +119,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oSetFilename, "set-filename", "@"),
   ARGPARSE_s_n (oOpenPGP, "openpgp", "@"),
   ARGPARSE_s_n (oCMS, "cms", "@"),
+  ARGPARSE_s_n (oNoCompress,   "no-compress", "@"),
 
   ARGPARSE_s_n (oBatch, "batch", "@"),
   ARGPARSE_s_n (oAnswerYes, "yes", "@"),
@@ -344,6 +346,7 @@ parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
         case oFilesFrom: files_from = pargs->r.ret_str; break;
         case oNull: null_names = 1; break;
         case oUtf8Strings: opt.utf8strings = 1; break;
+        case oNoCompress:  opt.no_compress = 1; break;
 
 	case aList:
         case aDecrypt:
@@ -453,7 +456,7 @@ main (int argc, char **argv)
 
   gnupg_reopen_std (GPGTAR_NAME);
   set_strusage (my_strusage);
-  log_set_prefix (GPGTAR_NAME, GPGRT_LOG_WITH_PREFIX);
+  log_set_prefix (GPGTAR_NAME, GPGRT_LOG_WITH_PREFIX|GPGRT_LOG_NO_REGISTRY);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init();
@@ -485,6 +488,36 @@ main (int argc, char **argv)
           log_info (_("NOTE: '%s' is not considered an option\n"), argv[i]);
     }
 
+  /* Set status stream for our own use of --status-fd.  The original
+   * status fd is passed verbatim to gpg.  */
+  if (opt.status_fd != -1)
+    {
+      int fd = translate_sys2libc_fd_int (opt.status_fd, 1);
+
+      if (!gnupg_fd_valid (fd))
+        log_fatal ("status-fd is invalid: %s\n", strerror (errno));
+
+      if (fd == 1)
+        {
+          opt.status_stream = es_stdout;
+          if (!skip_crypto)
+            log_fatal ("using stdout for the status-fd is not possible\n");
+        }
+      else if (fd == 2)
+        opt.status_stream = es_stderr;
+      else
+        {
+          opt.status_stream = es_fdopen (fd, "w");
+          if (opt.status_stream)
+            es_setvbuf (opt.status_stream, NULL, _IOLBF, 0);
+        }
+      if (!opt.status_stream)
+        {
+          log_fatal ("can't open fd %d for status output: %s\n",
+                     fd, strerror (errno));
+        }
+    }
+
   if (! opt.gpg_program)
     opt.gpg_program = gnupg_module_name (GNUPG_MODULE_NAME_GPG);
 
@@ -493,17 +526,27 @@ main (int argc, char **argv)
 
   switch (cmd)
     {
+    case aDecrypt:
     case aList:
       if (argc > 1)
         usage (1);
-      fname = argc ? *argv : NULL;
+      fname = (argc && strcmp (*argv, "-"))? *argv : NULL;
       if (opt.filename)
         log_info ("note: ignoring option --set-filename\n");
       if (files_from)
         log_info ("note: ignoring option --files-from\n");
-      err = gpgtar_list (fname, !skip_crypto);
-      if (err && log_get_errorcount (0) == 0)
-        log_error ("listing archive failed: %s\n", gpg_strerror (err));
+      if (cmd == aDecrypt)
+        {
+          err = gpgtar_extract (fname, !skip_crypto);
+          if (err && !log_get_errorcount (0))
+            log_error ("extracting archive failed: %s\n", gpg_strerror (err));
+        }
+      else
+        {
+          err = gpgtar_list (fname, !skip_crypto);
+          if (err && !log_get_errorcount (0))
+            log_error ("listing archive failed: %s\n", gpg_strerror (err));
+        }
       break;
 
     case aEncrypt:
@@ -524,22 +567,19 @@ main (int argc, char **argv)
         log_error ("creating archive failed: %s\n", gpg_strerror (err));
       break;
 
-    case aDecrypt:
-      if (argc != 1)
-        usage (1);
-      if (opt.outfile)
-        log_info ("note: ignoring option --output\n");
-      if (files_from)
-        log_info ("note: ignoring option --files-from\n");
-      fname = argc ? *argv : NULL;
-      err = gpgtar_extract (fname, !skip_crypto);
-      if (err && log_get_errorcount (0) == 0)
-        log_error ("extracting archive failed: %s\n", gpg_strerror (err));
-      break;
-
     default:
       log_error (_("invalid command (there is no implicit command)\n"));
+      err = 0;
       break;
+    }
+
+  if (opt.status_stream)
+    {
+      if (err || log_get_errorcount (0))
+        es_fprintf (opt.status_stream, "[GNUPG:] FAILURE - %u\n",
+                    err? err : gpg_error (GPG_ERR_GENERAL));
+      else
+        es_fprintf (opt.status_stream, "[GNUPG:] SUCCESS\n");
     }
 
   return log_get_errorcount (0)? 1:0;

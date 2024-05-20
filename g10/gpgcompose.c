@@ -2169,6 +2169,42 @@ static struct option sk_esk_options[] = {
     "  --literal --value foo | " GPG_NAME " --list-packets" }
 };
 
+
+/* Old version of encrypt_seskey copied from encrypt.c.  */
+static void
+encrypt_seskey (DEK *dek, DEK **seskey, byte *enckey)
+{
+  gcry_cipher_hd_t hd;
+  byte buf[33];
+
+  log_assert ( dek->keylen <= 32 );
+  if (!*seskey)
+    {
+      *seskey=xmalloc_clear(sizeof(DEK));
+      (*seskey)->algo=dek->algo;
+      make_session_key(*seskey);
+      /*log_hexdump( "thekey", c->key, c->keylen );*/
+    }
+
+  /* The encrypted session key is prefixed with a one-octet algorithm id.  */
+  buf[0] = (*seskey)->algo;
+  memcpy( buf + 1, (*seskey)->key, (*seskey)->keylen );
+
+  /* We only pass already checked values to the following function,
+     thus we consider any failure as fatal.  */
+  if (openpgp_cipher_open (&hd, dek->algo, GCRY_CIPHER_MODE_CFB, 1))
+    BUG ();
+  if (gcry_cipher_setkey (hd, dek->key, dek->keylen))
+    BUG ();
+  gcry_cipher_setiv (hd, NULL, 0);
+  gcry_cipher_encrypt (hd, buf, (*seskey)->keylen + 1, NULL, 0);
+  gcry_cipher_close (hd);
+
+  memcpy( enckey, buf, (*seskey)->keylen + 1 );
+  wipememory( buf, sizeof buf ); /* burn key */
+}
+
+
 static int
 sk_esk (const char *option, int argc, char *argv[], void *cookie)
 {
@@ -2833,8 +2869,7 @@ literal (const char *option, int argc, char *argv[], void *cookie)
           if (data->file)
             {
               iobuf_t in;
-              int overflow;
-              off_t off;
+              uint64_t off;
 
               in = iobuf_open (data->filename);
               if (! in)
@@ -2845,10 +2880,10 @@ literal (const char *option, int argc, char *argv[], void *cookie)
                   break;
                 }
 
-              off = iobuf_get_filelength (in, &overflow);
+              off = iobuf_get_filelength (in);
               iobuf_close (in);
 
-              if (overflow || off == 0)
+              if (off == 0)
                 /* Length is unknown or there was an error
                    (unfortunately, iobuf_get_filelength doesn't
                    distinguish between 0 length files and an error!).

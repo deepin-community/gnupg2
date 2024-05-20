@@ -7,3 +7,14 @@ build-maintainer/
 doc/gnupg.info
 doc/gnupg.info-1
 doc/gnupg.info-2
+doc/gnupg.info-3
+doc/*.pdf
+doc/*.png
+ChangeLog
+regexp/_unicode_mapping.c
+regexp/UnicodeData.txt
+common/audit-events.h
+common/status-codes.h
+ChangeLog-2011
+*/ChangeLog-2011
+tests/*/ChangeLog-2011

@@ -1,0 +1,39 @@
+From: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
+Date: Thu, 16 May 2024 17:02:06 -0400
+Subject: Build regexp against debian's unicode-data package
+
+It should be simple enough to auto-generate the regexp table from
+stock UnicodeData.txt.  Upstream doesn't seem inclined to keep it
+up-to-date, and using the stock debian package that ships it instead
+of upstream's stale version will take care of new case sensitivity
+issues automatically.
+
+This also reduces our dependence on material in the upstream tarball
+that differs from what is in upstream revision control.
+
+This addresses one part of #1071202.
+---
+ regexp/Makefile.am | 8 +++-----
+ 1 file changed, 3 insertions(+), 5 deletions(-)
+
+diff --git a/regexp/Makefile.am b/regexp/Makefile.am
+index 307aacf..035858e 100644
+--- a/regexp/Makefile.am
++++ b/regexp/Makefile.am
+@@ -27,13 +27,11 @@ AM_CFLAGS =
+ libregexp_a_SOURCES = jimregexp.h utf8.h jimregexp.c utf8.c
+ libregexp_a_CFLAGS = $(AM_CFLAGS)
+ 
+-EXTRA_DIST = parse-unidata.awk UnicodeData.txt _unicode_mapping.c
++EXTRA_DIST = parse-unidata.awk _unicode_mapping.c
+ 
+-if MAINTAINER_MODE
+ BUILT_SOURCES = _unicode_mapping.c
+ MAINTAINERCLEANFILES = _unicode_mapping.c
+ 
+-_unicode_mapping.c: parse-unidata.awk UnicodeData.txt
++_unicode_mapping.c: parse-unidata.awk
+ 	$(AWK) $(AWK_HEX_NUMBER_OPTION) -f $(srcdir)/parse-unidata.awk \
+-	       $(srcdir)/UnicodeData.txt >$@
+-endif
++	       /usr/share/unicode/UnicodeData.txt >$@

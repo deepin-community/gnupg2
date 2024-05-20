@@ -415,8 +415,8 @@ inq_certificate (void *opaque, const char *line)
       int err;
       ksba_cert_t cert;
 
-
-      err = gpgsm_find_cert (parm->ctrl, line, ski, &cert, 1);
+      err = gpgsm_find_cert (parm->ctrl, line, ski, &cert,
+                             FIND_CERT_ALLOW_AMBIG|FIND_CERT_WITH_EPHEM);
       if (err)
         {
           log_error ("certificate not found: %s\n", gpg_strerror (err));
@@ -605,7 +605,8 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
                 {
                   /* Note the no_dirmngr flag: This avoids checking
                      this certificate over and over again. */
-                  rc = gpgsm_validate_chain (ctrl, rspcert, "", NULL, 0, NULL,
+                  rc = gpgsm_validate_chain (ctrl, rspcert, GNUPG_ISOTIME_NONE,
+                                             NULL, 0, NULL,
                                              VALIDATE_FLAG_NO_DIRMNGR, NULL);
                   if (rc)
                     {
@@ -940,21 +941,23 @@ static gpg_error_t
 run_command_inq_cb (void *opaque, const char *line)
 {
   struct run_command_parm_s *parm = opaque;
+  gpg_error_t err;
   const char *s;
   int rc = 0;
+  ksba_cert_t cert = NULL;
+  ksba_sexp_t ski = NULL;
+  const unsigned char *der;
+  size_t derlen, n;
 
   if ((s = has_leading_keyword (line, "SENDCERT")))
-    { /* send the given certificate */
-      int err;
-      ksba_cert_t cert;
-      const unsigned char *der;
-      size_t derlen;
-
+    {
+      /* Send the given certificate.  */
       line = s;
       if (!*line)
         return gpg_error (GPG_ERR_ASS_PARAMETER);
 
-      err = gpgsm_find_cert (parm->ctrl, line, NULL, &cert, 1);
+      err = gpgsm_find_cert (parm->ctrl, line, NULL, &cert,
+                             FIND_CERT_ALLOW_AMBIG);
       if (err)
         {
           log_error ("certificate not found: %s\n", gpg_strerror (err));
@@ -967,11 +970,36 @@ run_command_inq_cb (void *opaque, const char *line)
             rc = gpg_error (GPG_ERR_INV_CERT_OBJ);
           else
             rc = assuan_send_data (parm->ctx, der, derlen);
-          ksba_cert_release (cert);
+        }
+    }
+  else if ((s = has_leading_keyword (line, "SENDCERT_SKI")))
+    {
+      /* Send a certificate where a sourceKeyIdentifier is included. */
+      line = s;
+      ski = make_simple_sexp_from_hexstr (line, &n);
+      line += n;
+      while (*line == ' ')
+        line++;
+
+      err = gpgsm_find_cert (parm->ctrl, line, ski, &cert,
+                             FIND_CERT_ALLOW_AMBIG|FIND_CERT_WITH_EPHEM);
+      if (err)
+        {
+          log_error ("certificate not found: %s\n", gpg_strerror (err));
+          rc = gpg_error (GPG_ERR_NOT_FOUND);
+        }
+      else
+        {
+          der = ksba_cert_get_image (cert, &derlen);
+          if (!der)
+            rc = gpg_error (GPG_ERR_INV_CERT_OBJ);
+          else
+            rc = assuan_send_data (parm->ctx, der, derlen);
         }
     }
   else if ((s = has_leading_keyword (line, "PRINTINFO")))
-    { /* Simply show the message given in the argument. */
+    {
+      /* Simply show the message given in the argument. */
       line = s;
       log_info ("dirmngr: %s\n", line);
     }
@@ -981,7 +1009,6 @@ run_command_inq_cb (void *opaque, const char *line)
          root certificate.  */
       char fpr[41];
       struct rootca_flags_s rootca_flags;
-      int n;
 
       line = s;
 
@@ -1005,6 +1032,8 @@ run_command_inq_cb (void *opaque, const char *line)
       rc = gpg_error (GPG_ERR_ASS_UNKNOWN_INQUIRE);
     }
 
+  ksba_cert_release (cert);
+  xfree (ski);
   return rc;
 }
 

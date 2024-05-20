@@ -1,7 +1,6 @@
-This is gnupg.info, produced by makeinfo version 6.5 from gnupg.texi.
+This is gnupg.info, produced by makeinfo version 6.7 from gnupg.texi.
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.40-beta3,
-October 2022).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -27,8 +26,7 @@ File: gnupg.info,  Node: Top,  Next: Installation,  Up: (dir)
 Using the GNU Privacy Guard
 ***************************
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.40-beta3,
-October 2022).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -396,14 +394,14 @@ the two leading dashes, in the configuration file.
 
 '--no-user-trustlist'
      Entirely ignore the user trust list and consider only the global
-     trustlist ('/etc/gnupg/trustlist.txt').  This implies the *note
-     option --no-allow-mark-trusted::.
+     trustlist ('/usr/local/etc/gnupg/trustlist.txt').  This implies the
+     *note option --no-allow-mark-trusted::.
 
 '--sys-trustlist-name FILE'
      Changes the default name for the global trustlist from
      "trustlist.txt" to FILE.  If FILE does not contain any slashes and
      does not start with "~/" it is searched in the system configuration
-     directory ('/etc/gnupg').
+     directory ('/usr/local/etc/gnupg').
 
 '--allow-preset-passphrase'
      This option allows the use of 'gpg-preset-passphrase' to seed the
@@ -487,10 +485,10 @@ the two leading dashes, in the configuration file.
      entering a new passphrase matching one of these pattern a warning
      will be displayed.  If FILE does not contain any slashes and does
      not start with "~/" it is searched in the system configuration
-     directory ('/etc/gnupg').  The default is not to use any pattern
-     file.  The second version of this option is only used when creating
-     a new symmetric key to allow the use of different patterns for such
-     passphrases.
+     directory ('/usr/local/etc/gnupg').  The default is not to use any
+     pattern file.  The second version of this option is only used when
+     creating a new symmetric key to allow the use of different patterns
+     for such passphrases.
 
      Security note: It is known that checking a passphrase against a
      list of pattern or even against a complete dictionary is not very
@@ -611,17 +609,10 @@ the two leading dashes, in the configuration file.
 
 '--enable-extended-key-format'
 '--disable-extended-key-format'
-     Since version 2.2.22 keys are created in the extended private key
-     format by default.  Changing the passphrase of a key will also
-     convert the key to that new format.  This key format is supported
-     since GnuPG version 2.1.12 and thus there should be no need to
-     disable it.  Anyway, the disable option still allows to revert to
-     the old behavior for new keys; be aware that keys are never
-     migrated back to the old format.  If the enable option has been
-     used the disable option won't have an effect.  The advantage of the
-     extended private key format is that it is text based and can carry
-     additional meta data.  In extended key format the OCB mode is used
-     for key protection.
+     These options are obsolete and have no effect.  The extended key
+     format is used for years now and has been supported since 2.1.12.
+     Existing keys in the old format are migrated to the new format as
+     soon as they are touched.
 
 '--enable-ssh-support'
 '--enable-putty-support'
@@ -766,10 +757,10 @@ agent.  By default they may all be found in the current home directory
      changed inadvertently.
 
      As a special feature a line 'include-default' will include a global
-     list of trusted certificates (e.g.  '/etc/gnupg/trustlist.txt').
-     This global list is also used if the local list is not available;
-     the *note option --no-user-trustlist:: enforces the use of only
-     this global list.
+     list of trusted certificates (e.g.
+     '/usr/local/etc/gnupg/trustlist.txt').  This global list is also
+     used if the local list is not available; the *note option
+     --no-user-trustlist:: enforces the use of only this global list.
 
      It is possible to add further flags after the 'S' for use by the
      caller:
@@ -785,6 +776,19 @@ agent.  By default they may all be found in the current home directory
           If validation of a certificate finally issued by a CA with
           this flag set fails, try again using the chain validation
           model.
+
+     'qual'
+          The CA is allowed to issue certificates for qualified
+          signatures.  This flag has an effect only if used in the
+          global list.  This is now the preferred way to mark such CA;
+          the old way of having a separate file 'qualified.txt' is still
+          supported.
+
+     'de-vs'
+          The CA is part of an approved PKI for the German
+          classification level VS-NfD. It is only valid in the global
+          trustlist.  As of now this is used only for documentation
+          purpose.
 
 'sshcontrol'
      This file is used when support for the secure shell agent protocol
@@ -824,9 +828,10 @@ agent.  By default they may all be found in the current home directory
      directory and take great care to keep this backup closed away.
 
    Note that on larger installations, it is useful to put predefined
-files into the directory '/etc/skel/.gnupg' so that newly created users
-start up with a working configuration.  For existing users the a small
-helper script is provided to create these files (*note addgnupghome::).
+files into the directory '/usr/local/etc/skel/.gnupg' so that newly
+created users start up with a working configuration.  For existing users
+the a small helper script is provided to create these files (*note
+addgnupghome::).
 
 
 File: gnupg.info,  Node: Agent Signals,  Next: Agent Examples,  Prev: Agent Configuration,  Up: Invoking GPG-AGENT
@@ -1637,6 +1642,13 @@ off the two leading dashes.
      Append all logging output to FILE.  This is very helpful in seeing
      what the agent actually does.  Use 'socket://' to log to socket.
 
+'--compatibility-flags FLAGS'
+     Set compatibility flags to work around certain problems or to
+     emulate bugs.  The FLAGS are given as a comma separated list of
+     flag names and are OR-ed together.  The special flag "none" clears
+     the list and allows to start over with an empty list.  To get a
+     list of available flags the sole word "help" can be used.
+
 '--debug-level LEVEL'
      Select the debug level for investigating problems.  LEVEL may be a
      numeric value or by a keyword:
@@ -1764,8 +1776,8 @@ off the two leading dashes.
      These are the same as the '--keyserver-options' of 'gpg', but apply
      only to this particular keyserver.
 
-     Most keyservers synchronize with each other, so there is generally
-     no need to send keys to more than one server.  Somes keyservers use
+     Some keyservers synchronize with each other, so there is not always
+     a need to send keys to more than one server.  Some keyservers use
      round robin DNS to give a different keyserver each time you use it.
 
      If exactly two keyservers are configured and only one is a Tor
@@ -1774,7 +1786,8 @@ off the two leading dashes.
      a running Tor is done for each new connection.
 
      If no keyserver is explicitly configured, dirmngr will use the
-     built-in default of 'https://keyserver.ubuntu.com'.
+     built-in default of 'https://keyserver.ubuntu.com'.  To avoid the
+     use of a default keyserver the value 'none' can be used.
 
      Windows users with a keyserver running on their Active Directory
      may use the short form 'ldap:///' for NAME to access this
@@ -1841,7 +1854,9 @@ off the two leading dashes.
 
 '--honor-http-proxy'
      If the environment variable 'http_proxy' has been set, use its
-     value to access HTTP servers.
+     value to access HTTP servers.  If on Windows the option is used but
+     the environment variable is not set, the proxy settings are taken
+     from the system.
 
 '--http-proxy [http://]HOST[:PORT]'
      Use HOST and PORT to access HTTP servers.  The use of this option
@@ -1991,6 +2006,14 @@ off the two leading dashes.
      rejected due to an unknown critical extension.  Use this option
      with care because extensions are usually flagged as critical for a
      reason.
+
+'--ignore-crl-extension OID'
+     Add OID to the list of ignored CRL extensions.  The OID is expected
+     to be in dotted decimal form.  Critical flagged CRL extensions
+     matching one of the OIDs in the list are treated as if they are
+     actually handled and thus the certificate won't be rejected due to
+     an unknown critical extension.  Use this option with care because
+     extensions are usually flagged as critical for a reason.
 
 '--ignore-cert FPR|FILE'
      Entirely ignore certificates with the fingerprint FPR.  As an
@@ -2840,12 +2863,13 @@ File: gnupg.info,  Node: Operational GPG Commands,  Next: OpenPGP Key Management
      STDIN. With the second form (or a deprecated "*" for ALGO) digests
      for all available algorithms are printed.
 
-'--gen-random 0|1|2 COUNT'
+'--gen-random 0|1|2|16|30 COUNT'
      Emit COUNT random bytes of the given quality level 0, 1 or 2.  If
      COUNT is not given or zero, an endless sequence of random bytes
      will be emitted.  If used with '--armor' the output will be base64
-     encoded.  PLEASE, don't use this command unless you know what you
-     are doing; it may remove precious entropy from the system!
+     encoded.  The special level 16 uses a quality level of 1 and
+     outputs and endless stream of hex-encoded octets.  The special
+     level 30 outputs random as 30 zBase-32 characters.
 
 '--gen-prime MODE BITS'
      Use the source, Luke :-).  The output format is subject to change
@@ -3033,10 +3057,11 @@ This section explains the main commands for key management.
      tsign
           Make a trust signature.  This is a signature that combines the
           notions of certification (like a regular signature), and trust
-          (like the "trust" command).  It is generally only useful in
-          distinct communities or groups.  For more information please
-          read the sections "Trust Signature" and "Regular Expression"
-          in RFC-4880.
+          (like the "trust" command).  It is generally useful in
+          distinct communities or groups to implement the concept of a
+          Trusted Introducer.  For more information please read the
+          sections "Trust Signature" and "Regular Expression" in
+          RFC-4880.
 
      Note that "l" (for local / non-exportable), "nr" (for
      non-revocable, and "t" (for trust) may be freely mixed and prefixed
@@ -3126,7 +3151,9 @@ This section explains the main commands for key management.
           'gpg --version' to get a list of available algorithms.  Note
           that while you can change the preferences on an attribute user
           ID (aka "photo ID"), GnuPG does not select keys via attribute
-          user IDs so these preferences will not be used by GnuPG.
+          user IDs so these preferences will not be used by GnuPG. Note
+          that an unattended version of this command is available as
+          '--quick-update-pref'.
 
           When setting preferences, you should list the algorithms in
           the order which you'd like to see them used by someone else
@@ -3313,6 +3340,15 @@ This section explains the main commands for key management.
      user ID which shall be flagged as the primary user ID. The primary
      user ID flag is removed from all other user ids and the timestamp
      of all affected self-signatures is set one second ahead.
+
+'--quick-update-pref USER-ID'
+     This command updates the preference list of the key to the current
+     default value (either built-in or set via
+     '--default-preference-list').  This is the unattended version of of
+     using "setpref" in the '--key-edit' menu without giving a list.
+     Note that you can show the preferences in a key listing by using
+     '--list-options show-pref' or '--list-options show-pref-verbose'.
+     You should also re-distribute updated keys to your peers.
 
 '--change-passphrase USER-ID'
 '--passwd USER-ID'
@@ -3688,14 +3724,26 @@ usually found in the option file.
 '-z N'
 '--compress-level N'
 '--bzip2-compress-level N'
+'--no-compress'
      Set compression level to N for the ZIP and ZLIB compression
      algorithms.  The default is to use the default compression level of
      zlib (normally 6).  '--bzip2-compress-level' sets the compression
      level for the BZIP2 compression algorithm (defaulting to 6 as
      well).  This is a different option from '--compress-level' since
      BZIP2 uses a significant amount of memory for each additional
-     compression level.  '-z' sets both.  A value of 0 for N disables
-     compression.
+     compression level.
+
+     Option '-z' sets both.  A value of 0 for N disables compression.  A
+     value of -1 forces compression using the default level.  Option
+     '--no-compress' is identical to '-z0'.
+
+     Except for the '--store' command compression is always used unless
+     'gpg' detects that the input is already compressed.  To inhibit the
+     use of compression use '-z0' or '--no-compress'; to force
+     compression use '-z-1' or option 'z' with another compression level
+     than the default as indicated by -1.  Note that this overriding of
+     the default deection works only with 'z' and not with the long
+     variant of this option.
 
 '--bzip2-decompress-lowmem'
      Use a different decompression method for BZIP2 compressed files.
@@ -3763,7 +3811,21 @@ usually found in the option file.
      (or one of them) online but still want to be able to check the
      validity of a given recipient's or signator's key.  If the given
      key is not locally available but an LDAP keyserver is configured
-     the missing key is imported from that server.
+     the missing key is imported from that server.  The value "none" is
+     explicitly allowed to distinguish between the use of any
+     trusted-key option and no use of this option at all (e.g.  due to
+     the '--no-options' option).
+
+'--add-desig-revoker [sensitive:]FINGERPRINT'
+     Add the key specified by FINGERPRINT as a designated revoker to
+     newly created keys.  If the fingerprint is prefixed with the
+     keyword "sensitive:" that info is normally not exported wit the
+     key.  This option may be given several time to add more than one
+     designated revoker.  If the keyword "clear" is used instead of a
+     fingerprint, all designated options previously encountered are
+     discarded.  Designated revokers are marked on the key as
+     non-revocable.  Note that a designated revoker specified using a
+     parameter file will also be added to the key.
 
 '--trust-model {pgp|classic|tofu|tofu+pgp|direct|always|auto}'
      Set what trust model GnuPG should follow.  The models are:
@@ -4593,6 +4655,11 @@ File: gnupg.info,  Node: GPG Input and Output,  Next: OpenPGP Options,  Prev: GP
           printed before each record to allow diverting the records to
           the corresponding zone file.
 
+     export-revocs
+          Export only standalone revocation certificates of the key.
+          This option does not export revocations of 3rd party
+          certificate revocations.
+
      export-dane
           Instead of outputting the key material output OpenPGP DANE
           records suitable to put into DNS zone files.  An ORIGIN line
@@ -4675,6 +4742,13 @@ File: gnupg.info,  Node: OpenPGP Options,  Next: Compliance Options,  Prev: GPG 
 '--force-v4-certs'
 '--no-force-v4-certs'
      These options are obsolete and have no effect since GnuPG 2.1.
+
+'--force-ocb'
+     Force the use of OCB mode encryption instead of CFB+MDC encryption.
+     OCB is a modern and faster way to do authenticated encryption than
+     the older CFB+MDC method.  This option is only useful for
+     symmetric-only encryption because the mode is automatically
+     selected based on the preferences of the recipients's public keys.
 
 '--force-mdc'
 '--disable-mdc'
@@ -4857,6 +4931,14 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Next: Deprecated Options,  Prev:
 '-i'
 '--interactive'
      Prompt before overwriting any files.
+
+'--compatibility-flags FLAGS'
+     Set compatibility flags to work around problems due to
+     non-compliant keys or data.  The FLAGS are given as a comma
+     separated list of flag names and are OR-ed together.  The special
+     flag "none" clears the list and allows to start over with an empty
+     list.  To get a list of available flags the sole word "help" can be
+     used.
 
 '--debug-level LEVEL'
      Select the debug level for investigating problems.  LEVEL may be a
@@ -5261,12 +5343,7 @@ File: gnupg.info,  Node: GPG Esoteric Options,  Next: Deprecated Options,  Prev:
      invalid.  This options allows to override this restriction.
 
 '--override-compliance-check'
-     The signature verification only allows the use of keys suitable in
-     the current compliance mode.  If the compliance mode has been
-     forced by a global option, there might be no way to check certain
-     signature.  This option allows to override this and prints an extra
-     warning in such a case.  This option is ignored in -batch mode so
-     that no accidental unattended verification may happen.
+     This was a temporary introduced option and has no more effect.
 
 '--no-default-keyring'
      Do not add the default keyring to the list of keyrings.  Note that
@@ -5514,9 +5591,10 @@ directory (*note option --homedir::).
      --options::).  You should backup this file.
 
    Note that on larger installations, it is useful to put predefined
-files into the directory '/etc/skel/.gnupg' so that newly created users
-start up with a working configuration.  For existing users a small
-helper script is provided to create these files (*note addgnupghome::).
+files into the directory '/usr/local/etc/skel/.gnupg' so that newly
+created users start up with a working configuration.  For existing users
+a small helper script is provided to create these files (*note
+addgnupghome::).
 
    For internal purposes 'gpg' creates and maintains a few other files;
 They all live in the current home directory (*note option --homedir::).
@@ -5792,7 +5870,7 @@ The program returns 0 if there are no severe errors, 1 if at least a
 signature was bad, and other error codes for fatal errors.
 
    Note that signature verification requires exact knowledge of what has
-been signed and by whom it has beensigned.  Using only the return code
+been signed and by whom it has been signed.  Using only the return code
 is thus not an appropriate way to verify a signature by a script.
 Either make proper use or the status codes or use the 'gpgv' tool which
 has been designed to make signature verification easy for scripts.
@@ -6567,7 +6645,9 @@ File: gnupg.info,  Node: Certificate Options,  Next: Input and Output,  Prev: Co
      request, so by sending you a message signed by a brand new key
      (which you naturally will not have on your local keybox), the
      operator can tell both your IP address and the time when you
-     verified the signature.
+     verified the signature.  Note that if CRL checking is not disabled
+     issuer certificates are retrieved in any case using the caIssuers
+     authorityInfoAccess method.
 
 '--validation-model NAME'
      This option changes the default validation model.  The only
@@ -6610,6 +6690,12 @@ File: gnupg.info,  Node: Input and Output,  Next: CMS Options,  Prev: Certificat
 
 '--assume-binary'
      Assume the input data is binary encoded.
+
+'--input-size-hint N'
+     This option can be used to tell GPGSM the size of the input data in
+     bytes.  N must be a positive base-10 number.  It is used by the
+     '--status-fd' line "PROGRESS" to provide a value for "total" if
+     that is not available by other means.
 
 '--p12-charset NAME'
      'gpgsm' uses the UTF-8 encoding when encoding passphrases for
@@ -6728,6 +6814,12 @@ File: gnupg.info,  Node: Esoteric Options,  Prev: CMS Options,  Up: GPGSM Option
      option can be used instead to make sure that the gpgsm process
      exits with a failure if the compliance rules are not fulfilled.
      Note that this option has currently an effect only in "de-vs" mode.
+
+'--always-trust'
+     Force encryption to the specified certificates without any
+     validation of the certificate chain.  The only requirement is that
+     the certificate is capable of encryption.  Note that this option is
+     ineffective if '--require-compliance' is used.
 
 '--ignore-cert-with-oid OID'
      Add OID to the list of OIDs to be checked while reading
@@ -6946,8 +7038,9 @@ home directory (*note option --homedir::).
      files in the data directory (e.g.
      '/usr/local/share/gnupg/gnupg/help.de.txt') and allows overriding
      of any help item by help files stored in the system configuration
-     directory (e.g.  '/etc/gnupg/help.de.txt').  For a reference of the
-     help file's syntax, please see the installed 'help.txt' file.
+     directory (e.g.  '/usr/local/etc/gnupg/help.de.txt').  For a
+     reference of the help file's syntax, please see the installed
+     'help.txt' file.
 
 'com-certs.pem'
      This file is a collection of common certificates used to populated
@@ -6982,191 +7075,4 @@ files; they all live in the current home directory (*note option
      instance.  Under Windows this socket (which in reality be a plain
      file describing a regular TCP listening port) is the standard way
      of connecting the 'gpg-agent'.
-
-
-File: gnupg.info,  Node: GPGSM Examples,  Next: Unattended Usage,  Prev: GPGSM Configuration,  Up: Invoking GPGSM
-
-5.4 Examples
-============
-
-     $ gpgsm -er goo@bar.net <plaintext >ciphertext
-
-
-File: gnupg.info,  Node: Unattended Usage,  Next: GPGSM Protocol,  Prev: GPGSM Examples,  Up: Invoking GPGSM
-
-5.5 Unattended Usage
-====================
-
-'gpgsm' is often used as a backend engine by other software.  To help
-with this a machine interface has been defined to have an unambiguous
-way to do this.  This is most likely used with the '--server' command
-but may also be used in the standard operation mode by using the
-'--status-fd' option.
-
-* Menu:
-
-* Automated signature checking::  Automated signature checking.
-* CSR and certificate creation::  CSR and certificate creation.
-
-
-File: gnupg.info,  Node: Automated signature checking,  Next: CSR and certificate creation,  Up: Unattended Usage
-
-5.5.1 Automated signature checking
-----------------------------------
-
-It is very important to understand the semantics used with signature
-verification.  Checking a signature is not as simple as it may sound and
-so the operation is a bit complicated.  In most cases it is required to
-look at several status lines.  Here is a table of all cases a signed
-message may have:
-
-The signature is valid
-     This does mean that the signature has been successfully verified,
-     the certificates are all sane.  However there are two subcases with
-     important information: One of the certificates may have expired or
-     a signature of a message itself as expired.  It is a sound practise
-     to consider such a signature still as valid but additional
-     information should be displayed.  Depending on the subcase 'gpgsm'
-     will issue these status codes:
-     signature valid and nothing did expire
-          'GOODSIG', 'VALIDSIG', 'TRUST_FULLY'
-     signature valid but at least one certificate has expired
-          'EXPKEYSIG', 'VALIDSIG', 'TRUST_FULLY'
-     signature valid but expired
-          'EXPSIG', 'VALIDSIG', 'TRUST_FULLY' Note, that this case is
-          currently not implemented.
-
-The signature is invalid
-     This means that the signature verification failed (this is an
-     indication of a transfer error, a program error or tampering with
-     the message).  'gpgsm' issues one of these status codes sequences:
-     'BADSIG'
-     'GOODSIG, VALIDSIG TRUST_NEVER'
-
-Error verifying a signature
-     For some reason the signature could not be verified, i.e.  it
-     cannot be decided whether the signature is valid or invalid.  A
-     common reason for this is a missing certificate.
-
-
-File: gnupg.info,  Node: CSR and certificate creation,  Prev: Automated signature checking,  Up: Unattended Usage
-
-5.5.2 CSR and certificate creation
-----------------------------------
-
-The command '--generate-key' may be used along with the option '--batch'
-to either create a certificate signing request (CSR) or an X.509
-certificate.  This is controlled by a parameter file; the format of this
-file is as follows:
-
-   * Text only, line length is limited to about 1000 characters.
-   * UTF-8 encoding must be used to specify non-ASCII characters.
-   * Empty lines are ignored.
-   * Leading and trailing while space is ignored.
-   * A hash sign as the first non white space character indicates a
-     comment line.
-   * Control statements are indicated by a leading percent sign, the
-     arguments are separated by white space from the keyword.
-   * Parameters are specified by a keyword, followed by a colon.
-     Arguments are separated by white space.
-   * The first parameter must be 'Key-Type', control statements may be
-     placed anywhere.
-   * The order of the parameters does not matter except for 'Key-Type'
-     which must be the first parameter.  The parameters are only used
-     for the generated CSR/certificate; parameters from previous sets
-     are not used.  Some syntactically checks may be performed.
-   * Key generation takes place when either the end of the parameter
-     file is reached, the next 'Key-Type' parameter is encountered or at
-     the control statement '%commit' is encountered.
-
-Control statements:
-
-%echo TEXT
-     Print TEXT as diagnostic.
-
-%dry-run
-     Suppress actual key generation (useful for syntax checking).
-
-%commit
-     Perform the key generation.  Note that an implicit commit is done
-     at the next Key-Type parameter.
-
-General Parameters:
-
-Key-Type: ALGO
-     Starts a new parameter block by giving the type of the primary key.
-     The algorithm must be capable of signing.  This is a required
-     parameter.  The only supported value for ALGO is 'rsa'.
-
-Key-Length: NBITS
-     The requested length of a generated key in bits.  Defaults to 3072.
-
-Key-Grip: HEXSTRING
-     This is optional and used to generate a CSR or certificate for an
-     already existing key.  Key-Length will be ignored when given.
-
-Key-Usage: USAGE-LIST
-     Space or comma delimited list of key usage, allowed values are
-     'encrypt', 'sign' and 'cert'.  This is used to generate the
-     keyUsage extension.  Please make sure that the algorithm is capable
-     of this usage.  Default is to allow encrypt and sign.
-
-Name-DN: SUBJECT-NAME
-     This is the Distinguished Name (DN) of the subject in RFC-2253
-     format.
-
-Name-Email: STRING
-     This is an email address for the altSubjectName.  This parameter is
-     optional but may occur several times to add several email addresses
-     to a certificate.
-
-Name-DNS: STRING
-     The is an DNS name for the altSubjectName.  This parameter is
-     optional but may occur several times to add several DNS names to a
-     certificate.
-
-Name-URI: STRING
-     This is an URI for the altSubjectName.  This parameter is optional
-     but may occur several times to add several URIs to a certificate.
-
-Additional parameters used to create a certificate (in contrast to a
-certificate signing request):
-
-Serial: SN
-     If this parameter is given an X.509 certificate will be generated.
-     SN is expected to be a hex string representing an unsigned integer
-     of arbitrary length.  The special value 'random' can be used to
-     create a 64 bit random serial number.
-
-Issuer-DN: ISSUER-NAME
-     This is the DN name of the issuer in RFC-2253 format.  If it is not
-     set it will default to the subject DN and a special GnuPG extension
-     will be included in the certificate to mark it as a standalone
-     certificate.
-
-Creation-Date: ISO-DATE
-Not-Before: ISO-DATE
-     Set the notBefore date of the certificate.  Either a date like
-     '1986-04-26' or '1986-04-26 12:00' or a standard ISO timestamp like
-     '19860426T042640' may be used.  The time is considered to be UTC.
-     If it is not given the current date is used.
-
-Expire-Date: ISO-DATE
-Not-After: ISO-DATE
-     Set the notAfter date of the certificate.  Either a date like
-     '2063-04-05' or '2063-04-05 17:00' or a standard ISO timestamp like
-     '20630405T170000' may be used.  The time is considered to be UTC.
-     If it is not given a default value in the not too far future is
-     used.
-
-Signing-Key: KEYGRIP
-     This gives the keygrip of the key used to sign the certificate.  If
-     it is not given a self-signed certificate will be created.  For
-     compatibility with future versions, it is suggested to prefix the
-     keygrip with a '&'.
-
-Hash-Algo: HASH-ALGO
-     Use HASH-ALGO for this CSR or certificate.  The supported hash
-     algorithms are: 'sha1', 'sha256', 'sha384' and 'sha512'; they may
-     also be specified with uppercase letters.  The default is 'sha256'.
 

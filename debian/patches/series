@@ -12,6 +12,8 @@ from-master/gpg-default-to-3072-bit-keys.patch
 from-master/gpg-default-to-AES-256.patch
 update-defaults/gpg-Default-to-SHA-512-for-all-signature-types-on-RS.patch
 update-defaults/gpg-Prefer-SHA-512-and-SHA-384-in-personal-digest.patch
+update-defaults/gpg-Do-not-set-OCB-key-preference.diff
+update-defaults/gpg-encrypt-disrespect-OCB-key-preference.diff
 import-merge-without-userid/tests-add-test-cases-for-import-without-uid.patch
 import-merge-without-userid/gpg-allow-import-of-previously-known-keys-even-without-UI.patch
 import-merge-without-userid/gpg-accept-subkeys-with-a-good-revocation-but-no-self-sig.patch
@@ -20,7 +22,7 @@ Make-gpg-zip-use-tar-from-PATH.patch
 gpg-drop-import-clean-from-default-keyserver-import-optio.patch
 from-master/common-Use-gnupg_spawn_process_fd-to-invoke-gpg-agent-dir.patch
 from-master/common-Fix-the-previous-commit.patch
-from-upstream/gpg-Report-an-error-for-receiving-key-from-agent.patch
-from-upstream/gpg-Move-NETLIBS-after-GPG_ERROR_LIBS.patch
-from-upstream/dirmngr-Fix-build-with-no-LDAP-support.patch
-from-upstream/gpg-Move-NETLIBS-after-GPG_ERROR_LIBS-another.patch
+from-master/build-Use-LDAP_DEPRECATED-to-detect-ldap-library.patch
+debian-packaging/Build-regexp-against-debian-s-unicode-data-package.patch
+debian-packaging/Always-build-common-status-codes.h-and-common-audit-event.patch
+restore-nl.po.patch

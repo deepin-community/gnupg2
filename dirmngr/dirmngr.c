@@ -146,6 +146,7 @@ enum cmd_and_opt_values {
   oHTTPWrapperProgram,
   oIgnoreCert,
   oIgnoreCertExtension,
+  oIgnoreCRLExtension,
   oUseTor,
   oNoUseTor,
   oKeyServer,
@@ -157,6 +158,7 @@ enum cmd_and_opt_values {
   oConnectTimeout,
   oConnectQuickTimeout,
   oListenBacklog,
+  oCompatibilityFlags,
   aTest
 };
 
@@ -221,6 +223,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
   ARGPARSE_s_s (oIgnoreCert,"ignore-cert", "@"),
   ARGPARSE_s_s (oIgnoreCertExtension,"ignore-cert-extension", "@"),
+  ARGPARSE_s_s (oIgnoreCRLExtension,"ignore-crl-extension", "@"),
 
 
   ARGPARSE_header ("Network", N_("Network related options")),
@@ -297,6 +300,7 @@ static ARGPARSE_OPTS opts[] = {
 
   ARGPARSE_s_s (oSocketName, "socket-name", "@"),  /* Only for debugging.  */
   ARGPARSE_s_n (oDebugCacheExpiredCerts, "debug-cache-expired-certs", "@"),
+  ARGPARSE_s_s (oCompatibilityFlags, "compatibility-flags", "@"),
 
   ARGPARSE_header (NULL, ""),  /* Stop the header group.  */
 
@@ -327,6 +331,13 @@ static struct debug_flags_s debug_flags [] =
     { DBG_EXTPROG_VALUE, "extprog" },
     { 77, NULL } /* 77 := Do not exit on "help" or "?".  */
   };
+
+/* The list of compatibility flags.  */
+static struct compatibility_flags_s compatibility_flags [] =
+  {
+    { 0, NULL }
+  };
+
 
 #define DEFAULT_MAX_REPLIES 10
 #define DEFAULT_LDAP_TIMEOUT 15  /* seconds */
@@ -695,6 +706,7 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
           opt.ignored_certs = tmp;
         }
       FREE_STRLIST (opt.ignored_cert_extensions);
+      FREE_STRLIST (opt.ignored_crl_extensions);
       http_register_tls_ca (NULL);
       FREE_STRLIST (hkp_cacert_filenames);
       FREE_STRLIST (opt.keyserver);
@@ -709,6 +721,7 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.ldaptimeout = DEFAULT_LDAP_TIMEOUT;
       ldapserver_list_needs_reset = 1;
       opt.debug_cache_expired_certs = 0;
+      opt.compat_flags = 0;
       return 1;
     }
 
@@ -805,6 +818,10 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       add_to_strlist (&opt.ignored_cert_extensions, pargs->r.ret_str);
       break;
 
+    case oIgnoreCRLExtension:
+      add_to_strlist (&opt.ignored_crl_extensions, pargs->r.ret_str);
+      break;
+
     case oUseTor:
       tor_mode = TOR_MODE_FORCE;
       break;
@@ -871,6 +888,15 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.debug_cache_expired_certs = 0;
       break;
 
+    case oCompatibilityFlags:
+      if (parse_compatibility_flags (pargs->r.ret_str, &opt.compat_flags,
+                                     compatibility_flags))
+        {
+          pargs->r_opt = ARGPARSE_INVALID_ARG;
+          pargs->err = ARGPARSE_PRINT_WARNING;
+        }
+      break;
+
     default:
       return 0; /* Not handled. */
     }
@@ -887,7 +913,7 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 /* This fucntion is called after option parsing to adjust some values
  * and call option setup functions.  */
 static void
-post_option_parsing (void)
+post_option_parsing (enum cmd_and_opt_values cmd)
 {
   /* It would be too surpirsing if the quick timeout is larger than
    * the standard value.  */
@@ -895,7 +921,18 @@ post_option_parsing (void)
     opt.connect_quick_timeout = opt.connect_timeout;
 
   set_debug ();
-  set_tor_mode ();
+  /* For certain commands we do not want to set/test for Tor mode
+   * because that is somewhat expensive.  */
+  switch (cmd)
+    {
+    case aGPGConfList:
+    case aGPGConfTest:
+    case aGPGConfVersions:
+      break;
+    default:
+      set_tor_mode ();
+      break;
+    }
 }
 
 
@@ -1208,7 +1245,7 @@ main (int argc, char **argv)
       log_printf ("\n");
     }
 
-  post_option_parsing ();
+  post_option_parsing (cmd);
 
   /* Get LDAP server list from file unless --ldapserver has been used.  */
 #if USE_LDAP
@@ -1669,6 +1706,8 @@ dirmngr_deinit_default_ctrl (ctrl_t ctrl)
 
   xfree (ctrl->http_proxy);
   ctrl->http_proxy = NULL;
+  nvc_release (ctrl->rootdse);
+  ctrl->rootdse = NULL;
 }
 
 
@@ -1944,7 +1983,7 @@ reread_configuration (void)
     }
   gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
   xfree (twopart);
-  post_option_parsing ();
+  post_option_parsing (0);
 }
 
 
@@ -1960,6 +1999,7 @@ dirmngr_sighup_action (void)
   crl_cache_deinit ();
   cert_cache_init (hkp_cacert_filenames);
   crl_cache_init ();
+  http_reinitialize ();
   reload_dns_stuff (0);
   ks_hkp_reload ();
 }

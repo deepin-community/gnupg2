@@ -74,14 +74,17 @@ do_encode_md (gcry_md_hd_t md, int algo, int pkalgo, unsigned int nbits,
   size_t nframe;
   unsigned char *frame;
 
-  if (pkalgo == GCRY_PK_DSA || pkalgo == GCRY_PK_ECDSA)
+  if (pkalgo == GCRY_PK_DSA || pkalgo == GCRY_PK_ECC)
     {
-      unsigned int qbits;
+      unsigned int qbits0, qbits;
 
-      if ( pkalgo == GCRY_PK_ECDSA )
-        qbits = gcry_pk_get_nbits (pkey);
+      if ( pkalgo == GCRY_PK_ECC )
+        {
+          qbits0 = gcry_pk_get_nbits (pkey);
+          qbits = qbits0 == 521? 512 : qbits0;
+        }
       else
-        qbits = get_dsa_qbits (pkey);
+        qbits0 = qbits = get_dsa_qbits (pkey);
 
       if ( (qbits%8) )
 	{
@@ -98,7 +101,7 @@ do_encode_md (gcry_md_hd_t md, int algo, int pkalgo, unsigned int nbits,
       if (qbits < 160)
 	{
 	  log_error (_("%s key uses an unsafe (%u bit) hash\n"),
-                     gcry_pk_algo_name (pkalgo), qbits);
+                     gcry_pk_algo_name (pkalgo), qbits0);
 	  return gpg_error (GPG_ERR_INTERNAL);
 	}
 
@@ -109,7 +112,7 @@ do_encode_md (gcry_md_hd_t md, int algo, int pkalgo, unsigned int nbits,
         {
 	  log_error (_("a %u bit hash is not valid for a %u bit %s key\n"),
                      (unsigned int)nframe*8,
-                     gcry_pk_get_nbits (pkey),
+                     qbits0,
                      gcry_pk_algo_name (pkalgo));
           /* FIXME: we need to check the requirements for ECDSA.  */
           if (nframe < 20 || pkalgo == GCRY_PK_DSA  )
@@ -210,10 +213,8 @@ pk_algo_from_sexp (gcry_sexp_t pkey)
     algo = GCRY_PK_RSA;
   else if (n==3 && !memcmp (name, "dsa", 3))
     algo = GCRY_PK_DSA;
-  /* Because this function is called only for verification we can
-     assume that ECC actually means ECDSA.  */
   else if (n==3 && !memcmp (name, "ecc", 3))
-    algo = GCRY_PK_ECDSA;
+    algo = GCRY_PK_ECC;
   else if (n==13 && !memcmp (name, "ambiguous-rsa", 13))
     algo = GCRY_PK_RSA;
   else
@@ -357,9 +358,19 @@ gpgsm_check_cert_sig (ksba_cert_t issuer_cert, ksba_cert_t cert)
   int use_pss = 0;
   unsigned int saltlen;
 
+  /* Note that we map the 4 algos which current Libgcrypt versions are
+   * not aware of the OID.  */
   algo = gcry_md_map_name ( (algoid=ksba_cert_get_digest_algo (cert)));
   if (!algo && algoid && !strcmp (algoid, "1.2.840.113549.1.1.10"))
     use_pss = 1;
+  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.1"))
+    algo = GCRY_MD_SHA224; /* ecdsa-with-sha224 */
+  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.2"))
+    algo = GCRY_MD_SHA256; /* ecdsa-with-sha256 */
+  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.3"))
+    algo = GCRY_MD_SHA384; /* ecdsa-with-sha384 */
+  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.4"))
+    algo = GCRY_MD_SHA512; /* ecdsa-with-sha512 */
   else if (!algo)
     {
       log_error ("unknown digest algorithm '%s' used certificate\n",

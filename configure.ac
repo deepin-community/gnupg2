@@ -1,7 +1,7 @@
 # configure.ac - for GnuPG 2.2
 # Copyright (C) 1998-2019 Free Software Foundation, Inc.
 # Copyright (C) 1998-2019 Werner Koch
-# Copyright (C) 2003-2022 g10 Code GmbH
+# Copyright (C) 2003-2023 g10 Code GmbH
 #
 # This file is part of GnuPG.
 #
@@ -19,8 +19,8 @@
 # along with this program; if not, see <https://www.gnu.org/licenses/>.
 
 # Process this file with autoconf to produce a configure script.
-AC_PREREQ(2.61)
-min_automake_version="1.14"
+AC_PREREQ([2.69])
+min_automake_version="1.16.3"
 
 # To build a release you need to create a tag with the version number
 # (git tag -s gnupg-2.n.m) and run "./autogen.sh --force".  Please
@@ -29,7 +29,7 @@ min_automake_version="1.14"
 m4_define([mym4_package],[gnupg])
 m4_define([mym4_major], [2])
 m4_define([mym4_minor], [2])
-m4_define([mym4_micro], [40])
+m4_define([mym4_micro], [43])
 
 # To start a new development series, i.e a new major or minor number
 # you need to mark an arbitrary commit before the first beta release
@@ -48,13 +48,13 @@ m4_define([mym4_version],      m4_argn(4, mym4_verslist))
 m4_define([mym4_revision],     m4_argn(7, mym4_verslist))
 m4_define([mym4_revision_dec], m4_argn(8, mym4_verslist))
 m4_esyscmd([echo ]mym4_version[>VERSION])
-AC_INIT([mym4_package],[mym4_version], [https://bugs.gnupg.org])
+AC_INIT([mym4_package],[mym4_version],[https://bugs.gnupg.org])
 
 # When changing the SWDB tag please also adjust the hard coded tags in
 # build-aux/speedo.mk and Makefile.am
 AC_DEFINE_UNQUOTED(GNUPG_SWDB_TAG, "gnupg22", [swdb tag for this branch])
 
-NEED_GPG_ERROR_VERSION=1.27
+NEED_GPG_ERROR_VERSION=1.38
 
 NEED_LIBGCRYPT_API=1
 NEED_LIBGCRYPT_VERSION=1.8.0
@@ -63,16 +63,16 @@ NEED_LIBASSUAN_API=2
 NEED_LIBASSUAN_VERSION=2.5.0
 
 NEED_KSBA_API=1
-NEED_KSBA_VERSION=1.3.5
+NEED_KSBA_VERSION=1.4.0
 
 NEED_NTBTLS_API=1
-NEED_NTBTLS_VERSION=0.1.0
+NEED_NTBTLS_VERSION=0.2.0
 
 NEED_NPTH_API=1
 NEED_NPTH_VERSION=1.2
 
 
-NEED_GNUTLS_VERSION=3.0
+NEED_GNUTLS_VERSION=3.2
 
 NEED_SQLITE_VERSION=3.7
 
@@ -83,12 +83,12 @@ VERSION=$PACKAGE_VERSION
 
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_SRCDIR([sm/gpgsm.c])
-AC_CONFIG_HEADER([config.h])
+AC_CONFIG_HEADERS([config.h])
 AM_INIT_AUTOMAKE([serial-tests dist-bzip2 no-dist-gzip])
 AC_CANONICAL_HOST
 AB_INIT
 
-AC_GNU_SOURCE
+AC_USE_SYSTEM_EXTENSIONS
 
 
 # Some status variables.
@@ -214,7 +214,7 @@ test -n "$GNUPG_DIRMNGR_LDAP_PGM" \
 # 2.2.  This option can be used to install gpg under the name gpg2.
 #
 AC_ARG_ENABLE(gpg-is-gpg2,
-    AC_HELP_STRING([--enable-gpg-is-gpg2],[Set installed name of gpg to gpg2]),
+    AS_HELP_STRING([--enable-gpg-is-gpg2],[Set installed name of gpg to gpg2]),
     gpg_is_gpg2=$enableval)
 if test "$gpg_is_gpg2" = "yes"; then
    AC_DEFINE(USE_GPG2_HACK, 1, [Define to install gpg as gpg2])
@@ -226,7 +226,7 @@ AM_CONDITIONAL(USE_GPG2_HACK, test "$gpg_is_gpg2" = "yes")
 # leaking their contents through processing these files by gpg itself
 AC_MSG_CHECKING([whether SELinux support is requested])
 AC_ARG_ENABLE(selinux-support,
-              AC_HELP_STRING([--enable-selinux-support],
+              AS_HELP_STRING([--enable-selinux-support],
                              [enable SELinux support]),
               selinux_support=$enableval, selinux_support=no)
 AC_MSG_RESULT($selinux_support)
@@ -234,7 +234,7 @@ AC_MSG_RESULT($selinux_support)
 
 AC_MSG_CHECKING([whether to allocate extra secure memory])
 AC_ARG_ENABLE(large-secmem,
-              AC_HELP_STRING([--enable-large-secmem],
+              AS_HELP_STRING([--enable-large-secmem],
                              [allocate extra secure memory]),
               large_secmem=$enableval, large_secmem=no)
 AC_MSG_RESULT($large_secmem)
@@ -248,7 +248,7 @@ AC_DEFINE_UNQUOTED(SECMEM_BUFFER_SIZE,$SECMEM_BUFFER_SIZE,
 
 AC_MSG_CHECKING([calibrated passphrase-stretching (s2k) duration])
 AC_ARG_WITH(agent-s2k-calibration,
-              AC_HELP_STRING([--with-agent-s2k-calibration=MSEC],
+              AS_HELP_STRING([--with-agent-s2k-calibration=MSEC],
                              [calibrate passphrase stretching (s2k) to MSEC milliseconds]),
               agent_s2k_calibration=$withval, agent_s2k_calibration=100)
 AC_MSG_RESULT($agent_s2k_calibration milliseconds)
@@ -257,7 +257,7 @@ AC_DEFINE_UNQUOTED(AGENT_S2K_CALIBRATION, $agent_s2k_calibration,
 
 AC_MSG_CHECKING([whether to enable trust models])
 AC_ARG_ENABLE(trust-models,
-              AC_HELP_STRING([--disable-trust-models],
+              AS_HELP_STRING([--disable-trust-models],
                              [disable all trust models except "always"]),
               use_trust_models=$enableval)
 AC_MSG_RESULT($use_trust_models)
@@ -268,7 +268,7 @@ fi
 
 AC_MSG_CHECKING([whether to enable TOFU])
 AC_ARG_ENABLE(tofu,
-                AC_HELP_STRING([--disable-tofu],
+                AS_HELP_STRING([--disable-tofu],
                                [disable the TOFU trust model]),
               use_tofu=$enableval, use_tofu=$use_trust_models)
 AC_MSG_RESULT($use_tofu)
@@ -278,7 +278,7 @@ fi
 
 AC_MSG_CHECKING([whether to enable libdns])
 AC_ARG_ENABLE(libdns,
-                AC_HELP_STRING([--disable-libdns],
+                AS_HELP_STRING([--disable-libdns],
                                [do not build with libdns support]),
               use_libdns=$enableval, use_libdns=yes)
 AC_MSG_RESULT($use_libdns)
@@ -325,7 +325,7 @@ GNUPG_GPG_DISABLE_ALGO([sha512],[SHA-512 hash])
 # implementations SHOULD support ZLIB.
 AC_MSG_CHECKING([whether to enable the ZIP and ZLIB compression algorithm])
 AC_ARG_ENABLE(zip,
-   AC_HELP_STRING([--disable-zip],
+   AS_HELP_STRING([--disable-zip],
                   [disable the ZIP and ZLIB compression algorithm]),
    use_zip=$enableval)
 AC_MSG_RESULT($use_zip)
@@ -334,7 +334,7 @@ AC_MSG_RESULT($use_zip)
 # It is defined only after we confirm the library is available later
 AC_MSG_CHECKING([whether to enable the BZIP2 compression algorithm])
 AC_ARG_ENABLE(bzip2,
-   AC_HELP_STRING([--disable-bzip2],[disable the BZIP2 compression algorithm]),
+   AS_HELP_STRING([--disable-bzip2],[disable the BZIP2 compression algorithm]),
    use_bzip2=$enableval)
 AC_MSG_RESULT($use_bzip2)
 
@@ -342,7 +342,7 @@ AC_MSG_RESULT($use_bzip2)
 # programs, like a photo viewer.
 AC_MSG_CHECKING([whether to enable external program execution])
 AC_ARG_ENABLE(exec,
-    AC_HELP_STRING([--disable-exec],[disable all external program execution]),
+    AS_HELP_STRING([--disable-exec],[disable all external program execution]),
     use_exec=$enableval)
 AC_MSG_RESULT($use_exec)
 if test "$use_exec" = no ; then
@@ -380,7 +380,7 @@ fi
 #
 AC_MSG_CHECKING([for the size of the key and uid cache])
 AC_ARG_ENABLE(key-cache,
-        AC_HELP_STRING([--enable-key-cache=SIZE],
+        AS_HELP_STRING([--enable-key-cache=SIZE],
                        [Set key cache to SIZE (default 4096)]),,enableval=4096)
 if test "$enableval" = "no"; then
    enableval=5
@@ -412,7 +412,7 @@ AC_MSG_RESULT($use_capabilities)
 # Check whether to disable the card support
 AC_MSG_CHECKING([whether smartcard support is requested])
 AC_ARG_ENABLE(card-support,
-              AC_HELP_STRING([--disable-card-support],
+              AS_HELP_STRING([--disable-card-support],
                              [disable smartcard support]),
               card_support=$enableval)
 AC_MSG_RESULT($card_support)
@@ -428,14 +428,14 @@ fi
 #
 AC_MSG_CHECKING([whether to enable the internal CCID driver])
 AC_ARG_ENABLE(ccid-driver,
-              AC_HELP_STRING([--disable-ccid-driver],
+              AS_HELP_STRING([--disable-ccid-driver],
                              [disable the internal CCID driver]),
               use_ccid_driver=$enableval)
 AC_MSG_RESULT($use_ccid_driver)
 
 AC_MSG_CHECKING([whether to auto start dirmngr])
 AC_ARG_ENABLE(dirmngr-auto-start,
-              AC_HELP_STRING([--disable-dirmngr-auto-start],
+              AS_HELP_STRING([--disable-dirmngr-auto-start],
                              [disable auto starting of the dirmngr]),
               dirmngr_auto_start=$enableval)
 AC_MSG_RESULT($dirmngr_auto_start)
@@ -509,7 +509,7 @@ AH_BOTTOM([
 #define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
 #define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
 
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2022 g10 Code GmbH"
+#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2023 g10 Code GmbH"
 
 
 /* For some systems (DOS currently), we hardcode the path here.  For
@@ -622,7 +622,7 @@ AC_CHECK_TOOL(WINDRES, windres, :)
 AC_PATH_PROG(YAT2M, "yat2m")
 AC_ARG_VAR(YAT2M, [tool to convert texi to man pages])
 AM_CONDITIONAL(HAVE_YAT2M, test -n "$ac_cv_path_YAT2M")
-AC_ISC_POSIX
+AC_SEARCH_LIBS([strerror],[cposix])
 AC_SYS_LARGEFILE
 GNUPG_CHECK_USTAR
 
@@ -913,7 +913,7 @@ LIBS="$gnupg_dlopen_save_libs"
 # Checks for g10
 
 AC_ARG_ENABLE(sqlite,
-                AC_HELP_STRING([--disable-sqlite],
+                AS_HELP_STRING([--disable-sqlite],
                                [disable the use of SQLITE]),
               try_sqlite=$enableval, try_sqlite=yes)
 
@@ -997,7 +997,7 @@ fi
 # Enable debugging of nPth
 #
 AC_ARG_ENABLE(npth-debug,
-   AC_HELP_STRING([--enable-npth-debug],
+   AS_HELP_STRING([--enable-npth-debug],
                   [build with debug version of npth]),
                   [if test $enableval = yes ; then
                      AC_DEFINE(NPTH_ENABLE_DEBUG,1,
@@ -1011,7 +1011,7 @@ AC_ARG_ENABLE(npth-debug,
 # GNUTLS.
 #
 AC_ARG_ENABLE(ntbtls,
-              AC_HELP_STRING([--disable-ntbtls],
+              AS_HELP_STRING([--disable-ntbtls],
                              [disable the use of NTBTLS as TLS library]),
               try_ntbtls=$enableval, try_ntbtls=yes)
 if test x"$try_ntbtls" = xyes ; then
@@ -1023,7 +1023,7 @@ if test "$have_ntbtls" = yes ; then
    AC_DEFINE(HTTP_USE_NTBTLS, 1, [Enable NTBTLS support in http.c])
 else
   AC_ARG_ENABLE(gnutls,
-                AC_HELP_STRING([--disable-gnutls],
+                AS_HELP_STRING([--disable-gnutls],
                                [disable GNUTLS as fallback TLS library]),
                 try_gnutls=$enableval, try_gnutls=yes)
   if test x"$try_gnutls" = xyes ; then
@@ -1050,7 +1050,7 @@ fi
 # Allow to set a fixed trust store file for system provided certificates.
 #
 AC_ARG_WITH([default-trust-store-file],
-            [AC_HELP_STRING([--with-default-trust-store-file=FILE],
+            [AS_HELP_STRING([--with-default-trust-store-file=FILE],
                             [Use FILE as system trust store])],
             default_trust_store_file="$withval",
             default_trust_store_file="")
@@ -1179,7 +1179,8 @@ AC_SUBST(DNSLIBS)
 # gnupg_have_ldap from "n/a" to "no" or "yes".
 
 AC_ARG_ENABLE(ldap,
-    AC_HELP_STRING([--disable-ldap],[disable LDAP support]),
+    AS_HELP_STRING([--disable-ldap],
+                   [disable LDAP support]),
     [if test "$enableval" = "no"; then gnupg_have_ldap=no; fi])
 
 if test "$gnupg_have_ldap" != "no" ; then
@@ -1215,7 +1216,7 @@ fi
 # sendmail-ish interface to the outside world.  That includes Exim,
 # Postfix, etc.  Basically, anything that can handle "sendmail -t".
 AC_ARG_WITH(mailprog,
-      AC_HELP_STRING([--with-mailprog=NAME],
+      AS_HELP_STRING([--with-mailprog=NAME],
                      [use "NAME -t" for mail transport]),
              ,with_mailprog=yes)
 if test x"$with_mailprog" = xyes ; then
@@ -1320,13 +1321,11 @@ fi
 # Checks for header files.
 #
 AC_MSG_NOTICE([checking for header files])
-AC_HEADER_STDC
-AC_CHECK_HEADERS([string.h unistd.h langinfo.h termio.h locale.h getopt.h \
-                  pty.h utmp.h pwd.h inttypes.h signal.h sys/select.h     \
-                  stdint.h signal.h util.h libutil.h termios.h \
+AC_CHECK_HEADERS([unistd.h langinfo.h termio.h locale.h \
+                  pwd.h inttypes.h signal.h sys/select.h sys/time.h \
+                  stdint.h signal.h termios.h \
                   ucred.h sys/ucred.h sys/sysmacros.h sys/mkdev.h])
 
-AC_HEADER_TIME
 
 
 #
@@ -1338,9 +1337,14 @@ AC_C_INLINE
 AC_C_VOLATILE
 AC_TYPE_SIZE_T
 AC_TYPE_MODE_T
-AC_TYPE_SIGNAL
 AC_CHECK_FUNCS([sigdescr_np])
-AC_DECL_SYS_SIGLIST
+AC_CHECK_DECLS([sys_siglist],[],[],[#include <signal.h>
+/* NetBSD declares sys_siglist in unistd.h.  */
+#ifdef HAVE_UNISTD_H
+# include <unistd.h>
+#endif
+])
+
 
 gl_HEADER_SYS_SOCKET
 gl_TYPE_SOCKLEN_T
@@ -1348,8 +1352,8 @@ gl_TYPE_SOCKLEN_T
 AC_SEARCH_LIBS([inet_addr], [nsl])
 
 AC_ARG_ENABLE(endian-check,
-              AC_HELP_STRING([--disable-endian-check],
-	      [disable the endian check and trust the OS provided macros]),
+              AS_HELP_STRING([--disable-endian-check],
+              [disable the endian check and trust the OS provided macros]),
 	      endiancheck=$enableval,endiancheck=yes)
 
 if test x"$endiancheck" = xyes ; then
@@ -1357,28 +1361,17 @@ if test x"$endiancheck" = xyes ; then
 fi
 
 # fixme: we should get rid of the byte type
-GNUPG_CHECK_TYPEDEF(byte, HAVE_BYTE_TYPEDEF)
-GNUPG_CHECK_TYPEDEF(ushort, HAVE_USHORT_TYPEDEF)
-GNUPG_CHECK_TYPEDEF(ulong, HAVE_ULONG_TYPEDEF)
-GNUPG_CHECK_TYPEDEF(u16, HAVE_U16_TYPEDEF)
-GNUPG_CHECK_TYPEDEF(u32, HAVE_U32_TYPEDEF)
-
+AC_CHECK_TYPES([byte, ushort, ulong, u16, u32])
 AC_CHECK_SIZEOF(unsigned short)
 AC_CHECK_SIZEOF(unsigned int)
 AC_CHECK_SIZEOF(unsigned long)
 AC_CHECK_SIZEOF(unsigned long long)
-AC_HEADER_TIME
 AC_CHECK_SIZEOF(time_t,,[[
 #include <stdio.h>
-#if TIME_WITH_SYS_TIME
+#ifdef HAVE_SYS_TIME_H
 # include <sys/time.h>
-# include <time.h>
 #else
-# if HAVE_SYS_TIME_H
-#  include <sys/time.h>
-# else
-#  include <time.h>
-# endif
+# include <time.h>
 #endif
 ]])
 GNUPG_TIME_T_UNSIGNED
@@ -1456,7 +1449,6 @@ AC_CHECK_FUNCS([getpeerucred])
 #
 # W32 specific test
 #
-GNUPG_FUNC_MKDIR_TAKES_ONE_ARG
 
 
 #
@@ -1493,7 +1485,7 @@ if test "$use_bzip2" = yes ; then
   _cppflags="${CPPFLAGS}"
   _ldflags="${LDFLAGS}"
   AC_ARG_WITH(bzip2,
-     AC_HELP_STRING([--with-bzip2=DIR],[look for bzip2 in DIR]),
+     AS_HELP_STRING([--with-bzip2=DIR],[look for bzip2 in DIR]),
       [
       if test -d "$withval" ; then
         CPPFLAGS="${CPPFLAGS} -I$withval/include"
@@ -1662,18 +1654,17 @@ AC_SUBST(USE_C99_CFLAGS)
 # things and eliminate variables.
 #
 AC_ARG_ENABLE(optimization,
-   AC_HELP_STRING([--disable-optimization],
+   AS_HELP_STRING([--disable-optimization],
                   [disable compiler optimization]),
                   [if test $enableval = no ; then
                       CFLAGS=`echo $CFLAGS | sed s/-O[[1-9]]\ /-O0\ /g`
                    fi])
 
-#
 # Add -Werror to CFLAGS.  This hack can be used to avoid problems with
 # misbehaving autoconf tests in case the user supplied -Werror.
 #
 AC_ARG_ENABLE(werror,
-   AC_HELP_STRING([--enable-werror],
+   AS_HELP_STRING([--enable-werror],
                   [append -Werror to CFLAGS]),
                   [if test $enableval = yes ; then
                       CFLAGS="$CFLAGS -Werror"
@@ -1684,7 +1675,7 @@ AC_ARG_ENABLE(werror,
 #
 AC_MSG_CHECKING([whether "make check" shall run all tests])
 AC_ARG_ENABLE(all-tests,
-              AC_HELP_STRING([--enable-all-tests],
+              AS_HELP_STRING([--enable-all-tests],
                              [let "make check" run all tests]),
               run_all_tests=$enableval, run_all_tests=no)
 AC_MSG_RESULT($run_all_tests)
@@ -1698,7 +1689,7 @@ fi
 #
 AC_MSG_CHECKING([whether tests should be run])
 AC_ARG_ENABLE(tests,
-              AC_HELP_STRING([--disable-tests],
+              AS_HELP_STRING([--disable-tests],
                              [do not run any tests]),
               run_tests=$enableval, run_tests=yes)
 AC_MSG_RESULT($run_tests)
@@ -1725,7 +1716,7 @@ fi
 # before /run/user
 #
 AC_ARG_ENABLE(run-gnupg-user-socket,
-    AC_HELP_STRING([--enable-run-gnupg-user-socket],
+    AS_HELP_STRING([--enable-run-gnupg-user-socket],
                    [try /run/gnupg/user for sockets prior to /run/user]),
     use_run_gnupg_user_socket=$enableval)
 if test x"$use_run_gnupg_user_socket" = x"yes"; then
@@ -1865,7 +1856,7 @@ AC_SUBST(BUILD_VERSION)
 AC_SUBST(BUILD_FILEVERSION)
 
 AC_ARG_ENABLE([build-timestamp],
-  AC_HELP_STRING([--enable-build-timestamp],
+  AS_HELP_STRING([--enable-build-timestamp],
                  [set an explicit build timestamp for reproducibility.
                   (default is the current time in ISO-8601 format)]),
      [if test "$enableval" = "yes"; then
@@ -2006,12 +1997,14 @@ tests/migrations/Makefile
 tests/gpgsm/Makefile
 tests/gpgme/Makefile
 tests/pkits/Makefile
-agent/gpg-agent.w32-manifest
 g10/gpg.w32-manifest
 g10/gpgv.w32-manifest
 sm/gpgsm.w32-manifest
+agent/gpg-agent.w32-manifest
 scd/scdaemon.w32-manifest
 dirmngr/dirmngr.w32-manifest
+dirmngr/dirmngr_ldap.w32-manifest
+dirmngr/dirmngr-client.w32-manifest
 tools/gpgconf.w32-manifest
 tools/gpgtar.w32-manifest
 tools/gpg-connect-agent.w32-manifest

@@ -765,7 +765,7 @@ proc_encrypted (CTX c, PACKET *pkt)
     result = GPG_ERR_NO_SECKEY;
 
   /* Compute compliance with CO_DE_VS.  */
-  if (!result && is_status_enabled ()
+  if (!result && (is_status_enabled () || opt.flags.require_compliance)
       /* Overriding session key voids compliance.  */
       && !opt.override_session_key
       /* Check symmetric cipher.  */
@@ -821,9 +821,13 @@ proc_encrypted (CTX c, PACKET *pkt)
         compliance_de_vs |= 2;
     }
 
-  /* Trigger the deferred error.  */
+  /* Trigger the deferred error.  The second condition makes sure that a
+   * log_error printed in the cry_cipher_checktag never gets ignored.  */
   if (!result && early_plaintext)
     result = gpg_error (GPG_ERR_BAD_DATA);
+  else if (!result && pkt->pkt.encrypted->aead_algo
+           && log_get_errorcount (0))
+    result = gpg_error (GPG_ERR_BAD_SIGNATURE);
 
   if (result == -1)
     ;
@@ -2612,7 +2616,7 @@ check_sig_and_print (CTX c, kbnode_t node)
         }
 
       /* Compute compliance with CO_DE_VS.  */
-      if (pk && is_status_enabled ()
+      if (pk
           && gnupg_gcrypt_is_compliant (CO_DE_VS)
           && gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0, pk->pkey,
                                     nbits_from_pk (pk), NULL)

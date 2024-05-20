@@ -821,7 +821,8 @@ find_and_check_key (ctrl_t ctrl, const char *name, unsigned int use,
 {
   int rc;
   PKT_public_key *pk;
-  KBNODE keyblock = NULL;
+  kbnode_t keyblock = NULL;
+  kbnode_t node;
 
   if (!name || !*name)
     return gpg_error (GPG_ERR_INV_USER_ID);
@@ -832,7 +833,7 @@ find_and_check_key (ctrl_t ctrl, const char *name, unsigned int use,
   pk->req_usage = use;
 
   if (from_file)
-    rc = get_pubkey_fromfile (ctrl, pk, name);
+    rc = get_pubkey_fromfile (ctrl, pk, name, &keyblock);
   else
     rc = get_best_pubkey_byname (ctrl, GET_PUBKEY_NORMAL,
                                  NULL, pk, name, &keyblock, 0);
@@ -871,10 +872,10 @@ find_and_check_key (ctrl_t ctrl, const char *name, unsigned int use,
       int trustlevel;
 
       trustlevel = get_validity (ctrl, keyblock, pk, pk->user_id, NULL, 1);
-      release_kbnode (keyblock);
       if ( (trustlevel & TRUST_FLAG_DISABLED) )
         {
           /* Key has been disabled. */
+          release_kbnode (keyblock);
           send_status_inv_recp (13, name);
           log_info (_("%s: skipped: public key is disabled\n"), name);
           free_public_key (pk);
@@ -884,6 +885,7 @@ find_and_check_key (ctrl_t ctrl, const char *name, unsigned int use,
       if ( !do_we_trust_pre (ctrl, pk, trustlevel) )
         {
           /* We don't trust this key.  */
+          release_kbnode (keyblock);
           send_status_inv_recp (10, name);
           free_public_key (pk);
           return GPG_ERR_UNUSABLE_PUBKEY;
@@ -902,19 +904,33 @@ find_and_check_key (ctrl_t ctrl, const char *name, unsigned int use,
     {
       pk_list_t r;
 
-      r = xtrymalloc (sizeof *r);
-      if (!r)
-        {
-          rc = gpg_error_from_syserror ();
-          free_public_key (pk);
-          return rc;
-        }
+      r = xmalloc (sizeof *r);
       r->pk = pk;
       r->next = *pk_list_addr;
       r->flags = mark_hidden? 1:0;
       *pk_list_addr = r;
     }
 
+  for (node = keyblock; node; node = node->next)
+    if (node->pkt->pkttype == PKT_PUBLIC_SUBKEY
+        && ((pk=node->pkt->pkt.public_key)->pubkey_usage & PUBKEY_USAGE_RENC)
+        && pk->flags.valid
+        && !pk->flags.revoked
+        && !pk->flags.disabled
+        && !pk->has_expired
+        && key_present_in_pk_list (*pk_list_addr, pk))
+      {
+        pk_list_t r;
+
+        r = xmalloc (sizeof *r);
+        r->pk = copy_public_key (NULL, pk);
+        r->next = *pk_list_addr;
+        r->flags = mark_hidden? 1:0;  /* FIXME: Use PK_LIST_HIDDEN ? */
+        *pk_list_addr = r;
+      }
+
+
+  release_kbnode (keyblock);
   return 0;
 }
 
@@ -1648,36 +1664,37 @@ select_algo_from_prefs(PK_LIST pk_list, int preftype,
   return result;
 }
 
-/*
- * Select the MDC flag from the pk_list.  We can only use MDC if all
- * recipients support this feature.
- */
-int
-select_mdc_from_pklist (PK_LIST pk_list)
-{
-  PK_LIST pkr;
 
-  if ( !pk_list )
+/* Select the AEAD flag from the pk_list.  We can only use AEAD if all
+ * recipients support this feature.  Returns the AEAD to be used or 0
+ * if AEAD shall not be used.  */
+aead_algo_t
+select_aead_from_pklist (PK_LIST pk_list)
+{
+  pk_list_t pkr;
+  int aead;
+
+  if (!pk_list)
     return 0;
 
   for (pkr = pk_list; pkr; pkr = pkr->next)
     {
-      int mdc;
-
       if (pkr->pk->user_id) /* selected by user ID */
-        mdc = pkr->pk->user_id->flags.mdc;
+        aead = pkr->pk->user_id->flags.aead;
       else
-        mdc = pkr->pk->flags.mdc;
-      if (!mdc)
+        aead = pkr->pk->flags.aead;
+      if (!aead)
         return 0;  /* At least one recipient does not support it. */
     }
-  return 1; /* Can be used. */
+
+  return AEAD_ALGO_OCB; /* Yes, AEAD can be used. */
 }
 
 
-/* Print a warning for all keys in PK_LIST missing the MDC feature. */
+/* Print a warning for all keys in PK_LIST missing the AEAD feature
+ * flag or AEAD algorithms. */
 void
-warn_missing_mdc_from_pklist (PK_LIST pk_list)
+warn_missing_aead_from_pklist (PK_LIST pk_list)
 {
   PK_LIST pkr;
 
@@ -1686,12 +1703,12 @@ warn_missing_mdc_from_pklist (PK_LIST pk_list)
       int mdc;
 
       if (pkr->pk->user_id) /* selected by user ID */
-        mdc = pkr->pk->user_id->flags.mdc;
+        mdc = pkr->pk->user_id->flags.aead;
       else
-        mdc = pkr->pk->flags.mdc;
+        mdc = pkr->pk->flags.aead;
       if (!mdc)
         log_info (_("Note: key %s has no %s feature\n"),
-                  keystr_from_pk (pkr->pk), "MDC");
+                  keystr_from_pk (pkr->pk), "AEAD");
     }
 }
 

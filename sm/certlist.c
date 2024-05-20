@@ -34,13 +34,23 @@
 #include "keydb.h"
 #include "../common/i18n.h"
 
+/* Mode values for cert_usage_p.
+ * Take care: the values have a  semantic.  */
+#define USE_MODE_SIGN 0
+#define USE_MODE_ENCR 1
+#define USE_MODE_VRFY 2
+#define USE_MODE_DECR 3
+#define USE_MODE_CERT 4
+#define USE_MODE_OCSP 5
 
+/* OIDs we use here.  */
 static const char oid_kp_serverAuth[]     = "1.3.6.1.5.5.7.3.1";
 static const char oid_kp_clientAuth[]     = "1.3.6.1.5.5.7.3.2";
 static const char oid_kp_codeSigning[]    = "1.3.6.1.5.5.7.3.3";
 static const char oid_kp_emailProtection[]= "1.3.6.1.5.5.7.3.4";
 static const char oid_kp_timeStamping[]   = "1.3.6.1.5.5.7.3.8";
 static const char oid_kp_ocspSigning[]    = "1.3.6.1.5.5.7.3.9";
+
 
 /* Return 0 if the cert is usable for encryption.  A MODE of 0 checks
    for signing a MODE of 1 checks for encryption, a MODE of 2 checks
@@ -120,7 +130,7 @@ cert_usage_p (ksba_cert_t cert, int mode, int silent)
       if (gpg_err_code (err) == GPG_ERR_NO_DATA)
         {
           err = 0;
-          if (opt.verbose && mode < 2 && !silent)
+          if (opt.verbose && mode < USE_MODE_VRFY && !silent)
             log_info (_("no key usage specified - assuming all usages\n"));
           use = ~0;
         }
@@ -137,7 +147,7 @@ cert_usage_p (ksba_cert_t cert, int mode, int silent)
       return err;
     }
 
-  if (mode == 4)
+  if (mode == USE_MODE_CERT)
     {
       if ((use & (KSBA_KEYUSAGE_KEY_CERT_SIGN)))
         return 0;
@@ -147,7 +157,7 @@ cert_usage_p (ksba_cert_t cert, int mode, int silent)
       return gpg_error (GPG_ERR_WRONG_KEY_USAGE);
     }
 
-  if (mode == 5)
+  if (mode == USE_MODE_OCSP)
     {
       if (use != ~0
           && (have_ocsp_signing
@@ -161,7 +171,8 @@ cert_usage_p (ksba_cert_t cert, int mode, int silent)
     }
 
   encr_bits = (KSBA_KEYUSAGE_KEY_ENCIPHERMENT|KSBA_KEYUSAGE_DATA_ENCIPHERMENT);
-  if ((opt.compat_flags & COMPAT_ALLOW_KA_TO_ENCR))
+  if ((opt.compat_flags & COMPAT_ALLOW_KA_TO_ENCR)
+      || gpgsm_is_ecc_key (cert))
     encr_bits |= KSBA_KEYUSAGE_KEY_AGREEMENT;
 
   sign_bits = (KSBA_KEYUSAGE_DIGITAL_SIGNATURE|KSBA_KEYUSAGE_NON_REPUDIATION);
@@ -170,11 +181,13 @@ cert_usage_p (ksba_cert_t cert, int mode, int silent)
     return 0;
 
   if (!silent)
-    log_info
-      (mode==3? _("certificate should not have been used for encryption\n"):
-       mode==2? _("certificate should not have been used for signing\n"):
-       mode==1? _("certificate is not usable for encryption\n"):
-       /**/     _("certificate is not usable for signing\n"));
+    log_info (mode == USE_MODE_DECR?
+              _("certificate should not have been used for encryption\n") :
+              mode == USE_MODE_VRFY?
+              _("certificate should not have been used for signing\n") :
+              mode == USE_MODE_ENCR?
+              _("certificate is not usable for encryption\n") :
+              _("certificate is not usable for signing\n"));
 
   return gpg_error (GPG_ERR_WRONG_KEY_USAGE);
 }
@@ -184,7 +197,7 @@ cert_usage_p (ksba_cert_t cert, int mode, int silent)
 int
 gpgsm_cert_use_sign_p (ksba_cert_t cert, int silent)
 {
-  return cert_usage_p (cert, 0, silent);
+  return cert_usage_p (cert, USE_MODE_SIGN, silent);
 }
 
 
@@ -192,31 +205,31 @@ gpgsm_cert_use_sign_p (ksba_cert_t cert, int silent)
 int
 gpgsm_cert_use_encrypt_p (ksba_cert_t cert)
 {
-  return cert_usage_p (cert, 1, 0);
+  return cert_usage_p (cert, USE_MODE_ENCR, 0);
 }
 
 int
 gpgsm_cert_use_verify_p (ksba_cert_t cert)
 {
-  return cert_usage_p (cert, 2, 0);
+  return cert_usage_p (cert, USE_MODE_VRFY, 0);
 }
 
 int
 gpgsm_cert_use_decrypt_p (ksba_cert_t cert)
 {
-  return cert_usage_p (cert, 3, 0);
+  return cert_usage_p (cert, USE_MODE_DECR, 0);
 }
 
 int
 gpgsm_cert_use_cert_p (ksba_cert_t cert)
 {
-  return cert_usage_p (cert, 4, 0);
+  return cert_usage_p (cert, USE_MODE_CERT, 0);
 }
 
 int
 gpgsm_cert_use_ocsp_p (ksba_cert_t cert)
 {
-  return cert_usage_p (cert, 5, 0);
+  return cert_usage_p (cert, USE_MODE_OCSP, 0);
 }
 
 
@@ -387,7 +400,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
 
             next_ambigious:
               rc = keydb_search (ctrl, kh, &desc, 1);
-              if (rc == -1)
+              if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
                 rc = 0;
               else if (!rc)
                 {
@@ -441,6 +454,11 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
 
           if (!rc && !is_cert_in_certlist (cert, *listaddr))
             {
+              unsigned int valflags = 0;
+
+              if (!secret && (opt.always_trust || ctrl->always_trust))
+                valflags |= VALIDATE_FLAG_BYPASS;
+
               if (!rc && secret)
                 {
                   char *p;
@@ -454,9 +472,10 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
                       xfree (p);
                     }
                 }
+
               if (!rc)
-                rc = gpgsm_validate_chain (ctrl, cert, "", NULL,
-                                           0, NULL, 0, NULL);
+                rc = gpgsm_validate_chain (ctrl, cert, GNUPG_ISOTIME_NONE, NULL,
+                                           0, NULL, valflags, NULL);
               if (!rc)
                 {
                   certlist_t cl = xtrycalloc (1, sizeof *cl);
@@ -476,7 +495,8 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
 
   keydb_release (kh);
   ksba_cert_release (cert);
-  return rc == -1? gpg_error (GPG_ERR_NO_PUBKEY): rc;
+  return (gpg_err_code (rc) == GPG_ERR_NOT_FOUND
+          ? gpg_error (GPG_ERR_NO_PUBKEY): rc);
 }
 
 
@@ -500,11 +520,12 @@ gpgsm_release_certlist (certlist_t list)
 int
 gpgsm_find_cert (ctrl_t ctrl,
                  const char *name, ksba_sexp_t keyid, ksba_cert_t *r_cert,
-                 int allow_ambiguous)
+                 unsigned int flags)
 {
   int rc;
   KEYDB_SEARCH_DESC desc;
   KEYDB_HANDLE kh = NULL;
+  int allow_ambiguous = (flags & FIND_CERT_ALLOW_AMBIG);
 
   *r_cert = NULL;
   rc = classify_user_id (name, &desc, 0);
@@ -515,6 +536,9 @@ gpgsm_find_cert (ctrl_t ctrl,
         rc = gpg_error (GPG_ERR_ENOMEM);
       else
         {
+          if ((flags & FIND_CERT_WITH_EPHEM))
+            keydb_set_ephemeral (kh, 1);
+
         nextone:
           rc = keydb_search (ctrl, kh, &desc, 1);
           if (!rc)
@@ -560,7 +584,7 @@ gpgsm_find_cert (ctrl_t ctrl,
                 }
             next_ambiguous:
               rc = keydb_search (ctrl, kh, &desc, 1);
-              if (rc == -1)
+              if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
                 rc = 0;
               else
                 {
@@ -614,5 +638,6 @@ gpgsm_find_cert (ctrl_t ctrl,
     }
 
   keydb_release (kh);
-  return rc == -1? gpg_error (GPG_ERR_NO_PUBKEY): rc;
+  return (gpg_err_code (rc) == GPG_ERR_NOT_FOUND?
+          gpg_error (GPG_ERR_NO_PUBKEY): rc);
 }

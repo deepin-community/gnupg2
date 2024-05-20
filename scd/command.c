@@ -1083,10 +1083,10 @@ cmd_writekey (assuan_context_t ctx, char *line)
 
 
 static const char hlp_genkey[] =
-  "GENKEY [--force] [--timestamp=<isodate>] <no>\n"
+  "GENKEY [--force] [--timestamp=<isodate>] [--algo=ALGO] <keyref>\n"
   "\n"
-  "Generate a key on-card identified by NO, which is application\n"
-  "specific.  Return values are application specific.  For OpenPGP\n"
+  "Generate a key on-card identified by <keyref>, which is application\n"
+  "specific.  Return values are also application specific.  For OpenPGP\n"
   "cards 3 status lines are returned:\n"
   "\n"
   "  S KEY-FPR  <hexstring>\n"
@@ -1105,16 +1105,21 @@ static const char hlp_genkey[] =
   "value.  The value needs to be in ISO Format; e.g.\n"
   "\"--timestamp=20030316T120000\" and after 1970-01-01 00:00:00.\n"
   "\n"
+  "The option --algo can be used to request creation using a specific\n"
+  "algorithm.  The possible algorithms are card dependent.\n"
+  "\n"
   "The public part of the key can also later be retrieved using the\n"
   "READKEY command.";
 static gpg_error_t
 cmd_genkey (assuan_context_t ctx, char *line)
 {
   ctrl_t ctrl = assuan_get_pointer (ctx);
-  int rc;
-  char *save_line;
+  gpg_error_t err;
+  char *keyref_buffer = NULL;
+  char *keyref;
   int force;
   const char *s;
+  char *opt_algo = NULL;
   time_t timestamp;
 
   force = has_option (line, "--force");
@@ -1130,39 +1135,41 @@ cmd_genkey (assuan_context_t ctx, char *line)
   else
     timestamp = 0;
 
+  err = get_option_value (line, "--algo", &opt_algo);
+  if (err)
+    goto leave;
 
   line = skip_options (line);
   if (!*line)
-    {
-      rc = set_error (GPG_ERR_ASS_PARAMETER, "no key number given");
-      goto leave;
-    }
-  save_line = line;
+    return set_error (GPG_ERR_ASS_PARAMETER, "no key number given");
+  keyref = line;
   while (*line && !spacep (line))
     line++;
   *line = 0;
 
-  if ((rc = open_card (ctrl)))
+  if ((err = open_card (ctrl)))
     goto leave;
 
   if (!ctrl->app_ctx)
     {
-      rc = gpg_error (GPG_ERR_UNSUPPORTED_OPERATION);
+      err = gpg_error (GPG_ERR_UNSUPPORTED_OPERATION);
       goto leave;
     }
 
-  {
-    char *tmp = xtrystrdup (save_line);
-    if (!tmp)
-      return gpg_error_from_syserror ();
-    rc = app_genkey (ctrl->app_ctx, ctrl, tmp, NULL,
-                     force? APP_GENKEY_FLAG_FORCE : 0,
-                     timestamp, pin_cb, ctx);
-    xfree (tmp);
-  }
+  keyref = keyref_buffer = xtrystrdup (keyref);
+  if (!keyref)
+    {
+      err = gpg_error_from_syserror ();
+      goto leave;
+    }
+  err = app_genkey (ctrl->app_ctx, ctrl, keyref, opt_algo,
+                    force? APP_GENKEY_FLAG_FORCE : 0,
+                    timestamp, pin_cb, ctx);
 
  leave:
-  return rc;
+  xfree (keyref_buffer);
+  xfree (opt_algo);
+  return err;
 }
 
 
@@ -1705,7 +1712,10 @@ cmd_apdu (assuan_context_t ctx, char *line)
                              apdu, apdulen, handle_more,
                              NULL, &result, &resultlen);
       if (rc)
-        log_error ("apdu_send_direct failed: %s\n", gpg_strerror (rc));
+        {
+          log_error ("apdu_send_direct failed: %s\n", apdu_strerror (rc));
+          rc = iso7816_map_sw (rc);
+        }
       else
         {
           rc = assuan_send_data (ctx, result, resultlen);
@@ -1903,14 +1913,15 @@ scd_command_handler (ctrl_t ctrl, int fd)
  * data line, else as a status line.  */
 void
 send_keyinfo (ctrl_t ctrl, int data, const char *keygrip_str,
-              const char *serialno, const char *idstr)
+              const char *serialno, const char *idstr, const char *usage)
 {
   char *string;
   assuan_context_t ctx = ctrl->server_local->assuan_ctx;
 
-  string = xtryasprintf ("%s T %s %s%s", keygrip_str,
+  string = xtryasprintf ("%s T %s %s %s%s", keygrip_str,
                          serialno? serialno : "-",
                          idstr? idstr : "-",
+                         usage? usage : "-",
                          data? "\n" : "");
 
   if (!string)

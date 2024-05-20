@@ -51,6 +51,7 @@ EXTRA_DIST = build-aux/config.rpath build-aux/potomo autogen.sh autogen.rc \
              build-aux/speedo/w32/pango.modules		    \
              build-aux/speedo/w32/gdk-pixbuf-loaders.cache  \
              build-aux/speedo/w32/exdll.h		    \
+             build-aux/speedo/w32/exdll.c		    \
              build-aux/speedo/w32/README.txt		    \
              build-aux/speedo/w32/gnupg-logo-150x57.bmp	    \
              build-aux/speedo/w32/gnupg-logo-164x314.bmp    \
@@ -189,10 +190,25 @@ release:
 	 ./autogen.sh --force; \
 	 cd $(abs_top_builddir); \
 	 rm -rf dist; mkdir dist ; cd dist ; \
+         mkopt=""; \
+	 if [ -n "$$CUSTOM_SWDB" ]; then \
+            mkopt="CUSTOM_SWB=1"; \
+	    x=$$(grep '^OVERRIDE_TARBALLS=' \
+                 $$HOME/.gnupg-autogen.rc|cut -d= -f2);\
+	    if [ -f "$$x/swdb.lst" ]; then \
+	      echo "/* Copying swdb.lst from the overrides directory */"; \
+              cp "$$x/swdb.lst" . ; \
+              cp "$$x/swdb.lst.sig" . ; \
+	    fi; \
+	 fi; \
+	 echo "/* Running configure */";\
 	 $(abs_top_srcdir)/configure --enable-maintainer-mode; \
+	 echo "/* Running make distcheck */";\
 	 $(MAKE) distcheck TESTFLAGS=--parallel; \
+	 echo "/* Unpacking release */";\
 	 $(TAR) xjf $(RELEASE_NAME).tar.bz2 ;\
-	 $(MAKE) -f  $(RELEASE_NAME)/build-aux/speedo.mk w32-release ;\
+	 echo "/* Running $(MAKE) -f $(RELEASE_NAME)/build-aux/speedo.mk w32-release $$mkopt";\
+	 $(MAKE) -f  $(RELEASE_NAME)/build-aux/speedo.mk w32-release $$mkopt;\
 	 echo "/* Build finished at $$(date -uIseconds) */" ;\
          echo "/*" ;\
 	 echo " * Please run the final step interactivly:" ;\

@@ -152,24 +152,23 @@ noinst_PROGRAMS = $(am__EXEEXT_3) $(am__EXEEXT_4)
 @HAVE_W32CE_SYSTEM_TRUE@@HAVE_W32_SYSTEM_TRUE@am__append_10 = exechelp-w32ce.c
 @HAVE_W32CE_SYSTEM_FALSE@@HAVE_W32_SYSTEM_TRUE@am__append_11 = exechelp-w32.c
 @HAVE_W32_SYSTEM_FALSE@am__append_12 = exechelp-posix.c
-@HAVE_W32CE_SYSTEM_FALSE@am__append_13 = t-exechelp t-exectool
-@HAVE_W32_SYSTEM_TRUE@am__append_14 = t-w32-reg
+@HAVE_W32_SYSTEM_TRUE@am__append_13 = t-w32-reg
+@HAVE_W32_SYSTEM_FALSE@am__append_14 = t-exechelp t-exectool
 subdir = common
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
@@ -177,9 +176,9 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = w32info-rc.h
 CONFIG_CLEAN_VPATH_FILES =
-@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_1 = t-exechelp$(EXEEXT) \
-@HAVE_W32CE_SYSTEM_FALSE@	t-exectool$(EXEEXT)
-@HAVE_W32_SYSTEM_TRUE@am__EXEEXT_2 = t-w32-reg$(EXEEXT)
+@HAVE_W32_SYSTEM_TRUE@am__EXEEXT_1 = t-w32-reg$(EXEEXT)
+@HAVE_W32_SYSTEM_FALSE@am__EXEEXT_2 = t-exechelp$(EXEEXT) \
+@HAVE_W32_SYSTEM_FALSE@	t-exectool$(EXEEXT)
 am__EXEEXT_3 = t-stringhelp$(EXEEXT) t-timestuff$(EXEEXT) \
 	t-convert$(EXEEXT) t-percent$(EXEEXT) t-gettime$(EXEEXT) \
 	t-sysutils$(EXEEXT) t-sexputil$(EXEEXT) t-session-env$(EXEEXT) \
@@ -187,9 +186,8 @@ am__EXEEXT_3 = t-stringhelp$(EXEEXT) t-timestuff$(EXEEXT) \
 	t-mapstrings$(EXEEXT) t-zb32$(EXEEXT) t-mbox-util$(EXEEXT) \
 	t-iobuf$(EXEEXT) t-strlist$(EXEEXT) t-name-value$(EXEEXT) \
 	t-ccparray$(EXEEXT) t-recsel$(EXEEXT) t-w32-cmdline$(EXEEXT) \
-	$(am__EXEEXT_1) $(am__EXEEXT_2)
-@MAINTAINER_MODE_TRUE@am__EXEEXT_4 = t-helpfile$(EXEEXT) \
-@MAINTAINER_MODE_TRUE@	t-b64$(EXEEXT)
+	t-b64$(EXEEXT) $(am__EXEEXT_1) $(am__EXEEXT_2)
+@MAINTAINER_MODE_TRUE@am__EXEEXT_4 = t-helpfile$(EXEEXT)
 PROGRAMS = $(noinst_PROGRAMS)
 LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
@@ -925,10 +923,10 @@ libgpgrl_a_SOURCES = \
 module_tests = t-stringhelp t-timestuff t-convert t-percent t-gettime \
 	t-sysutils t-sexputil t-session-env t-openpgp-oid t-ssh-utils \
 	t-mapstrings t-zb32 t-mbox-util t-iobuf t-strlist t-name-value \
-	t-ccparray t-recsel t-w32-cmdline $(am__append_13) \
+	t-ccparray t-recsel t-w32-cmdline t-b64 $(am__append_13) \
 	$(am__append_14)
 @MAINTAINER_MODE_FALSE@module_maint_tests = 
-@MAINTAINER_MODE_TRUE@module_maint_tests = t-helpfile t-b64
+@MAINTAINER_MODE_TRUE@module_maint_tests = t-helpfile
 t_extra_src = t-support.h
 t_common_cflags = $(KSBA_CFLAGS) $(LIBGCRYPT_CFLAGS) \
                   $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS) $(INCICONV)

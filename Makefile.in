@@ -111,17 +111,16 @@ ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/codeset.m4 $(top_srcdir)/m4/gettext.m4 \
 	$(top_srcdir)/m4/gpg-error.m4 $(top_srcdir)/m4/iconv.m4 \
-	$(top_srcdir)/m4/isc-posix.m4 $(top_srcdir)/m4/ksba.m4 \
-	$(top_srcdir)/m4/lcmessage.m4 $(top_srcdir)/m4/ldap.m4 \
-	$(top_srcdir)/m4/lib-ld.m4 $(top_srcdir)/m4/lib-link.m4 \
-	$(top_srcdir)/m4/lib-prefix.m4 $(top_srcdir)/m4/libassuan.m4 \
-	$(top_srcdir)/m4/libgcrypt.m4 $(top_srcdir)/m4/nls.m4 \
-	$(top_srcdir)/m4/npth.m4 $(top_srcdir)/m4/ntbtls.m4 \
-	$(top_srcdir)/m4/pkg.m4 $(top_srcdir)/m4/po.m4 \
-	$(top_srcdir)/m4/progtest.m4 $(top_srcdir)/m4/readline.m4 \
-	$(top_srcdir)/m4/socklen.m4 $(top_srcdir)/m4/sys_socket_h.m4 \
-	$(top_srcdir)/m4/tar-ustar.m4 $(top_srcdir)/acinclude.m4 \
-	$(top_srcdir)/configure.ac
+	$(top_srcdir)/m4/ksba.m4 $(top_srcdir)/m4/lcmessage.m4 \
+	$(top_srcdir)/m4/ldap.m4 $(top_srcdir)/m4/lib-ld.m4 \
+	$(top_srcdir)/m4/lib-link.m4 $(top_srcdir)/m4/lib-prefix.m4 \
+	$(top_srcdir)/m4/libassuan.m4 $(top_srcdir)/m4/libgcrypt.m4 \
+	$(top_srcdir)/m4/nls.m4 $(top_srcdir)/m4/npth.m4 \
+	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
+	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
+	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
+	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(top_srcdir)/configure \
@@ -493,6 +492,7 @@ EXTRA_DIST = build-aux/config.rpath build-aux/potomo autogen.sh autogen.rc \
              build-aux/speedo/w32/pango.modules		    \
              build-aux/speedo/w32/gdk-pixbuf-loaders.cache  \
              build-aux/speedo/w32/exdll.h		    \
+             build-aux/speedo/w32/exdll.c		    \
              build-aux/speedo/w32/README.txt		    \
              build-aux/speedo/w32/gnupg-logo-150x57.bmp	    \
              build-aux/speedo/w32/gnupg-logo-164x314.bmp    \
@@ -1109,10 +1109,25 @@ release:
 	 ./autogen.sh --force; \
 	 cd $(abs_top_builddir); \
 	 rm -rf dist; mkdir dist ; cd dist ; \
+         mkopt=""; \
+	 if [ -n "$$CUSTOM_SWDB" ]; then \
+            mkopt="CUSTOM_SWB=1"; \
+	    x=$$(grep '^OVERRIDE_TARBALLS=' \
+                 $$HOME/.gnupg-autogen.rc|cut -d= -f2);\
+	    if [ -f "$$x/swdb.lst" ]; then \
+	      echo "/* Copying swdb.lst from the overrides directory */"; \
+              cp "$$x/swdb.lst" . ; \
+              cp "$$x/swdb.lst.sig" . ; \
+	    fi; \
+	 fi; \
+	 echo "/* Running configure */";\
 	 $(abs_top_srcdir)/configure --enable-maintainer-mode; \
+	 echo "/* Running make distcheck */";\
 	 $(MAKE) distcheck TESTFLAGS=--parallel; \
+	 echo "/* Unpacking release */";\
 	 $(TAR) xjf $(RELEASE_NAME).tar.bz2 ;\
-	 $(MAKE) -f  $(RELEASE_NAME)/build-aux/speedo.mk w32-release ;\
+	 echo "/* Running $(MAKE) -f $(RELEASE_NAME)/build-aux/speedo.mk w32-release $$mkopt";\
+	 $(MAKE) -f  $(RELEASE_NAME)/build-aux/speedo.mk w32-release $$mkopt;\
 	 echo "/* Build finished at $$(date -uIseconds) */" ;\
          echo "/*" ;\
 	 echo " * Please run the final step interactivly:" ;\

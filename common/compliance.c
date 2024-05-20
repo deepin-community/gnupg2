@@ -45,6 +45,9 @@ static int module;
  * using a confue file.  */
 static unsigned int min_compliant_rsa_length;
 
+/* Temporary hack to allow OCB mode in de-vs mode.  */
+static unsigned int vsd_allow_ocb;
+
 /* Return the address of a compliance cache variable for COMPLIANCE.
  * If no such variable exists NULL is returned.  FOR_RNG returns the
  * cache variable for the RNG compliance check. */
@@ -85,7 +88,9 @@ gnupg_initialize_compliance (int gnupg_module_name)
   log_assert (! initialized);
 
   /* We accept both OpenPGP-style and gcrypt-style algorithm ids.
-   * Assert that they are compatible.  */
+   * Assert that they are compatible. At some places gcrypt ids are
+   * used which can't be encoded in an OpenPGP algo octet; we also
+   * assert this.  */
   log_assert ((int) GCRY_PK_RSA          == (int) PUBKEY_ALGO_RSA);
   log_assert ((int) GCRY_PK_RSA_E        == (int) PUBKEY_ALGO_RSA_E);
   log_assert ((int) GCRY_PK_RSA_S        == (int) PUBKEY_ALGO_RSA_S);
@@ -93,6 +98,9 @@ gnupg_initialize_compliance (int gnupg_module_name)
   log_assert ((int) GCRY_PK_DSA          == (int) PUBKEY_ALGO_DSA);
   log_assert ((int) GCRY_PK_ECC          == (int) PUBKEY_ALGO_ECDH);
   log_assert ((int) GCRY_PK_ELG          == (int) PUBKEY_ALGO_ELGAMAL);
+  log_assert ((int) GCRY_PK_ECDSA        > 255);
+  log_assert ((int) GCRY_PK_ECDH         > 255);
+  log_assert ((int) GCRY_PK_EDDSA        > 255);
   log_assert ((int) GCRY_CIPHER_NONE     == (int) CIPHER_ALGO_NONE);
   log_assert ((int) GCRY_CIPHER_IDEA     == (int) CIPHER_ALGO_IDEA);
   log_assert ((int) GCRY_CIPHER_3DES     == (int) CIPHER_ALGO_3DES);
@@ -161,6 +169,9 @@ gnupg_pk_is_compliant (enum gnupg_compliance_mode compliance, int algo,
     case PUBKEY_ALGO_ECDH:
     case PUBKEY_ALGO_ECDSA:
     case PUBKEY_ALGO_EDDSA:
+    case GCRY_PK_ECDSA:
+    case GCRY_PK_ECDH:
+    case GCRY_PK_EDDSA:
       algotype = is_ecc;
       break;
 
@@ -213,7 +224,9 @@ gnupg_pk_is_compliant (enum gnupg_compliance_mode compliance, int algo,
 
           result = (curvename
                     && (algo == PUBKEY_ALGO_ECDH
-                        || algo == PUBKEY_ALGO_ECDSA)
+                        || algo == PUBKEY_ALGO_ECDSA
+                        || algo == GCRY_PK_ECDH
+                        || algo == GCRY_PK_ECDSA)
                     && (!strcmp (curvename, "brainpoolP256r1")
                         || !strcmp (curvename, "brainpoolP384r1")
                         || !strcmp (curvename, "brainpoolP512r1")));
@@ -248,6 +261,13 @@ gnupg_pk_is_allowed (enum gnupg_compliance_mode compliance,
   if (! initialized)
     return 1;
 
+  /* Map the the generic ECC algo to ECDSA if requested.  */
+  if ((algo_flags & PK_ALGO_FLAG_ECC18)
+      && algo == GCRY_PK_ECC
+      && (use == PK_USE_VERIFICATION
+          || use == PK_USE_SIGNING))
+    algo = GCRY_PK_ECDSA;
+
   switch (compliance)
     {
     case CO_DE_VS:
@@ -272,7 +292,6 @@ gnupg_pk_is_allowed (enum gnupg_compliance_mode compliance,
 	    default:
 	      log_assert (!"reached");
 	    }
-          (void)algo_flags;
 	  break;
 
 	case PUBKEY_ALGO_DSA:
@@ -293,7 +312,8 @@ gnupg_pk_is_allowed (enum gnupg_compliance_mode compliance,
 	  result = (use == PK_USE_DECRYPTION);
           break;
 
-	case PUBKEY_ALGO_ECDH:
+	case PUBKEY_ALGO_ECDH:  /* Same value as GCRY_PK_ECC, i.e. 18  */
+	case GCRY_PK_ECDH:
 	  if (use == PK_USE_DECRYPTION)
             result = 1;
           else if (use == PK_USE_ENCRYPTION)
@@ -318,6 +338,7 @@ gnupg_pk_is_allowed (enum gnupg_compliance_mode compliance,
           break;
 
 	case PUBKEY_ALGO_ECDSA:
+	case GCRY_PK_ECDSA:
           if (use == PK_USE_VERIFICATION)
             result = 1;
           else
@@ -343,6 +364,10 @@ gnupg_pk_is_allowed (enum gnupg_compliance_mode compliance,
 
 
 	case PUBKEY_ALGO_EDDSA:
+          if (use == PK_USE_VERIFICATION)
+            result = 1;
+          else /* We may not create such signatures in de-vs mode.  */
+            result = 0;
 	  break;
 
 	default:
@@ -380,7 +405,8 @@ gnupg_cipher_is_compliant (enum gnupg_compliance_mode compliance,
 	  switch (module)
 	    {
 	    case GNUPG_MODULE_NAME_GPG:
-	      return mode == GCRY_CIPHER_MODE_CFB;
+	      return (mode == GCRY_CIPHER_MODE_CFB
+                      || (vsd_allow_ocb && mode == GCRY_CIPHER_MODE_OCB));
 	    case GNUPG_MODULE_NAME_GPGSM:
 	      return mode == GCRY_CIPHER_MODE_CBC;
 	    }
@@ -424,7 +450,8 @@ gnupg_cipher_is_allowed (enum gnupg_compliance_mode compliance, int producer,
 	    {
 	    case GNUPG_MODULE_NAME_GPG:
 	      return (mode == GCRY_CIPHER_MODE_NONE
-                      || mode == GCRY_CIPHER_MODE_CFB);
+                      || mode == GCRY_CIPHER_MODE_CFB
+                      || (vsd_allow_ocb && mode == GCRY_CIPHER_MODE_OCB));
 	    case GNUPG_MODULE_NAME_GPGSM:
 	      return (mode == GCRY_CIPHER_MODE_NONE
                       || mode == GCRY_CIPHER_MODE_CBC
@@ -441,7 +468,8 @@ gnupg_cipher_is_allowed (enum gnupg_compliance_mode compliance, int producer,
 	case CIPHER_ALGO_TWOFISH:
 	  return (module == GNUPG_MODULE_NAME_GPG
 		  && (mode == GCRY_CIPHER_MODE_NONE
-                      || mode == GCRY_CIPHER_MODE_CFB)
+                      || mode == GCRY_CIPHER_MODE_CFB
+                      || (vsd_allow_ocb && mode == GCRY_CIPHER_MODE_OCB))
 		  && ! producer);
 	default:
 	  return 0;
@@ -534,6 +562,9 @@ gnupg_rng_is_compliant (enum gnupg_compliance_mode compliance)
 {
   int *result;
   int res;
+
+  /* #warning debug code ahead */
+  /* return 1; */
 
   result = get_compliance_cache (compliance, 1);
 
@@ -696,7 +727,15 @@ gnupg_compliance_option_string (enum gnupg_compliance_mode compliance)
 
 /* Set additional infos for example taken from config files at startup.  */
 void
-gnupg_set_compliance_extra_info (unsigned int min_rsa)
+gnupg_set_compliance_extra_info (enum gnupg_co_extra_infos what,
+                                 unsigned int value)
 {
-  min_compliant_rsa_length = min_rsa;
+  switch (what)
+    {
+    case CO_EXTRA_INFO_MIN_RSA:
+      min_compliant_rsa_length = value;
+      break;
+    case CO_EXTRA_INFO_VSD_ALLOW_OCB:
+      vsd_allow_ocb = value;
+    }
 }

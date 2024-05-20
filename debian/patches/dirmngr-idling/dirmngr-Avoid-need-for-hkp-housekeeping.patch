@@ -30,10 +30,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  3 files changed, 35 insertions(+), 41 deletions(-)
 
 diff --git a/dirmngr/dirmngr.c b/dirmngr/dirmngr.c
-index e287194..c04a287 100644
+index 06ef22b..0238359 100644
 --- a/dirmngr/dirmngr.c
 +++ b/dirmngr/dirmngr.c
-@@ -2031,12 +2031,10 @@ static void *
+@@ -2071,12 +2071,10 @@ static void *
  housekeeping_thread (void *arg)
  {
    static int sentinel;
@@ -46,7 +46,7 @@ index e287194..c04a287 100644
    if (sentinel)
      {
        log_info ("housekeeping is already going on\n");
-@@ -2050,7 +2048,6 @@ housekeeping_thread (void *arg)
+@@ -2090,7 +2088,6 @@ housekeeping_thread (void *arg)
    dirmngr_init_default_ctrl (&ctrlbuf);
  
    dns_stuff_housekeeping ();
@@ -55,10 +55,10 @@ index e287194..c04a287 100644
      {
        network_activity_seen = 0;
 diff --git a/dirmngr/dirmngr.h b/dirmngr/dirmngr.h
-index fed4599..0e1fbd9 100644
+index 07f0df8..48f293c 100644
 --- a/dirmngr/dirmngr.h
 +++ b/dirmngr/dirmngr.h
-@@ -234,7 +234,6 @@ int dirmngr_use_tor (void);
+@@ -250,7 +250,6 @@ int dirmngr_use_tor (void);
  int dirmngr_never_use_tor_p (void);
  
  /*-- Various housekeeping functions.  --*/
@@ -67,7 +67,7 @@ index fed4599..0e1fbd9 100644
  
  
 diff --git a/dirmngr/ks-engine-hkp.c b/dirmngr/ks-engine-hkp.c
-index 5793f07..91f1c63 100644
+index bbd5a9d..8a95291 100644
 --- a/dirmngr/ks-engine-hkp.c
 +++ b/dirmngr/ks-engine-hkp.c
 @@ -218,6 +218,24 @@ host_in_pool_p (hostinfo_t hi, int tblidx)

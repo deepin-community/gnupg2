@@ -31,6 +31,10 @@ else
 AUTOTEST_FLAGS = "--no-parallel"
 endif
 
+ifneq ($(filter nodoc,$(DEB_BUILD_PROFILES)),)
+	NODOC = --disable-doc
+endif
+
 %:
 	dh $@ --with=autoreconf --builddirectory=build
 
@@ -38,21 +42,35 @@ GPGV_UDEB_UNNEEDED = gpgtar bzip2 gpgsm scdaemon dirmngr doc tofu exec ldap gnut
 
 WIN32_FLAGS=LDFLAGS="-Xlinker --no-insert-timestamp -static" CFLAGS="-g -Os" CPPFLAGS=
 
-override_dh_auto_configure:
-	dh_auto_configure --builddirectory=build-gpgv-udeb -- \
-	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x))
-	dh_auto_configure --builddirectory=build-maintainer -- \
-		--enable-maintainer-mode \
-	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x))
-	dh_auto_configure --builddirectory=build -- --libexecdir=\$${prefix}/lib/gnupg \
+# runs for both arch-all and arch-indep builds
+execute_after_dh_auto_configure:
+	dh_auto_configure --builddirectory=build --verbose -- \
+		--libexecdir=\$${prefix}/lib/gnupg \
 		--enable-wks-tools \
 		--enable-all-tests \
 		--with-agent-s2k-calibration=300 \
-		--enable-large-secmem
+		--enable-large-secmem \
+		--with-mailprog=/usr/sbin/sendmail \
+		$(NODOC)
+
+override_dh_auto_configure-arch:
+	dh_auto_configure --builddirectory=build-maintainer -- \
+		--enable-maintainer-mode \
+	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x)) \
+		$(NODOC)
+	dh_auto_configure --builddirectory=build-gpgv-udeb -- \
+		$(NODOC) \
+		$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x))
+
+override_dh_auto_configure-indep:
+	# nothing to do
+
+# needed for both arch-all and -indep builds
+execute_after_dh_auto_build:
+	dh_auto_build --builddirectory=build
 
 override_dh_auto_build-arch:
 	dh_auto_build --builddirectory=build-gpgv-udeb
-	dh_auto_build --builddirectory=build
 	dh_auto_build --builddirectory=build-maintainer
 	cp -a build-gpgv-udeb build-gpgv-static
 	rm -f build-gpgv-static/g10/gpgv
@@ -64,14 +82,17 @@ override_dh_auto_build-indep:
 	cd build-gpgv-win32 && $(WIN32_FLAGS) ../configure \
 	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x)) \
 		$(foreach x, libgpg-error libgcrypt libassuan ksba npth, --with-$x-prefix=/usr/i686-w64-mingw32) \
+		$(NODOC) \
 		--enable-gpg2-is-gpg \
 		--with-zlib=/usr/i686-w64-mingw \
 		--prefix=/usr/i686-w64-mingw32 \
 		--host i686-w64-mingw32
+	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) status-codes.h audit-events.h
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libcommon.a
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libgpgrl.a
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libsimple-pwquery.a
 	cd build-gpgv-win32/kbx && $(WIN32_FLAGS) $(MAKE) libkeybox.a
+	cd build-gpgv-win32/regexp && $(WIN32_FLAGS) $(MAKE) _unicode_mapping.c
 	cd build-gpgv-win32/regexp && $(WIN32_FLAGS) $(MAKE) libregexp.a
 	cd build-gpgv-win32/g10 && $(WIN32_FLAGS) $(MAKE) gpgv.exe
 	strip build-gpgv-win32/g10/gpgv.exe
@@ -84,6 +105,9 @@ override_dh_shlibdeps:
 # Make ldap a recommends rather than a hard dependency.
 	dpkg-shlibdeps -Tdebian/dirmngr.substvars -dRecommends debian/dirmngr/usr/lib/gnupg/dirmngr_ldap -dDepends debian/dirmngr/usr/bin/dirmngr*
 	dh_shlibdeps -Ndirmngr
+
+execute_before_dh_autoreconf:
+	echo "Developer change history can be found in the source tarball. See NEWS for high-level changes." > ChangeLog
 
 # visualizations of package dependencies:
 debian/%.png: debian/%.dot

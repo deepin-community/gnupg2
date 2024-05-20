@@ -13,14 +13,14 @@ This fixes two of the three broken tests in import-incomplete.scm.
 GnuPG-Bug-id: 4393
 Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
 ---
- g10/import.c | 44 +++++++++++---------------------------------
- 1 file changed, 11 insertions(+), 33 deletions(-)
+ g10/import.c | 45 +++++++++++----------------------------------
+ 1 file changed, 11 insertions(+), 34 deletions(-)
 
 diff --git a/g10/import.c b/g10/import.c
-index b2d5c1d..078a78c 100644
+index f11dedc..59c83f7 100644
 --- a/g10/import.c
 +++ b/g10/import.c
-@@ -1855,7 +1855,6 @@ import_one_real (ctrl_t ctrl,
+@@ -1858,7 +1858,6 @@ import_one_real (ctrl_t ctrl,
    size_t an;
    char pkstrbuf[PUBKEY_STRING_SIZE];
    int merge_keys_done = 0;
@@ -28,7 +28,7 @@ index b2d5c1d..078a78c 100644
    KEYDB_HANDLE hd = NULL;
  
    if (r_valid)
-@@ -1892,14 +1891,6 @@ import_one_real (ctrl_t ctrl,
+@@ -1895,14 +1894,6 @@ import_one_real (ctrl_t ctrl,
        log_printf ("\n");
      }
  
@@ -43,11 +43,12 @@ index b2d5c1d..078a78c 100644
    if (screener && screener (keyblock, screener_arg))
      {
        log_error (_("key %s: %s\n"), keystr_from_pk (pk),
-@@ -1974,17 +1965,10 @@ import_one_real (ctrl_t ctrl,
+@@ -1977,18 +1968,10 @@ import_one_real (ctrl_t ctrl,
  	  }
      }
  
--  if (!delete_inv_parts (ctrl, keyblock, keyid, options ) )
+-  /* Delete invalid parts and bail out if there are no user ids left.  */
+-  if (!delete_inv_parts (ctrl, keyblock, keyid, options, otherrevsigs))
 -    {
 -      if (!silent)
 -        {
@@ -61,11 +62,11 @@ index b2d5c1d..078a78c 100644
 +  /* Delete invalid parts, and note if we have any valid ones left.
 +   * We will later abort import if this key is new but contains
 +   * no valid uids.  */
-+  delete_inv_parts (ctrl, keyblock, keyid, options);
++  delete_inv_parts (ctrl, keyblock, keyid, options, otherrevsigs);
  
    /* Get rid of deleted nodes.  */
    commit_kbnode (&keyblock);
-@@ -1994,24 +1978,11 @@ import_one_real (ctrl_t ctrl,
+@@ -1998,24 +1981,11 @@ import_one_real (ctrl_t ctrl,
      {
        apply_keep_uid_filter (ctrl, keyblock, import_filter.keep_uid);
        commit_kbnode (&keyblock);
@@ -90,7 +91,7 @@ index b2d5c1d..078a78c 100644
      }
  
    /* The keyblock is valid and ready for real import.  */
-@@ -2069,6 +2040,13 @@ import_one_real (ctrl_t ctrl,
+@@ -2073,6 +2043,13 @@ import_one_real (ctrl_t ctrl,
        err = 0;
        stats->skipped_new_keys++;
      }

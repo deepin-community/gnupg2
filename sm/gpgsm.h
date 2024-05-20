@@ -102,8 +102,6 @@ struct
   int extra_digest_algo;  /* A digest algorithm also used for
                              verification of signatures.  */
 
-  int always_trust;       /* Trust the given keys even if there is no
-                             valid certification chain */
   int skip_verify;        /* do not check signatures on data */
 
   int lock_once;          /* Keep lock once they are set */
@@ -150,6 +148,10 @@ struct
    * mode.  */
   int require_compliance;
 
+  /* Enable always-trust mode - note that there is also server option
+   * for this.  */
+  int always_trust;
+
   /* Compatibility flags (COMPAT_FLAG_xxxx).  */
   unsigned int compat_flags;
 } opt;
@@ -181,6 +183,7 @@ struct
  *  policies: 1.3.6.1.4.1.7924.1.1:N:
  */
 #define COMPAT_ALLOW_KA_TO_ENCR   1
+#define COMPAT_ALLOW_ECC_ENCR     2
 
 
 /* Forward declaration for an object defined in server.c */
@@ -210,6 +213,11 @@ struct server_control_s
   int is_pem;         /* Is in PEM format */
   int is_base64;      /* is in plain base-64 format */
 
+  /* If > 0 a hint with the expected number of input data bytes.  This
+   * is not necessary an exact number but intended to be used for
+   * progress info and to decide on how to allocate buffers.  */
+  uint64_t input_size_hint;
+
   int create_base64;  /* Create base64 encoded output */
   int create_pem;     /* create PEM output */
   const char *pem_name; /* PEM name to use */
@@ -224,6 +232,9 @@ struct server_control_s
                            2 := STEED model. */
   int offline;        /* If true gpgsm won't do any network access.  */
 
+  int always_trust;   /* True in always-trust mode; see also
+                       * opt.always-trust.  */
+
   /* The current time.  Used as a helper in certchain.c.  */
   ksba_isotime_t current_time;
 };
@@ -236,6 +247,7 @@ struct certlist_s
   ksba_cert_t cert;
   int is_encrypt_to; /* True if the certificate has been set through
                         the --encrypto-to option. */
+  int pk_algo;       /* The PK_ALGO from CERT or 0 if not yet known.  */
   int hash_algo;     /* Used to track the hash algorithm to use.  */
   const char *hash_algo_oid;  /* And the corresponding OID.  */
 };
@@ -249,6 +261,8 @@ struct rootca_flags_s
                             information.  */
   unsigned int relax:1;  /* Relax checking of root certificates.  */
   unsigned int chain_model:1; /* Root requires the use of the chain model.  */
+  unsigned int qualified:1;   /* Root CA used for qualfied signatures.   */
+  unsigned int de_vs:1;       /* Root CA is de-vs compliant.             */
 };
 
 
@@ -268,6 +282,7 @@ gpg_error_t gpgsm_status_with_err_code (ctrl_t ctrl, int no, const char *text,
                                         gpg_err_code_t ec);
 gpg_error_t gpgsm_status_with_error (ctrl_t ctrl, int no, const char *text,
                                      gpg_error_t err);
+gpg_error_t gpgsm_progress_cb (ctrl_t ctrl, uint64_t current, uint64_t total);
 gpg_error_t gpgsm_proxy_pinentry_notify (ctrl_t ctrl,
                                          const unsigned char *line);
 
@@ -280,7 +295,9 @@ unsigned long gpgsm_get_short_fingerprint (ksba_cert_t cert,
                                            unsigned long *r_high);
 unsigned char *gpgsm_get_keygrip (ksba_cert_t cert, unsigned char *array);
 char *gpgsm_get_keygrip_hexstring (ksba_cert_t cert);
-int  gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits);
+int  gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits,
+                              char **r_curve);
+int   gpgsm_is_ecc_key (ksba_cert_t cert);
 char *gpgsm_pubkey_algo_string (ksba_cert_t cert, int *r_algoid);
 char *gpgsm_get_certid (ksba_cert_t cert);
 
@@ -329,6 +346,7 @@ int gpgsm_create_cms_signature (ctrl_t ctrl,
 #define VALIDATE_FLAG_NO_DIRMNGR  1
 #define VALIDATE_FLAG_CHAIN_MODEL 2
 #define VALIDATE_FLAG_STEED       4
+#define VALIDATE_FLAG_BYPASS      8  /* No actual validation.  */
 
 int gpgsm_walk_cert_chain (ctrl_t ctrl,
                            ksba_cert_t start, ksba_cert_t *r_next);
@@ -354,8 +372,11 @@ int gpgsm_add_cert_to_certlist (ctrl_t ctrl, ksba_cert_t cert,
 int gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
                            certlist_t *listaddr, int is_encrypt_to);
 void gpgsm_release_certlist (certlist_t list);
+
+#define FIND_CERT_ALLOW_AMBIG 1
+#define FIND_CERT_WITH_EPHEM  2
 int gpgsm_find_cert (ctrl_t ctrl, const char *name, ksba_sexp_t keyid,
-                     ksba_cert_t *r_cert, int allow_ambiguous);
+                     ksba_cert_t *r_cert, unsigned int flags);
 
 /*-- keylist.c --*/
 gpg_error_t gpgsm_list_keys (ctrl_t ctrl, strlist_t names,
@@ -387,6 +408,10 @@ int gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist,
                    int in_fd, estream_t out_fp);
 
 /*-- decrypt.c --*/
+gpg_error_t hash_ecc_cms_shared_info (gcry_md_hd_t hash_hd,
+                                      const char *wrap_algo_str,
+                                      unsigned int keylen,
+                                      const void *ukm, unsigned int ukmlen);
 int gpgsm_decrypt (ctrl_t ctrl, int in_fd, estream_t out_fp);
 
 /*-- certreqgen.c --*/

@@ -210,8 +210,8 @@
 /* Defined if ttyname does not work properly */
 #undef HAVE_BROKEN_TTYNAME
 
-/* Defined if a `byte' is typedef'd */
-#undef HAVE_BYTE_TYPEDEF
+/* Define to 1 if the system has the type `byte'. */
+#undef HAVE_BYTE
 
 /* Defined if the bz2 compression library is available */
 #undef HAVE_BZIP2
@@ -219,9 +219,9 @@
 /* Define to 1 if you have the `canonicalize_file_name' function. */
 #undef HAVE_CANONICALIZE_FILE_NAME
 
-/* Define to 1 if you have the Mac OS X function CFLocaleCopyCurrent in the
-   CoreFoundation framework. */
-#undef HAVE_CFLOCALECOPYCURRENT
+/* Define to 1 if you have the Mac OS X function
+   CFLocaleCopyPreferredLanguages in the CoreFoundation framework. */
+#undef HAVE_CFLOCALECOPYPREFERREDLANGUAGES
 
 /* Define to 1 if you have the Mac OS X function CFPreferencesCopyAppValue in
    the CoreFoundation framework. */
@@ -244,9 +244,6 @@
 /* Define to 1 if you have the declaration of `sys_siglist', and to 0 if you
    don't. */
 #undef HAVE_DECL_SYS_SIGLIST
-
-/* Define to 1 if you have the <direct.h> header file. */
-#undef HAVE_DIRECT_H
 
 /* Define to 1 if you don't have `vprintf' but do have `_doprnt.' */
 #undef HAVE_DOPRNT
@@ -291,9 +288,6 @@
 
 /* Define to 1 if you have the `getenv' function. */
 #undef HAVE_GETENV
-
-/* Define to 1 if you have the <getopt.h> header file. */
-#undef HAVE_GETOPT_H
 
 /* Define to 1 if you have the `getpagesize' function. */
 #undef HAVE_GETPAGESIZE
@@ -376,9 +370,6 @@
 /* defined if libutil is available */
 #undef HAVE_LIBUTIL
 
-/* Define to 1 if you have the <libutil.h> header file. */
-#undef HAVE_LIBUTIL_H
-
 /* Define to 1 if you have the <locale.h> header file. */
 #undef HAVE_LOCALE_H
 
@@ -416,9 +407,6 @@
    by signal from a thread within the same process. We use pipe in this case,
    instead. */
 #undef HAVE_PSELECT_NO_EINTR
-
-/* Define to 1 if you have the <pty.h> header file. */
-#undef HAVE_PTY_H
 
 /* Define to 1 if you have the <pwd.h> header file. */
 #undef HAVE_PWD_H
@@ -537,6 +525,9 @@
 /* Define to 1 if you have the <sys/sysmacros.h> header file. */
 #undef HAVE_SYS_SYSMACROS_H
 
+/* Define to 1 if you have the <sys/time.h> header file. */
+#undef HAVE_SYS_TIME_H
+
 /* Define to 1 if you have the <sys/types.h> header file. */
 #undef HAVE_SYS_TYPES_H
 
@@ -561,17 +552,17 @@
 /* Define to 1 if you have the `ttyname' function. */
 #undef HAVE_TTYNAME
 
-/* Defined if a `u16' is typedef'd */
-#undef HAVE_U16_TYPEDEF
+/* Define to 1 if the system has the type `u16'. */
+#undef HAVE_U16
 
-/* Defined if a `u32' is typedef'd */
-#undef HAVE_U32_TYPEDEF
+/* Define to 1 if the system has the type `u32'. */
+#undef HAVE_U32
 
 /* Define to 1 if you have the <ucred.h> header file. */
 #undef HAVE_UCRED_H
 
-/* Defined if a `ulong' is typedef'd */
-#undef HAVE_ULONG_TYPEDEF
+/* Define to 1 if the system has the type `ulong'. */
+#undef HAVE_ULONG
 
 /* Define to 1 if you have the <unistd.h> header file. */
 #undef HAVE_UNISTD_H
@@ -582,14 +573,8 @@
 /* Defined if time_t is an unsigned type */
 #undef HAVE_UNSIGNED_TIME_T
 
-/* Defined if a `ushort' is typedef'd */
-#undef HAVE_USHORT_TYPEDEF
-
-/* Define to 1 if you have the <util.h> header file. */
-#undef HAVE_UTIL_H
-
-/* Define to 1 if you have the <utmp.h> header file. */
-#undef HAVE_UTMP_H
+/* Define to 1 if the system has the type `ushort'. */
+#undef HAVE_USHORT
 
 /* Define to 1 if you have the `vfork' function. */
 #undef HAVE_VFORK
@@ -639,14 +624,14 @@
 /* Defined if this is not a regular release */
 #undef IS_DEVELOPMENT_VERSION
 
+/* Requested API version for libassuan */
+#undef LIBASSUAN_API_REQUESTED
+
 /* Defined if the host has little endian byte ordering */
 #undef LITTLE_ENDIAN_HOST
 
 /* Defined if this build is in maintainer mode */
 #undef MAINTAINER_MODE
-
-/* Defined if mkdir() does not take permission flags */
-#undef MKDIR_TAKES_ONE_ARG
 
 /* Tool with sendmail -t interface */
 #undef NAME_OF_SENDMAIL
@@ -702,9 +687,6 @@
 /* A human readable text with the name of the OS */
 #undef PRINTABLE_OS_NAME
 
-/* Define as the return type of signal handlers (`int' or `void'). */
-#undef RETSIGTYPE
-
 /* Defined if "make check" shall run all tests */
 #undef RUN_ALL_TESTS
 
@@ -740,9 +722,6 @@
 
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
-
-/* Define to 1 if you can safely include both <sys/time.h> and <time.h>. */
-#undef TIME_WITH_SYS_TIME
 
 /* Define to enable auto starting of the dirmngr */
 #undef USE_DIRMNGR_AUTO_START
@@ -903,7 +882,7 @@
 #define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
 #define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
 
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2022 g10 Code GmbH"
+#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2023 g10 Code GmbH"
 
 
 /* For some systems (DOS currently), we hardcode the path here.  For

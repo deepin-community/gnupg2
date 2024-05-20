@@ -104,7 +104,8 @@ int agent_scd_getattr (const char *name, struct agent_card_info_s *info);
 
 /* Send the KEYTOCARD command. */
 int agent_keytocard (const char *hexgrip, int keyno, int force,
-                     const char *serialno, const char *timestamp);
+                     const char *serialno, const char *timestamp,
+                     const char *ecdh_param_str);
 
 /* Send a SETATTR command to the SCdaemon. */
 gpg_error_t agent_scd_setattr (const char *name,
@@ -153,8 +154,8 @@ gpg_error_t gpg_agent_get_confirmation (const char *desc);
 gpg_error_t agent_get_s2k_count (unsigned long *r_count);
 
 /* Check whether a secret key for public key PK is available.  Returns
-   0 if the secret key is available. */
-gpg_error_t agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk);
+   0 if not available, positive value if the secret key is available. */
+int agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk);
 
 /* Ask the agent whether a secret key is availabale for any of the
    keys (primary or sub) in KEYBLOCK.  Returns 0 if available.  */

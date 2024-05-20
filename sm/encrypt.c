@@ -1,6 +1,8 @@
 /* encrypt.c - Encrypt a message
  * Copyright (C) 2001, 2003, 2004, 2007, 2008,
  *               2010 Free Software Foundation, Inc.
+ * Copyright (C) 2001-2019 Werner Koch
+ * Copyright (C) 2015-2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -16,6 +18,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include <config.h>
@@ -144,7 +147,7 @@ init_dek (DEK dek)
   return 0;
 }
 
-
+/* Encrypt an RSA session key.  */
 static int
 encode_session_key (DEK dek, gcry_sexp_t * r_data)
 {
@@ -165,10 +168,282 @@ encode_session_key (DEK dek, gcry_sexp_t * r_data)
 }
 
 
+/* Encrypt DEK using ECDH.  S_PKEY is the public key.  On success the
+ * result is stored at R_ENCVAL.  Example of a public key:
+ *
+ *   (public-key (ecc (curve "1.3.132.0.34") (q #04B0[...]B8#)))
+ *
+ */
+static gpg_error_t
+ecdh_encrypt (DEK dek, gcry_sexp_t s_pkey, gcry_sexp_t *r_encval)
+{
+  gpg_error_t err;
+  gcry_sexp_t l1;
+  char *curvebuf = NULL;
+  const char *curve;
+  unsigned int curvebits;
+  const char *encr_algo_str;
+  const char *wrap_algo_str;
+  int hash_algo, cipher_algo;
+  unsigned int keylen, hashlen;
+  unsigned char key[32];
+  gcry_sexp_t s_data = NULL;
+  gcry_sexp_t s_encr = NULL;
+  gcry_buffer_t ioarray[2] = { {0}, {0} };
+  unsigned char *secret;  /* Alias for ioarray[0].  */
+  unsigned int secretlen;
+  unsigned char *pubkey;  /* Alias for ioarray[1].  */
+  unsigned int pubkeylen;
+  gcry_cipher_hd_t cipher_hd = NULL;
+  unsigned char *result = NULL;
+  unsigned int resultlen;
+
+  *r_encval = NULL;
+
+  /* Figure out the encryption and wrap algo OIDs.  */
+  /* Get the curve name if any,  */
+  l1 = gcry_sexp_find_token (s_pkey, "curve", 0);
+  if (l1)
+    {
+      curvebuf = gcry_sexp_nth_string (l1, 1);
+      gcry_sexp_release (l1);
+    }
+  if (!curvebuf)
+    {
+      err = gpg_error (GPG_ERR_INV_CURVE);
+      log_error ("%s: invalid public key: no curve\n", __func__);
+      goto leave;
+    }
+
+  /* We need to use our OpenPGP mapping to turn a curve name into its
+   * canonical numerical OID.  We also use this to get the size of the
+   * curve which we need to figure out a suitable hash algo.  We
+   * should have a Libgcrypt function to do this; see bug report #4926.  */
+  curve = openpgp_curve_to_oid (curvebuf, &curvebits, NULL);
+  if (!curve)
+    {
+      err = gpg_error (GPG_ERR_UNKNOWN_CURVE);
+      log_error ("%s: invalid public key: %s\n", __func__, gpg_strerror (err));
+      goto leave;
+    }
+  xfree (curvebuf);
+  curvebuf = NULL;
+
+  /* Our mapping matches the recommended algorithms from RFC-5753 but
+   * not supporing the short curves which would require 3DES.  */
+  if (curvebits < 255)
+    {
+      err = gpg_error (GPG_ERR_UNKNOWN_CURVE);
+      log_error ("%s: curve '%s' is not supported\n", __func__, curve);
+      goto leave;
+    }
+  else if (curvebits <= 256)
+    {
+      /* dhSinglePass-stdDH-sha256kdf-scheme */
+      encr_algo_str = "1.3.132.1.11.1";
+      wrap_algo_str = "2.16.840.1.101.3.4.1.5";
+      hash_algo     = GCRY_MD_SHA256;
+      hashlen       = 32;
+      cipher_algo   = GCRY_CIPHER_AES128;
+      keylen        = 16;
+    }
+  else if (curvebits <= 384)
+    {
+      /* dhSinglePass-stdDH-sha384kdf-scheme */
+      encr_algo_str = "1.3.132.1.11.2";
+      wrap_algo_str = "2.16.840.1.101.3.4.1.25";
+      hash_algo     = GCRY_MD_SHA384;
+      hashlen       = 48;
+      cipher_algo   = GCRY_CIPHER_AES256;
+      keylen        = 24;
+    }
+  else
+    {
+      /* dhSinglePass-stdDH-sha512kdf-scheme*/
+      encr_algo_str = "1.3.132.1.11.3";
+      wrap_algo_str = "2.16.840.1.101.3.4.1.45";
+      hash_algo     = GCRY_MD_SHA512;
+      hashlen       = 64;
+      cipher_algo   = GCRY_CIPHER_AES256;
+      keylen        = 32;
+    }
+
+
+  /* Create a secret and an ephemeral key.  */
+  {
+    char *k;
+    k = gcry_random_bytes_secure ((curvebits+7)/8, GCRY_STRONG_RANDOM);
+    if (DBG_CRYPTO)
+      log_printhex (k, (curvebits+7)/8, "ephm. k .:");
+    err = gcry_sexp_build (&s_data, NULL, "%b", (int)(curvebits+7)/8, k);
+    xfree (k);
+  }
+  if (err)
+    {
+      log_error ("%s: error building ephemeral secret: %s\n",
+                 __func__, gpg_strerror (err));
+      goto leave;
+    }
+
+  err = gcry_pk_encrypt (&s_encr, s_data, s_pkey);
+  if (err)
+    {
+      log_error ("%s: error encrypting ephemeral secret: %s\n",
+                 __func__, gpg_strerror (err));
+      goto leave;
+    }
+  err = gcry_sexp_extract_param (s_encr, NULL, "&se",
+                                 &ioarray+0, ioarray+1, NULL);
+  if (err)
+    {
+      log_error ("%s: error extracting ephemeral key and secret: %s\n",
+                 __func__, gpg_strerror (err));
+      goto leave;
+    }
+  secret    = ioarray[0].data;
+  secretlen = ioarray[0].len;
+  pubkey    = ioarray[1].data;
+  pubkeylen = ioarray[1].len;
+
+  if (DBG_CRYPTO)
+    {
+      log_printhex (pubkey, pubkeylen, "pubkey ..:");
+      log_printhex (secret, secretlen, "secret ..:");
+    }
+
+  /* Extract X coordinate from SECRET.  */
+  if (secretlen < 5)  /* 5 because N could be reduced to (n-1)/2.  */
+    err = gpg_error (GPG_ERR_BAD_DATA);
+  else if (*secret == 0x04)
+    {
+      secretlen--;
+      memmove (secret, secret+1, secretlen);
+      if ((secretlen & 1))
+        {
+          err = gpg_error (GPG_ERR_BAD_DATA);
+          goto leave;
+        }
+      secretlen /= 2;
+    }
+  else if (*secret == 0x40 || *secret == 0x41)
+    {
+      secretlen--;
+      memmove (secret, secret+1, secretlen);
+    }
+  else
+    err = gpg_error (GPG_ERR_BAD_DATA);
+  if (err)
+    goto leave;
+
+  if (DBG_CRYPTO)
+    log_printhex (secret, secretlen, "ECDH X ..:");
+
+  /* Derive a KEK (key wrapping key) using MESSAGE and SECRET_X.
+   * According to SEC1 3.6.1 we should check that
+   *   SECRETLEN + UKMLEN + 4 < maxhashlen
+   * However, we have no practical limit on the hash length and thus
+   * there is no point in checking this.  The second check that
+   *   KEYLEN < hashlen*(2^32-1)
+   * is obviously also not needed.  Because with our allowed
+   * parameters KEYLEN is always less or equal to HASHLEN so that we
+   * do not need to iterate at all.
+   */
+  log_assert (gcry_md_get_algo_dlen (hash_algo) == hashlen);
+  {
+    gcry_md_hd_t hash_hd;
+    err = gcry_md_open (&hash_hd, hash_algo, 0);
+    if (err)
+      goto leave;
+    gcry_md_write(hash_hd, secret, secretlen);
+    gcry_md_write(hash_hd, "\x00\x00\x00\x01", 4);  /* counter */
+    err = hash_ecc_cms_shared_info (hash_hd, wrap_algo_str, keylen, NULL, 0);
+    gcry_md_final (hash_hd);
+    log_assert (keylen <= sizeof key && keylen <= hashlen);
+    memcpy (key, gcry_md_read (hash_hd, 0), keylen);
+    gcry_md_close (hash_hd);
+    if (err)
+      goto leave;
+  }
+
+  if (DBG_CRYPTO)
+    log_printhex (key, keylen, "KEK .....:");
+
+  /* Wrap the key.  */
+  if ((dek->keylen % 8) || dek->keylen < 16)
+    {
+      log_error ("%s: can't use a session key of %u bytes\n",
+                 __func__, dek->keylen);
+      err = gpg_error (GPG_ERR_BAD_DATA);
+      goto leave;
+    }
+
+  resultlen = dek->keylen + 8;
+  result = xtrymalloc_secure (resultlen);
+  if (!result)
+    {
+      err = gpg_error_from_syserror ();
+      goto leave;
+    }
+
+  err = gcry_cipher_open (&cipher_hd, cipher_algo, GCRY_CIPHER_MODE_AESWRAP, 0);
+  if (err)
+    {
+      log_error ("%s: failed to initialize AESWRAP: %s\n",
+                 __func__, gpg_strerror (err));
+      goto leave;
+    }
+
+  err = gcry_cipher_setkey (cipher_hd, key, keylen);
+  wipememory (key, sizeof key);
+  if (err)
+    {
+      log_error ("%s: failed in gcry_cipher_setkey: %s\n",
+                 __func__, gpg_strerror (err));
+      goto leave;
+    }
+
+  err = gcry_cipher_encrypt (cipher_hd, result, resultlen,
+                             dek->key, dek->keylen);
+  if (err)
+    {
+      log_error ("%s: failed in gcry_cipher_encrypt: %s\n",
+                 __func__, gpg_strerror (err));
+      goto leave;
+    }
+
+  if (DBG_CRYPTO)
+    log_printhex (result, resultlen, "w(CEK) ..:");
+
+  err = gcry_sexp_build (r_encval, NULL,
+                         "(enc-val(ecdh(e%b)(s%b)(encr-algo%s)(wrap-algo%s)))",
+                         (int)pubkeylen, pubkey,
+                         (int)resultlen, result,
+                         encr_algo_str,
+                         wrap_algo_str,
+                         NULL);
+  if (err)
+    log_error ("%s: failed building final S-exp: %s\n",
+               __func__, gpg_strerror (err));
+
+ leave:
+  gcry_cipher_close (cipher_hd);
+  wipememory (key, sizeof key);
+  xfree (result);
+  xfree (ioarray[0].data);
+  xfree (ioarray[1].data);
+  gcry_sexp_release (s_data);
+  gcry_sexp_release (s_encr);
+  xfree (curvebuf);
+  return err;
+}
+
+
 /* Encrypt the DEK under the key contained in CERT and return it as a
-   canonical S-Exp in encval. */
+ * canonical S-expressions at ENCVAL. PK_ALGO is the public key
+ * algorithm which the caller has already retrieved from CERT.  */
 static int
-encrypt_dek (const DEK dek, ksba_cert_t cert, unsigned char **encval)
+encrypt_dek (const DEK dek, ksba_cert_t cert, int pk_algo,
+             unsigned char **encval)
 {
   gcry_sexp_t s_ciph, s_data, s_pkey;
   int rc;
@@ -198,20 +473,40 @@ encrypt_dek (const DEK dek, ksba_cert_t cert, unsigned char **encval)
       return rc;
     }
 
-  /* Put the encoded cleartext into a simple list. */
-  s_data = NULL; /* (avoid compiler warning) */
-  rc = encode_session_key (dek, &s_data);
-  if (rc)
+  if (DBG_CRYPTO)
     {
-      gcry_sexp_release (s_pkey);
-      log_error ("encode_session_key failed: %s\n", gpg_strerror (rc));
-      return rc;
+      log_printsexp (" pubkey:", s_pkey);
+      log_printhex (dek->key, dek->keylen, "CEK .....:");
     }
 
-  /* pass it to libgcrypt */
-  rc = gcry_pk_encrypt (&s_ciph, s_data, s_pkey);
+  /* Put the encoded cleartext into a simple list. */
+  s_data = NULL; /* (avoid compiler warning) */
+  if (pk_algo == GCRY_PK_ECC)
+    {
+      if (!(opt.compat_flags & COMPAT_ALLOW_ECC_ENCR))
+        rc = gpg_error (GPG_ERR_NOT_SUPPORTED);
+      else
+        rc = ecdh_encrypt (dek, s_pkey, &s_ciph);
+    }
+  else
+    {
+      rc = encode_session_key (dek, &s_data);
+      if (rc)
+        {
+          log_error ("encode_session_key failed: %s\n", gpg_strerror (rc));
+          return rc;
+        }
+      if (DBG_CRYPTO)
+        log_printsexp ("   data:", s_data);
+
+      /* pass it to libgcrypt */
+      rc = gcry_pk_encrypt (&s_ciph, s_data, s_pkey);
+    }
   gcry_sexp_release (s_data);
   gcry_sexp_release (s_pkey);
+
+  if (DBG_CRYPTO)
+    log_printsexp ("enc-val:", s_ciph);
 
   /* Reformat it. */
   if (!rc)
@@ -300,9 +595,8 @@ encrypt_cb (void *cb_value, char *buffer, size_t count, size_t *nread)
 int
 gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
 {
-  int rc = 0;
+  gpg_error_t err = 0;
   gnupg_ksba_io_t b64writer = NULL;
-  gpg_error_t err;
   ksba_writer_t writer;
   ksba_reader_t reader = NULL;
   ksba_cms_t cms = NULL;
@@ -331,7 +625,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
       log_error(_("no valid recipients given\n"));
       gpgsm_status (ctrl, STATUS_NO_RECP, "0");
       audit_log_i (ctrl->audit, AUDIT_GOT_RECIPIENTS, 0);
-      rc = gpg_error (GPG_ERR_NO_PUBKEY);
+      err = gpg_error (GPG_ERR_NO_PUBKEY);
       goto leave;
     }
 
@@ -343,7 +637,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
   if (!kh)
     {
       log_error (_("failed to allocate keyDB handle\n"));
-      rc = gpg_error (GPG_ERR_GENERAL);
+      err = gpg_error (GPG_ERR_GENERAL);
       goto leave;
     }
 
@@ -351,45 +645,43 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
   data_fp = es_fdopen_nc (data_fd, "rb");
   if (!data_fp)
     {
-      rc = gpg_error_from_syserror ();
-      log_error ("fdopen() failed: %s\n", strerror (errno));
+      err = gpg_error_from_syserror ();
+      log_error ("fdopen() failed: %s\n", gpg_strerror (err));
       goto leave;
     }
 
   err = ksba_reader_new (&reader);
+  if (!err)
+    err = ksba_reader_set_cb (reader, encrypt_cb, &encparm);
   if (err)
-      rc = err;
-  if (!rc)
-    rc = ksba_reader_set_cb (reader, encrypt_cb, &encparm);
-  if (rc)
-      goto leave;
+    goto leave;
 
   encparm.fp = data_fp;
 
   ctrl->pem_name = "ENCRYPTED MESSAGE";
-  rc = gnupg_ksba_create_writer
+  err = gnupg_ksba_create_writer
     (&b64writer, ((ctrl->create_pem? GNUPG_KSBA_IO_PEM : 0)
                   | (ctrl->create_base64? GNUPG_KSBA_IO_BASE64 : 0)),
      ctrl->pem_name, out_fp, &writer);
-  if (rc)
+  if (err)
     {
-      log_error ("can't create writer: %s\n", gpg_strerror (rc));
+      log_error ("can't create writer: %s\n", gpg_strerror (err));
       goto leave;
     }
 
+  gnupg_ksba_set_progress_cb (b64writer, gpgsm_progress_cb, ctrl);
+  if (ctrl->input_size_hint)
+    gnupg_ksba_set_total (b64writer, ctrl->input_size_hint);
+
   err = ksba_cms_new (&cms);
   if (err)
-    {
-      rc = err;
-      goto leave;
-    }
+    goto leave;
 
   err = ksba_cms_set_reader_writer (cms, reader, writer);
   if (err)
     {
-      log_debug ("ksba_cms_set_reader_writer failed: %s\n",
+      log_error ("ksba_cms_set_reader_writer failed: %s\n",
                  gpg_strerror (err));
-      rc = err;
       goto leave;
     }
 
@@ -402,9 +694,8 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
     err = ksba_cms_set_content_type (cms, 1, KSBA_CT_DATA);
   if (err)
     {
-      log_debug ("ksba_cms_set_content_type failed: %s\n",
+      log_error ("ksba_cms_set_content_type failed: %s\n",
                  gpg_strerror (err));
-      rc = err;
       goto leave;
     }
 
@@ -416,34 +707,34 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
       log_error (_("cipher algorithm '%s' may not be used in %s mode\n"),
 		 opt.def_cipher_algoid,
 		 gnupg_compliance_option_string (opt.compliance));
-      rc = gpg_error (GPG_ERR_CIPHER_ALGO);
+      err = gpg_error (GPG_ERR_CIPHER_ALGO);
       goto leave;
     }
 
   if (!gnupg_rng_is_compliant (opt.compliance))
     {
-      rc = gpg_error (GPG_ERR_FORBIDDEN);
+      err = gpg_error (GPG_ERR_FORBIDDEN);
       log_error (_("%s is not compliant with %s mode\n"),
                  "RNG",
                  gnupg_compliance_option_string (opt.compliance));
       gpgsm_status_with_error (ctrl, STATUS_ERROR,
-                               "random-compliance", rc);
+                               "random-compliance", err);
       goto leave;
     }
 
   /* Create a session key */
   dek = xtrycalloc_secure (1, sizeof *dek);
   if (!dek)
-    rc = out_of_core ();
+    err = gpg_error_from_syserror ();
   else
-  {
-    dek->algoid = opt.def_cipher_algoid;
-    rc = init_dek (dek);
-  }
-  if (rc)
+    {
+      dek->algoid = opt.def_cipher_algoid;
+      err = init_dek (dek);
+    }
+  if (err)
     {
       log_error ("failed to create the session key: %s\n",
-                 gpg_strerror (rc));
+                 gpg_strerror (err));
       goto leave;
     }
 
@@ -452,7 +743,6 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
     {
       log_error ("ksba_cms_set_content_enc_algo failed: %s\n",
                  gpg_strerror (err));
-      rc = err;
       goto leave;
     }
 
@@ -462,7 +752,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
   encparm.buffer = xtrymalloc (encparm.bufsize);
   if (!encparm.buffer)
     {
-      rc = out_of_core ();
+      err = gpg_error_from_syserror ();
       goto leave;
     }
 
@@ -478,11 +768,12 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
       unsigned char *encval;
       unsigned int nbits;
       int pk_algo;
+      char *curve = NULL;
 
       /* Check compliance.  */
-      pk_algo = gpgsm_get_key_algo_info (cl->cert, &nbits);
+      pk_algo = gpgsm_get_key_algo_info (cl->cert, &nbits, &curve);
       if (!gnupg_pk_is_compliant (opt.compliance, pk_algo, 0,
-                                  NULL, nbits, NULL))
+                                  NULL, nbits, curve))
         {
           char  kidstr[10+1];
 
@@ -497,15 +788,18 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
       /* Fixme: When adding ECC we need to provide the curvename and
        * the key to gnupg_pk_is_compliant.  */
       if (compliant
-          && !gnupg_pk_is_compliant (CO_DE_VS, pk_algo, 0, NULL, nbits, NULL))
+          && !gnupg_pk_is_compliant (CO_DE_VS, pk_algo, 0, NULL, nbits, curve))
         compliant = 0;
 
-      rc = encrypt_dek (dek, cl->cert, &encval);
-      if (rc)
+      xfree (curve);
+      curve = NULL;
+
+      err = encrypt_dek (dek, cl->cert, pk_algo, &encval);
+      if (err)
         {
-          audit_log_cert (ctrl->audit, AUDIT_ENCRYPTED_TO, cl->cert, rc);
+          audit_log_cert (ctrl->audit, AUDIT_ENCRYPTED_TO, cl->cert, err);
           log_error ("encryption failed for recipient no. %d: %s\n",
-                     recpno, gpg_strerror (rc));
+                     recpno, gpg_strerror (err));
           goto leave;
         }
 
@@ -515,7 +809,6 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
           audit_log_cert (ctrl->audit, AUDIT_ENCRYPTED_TO, cl->cert, err);
           log_error ("ksba_cms_add_recipient failed: %s\n",
                      gpg_strerror (err));
-          rc = err;
           xfree (encval);
           goto leave;
         }
@@ -527,7 +820,6 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
         {
           log_error ("ksba_cms_set_enc_val failed: %s\n",
                      gpg_strerror (err));
-          rc = err;
           goto leave;
         }
     }
@@ -541,7 +833,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
       log_error (_("operation forced to fail due to"
                    " unfulfilled compliance rules\n"));
       gpgsm_errors_seen = 1;
-      rc = gpg_error (GPG_ERR_FORBIDDEN);
+      err = gpg_error (GPG_ERR_FORBIDDEN);
       goto leave;
     }
 
@@ -552,8 +844,7 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
       err = ksba_cms_build (cms, &stopreason);
       if (err)
         {
-          log_debug ("ksba_cms_build failed: %s\n", gpg_strerror (err));
-          rc = err;
+          log_error ("creating CMS object failed: %s\n", gpg_strerror (err));
           goto leave;
         }
     }
@@ -562,15 +853,15 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
   if (encparm.readerror)
     {
       log_error ("error reading input: %s\n", strerror (encparm.readerror));
-      rc = gpg_error (gpg_err_code_from_errno (encparm.readerror));
+      err = gpg_error (gpg_err_code_from_errno (encparm.readerror));
       goto leave;
     }
 
 
-  rc = gnupg_ksba_finish_writer (b64writer);
-  if (rc)
+  err = gnupg_ksba_finish_writer (b64writer);
+  if (err)
     {
-      log_error ("write failed: %s\n", gpg_strerror (rc));
+      log_error ("write failed: %s\n", gpg_strerror (err));
       goto leave;
     }
   audit_log (ctrl->audit, AUDIT_ENCRYPTION_DONE);
@@ -585,5 +876,5 @@ gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist, int data_fd, estream_t out_fp)
   xfree (dek);
   es_fclose (data_fp);
   xfree (encparm.buffer);
-  return rc;
+  return err;
 }

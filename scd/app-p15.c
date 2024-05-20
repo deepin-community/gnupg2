@@ -326,7 +326,7 @@ struct prkdf_object_s
   char *serial_number;
 
   /* KDF/KEK parameter for OpenPGP's ECDH.  First byte is zero if not
-   * availabale. .*/
+   * available.  */
   unsigned char ecdh_kdf[4];
 
   /* Length and allocated buffer with the Id of this object. */
@@ -744,7 +744,15 @@ select_and_read_record (app_t app, unsigned short efid, int recno,
   /* On CardOS with a Linear TLV file structure the records starts
    * with some tag (often the record number) followed by the length
    * byte for this record.  Detect and remove this prefix.  */
-  if (*buflen > 2 && (*buffer)[0] != 0x30 && (*buffer)[1] == *buflen - 2)
+  if (*buflen == 2 && !(*buffer)[0] && !(*buffer)[1])
+    ;  /* deleted record.  */
+  else if (*buflen > 3 && (*buffer)[0] == 0xff
+           && buf16_to_uint ((*buffer)+1) == *buflen - 3)
+    {
+      memmove (*buffer, *buffer + 3, *buflen - 3);
+      *buflen = *buflen - 3;
+    }
+  else if (*buflen > 2 && (*buffer)[0] != 0x30 && (*buffer)[1] == *buflen - 2)
     {
       memmove (*buffer, *buffer + 2, *buflen - 2);
       *buflen = *buflen - 2;
@@ -1771,6 +1779,9 @@ read_ef_prkdf (app_t app, unsigned short fid, prkdf_object_t *result)
      starting with 0x00 or 0xff as these values are commonly used to
      pad data blocks and are no valid ASN.1 encoding.  Note the
      special handling for record mode at the end of the loop. */
+  if (record_mode && buflen == 2 && !buffer[0] && !buffer[1])
+    goto next_record;  /* Deleted record - continue with next */
+
   while (n && *p && *p != 0xff)
     {
       const unsigned char *pp;
@@ -1908,10 +1919,12 @@ read_ef_prkdf (app_t app, unsigned short fid, prkdf_object_t *result)
       if (err)
         goto parse_error;
 
-      /* Make sure that the next element is a non zero path and of
-         even length (FID are two bytes each). */
+      /* Make sure that the next element has a path of even length
+       * (FIDs are two bytes each).  We should check that the path
+       * length is non-zero but some cards return a zero length path
+       * nevertheless (e.g. A.E.T. Europe Java applets). */
       if (class != CLASS_UNIVERSAL || tag != TAG_OCTET_STRING
-          ||  !objlen || (objlen & 1) )
+          || (objlen & 1) )
         {
           errstr = "invalid path reference";
           goto parse_error;
@@ -2026,6 +2039,8 @@ read_ef_prkdf (app_t app, unsigned short fid, prkdf_object_t *result)
               err = 0;
             goto leave;
           }
+          if (buflen == 2 && !buffer[0] && !buffer[1])
+            goto next_record;  /* Deleted record - continue with next */
           p = buffer;
           n = buflen;
         }
@@ -2075,6 +2090,9 @@ read_ef_pukdf (app_t app, unsigned short fid, pukdf_object_t *result)
    * starting with 0x00 or 0xff as these values are commonly used to
    * pad data blocks and are no valid ASN.1 encoding.  Note the
    * special handling for record mode at the end of the loop. */
+  if (record_mode && buflen == 2 && !buffer[0] && !buffer[1])
+    goto next_record;  /* Deleted record - continue with next */
+
   while (n && *p && *p != 0xff)
     {
       const unsigned char *pp;
@@ -2212,10 +2230,10 @@ read_ef_pukdf (app_t app, unsigned short fid, pukdf_object_t *result)
       if (err)
         goto parse_error;
 
-      /* Make sure that the next element is a non zero path and of
-         even length (FID are two bytes each). */
+      /* Make sure that the next element has a path of even length
+       * (FIDs are two bytes each).  */
       if (class != CLASS_UNIVERSAL || tag != TAG_OCTET_STRING
-          ||  !objlen || (objlen & 1) )
+          ||  (objlen & 1) )
         {
           errstr = "invalid path reference";
           goto parse_error;
@@ -2352,6 +2370,8 @@ read_ef_pukdf (app_t app, unsigned short fid, pukdf_object_t *result)
               err = 0;
             goto leave;
           }
+          if (buflen == 2 && !buffer[0] && !buffer[1])
+            goto next_record;  /* Deleted record - continue with next */
           p = buffer;
           n = buflen;
         }
@@ -2402,6 +2422,9 @@ read_ef_cdf (app_t app, unsigned short fid, int cdftype, cdf_object_t *result)
      starting with 0x00 or 0xff as these values are commonly used to
      pad data blocks and are no valid ASN.1 encoding.  Note the
      special handling for record mode at the end of the loop. */
+  if (record_mode && buflen == 2 && !buffer[0] && !buffer[1])
+    goto next_record;  /* Deleted record - continue with next */
+
   while (n && *p && *p != 0xff)
     {
       const unsigned char *pp;
@@ -2507,10 +2530,10 @@ read_ef_cdf (app_t app, unsigned short fid, int cdftype, cdf_object_t *result)
       if (err)
         goto parse_error;
 
-      /* Make sure that the next element is a non zero path and of
-         even length (FID are two bytes each). */
+      /* Make sure that the next element has a path of even length
+       * (FIDs are two bytes each).  */
       if (class != CLASS_UNIVERSAL || tag != TAG_OCTET_STRING
-          ||  !objlen || (objlen & 1) )
+          || (objlen & 1) )
         {
           errstr = "invalid path reference";
           goto parse_error;
@@ -2623,8 +2646,8 @@ read_ef_cdf (app_t app, unsigned short fid, int cdftype, cdf_object_t *result)
       err = 0;
 
     next_record:
-      xfree (authid);
-      xfree (label);
+      xfree (authid); authid = NULL;
+      xfree (label); label = NULL;
       /* If the card uses a record oriented file structure, read the
        * next record.  Otherwise we keep on parsing the current buffer.  */
       recno++;
@@ -2633,11 +2656,14 @@ read_ef_cdf (app_t app, unsigned short fid, int cdftype, cdf_object_t *result)
           xfree (buffer); buffer = NULL;
           err = select_and_read_record (app, 0, recno, "CDF",
                                         &buffer, &buflen, NULL);
-          if (err) {
-            if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
-              err = 0;
-            goto leave;
-          }
+          if (err)
+            {
+              if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
+                err = 0;
+              goto leave;
+            }
+          if (buflen == 2 && !buffer[0] && !buffer[1])
+            goto next_record;  /* Deleted record - continue with next */
           p = buffer;
           n = buflen;
         }
@@ -2726,6 +2752,9 @@ read_ef_aodf (app_t app, unsigned short fid, aodf_object_t *result)
      starting with 0x00 or 0xff as these values are commonly used to
      pad data blocks and are no valid ASN.1 encoding.  Note the
      special handling for record mode at the end of the loop.  */
+  if (record_mode && buflen == 2 && !buffer[0] && !buffer[1])
+    goto next_record;  /* Deleted record - continue with next */
+
   while (n && *p && *p != 0xff)
     {
       const unsigned char *pp;
@@ -2756,6 +2785,8 @@ read_ef_aodf (app_t app, unsigned short fid, aodf_object_t *result)
             case 2: errstr = "external auth type are not supported"; break;
             default: errstr = "unknown privateKeyObject"; break;
             }
+          p += objlen;
+          n -= objlen;
           goto parse_error;
         }
       else
@@ -3295,6 +3326,8 @@ read_ef_aodf (app_t app, unsigned short fid, aodf_object_t *result)
               err = 0;
             goto leave;
           }
+          if (buflen == 2 && !buffer[0] && !buffer[1])
+            goto next_record;  /* Deleted record - continue with next */
           p = buffer;
           n = buflen;
         }
@@ -3873,8 +3906,8 @@ read_p15_info (app_t app)
           log_printf ("\n");
         }
 
-      log_info ("p15:  atr ..........: ");
       atr = apdu_get_atr (app_get_slot (app), &atrlen);
+      log_info ("p15:  atr ..........: ");
       if (!atr)
         log_printf ("[error]\n");
       else
@@ -4482,7 +4515,7 @@ send_key_fpr_line (ctrl_t ctrl, int number, const unsigned char *fpr)
 }
 
 
-/* If possible Emit a FPR-KEY status line for the private key object
+/* If possible emit a FPR-KEY status line for the private key object
  * PRKDF using NUMBER as index.  */
 static void
 send_key_fpr (app_t app, ctrl_t ctrl, prkdf_object_t prkdf, int number)
@@ -5041,15 +5074,15 @@ get_dispserialno (app_t app, prkdf_object_t prkdf)
   else if (IS_CARDOS_5 (app) && app->app_local->manufacturer_id
            && !ascii_strcasecmp (app->app_local->manufacturer_id,
                                  "Technology Nexus")
-           && app->serialno && app->serialnolen == 4+9
-           && !memcmp (app->serialno, "\xff\x00\x00\xff", 4)
-           && !any_control_or_space_mem (app->serialno + 4, 9))
+           && APP_CARD(app)->serialno && APP_CARD(app)->serialnolen == 4+9
+           && !memcmp (APP_CARD(app)->serialno, "\xff\x00\x00\xff", 4)
+           && !any_control_or_space_mem (APP_CARD(app)->serialno + 4, 9))
     {
       /* Sample: ff0000ff354830313232363537 -> "5H01 2265 7" */
       serial = xtrymalloc (9+2+1);
       if (serial)
         {
-          s = app->serialno + 4;
+          s = APP_CARD(app)->serialno + 4;
           for (i=0; i < 4; i++)
             serial[i] = *s++;
           serial[i++] = ' ';
@@ -5170,6 +5203,7 @@ verify_pin (app_t app,
   const char *errstr;
   const char *s;
   int remaining;
+  unsigned int min_length;
   int pin_reference;
   int verified = 0;
   int i;
@@ -5236,12 +5270,16 @@ verify_pin (app_t app,
     }
 
   /* We might need to cope with UTF8 things here.  Not sure how
-     min_length etc. are exactly defined, for now we take them as
-     a plain octet count. */
-  if (strlen (pinvalue) < aodf->min_length)
+     min_length etc. are exactly defined, for now we take them as a
+     plain octet count.  For RSCS we enforce 6 despite that some cards
+     give 4 has min. length.  */
+  min_length = aodf->min_length;
+  if (app->app_local->card_product == CARD_PRODUCT_RSCS && min_length < 6)
+    min_length = 6;
+
+  if (strlen (pinvalue) < min_length)
     {
-      log_error ("p15: PIN is too short; minimum length is %lu\n",
-                 aodf->min_length);
+      log_error ("p15: PIN is too short; minimum length is %u\n", min_length);
       err = gpg_error (GPG_ERR_BAD_PIN);
     }
   else if (aodf->stored_length && strlen (pinvalue) > aodf->stored_length)
@@ -5269,12 +5307,20 @@ verify_pin (app_t app,
   switch (aodf->pintype)
     {
     case PIN_TYPE_BCD:
-    case PIN_TYPE_ASCII_NUMERIC:
       for (s=pinvalue; digitp (s); s++)
         ;
       if (*s)
         {
           errstr = "Non-numeric digits found in PIN";
+          err = gpg_error (GPG_ERR_BAD_PIN);
+        }
+      break;
+    case PIN_TYPE_ASCII_NUMERIC:
+      for (s=pinvalue; *s && !(*s & 0x80); s++)
+        ;
+      if (*s)
+        {
+          errstr = "Non-ascii characters found in PIN";
           err = gpg_error (GPG_ERR_BAD_PIN);
         }
       break;
@@ -6030,7 +6076,7 @@ do_with_keygrip (app_t app, ctrl_t ctrl, int action,
               goto leave;
             }
 
-          send_keyinfo (ctrl, as_data, prkdf->keygrip, serialno, keyref);
+          send_keyinfo (ctrl, as_data, prkdf->keygrip, serialno, keyref, NULL);
           xfree (keyref);
           if (want_keygripstr)
             {

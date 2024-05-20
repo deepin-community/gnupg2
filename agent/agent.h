@@ -132,13 +132,6 @@ struct
      passphrase change.  */
   int enable_passphrase_history;
 
-  /* If set the extended key format is used for new keys.  Note that
-   * this may have the value 2 in which case
-   * --disable-extended-key-format won't have any effect and thus
-   * effectivley locking it.  This is required to support existing
-   * profiles which lock the use of --enable-extended-key-format. */
-  int enable_extended_key_format;
-
   int running_detached; /* We are running detached from the tty. */
 
   /* If this global option is true, the passphrase cache is ignored
@@ -429,10 +422,10 @@ void start_command_handler_ssh (ctrl_t, gnupg_fd_t);
 gpg_error_t agent_modify_description (const char *in, const char *comment,
                                       const gcry_sexp_t key, char **result);
 int agent_write_private_key (const unsigned char *grip,
-                             const void *buffer, size_t length, int force,
-                             time_t timestamp,
+                             const void *buffer, size_t length,
+                             int force, int reallyforce,
                              const char *serialno, const char *keyref,
-                             const char *dispserialno);
+                             const char *dispserialno, time_t timestamp);
 gpg_error_t agent_key_from_file (ctrl_t ctrl,
                                  const char *cache_nonce,
                                  const char *desc_text,
@@ -441,7 +434,8 @@ gpg_error_t agent_key_from_file (ctrl_t ctrl,
                                  cache_mode_t cache_mode,
                                  lookup_ttl_t lookup_ttl,
                                  gcry_sexp_t *result,
-                                 char **r_passphrase);
+                                 char **r_passphrase,
+                                 uint64_t *r_timestamp);
 gpg_error_t agent_raw_key_from_file (ctrl_t ctrl, const unsigned char *grip,
                                      gcry_sexp_t *result);
 gpg_error_t agent_keymeta_from_file (ctrl_t ctrl, const unsigned char *grip,
@@ -533,7 +527,7 @@ unsigned char get_standard_s2k_count_rfc4880 (void);
 unsigned long get_standard_s2k_time (void);
 int agent_protect (const unsigned char *plainkey, const char *passphrase,
                    unsigned char **result, size_t *resultlen,
-		   unsigned long s2k_count, int use_ocb);
+		   unsigned long s2k_count);
 gpg_error_t agent_unprotect (ctrl_t ctrl,
                      const unsigned char *protectedkey, const char *passphrase,
                      gnupg_isotime_t protected_at,
@@ -552,10 +546,10 @@ gpg_error_t s2k_hash_passphrase (const char *passphrase, int hashalgo,
                                  const unsigned char *s2ksalt,
                                  unsigned int s2kcount,
                                  unsigned char *key, size_t keylen);
-gpg_error_t agent_write_shadow_key (int maybe_update,
-                                    const unsigned char *grip,
+gpg_error_t agent_write_shadow_key (const unsigned char *grip,
                                     const char *serialno, const char *keyid,
                                     const unsigned char *pkbuf, int force,
+                                    int reallyforce,
                                     const char *dispserialno);
 
 
@@ -636,7 +630,8 @@ void agent_card_killscd (void);
 
 
 /*-- learncard.c --*/
-int agent_handle_learn (ctrl_t ctrl, int send, void *assuan_context, int force);
+int agent_handle_learn (ctrl_t ctrl, int send, void *assuan_context,
+                        int force, int reallyforce);
 
 
 /*-- cvt-openpgp.c --*/

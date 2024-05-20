@@ -5,32 +5,32 @@ Maintainer: Debian GnuPG Maintainers <pkg-gnupg-maint@lists.alioth.debian.org>
 Uploaders:
  Eric Dorland <eric@debian.org>,
  Daniel Kahn Gillmor <dkg@fifthhorseman.net>,
-Standards-Version: 4.6.1
+Standards-Version: 4.7.0
 Build-Depends:
  automake,
  autopoint,
  debhelper-compat (= 13),
+ fig2dev <!nodoc>,
  file,
  gettext,
- ghostscript,
  gpgrt-tools,
- imagemagick,
+ imagemagick <!nodoc>,
  libassuan-dev (>= 2.5.0),
  libbz2-dev,
- libcurl4-gnutls-dev,
  libgcrypt20-dev (>= 1.8.0),
- libgnutls28-dev (>= 3.0),
- libgpg-error-dev (>= 1.35),
- libksba-dev (>= 1.3.5),
+ libgnutls28-dev (>= 3.2),
+ libgpg-error-dev (>= 1.38),
+ libksba-dev (>= 1.4.0),
  libldap2-dev,
  libnpth0-dev (>= 1.2),
  libreadline-dev,
+ librsvg2-bin <!nodoc>,
  libsqlite3-dev,
  libusb-1.0-0-dev [!hurd-any],
  openssh-client <!nocheck>,
- pkg-config,
- texinfo,
- transfig,
+ pkgconf,
+ unicode-data,
+ texinfo <!nodoc>,
  zlib1g-dev | libz-dev,
 Build-Depends-Indep:
  binutils-multiarch [!amd64 !i386],
@@ -90,7 +90,7 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- gnupg (= ${binary:Version}),
+ gnupg (= ${source:Version}),
  ${shlibs:Recommends},
 Suggests:
  dbus-user-session,
@@ -120,12 +120,13 @@ Package: gpg-wks-server
 Architecture: any
 Multi-Arch: foreign
 Depends:
+ default-mta | mail-transport-agent,
  gpg (= ${binary:Version}),
  gpg-agent (= ${binary:Version}),
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- gnupg (= ${binary:Version}),
+ gnupg (= ${source:Version}),
  ${shlibs:Recommends},
 Description: GNU privacy guard - Web Key Service server
  GnuPG is GNU's tool for secure communication and data storage.
@@ -152,7 +153,7 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- gnupg (= ${binary:Version}),
+ gnupg (= ${source:Version}),
  ${shlibs:Recommends},
 Description: GNU privacy guard - Web Key Service client
  GnuPG is GNU's tool for secure communication and data storage.
@@ -195,12 +196,8 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- gnupg (= ${binary:Version}),
+ gnupg (= ${source:Version}),
  ${shlibs:Recommends},
-Breaks:
- gnupg2 (<< 2.1.10-2),
-Replaces:
- gnupg2 (<< 2.1.10-2),
 Description: GNU privacy guard - S/MIME version
  GnuPG is GNU's tool for secure communication and data storage.
  It can be used to encrypt data and to create digital signatures.
@@ -219,7 +216,7 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- gnupg (= ${binary:Version}),
+ gnupg (= ${source:Version}),
  ${shlibs:Recommends},
 Breaks:
  gnupg (<< 2.1.21-4),
@@ -252,8 +249,6 @@ Depends:
  gpg-agent (>= ${source:Version}),
  gpg-wks-client (<< ${source:Version}.1~),
  gpg-wks-client (>= ${source:Version}),
- gpg-wks-server (<< ${source:Version}.1~),
- gpg-wks-server (>= ${source:Version}),
  gpgsm (<< ${source:Version}.1~),
  gpgsm (>= ${source:Version}),
  gpgv (<< ${source:Version}.1~),
@@ -265,10 +260,11 @@ Recommends:
 Suggests:
  parcimonie,
  xloadimage,
+ gpg-wks-server (<< ${source:Version}.1~),
+ gpg-wks-server (>= ${source:Version}),
 Breaks:
  debsig-verify (<< 0.15),
  dirmngr (<< ${binary:Version}),
- gnupg2 (<< 2.1.11-7+exp1),
  libgnupg-interface-perl (<< 0.52-3),
  libgnupg-perl (<= 0.19-1),
  libmail-gnupg-perl (<= 0.22-1),
@@ -277,8 +273,6 @@ Breaks:
  python-apt (<= 1.1.0~beta4),
  python-gnupg (<< 0.3.8-3),
  python3-apt (<= 1.1.0~beta4),
-Replaces:
- gnupg2 (<< 2.1.11-7+exp1),
 Description: GNU privacy guard - a free PGP replacement
  GnuPG is GNU's tool for secure communication and data storage.
  It can be used to encrypt data and to create digital signatures.
@@ -312,12 +306,7 @@ Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Breaks:
- gnupg2 (<< 2.0.21-2),
- gpgv2 (<< 2.1.11-7+exp1),
  python-debian (<< 0.1.29),
-Replaces:
- gnupg2 (<< 2.0.21-2),
- gpgv2 (<< 2.1.11-7+exp1),
 Suggests:
  gnupg,
 Description: GNU privacy guard - signature verification tool
@@ -329,41 +318,21 @@ Description: GNU privacy guard - signature verification tool
  used to make the signature are valid. There are no configuration
  files and only a few options are implemented.
 
-Package: gpgv2
-Section: oldlibs
-Architecture: all
-Multi-Arch: foreign
-Depends:
- gpgv (>= ${source:Version}),
- ${misc:Depends},
-Description: GNU privacy guard - signature verification tool (dummy transitional package)
- GnuPG is GNU's tool for secure communication and data storage.  gpgv
- is a stripped-down version of gpg which is only able to check
- signatures.
- .
- This is a dummy transitional package that provides symlinks from gpgv2
- to gpgv.
-
 Package: dirmngr
 Architecture: any
 Multi-Arch: foreign
 Depends:
  adduser,
  gpgconf (= ${binary:Version}),
- lsb-base (>= 3.2-13),
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- gnupg (= ${binary:Version}),
+ gnupg (= ${source:Version}),
  ${shlibs:Recommends},
 Enhances:
  gpg,
  gpgsm,
  squid,
-Breaks:
- gnupg2 (<< 2.1.10-2),
-Replaces:
- gnupg2 (<< 2.1.10-2),
 Suggests:
  dbus-user-session,
  libpam-systemd,
@@ -450,12 +419,6 @@ Enhances:
  dirmngr,
  gpg,
  gpg-agent,
-Breaks:
- gnupg (<< 2.1.14-2~),
- gnupg2 (<< 2.1.14-2~),
-Replaces:
- gnupg (<< 2.1.14-2~),
- gnupg2 (<< 2.1.14-2~),
 Description: GNU privacy guard - localization files
  GnuPG is GNU's tool for secure communication and data storage.
  It can be used to encrypt data and to create digital signatures.

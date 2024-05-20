@@ -130,8 +130,8 @@ sigsubpkttype_t;
 typedef enum
   {
     AEAD_ALGO_NONE	    =  0,
-    AEAD_ALGO_EAX	    =  1,
-    AEAD_ALGO_OCB	    =  2
+    AEAD_ALGO_EAX	    =  1,  /* Deprecated.  */
+    AEAD_ALGO_OCB	    =  2   /* The one and only.  */
   }
 aead_algo_t;
 
@@ -225,6 +225,9 @@ gpg_error_t compute_openpgp_fpr_ecc (int keyversion,
                                      unsigned int kdflen,
                                      unsigned char *result,
                                      unsigned int *r_resultlen);
+
+/*-- openpgp-oid.c --*/
+enum gcry_pk_algos map_openpgp_pk_to_gcry (pubkey_algo_t algo);
 
 
 #endif /*GNUPG_COMMON_OPENPGPDEFS_H*/

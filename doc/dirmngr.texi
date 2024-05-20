@@ -168,6 +168,14 @@ Append all logging output to @var{file}.  This is very helpful in
 seeing what the agent actually does.  Use @file{socket://} to log to
 socket.
 
+@item --compatibility-flags @var{flags}
+@opindex compatibility-flags
+Set compatibility flags to work around certain problems or to emulate
+bugs.  The @var{flags} are given as a comma separated list of flag
+names and are OR-ed together.  The special flag "none" clears the list
+and allows to start over with an empty list.  To get a list of
+available flags the sole word "help" can be used.
+
 @item --debug-level @var{level}
 @opindex debug-level
 Select the debug level for investigating problems.  @var{level} may be a
@@ -320,8 +328,8 @@ keyserver name, optional keyserver configuration options may be
 provided.  These are the same as the @option{--keyserver-options} of
 @command{gpg}, but apply only to this particular keyserver.
 
-Most keyservers synchronize with each other, so there is generally no
-need to send keys to more than one server. Somes keyservers use round
+Some keyservers synchronize with each other, so there is not always a
+need to send keys to more than one server. Some keyservers use round
 robin DNS to give a different keyserver each time you use it.
 
 If exactly two keyservers are configured and only one is a Tor hidden
@@ -330,7 +338,8 @@ whether Tor is locally running or not.  The check for a running Tor is
 done for each new connection.
 
 If no keyserver is explicitly configured, dirmngr will use the
-built-in default of @code{https://keyserver.ubuntu.com}.
+built-in default of @code{https://keyserver.ubuntu.com}.  To avoid the
+use of a default keyserver the value @code{none} can be used.
 
 Windows users with a keyserver running on their Active Directory
 may use the short form @code{ldap:///} for @var{name} to access this directory.
@@ -412,7 +421,9 @@ force the use of the default responder.
 @item --honor-http-proxy
 @opindex honor-http-proxy
 If the environment variable @env{http_proxy} has been set, use its
-value to access HTTP servers.
+value to access HTTP servers.  If on Windows the option is used but
+the environment variable is not set, the proxy settings are taken
+from the system.
 
 @item --http-proxy [http://]@var{host}[:@var{port}]
 @opindex http-proxy
@@ -585,6 +596,15 @@ are treated as if they are actually handled and thus the certificate
 won't be rejected due to an unknown critical extension.  Use this
 option with care because extensions are usually flagged as critical
 for a reason.
+
+@item --ignore-crl-extension @var{oid}
+@opindex ignore-crl-extension
+Add @var{oid} to the list of ignored CRL extensions.  The @var{oid} is
+expected to be in dotted decimal form.  Critical flagged CRL
+extensions matching one of the OIDs in the list are treated as if they
+are actually handled and thus the certificate won't be rejected due to
+an unknown critical extension.  Use this option with care because
+extensions are usually flagged as critical for a reason.
 
 @item --ignore-cert @var{fpr}|@var{file}
 @opindex ignore-cert

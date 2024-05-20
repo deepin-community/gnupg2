@@ -1,3 +1,103 @@
+gnupg2 (2.2.43-6) unstable; urgency=medium
+
+  * actually fix arch-independent (win32) builds
+  * restore nl.po
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Fri, 17 May 2024 01:30:10 -0400
+
+gnupg2 (2.2.43-5) unstable; urgency=medium
+
+  * Fix arch-independent (win32) builds
+  * Strip Changelog-2011 files when building too
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Thu, 16 May 2024 19:53:06 -0400
+
+gnupg2 (2.2.43-4) unstable; urgency=medium
+
+  * Stop shipping upstream ChangeLog (/usr/share/doc/*/changelog.gz)
+  * Use debian standard UnicodeData.txt
+  * Refresh patches
+  * Rebuild generated header files in common/
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Thu, 16 May 2024 17:23:01 -0400
+
+gnupg2 (2.2.43-3) unstable; urgency=medium
+
+  * add librsvg2-bin as a build-dep for documentation
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Wed, 15 May 2024 01:07:12 -0400
+
+gnupg2 (2.2.43-2) unstable; urgency=medium
+
+  * d/changelog: correct old misspelling of "ghostscript"
+  * Generate documentation artifacts from source, respecting nodoc
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Tue, 14 May 2024 20:34:53 -0400
+
+gnupg2 (2.2.43-1) unstable; urgency=medium
+
+  [ Andreas Metzler ]
+  * New upstream version.
+    + Unfuzz patches.
+    + Drop patches from-upstream/*.
+    + Bump b-d versioning for libgnutls28-dev, libgpg-error-dev and
+      libksba-dev as specified in configure.ac.
+  * Drop unused b-d on libcurl4-gnutls-dev. (See #980768).
+  * Drop dirmngr dependency on lsb-base. (Empty transitional package
+    depending on essential package)
+  * [lintian] B-d on pkgconf instead of pkg-config.
+  * Drop transitional gpgv2 package (requested in #873186) and update CI
+    test dependencies. Also remove Breaks/Replaces against ancient
+    (pre-buster) versions of gpgv2.
+  * Drop Breaks/Replaces against ancient versions of gnupg/gnupg2.
+  * Update CI test dependencies (gnupg2 --> gnupg).
+  * Fixup recommends of architecture-any packages on architecture-all package
+    "gnupg" to use (= ${source:Version}) instead of binary:Version. (Thanks,
+    James McCoy) Closes: #1060366
+  * Run wrap-and-sort -ast.
+  * Set --with-mailprog=/usr/sbin/sendmail and add a dependency on
+    default-mta | mail-transport-agent to gpg-wks-server. Closes: #1025782
+  * Demote gnupg metapackage dependency on gpg-wks-server to Suggests since it
+    pulls in an MTA.
+  * Fix binary-all FTBFS by running a regular build for arch-all builds.
+    Otherwise the test suite was run against /usr/bin/gpg for
+    binary-all builds and failed if it was missing.
+  * Speed up indep build by only running needed dh_auto_configure instances.
+  * Add support for nodoc build-profile to ease bootstrapping. Turn
+    debian/gnupg-l10n.install into an executable that parses
+    $DEB_BUILD_PROFILES. This seems to be the only working solution to avoid
+    bad interaction of dh_install/dh_missing with nodoc.
+    Closes: #980768
+   * Add patches to avoid setting AEAD: OCB key-preference on generated keys
+     and to avoid using OCB-mode even if AEAD: OCB key preference is set
+     on recipient key.
+
+  [ Daniel Kahn Gillmor ]
+  * Standards-Version: bump to 4.7.0 (no changes needed)
+  * gbp: use upstream-2.2 as the name of the upstream branch
+  * d/copyright: Update dates, add Andreas Metzler for debian/*
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Mon, 13 May 2024 15:45:52 -0400
+
+gnupg2 (2.2.40-3) unstable; urgency=medium
+
+  * Team upload.
+  * Replace ldap-implicit.diff with
+    from-master/build-Use-LDAP_DEPRECATED-to-detect-ldap-library.patch.
+  * Comment b-d on ghostscript, imagemagick and transfig to ease t64
+    transition.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 17 Mar 2024 07:35:14 +0100
+
+gnupg2 (2.2.40-2) unstable; urgency=medium
+
+  * Team upload.
+  * ldap-implicit.diff: Fix FTBFS with -Werror=implicit-function-declaration
+    due to using ldap deprecated interfaces in autoconf tests.
+    Closes: #1066137
+
+ -- Andreas Metzler <ametzler@debian.org>  Wed, 13 Mar 2024 18:27:10 +0100
+
 gnupg2 (2.2.40-1.1) unstable; urgency=medium
 
   * Non-maintainer upload.
@@ -1536,8 +1636,8 @@ gnupg2 (2.0.12-1) unstable; urgency=low
 
   * New upstream release. (Closes: #499569, #463270, #446494, #314068,
     #519375, #514587)
-  * debian/control: Change build dependency on gs to ghoscript, since
-    ghoscript has been replaced.
+  * debian/control: Change build dependency on gs to ghostscript, since
+    ghostscript has been replaced.
   * debian/compat: Use debhelper v7.
   * debian/control: Update Standards-Version to 3.8.2.
   * debian/control: Use ${misc:Depends}.

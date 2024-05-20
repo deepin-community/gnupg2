@@ -93,6 +93,7 @@ gpg_error_t iso7816_reset_retry_counter (int slot, int chvno,
 gpg_error_t iso7816_reset_retry_counter_with_rc (int slot, int chvno,
                                                  const char *data,
                                                  size_t datalen);
+gpg_error_t iso7816_select_data (int slot, int occurrence, int tag);
 gpg_error_t iso7816_get_data (int slot, int extended_mode, int tag,
                               unsigned char **result, size_t *resultlen);
 gpg_error_t iso7816_put_data (int slot, int extended_mode, int tag,
@@ -150,5 +151,7 @@ gpg_error_t iso7816_read_record_ext (int slot, int recno, int reccount,
 gpg_error_t iso7816_read_record (int slot, int recno, int reccount,
                                  int short_ef,
                                  unsigned char **result, size_t *resultlen);
+gpg_error_t iso7816_update_binary (int slot, int extended_mode, size_t offset,
+                                   const void *data, size_t datalen);
 
 #endif /*ISO7816_H*/

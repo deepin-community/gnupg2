@@ -772,7 +772,14 @@ pcsc_send_apdu (int slot, unsigned char *apdu, size_t apdulen,
     return err;
 
   if (DBG_CARD_IO)
-    log_printhex (apdu, apdulen, "  PCSC_data:");
+    {
+      /* Do not dump the PIN in a VERIFY command.  */
+      if (apdulen > 5 && apdu[1] == 0x20)
+        log_debug ("PCSC_data: %02X %02X %02X %02X %02X [redacted]\n",
+                   apdu[0], apdu[1], apdu[2], apdu[3], apdu[4]);
+      else
+        log_printhex (apdu, apdulen, "PCSC_data:");
+    }
 
   if ((reader_table[slot].pcsc.protocol & PCSC_PROTOCOL_T1))
       send_pci.protocol = PCSC_PROTOCOL_T1;
@@ -1697,7 +1704,14 @@ send_apdu_ccid (int slot, unsigned char *apdu, size_t apdulen,
     return err;
 
   if (DBG_CARD_IO)
-    log_printhex (apdu, apdulen, " raw apdu:");
+    {
+      /* Do not dump the PIN in a VERIFY command.  */
+      if (apdulen > 5 && apdu[1] == 0x20)
+        log_debug (" raw apdu: %02x%02x%02x%02x%02x [redacted]\n",
+                   apdu[0], apdu[1], apdu[2], apdu[3], apdu[4]);
+      else
+        log_printhex (apdu, apdulen, " raw apdu:");
+    }
 
   maxbuflen = *buflen;
   if (pininfo)
@@ -2601,19 +2615,16 @@ apdu_get_atr (int slot, size_t *atrlen)
 {
   unsigned char *buf;
 
-  if (DBG_READER)
-    log_debug ("enter: apdu_get_atr: slot=%d\n", slot);
-
   if (slot < 0 || slot >= MAX_READER || !reader_table[slot].used )
     {
       if (DBG_READER)
-        log_debug ("leave: apdu_get_atr => NULL (bad slot)\n");
+        log_debug ("apdu_get_atr => NULL (bad slot)\n");
       return NULL;
     }
   if (!reader_table[slot].atrlen)
     {
       if (DBG_READER)
-        log_debug ("leave: apdu_get_atr => NULL (no ATR)\n");
+        log_debug ("apdu_get_atr => NULL (no ATR)\n");
       return NULL;
     }
 
@@ -2621,13 +2632,11 @@ apdu_get_atr (int slot, size_t *atrlen)
   if (!buf)
     {
       if (DBG_READER)
-        log_debug ("leave: apdu_get_atr => NULL (out of core)\n");
+        log_debug ("apdu_get_atr => NULL (out of core)\n");
       return NULL;
     }
   memcpy (buf, reader_table[slot].atr, reader_table[slot].atrlen);
   *atrlen = reader_table[slot].atrlen;
-  if (DBG_READER)
-    log_debug ("leave: apdu_get_atr => atrlen=%zu\n", *atrlen);
   return buf;
 }
 
@@ -3235,7 +3244,7 @@ apdu_send_simple (int slot, int extended_mode,
  * Out of historical reasons the function returns 0 on success and
  * outs the status word at the end of the result to be able to get the
  * status word in the case of a not provided RETBUF, R_SW can be used
- * to store the SW.  But note that R_SW qill only be set if the
+ * to store the SW.  But note that R_SW will only be set if the
  * function returns 0. */
 int
 apdu_send_direct (int slot, size_t extended_length,

@@ -1,7 +1,7 @@
 /* iobuf.c  -  File Handling for OpenPGP.
  * Copyright (C) 1998, 1999, 2000, 2001, 2003, 2004, 2006, 2007, 2008,
  *               2009, 2010, 2011  Free Software Foundation, Inc.
- * Copyright (C) 2015  g10 Code GmbH
+ * Copyright (C) 2015, 2023  g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -27,6 +27,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: (LGPL-3.0-or-later OR GPL-2.0-or-later)
  */
 
 #include <config.h>
@@ -35,7 +36,6 @@
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>
-#include <assert.h>
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -93,6 +93,9 @@ typedef struct
   int no_cache;
   int eof_seen;
   int print_only_name; /* Flags indicating that fname is not a real file.  */
+  char peeked[32];     /* Read ahead buffer.  */
+  byte npeeked;        /* Number of bytes valid in peeked.  */
+  byte upeeked;        /* Number of bytes used from peeked.  */
   char fname[1];       /* Name of the file.  */
 } file_filter_ctx_t;
 
@@ -203,7 +206,7 @@ fd_cache_invalidate (const char *fname)
   close_cache_t cc;
   int rc = 0;
 
-  assert (fname);
+  log_assert (fname);
   if (DBG_IOBUF)
     log_debug ("fd_cache_invalidate (%s)\n", fname);
 
@@ -366,7 +369,7 @@ fd_cache_close (const char *fname, gnupg_fd_t fp)
 {
   close_cache_t cc;
 
-  assert (fp);
+  log_assert (fp);
   if (!fname || !*fname)
     {
 #ifdef HAVE_W32_SYSTEM
@@ -407,7 +410,7 @@ fd_cache_open (const char *fname, const char *mode)
 {
   close_cache_t cc;
 
-  assert (fname);
+  log_assert (fname);
   for (cc = close_cache; cc; cc = cc->next)
     {
       if (cc->fp != GNUPG_INVALID_FD && !fd_cache_strcmp (cc->fname, fname))
@@ -453,8 +456,17 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 
   if (control == IOBUFCTRL_UNDERFLOW)
     {
-      assert (size); /* We need a buffer.  */
-      if (a->eof_seen)
+      log_assert (size); /* We need a buffer.  */
+      if (a->npeeked > a->upeeked)
+        {
+          nbytes = a->npeeked - a->upeeked;
+          if (nbytes > size)
+            nbytes = size;
+          memcpy (buf, a->peeked + a->upeeked, nbytes);
+          a->upeeked += nbytes;
+          *ret_len = nbytes;
+        }
+      else if (a->eof_seen)
 	{
 	  rc = -1;
 	  *ret_len = 0;
@@ -471,7 +483,8 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 	      if (ec != ERROR_BROKEN_PIPE)
 		{
 		  rc = gpg_error_from_errno (ec);
-		  log_error ("%s: read error: ec=%d\n", a->fname, ec);
+		  log_error ("%s: read error: %s (ec=%d)\n",
+                             a->fname, gpg_strerror (rc), ec);
 		}
 	    }
 	  else if (!nread)
@@ -529,9 +542,10 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 	    {
 	      if (size && !WriteFile (f, p, nbytes, &n, NULL))
 		{
-		  int ec = (int) GetLastError ();
-		  rc = gpg_error_from_errno (ec);
-		  log_error ("%s: write error: ec=%d\n", a->fname, ec);
+		  int ec = gnupg_w32_set_errno (-1);
+		  rc = gpg_error_from_syserror ();
+		  log_error ("%s: write error: %s (ec=%d)\n",
+                             a->fname, gpg_strerror (rc), ec);
 		  break;
 		}
 	      p += n;
@@ -573,6 +587,69 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
       a->eof_seen = 0;
       a->keep_open = 0;
       a->no_cache = 0;
+      a->npeeked = 0;
+      a->upeeked = 0;
+    }
+  else if (control == IOBUFCTRL_PEEK)
+    {
+      /* Peek on the input.  */
+#ifdef HAVE_W32_SYSTEM
+      unsigned long nread;
+
+      nbytes = 0;
+      if (!ReadFile (f, a->peeked, sizeof a->peeked, &nread, NULL))
+        {
+          int ec = (int) GetLastError ();
+          if (ec != ERROR_BROKEN_PIPE)
+            {
+              rc = gpg_error_from_errno (ec);
+              log_error ("%s: read error: %s (ec=%d)\n",
+                         a->fname, gpg_strerror (rc), ec);
+            }
+          a->npeeked = 0;
+        }
+      else if (!nread)
+        {
+          a->eof_seen = 1;
+          a->npeeked = 0;
+        }
+      else
+        {
+          a->npeeked = nread;
+        }
+
+#else /* Unix */
+
+      int n;
+
+    peek_more:
+      do
+        {
+          n = read (f, a->peeked + a->npeeked, sizeof a->peeked - a->npeeked);
+        }
+      while (n == -1 && errno == EINTR);
+      if (n > 0)
+        {
+          a->npeeked += n;
+          if (a->npeeked < sizeof a->peeked)
+            goto peek_more;
+        }
+      else if (!n) /* eof */
+        {
+          a->eof_seen = 1;
+        }
+      else /* error */
+        {
+          rc = gpg_error_from_syserror ();
+          if (gpg_err_code (rc) != GPG_ERR_EPIPE)
+            log_error ("%s: read error: %s\n", a->fname, gpg_strerror (rc));
+        }
+#endif /* Unix */
+
+      size = a->npeeked < size? a->npeeked : size;
+      memcpy (buf, a->peeked, size);
+      *ret_len = size;
+      rc = 0;  /* Return success - the user needs to check ret_len.  */
     }
   else if (control == IOBUFCTRL_DESC)
     {
@@ -609,7 +686,7 @@ file_es_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 
   if (control == IOBUFCTRL_UNDERFLOW)
     {
-      assert (size); /* We need a buffer.  */
+      log_assert (size); /* We need a buffer.  */
       if (a->eof_seen)
 	{
 	  rc = -1;
@@ -700,7 +777,7 @@ sock_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 
   if (control == IOBUFCTRL_UNDERFLOW)
     {
-      assert (size);		/* need a buffer */
+      log_assert (size);		/* need a buffer */
       if (a->eof_seen)
 	{
 	  rc = -1;
@@ -743,7 +820,8 @@ sock_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 	      if (n == SOCKET_ERROR)
 		{
 		  int ec = (int) WSAGetLastError ();
-		  rc = gpg_error_from_errno (ec);
+		  gnupg_w32_set_errno (ec);
+		  rc = gpg_error_from_syserror ();
 		  log_error ("socket write error: ec=%d\n", ec);
 		  break;
 		}
@@ -795,7 +873,7 @@ block_filter (void *opaque, int control, iobuf_t chain, byte * buffer,
       size_t n = 0;
 
       p = buf;
-      assert (size);		/* need a buffer */
+      log_assert (size);	/* need a buffer */
       if (a->eof)		/* don't read any further */
 	rc = -1;
       while (!rc && size)
@@ -917,7 +995,7 @@ block_filter (void *opaque, int control, iobuf_t chain, byte * buffer,
 	{			/* the complicated openpgp scheme */
 	  size_t blen, n, nbytes = size + a->buflen;
 
-	  assert (a->buflen <= OP_MIN_PARTIAL_CHUNK);
+	  log_assert (a->buflen <= OP_MIN_PARTIAL_CHUNK);
 	  if (nbytes < OP_MIN_PARTIAL_CHUNK)
 	    {
 	      /* not enough to write a partial block out; so we store it */
@@ -941,12 +1019,12 @@ block_filter (void *opaque, int control, iobuf_t chain, byte * buffer,
 		  blen /= 2;
 		  c--;
 		  /* write the partial length header */
-		  assert (c <= 0x1f);	/*;-) */
+		  log_assert (c <= 0x1f);	/*;-) */
 		  c |= 0xe0;
 		  iobuf_put (chain, c);
 		  if ((n = a->buflen))
 		    {		/* write stuff from the buffer */
-		      assert (n == OP_MIN_PARTIAL_CHUNK);
+		      log_assert (n == OP_MIN_PARTIAL_CHUNK);
 		      if (iobuf_write (chain, a->buffer, n))
 			rc = gpg_error_from_syserror ();
 		      a->buflen = 0;
@@ -963,8 +1041,8 @@ block_filter (void *opaque, int control, iobuf_t chain, byte * buffer,
 	      /* store the rest in the buffer */
 	      if (!rc && nbytes)
 		{
-		  assert (!a->buflen);
-		  assert (nbytes < OP_MIN_PARTIAL_CHUNK);
+		  log_assert (!a->buflen);
+		  log_assert (nbytes < OP_MIN_PARTIAL_CHUNK);
 		  if (!a->buffer)
 		    a->buffer = xmalloc (OP_MIN_PARTIAL_CHUNK);
 		  memcpy (a->buffer, p, nbytes);
@@ -1102,8 +1180,8 @@ iobuf_alloc (int use, size_t bufsize)
   iobuf_t a;
   static int number = 0;
 
-  assert (use == IOBUF_INPUT || use == IOBUF_INPUT_TEMP
-	  || use == IOBUF_OUTPUT || use == IOBUF_OUTPUT_TEMP);
+  log_assert (use == IOBUF_INPUT || use == IOBUF_INPUT_TEMP
+              || use == IOBUF_OUTPUT || use == IOBUF_OUTPUT_TEMP);
   if (bufsize == 0)
     {
       log_bug ("iobuf_alloc() passed a bufsize of 0!\n");
@@ -1218,7 +1296,7 @@ iobuf_temp_with_content (const char *buffer, size_t length)
   int i;
 
   a = iobuf_alloc (IOBUF_INPUT_TEMP, length);
-  assert (length == a->d.size);
+  log_assert (length == a->d.size);
   /* memcpy (a->d.buf, buffer, length); */
   for (i=0; i < length; i++)
     a->d.buf[i] = buffer[i];
@@ -1249,7 +1327,7 @@ do_open (const char *fname, int special_filenames,
   int fd;
   byte desc[MAX_IOBUF_DESC];
 
-  assert (use == IOBUF_INPUT || use == IOBUF_OUTPUT);
+  log_assert (use == IOBUF_INPUT || use == IOBUF_OUTPUT);
 
   if (special_filenames
       /* NULL or '-'.  */
@@ -1487,6 +1565,25 @@ iobuf_ioctl (iobuf_t a, iobuf_ioctl_t cmd, int intval, void *ptrval)
           return fd_cache_synchronize (ptrval);
         }
     }
+  else if (cmd == IOBUF_IOCTL_PEEK)
+    {
+      /* Peek at a justed opened file.  Use this only directly after a
+       * file has been opened for reading.  Don't use it after you did
+       * a seek.  This works only if just file filter has been
+       * pushed.  Expects a buffer wit size INTVAL at PTRVAL and returns
+       * the number of bytes put into the buffer.  */
+      if (DBG_IOBUF)
+	log_debug ("iobuf-%d.%d: ioctl '%s' peek\n",
+		   a ? a->no : -1, a ? a->subno : -1, iobuf_desc (a, desc));
+      if (a->filter == file_filter && ptrval && intval)
+        {
+          file_filter_ctx_t *fcx = a->filter_ov;
+          size_t len = intval;
+
+          if (!file_filter (fcx, IOBUFCTRL_PEEK, NULL, ptrval, &len))
+            return (int)len;
+        }
+    }
 
 
   return -1;
@@ -1666,13 +1763,13 @@ iobuf_pop_filter (iobuf_t a, int (*f) (void *opaque, int control,
   if (a->use == IOBUF_INPUT_TEMP || a->use == IOBUF_OUTPUT_TEMP)
     {
       /* This should be the last filter in the pipeline.  */
-      assert (! a->chain);
+      log_assert (! a->chain);
       return 0;
     }
   if (!a->filter)
     {				/* this is simple */
       b = a->chain;
-      assert (b);
+      log_assert (b);
       xfree (a->d.buf);
       xfree (a->real_fname);
       memcpy (a, b, sizeof *a);
@@ -1767,12 +1864,12 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
        buffer.  */
     return -1;
 
-  assert (a->use == IOBUF_INPUT);
+  log_assert (a->use == IOBUF_INPUT);
 
   /* If there is still some buffered data, then move it to the start
      of the buffer and try to fill the end of the buffer.  (This is
      useful if we are called from iobuf_peek().)  */
-  assert (a->d.start <= a->d.len);
+  log_assert (a->d.start <= a->d.len);
   a->d.len -= a->d.start;
   memmove (a->d.buf, &a->d.buf[a->d.start], a->d.len);
   a->d.start = 0;
@@ -1900,7 +1997,7 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
 	}
     }
 
-  assert (a->d.start <= a->d.len);
+  log_assert (a->d.start <= a->d.len);
   if (a->d.start < a->d.len)
     return a->d.buf[a->d.start++];
 
@@ -1957,7 +2054,7 @@ iobuf_readbyte (iobuf_t a)
       return -1;
     }
 
-  assert (a->d.start <= a->d.len);
+  log_assert (a->d.start <= a->d.len);
 
   if (a->nlimit && a->nbytes >= a->nlimit)
     return -1;			/* forced EOF */
@@ -1969,7 +2066,7 @@ iobuf_readbyte (iobuf_t a)
   else if ((c = underflow (a, 1)) == -1)
     return -1;			/* EOF */
 
-  assert (a->d.start <= a->d.len);
+  log_assert (a->d.start <= a->d.len);
 
   /* Note: if underflow doesn't return EOF, then it returns the first
      byte that was read and advances a->d.start appropriately.  */
@@ -2057,8 +2154,8 @@ iobuf_peek (iobuf_t a, byte * buf, unsigned buflen)
 {
   int n = 0;
 
-  assert (buflen > 0);
-  assert (a->use == IOBUF_INPUT || a->use == IOBUF_INPUT_TEMP);
+  log_assert (buflen > 0);
+  log_assert (a->use == IOBUF_INPUT || a->use == IOBUF_INPUT_TEMP);
 
   if (buflen > a->d.size)
     /* We can't peek more than we can buffer.  */
@@ -2074,7 +2171,7 @@ iobuf_peek (iobuf_t a, byte * buf, unsigned buflen)
 
       /* Underflow consumes the first character (it's the return
 	 value).  unget() it by resetting the "file position".  */
-      assert (a->d.start == 1);
+      log_assert (a->d.start == 1);
       a->d.start = 0;
     }
 
@@ -2109,7 +2206,7 @@ iobuf_writebyte (iobuf_t a, unsigned int c)
     if ((rc=filter_flush (a)))
       return rc;
 
-  assert (a->d.len < a->d.size);
+  log_assert (a->d.len < a->d.size);
   a->d.buf[a->d.len++] = c;
   return 0;
 }
@@ -2168,8 +2265,8 @@ iobuf_writestr (iobuf_t a, const char *buf)
 int
 iobuf_write_temp (iobuf_t dest, iobuf_t source)
 {
-  assert (source->use == IOBUF_OUTPUT || source->use == IOBUF_OUTPUT_TEMP);
-  assert (dest->use == IOBUF_OUTPUT || dest->use == IOBUF_OUTPUT_TEMP);
+  log_assert (source->use == IOBUF_OUTPUT || source->use == IOBUF_OUTPUT_TEMP);
+  log_assert (dest->use == IOBUF_OUTPUT || dest->use == IOBUF_OUTPUT_TEMP);
 
   iobuf_flush_temp (source);
   return iobuf_write (dest, source->d.buf, source->d.len);
@@ -2269,13 +2366,10 @@ iobuf_set_limit (iobuf_t a, off_t nlimit)
 }
 
 
-
-off_t
-iobuf_get_filelength (iobuf_t a, int *overflow)
+/* Return the length of the file behind A.  If there is no file, return 0. */
+uint64_t
+iobuf_get_filelength (iobuf_t a)
 {
-  if (overflow)
-    *overflow = 0;
-
   /* Hmmm: file_filter may have already been removed */
   for ( ; a->chain; a = a->chain )
     ;
@@ -2288,56 +2382,18 @@ iobuf_get_filelength (iobuf_t a, int *overflow)
     gnupg_fd_t fp = b->fp;
 
 #if defined(HAVE_W32_SYSTEM)
-    ulong size;
-    static int (* __stdcall get_file_size_ex) (void *handle,
-					       LARGE_INTEGER *r_size);
-    static int get_file_size_ex_initialized;
+    LARGE_INTEGER exsize;
 
-    if (!get_file_size_ex_initialized)
-      {
-	void *handle;
-
-	handle = dlopen ("kernel32.dll", RTLD_LAZY);
-	if (handle)
-	  {
-	    get_file_size_ex = dlsym (handle, "GetFileSizeEx");
-	    if (!get_file_size_ex)
-	      dlclose (handle);
-	  }
-	get_file_size_ex_initialized = 1;
-      }
-
-    if (get_file_size_ex)
-      {
-	/* This is a newer system with GetFileSizeEx; we use this
-	   then because it seem that GetFileSize won't return a
-	   proper error in case a file is larger than 4GB. */
-	LARGE_INTEGER exsize;
-
-	if (get_file_size_ex (fp, &exsize))
-	  {
-	    if (!exsize.u.HighPart)
-	      return exsize.u.LowPart;
-	    if (overflow)
-	      *overflow = 1;
-	    return 0;
-	  }
-      }
-    else
-      {
-	if ((size=GetFileSize (fp, NULL)) != 0xffffffff)
-	  return size;
-      }
+    if (GetFileSizeEx (fp, &exsize))
+      return exsize.QuadPart;
     log_error ("GetFileSize for handle %p failed: %s\n",
 	       fp, w32_strerror (-1));
 #else /*!HAVE_W32_SYSTEM*/
-    {
-      struct stat st;
+    struct stat st;
 
-      if ( !fstat (FD2INT (fp), &st) )
-        return st.st_size;
-      log_error("fstat() failed: %s\n", strerror(errno) );
-    }
+    if ( !fstat (fp, &st) )
+      return st.st_size;
+    log_error("fstat() failed: %s\n", strerror(errno) );
 #endif /*!HAVE_W32_SYSTEM*/
   }
 
@@ -2552,7 +2608,7 @@ iobuf_read_line (iobuf_t a, byte ** addr_of_buffer,
      NUL character in the buffer.  This requires at least 2 bytes.  We
      don't complicate the code by handling the stupid corner case, but
      simply assert that it can't happen.  */
-  assert (!buffer || length >= 2 || maxlen >= 2);
+  log_assert (!buffer || length >= 2 || maxlen >= 2);
 
   if (!buffer || length <= 1)
     /* must allocate a new buffer */
@@ -2585,7 +2641,7 @@ iobuf_read_line (iobuf_t a, byte ** addr_of_buffer,
 	      /* p is pointing at the last byte in the buffer.  We
 		 always terminate the line with "\n\0" so overwrite
 		 the previous byte with a \n.  */
-	      assert (p > buffer);
+	      log_assert (p > buffer);
 	      p[-1] = '\n';
 
 	      /* Indicate truncation.  */

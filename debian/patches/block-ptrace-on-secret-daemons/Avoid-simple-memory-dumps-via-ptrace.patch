@@ -22,7 +22,7 @@ Upstream bug: https://dev.gnupg.org/T1211
  3 files changed, 18 insertions(+), 1 deletion(-)
 
 diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
-index 53b86dd..3f7aaae 100644
+index c3b71b0..d747707 100644
 --- a/agent/gpg-agent.c
 +++ b/agent/gpg-agent.c
 @@ -50,6 +50,9 @@
@@ -35,7 +35,7 @@ index 53b86dd..3f7aaae 100644
  
  #define INCLUDED_BY_MAIN_MODULE 1
  #define GNUPG_COMMON_NEED_AFLOCAL
-@@ -1078,6 +1081,11 @@ main (int argc, char **argv )
+@@ -1066,6 +1069,11 @@ main (int argc, char **argv )
  
    early_system_init ();
  
@@ -48,10 +48,10 @@ index 53b86dd..3f7aaae 100644
       file descriptors and the signal mask.  This info is required to
       do the exec call properly.  We don't need it on Windows.  */
 diff --git a/configure.ac b/configure.ac
-index 4638f99..6e44af2 100644
+index 6d1e2ba..6962d20 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1404,7 +1404,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
+@@ -1397,7 +1397,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
                  ftruncate funlockfile getaddrinfo getenv getpagesize \
                  getpwnam getpwuid getrlimit getrusage gettimeofday   \
                  gmtime_r inet_ntop inet_pton isascii lstat memicmp   \

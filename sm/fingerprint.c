@@ -219,20 +219,25 @@ gpgsm_get_keygrip_hexstring (ksba_cert_t cert)
 
 
 /* Return the PK algorithm used by CERT as well as the length in bits
-   of the public key at NBITS. */
+ * of the public key at NBITS.  If R_CURVE is not NULL and an ECC
+ * algorithm is used the name or OID of the curve is stored there; the
+ * caller needs to free this value.  */
 int
-gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits)
+gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits, char **r_curve)
 {
   gcry_sexp_t s_pkey;
   int rc;
   ksba_sexp_t p;
   size_t n;
   gcry_sexp_t l1, l2;
+  const char *curve;
   const char *name;
   char namebuf[128];
 
   if (nbits)
     *nbits = 0;
+  if (r_curve)
+    *r_curve = NULL;
 
   p = ksba_cert_get_public_key (cert);
   if (!p)
@@ -258,6 +263,24 @@ gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits)
       gcry_sexp_release (s_pkey);
       return 0;
     }
+
+  if (r_curve)
+    {
+      curve = gcry_pk_get_curve (l1, 0, NULL);
+      if (curve)
+        {
+          name = openpgp_oid_to_curve (openpgp_curve_to_oid (curve,
+                                                             NULL, NULL), 0);
+          *r_curve = xtrystrdup (name? name : curve);
+          if (!*r_curve)
+            {
+              gcry_sexp_release (l1);
+              gcry_sexp_release (s_pkey);
+              return 0;  /* Out of core.  */
+            }
+        }
+    }
+
   l2 = gcry_sexp_cadr (l1);
   gcry_sexp_release (l1);
   l1 = l2;
@@ -274,6 +297,14 @@ gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits)
   gcry_sexp_release (l1);
   gcry_sexp_release (s_pkey);
   return gcry_pk_map_name (namebuf);
+}
+
+
+/* Return true if CERT is an ECC key.  */
+int
+gpgsm_is_ecc_key (ksba_cert_t cert)
+{
+  return GCRY_PK_ECC == gpgsm_get_key_algo_info (cert, NULL, NULL);
 }
 
 

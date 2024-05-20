@@ -1,0 +1,26 @@
+From: Andreas Metzler <ametzler@debian.org>
+Date: Thu, 9 May 2024 13:57:27 +0200
+Subject: Do not set AEAD: OCB key preference on new keys.
+
+Origin: vendor
+Forwarded: not-needed
+Last-Update: 2024-05-09
+---
+ g10/keygen.c | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/g10/keygen.c b/g10/keygen.c
+index 6612352..dfaa591 100644
+--- a/g10/keygen.c
++++ b/g10/keygen.c
+@@ -527,6 +527,10 @@ keygen_set_std_prefs (const char *string,int personal)
+     if (!(opt.compat_flags & COMPAT_VSD_ALLOW_OCB))
+       ocb = 0;
+ 
++    /* Do not set AEAD: OCB on newly generated key, it is a LibrePGP
++     * feature.  */
++    ocb = 0;
++
+     if(!rc)
+       {
+ 	if(personal)
