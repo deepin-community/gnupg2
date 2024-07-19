@@ -25,6 +25,7 @@
  */
 
 #include <config.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,7 +85,7 @@ enum cmd_and_opt_values
 
 
 /* The list of commands and options. */
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
   ARGPARSE_group (300, ("@Commands:\n ")),
 
   ARGPARSE_c (aReceive,   "receive",
@@ -199,7 +200,7 @@ my_strusage( int level )
 static void
 wrong_args (const char *text)
 {
-  es_fprintf (es_stderr, "usage: %s [options] %s\n", strusage (11), text);
+  es_fprintf (es_stderr, "usage: %s [options] %s\n", gpgrt_strusage (11), text);
   exit (2);
 }
 
@@ -207,12 +208,12 @@ wrong_args (const char *text)
 
 /* Command line parsing.  */
 static enum cmd_and_opt_values
-parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
+parse_arguments (gpgrt_argparse_t *pargs, gpgrt_opt_t *popts)
 {
   enum cmd_and_opt_values cmd = 0;
   int no_more_options = 0;
 
-  while (!no_more_options && gnupg_argparse (NULL, pargs, popts))
+  while (!no_more_options && gpgrt_argparse (NULL, pargs, popts))
     {
       switch (pargs->r_opt)
         {
@@ -275,11 +276,11 @@ int
 main (int argc, char **argv)
 {
   gpg_error_t err, firsterr;
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   enum cmd_and_opt_values cmd;
 
   gnupg_reopen_std ("gpg-wks-server");
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   log_set_prefix ("gpg-wks-server", GPGRT_LOG_WITH_PREFIX);
 
   /* Make sure that our subsystems are ready.  */
@@ -290,7 +291,7 @@ main (int argc, char **argv)
   pargs.argv  = &argv;
   pargs.flags = ARGPARSE_FLAG_KEEP;
   cmd = parse_arguments (&pargs, opts);
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gpgrt_argparse (NULL, &pargs, NULL);
 
   if (log_get_errorcount (0))
     exit (2);
@@ -307,7 +308,7 @@ main (int argc, char **argv)
 
   /* Set defaults for non given options.  */
   if (!opt.gpg_program)
-    opt.gpg_program = gnupg_module_name (GNUPG_MODULE_NAME_GPG);
+    opt.gpg_program = xstrdup (gnupg_module_name (GNUPG_MODULE_NAME_GPG));
 
   if (!opt.directory)
     opt.directory = "/var/lib/gnupg/wks";
@@ -420,7 +421,7 @@ main (int argc, char **argv)
       break;
 
     default:
-      usage (1);
+      gpgrt_usage (1);
       err = gpg_error (GPG_ERR_BUG);
       break;
     }
@@ -1332,10 +1333,10 @@ send_congratulation_message (const char *mbox, const char *keyfile)
               "\n"
               "Best regards\n"
               "\n"
-              "  Gnu Key Publisher\n\n\n"
+              "  GnuPG Key Publisher\n\n\n"
               "-- \n"
-              "The GnuPG Project welcomes donations: %s\n",
-              mbox, "https://gnupg.org/donate");
+              "For information on GnuPG see: %s\n",
+              mbox, "https://gnupg.org");
 
   es_rewind (body);
   err = encrypt_stream (&bodyenc, body, keyfile);

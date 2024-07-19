@@ -32,9 +32,6 @@
 #include <errno.h>
 #ifdef HAVE_ZIP
 # include <zlib.h>
-# if defined(__riscos__) && defined(USE_ZLIBRISCOS)
-#  include "zlib-riscos.h"
-# endif
 #endif
 
 #include "gpg.h"
@@ -63,13 +60,6 @@ init_compress( compress_filter_context_t *zfx, z_stream *zs )
     int rc;
     int level;
 
-#if defined(__riscos__) && defined(USE_ZLIBRISCOS)
-    static int zlib_initialized = 0;
-
-    if (!zlib_initialized)
-        zlib_initialized = riscos_load_module("ZLib", zlib_path, 1);
-#endif
-
     if( opt.compress_level >= 1 && opt.compress_level <= 9 )
 	level = opt.compress_level;
     else if( opt.compress_level == -1 )
@@ -83,10 +73,12 @@ init_compress( compress_filter_context_t *zfx, z_stream *zs )
 					    -13, 8, Z_DEFAULT_STRATEGY)
 			    : deflateInit( zs, level )
 			    ) != Z_OK ) {
-	log_fatal("zlib problem: %s\n", zs->msg? zs->msg :
+	log_error ("zlib problem: %s\n", zs->msg? zs->msg :
 			       rc == Z_MEM_ERROR ? "out of core" :
 			       rc == Z_VERSION_ERROR ? "invalid lib version" :
 						       "unknown error" );
+        write_status_error ("zlib.init", gpg_error (GPG_ERR_INTERNAL));
+        g10_exit (2);
     }
 
     zfx->outbufsize = 8192;
@@ -100,6 +92,9 @@ do_compress( compress_filter_context_t *zfx, z_stream *zs, int flush, IOBUF a )
     int zrc;
     unsigned n;
 
+    if (flush == Z_NO_FLUSH && zs->avail_in == 0)
+      return 0;
+
     do {
 	zs->next_out = BYTEF_CAST (zfx->outbuf);
 	zs->avail_out = zfx->outbufsize;
@@ -111,9 +106,11 @@ do_compress( compress_filter_context_t *zfx, z_stream *zs, int flush, IOBUF a )
 	    ;
 	else if( zrc != Z_OK ) {
 	    if( zs->msg )
-		log_fatal("zlib deflate problem: %s\n", zs->msg );
+		log_error ("zlib deflate problem: %s\n", zs->msg );
 	    else
-		log_fatal("zlib deflate problem: rc=%d\n", zrc );
+		log_error ("zlib deflate problem: rc=%d\n", zrc );
+            write_status_error ("zlib.deflate", gpg_error (GPG_ERR_INTERNAL));
+            g10_exit (2);
 	}
 	n = zfx->outbufsize - zs->avail_out;
 	if( DBG_FILTER )
@@ -123,7 +120,7 @@ do_compress( compress_filter_context_t *zfx, z_stream *zs, int flush, IOBUF a )
 					       (unsigned)n, zrc );
 
 	if( (rc=iobuf_write( a, zfx->outbuf, n )) ) {
-	    log_debug("deflate: iobuf_write failed\n");
+	    log_error ("deflate: iobuf_write failed\n");
 	    return rc;
 	}
     } while( zs->avail_in || (flush == Z_FINISH && zrc != Z_STREAM_END) );
@@ -147,10 +144,12 @@ init_uncompress( compress_filter_context_t *zfx, z_stream *zs )
      */
     if( (rc = zfx->algo == 1? inflateInit2( zs, -15)
 			    : inflateInit( zs )) != Z_OK ) {
-	log_fatal("zlib problem: %s\n", zs->msg? zs->msg :
-			       rc == Z_MEM_ERROR ? "out of core" :
-			       rc == Z_VERSION_ERROR ? "invalid lib version" :
-						       "unknown error" );
+	log_error ("zlib problem: %s\n", zs->msg? zs->msg :
+                   rc == Z_MEM_ERROR ? "out of core" :
+                   rc == Z_VERSION_ERROR ? "invalid lib version" :
+                                            "unknown error" );
+        write_status_error ("zlib.init.un", gpg_error (GPG_ERR_INTERNAL));
+        g10_exit (2);
     }
 
     zfx->inbufsize = 2048;
@@ -205,9 +204,11 @@ do_uncompress( compress_filter_context_t *zfx, z_stream *zs,
 	    rc = -1; /* eof */
 	else if( zrc != Z_OK && zrc != Z_BUF_ERROR ) {
 	    if( zs->msg )
-		log_fatal("zlib inflate problem: %s\n", zs->msg );
+		log_error ("zlib inflate problem: %s\n", zs->msg );
 	    else
-		log_fatal("zlib inflate problem: rc=%d\n", zrc );
+		log_error ("zlib inflate problem: rc=%d\n", zrc );
+            write_status_error ("zlib.inflate", gpg_error (GPG_ERR_BAD_DATA));
+            g10_exit (2);
 	}
     } while (zs->avail_out && zrc != Z_STREAM_END && zrc != Z_BUF_ERROR
              && !leave);

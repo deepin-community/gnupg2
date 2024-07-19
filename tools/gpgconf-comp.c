@@ -1,7 +1,7 @@
 /* gpgconf-comp.c - Configuration utility for GnuPG.
  * Copyright (C) 2004, 2007-2011 Free Software Foundation, Inc.
  * Copyright (C) 2016 Werner Koch
- * Copyright (C) 2020-2022 g10 Code GmbH
+ * Copyright (C) 2020, 2021 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -17,6 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with GnuPG; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #if HAVE_CONFIG_H
@@ -52,14 +53,6 @@
 #include "../common/gc-opt-flags.h"
 #include "gpgconf.h"
 
-/* There is a problem with gpg 1.4 under Windows: --gpgconf-list
-   returns a plain filename without escaping.  As long as we have not
-   fixed that we need to use gpg2.  */
-#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
-#define GPGNAME "gpg2"
-#else
-#define GPGNAME GPG_NAME
-#endif
 
 
 
@@ -80,7 +73,7 @@ gc_error (int status, int errnum, const char *fmt, ...)
   va_list arg_ptr;
 
   va_start (arg_ptr, fmt);
-  log_logv (GPGRT_LOG_ERROR, fmt, arg_ptr);
+  log_logv (GPGRT_LOGLVL_ERROR, fmt, arg_ptr);
   va_end (arg_ptr);
 
   if (errnum)
@@ -100,8 +93,11 @@ gc_error (int status, int errnum, const char *fmt, ...)
 /* Forward declaration.  */
 static void gpg_agent_runtime_change (int killflag);
 static void scdaemon_runtime_change (int killflag);
+#ifdef BUILD_WITH_TPM2D
+static void tpm2daemon_runtime_change (int killflag);
+#endif
 static void dirmngr_runtime_change (int killflag);
-
+static void keyboxd_runtime_change (int killflag);
 
 
 
@@ -283,7 +279,6 @@ static const struct
 #define GC_OPT_FLAG_RUNTIME	(1UL << 3)
 
 
-
 /* A human-readable description for each flag.  */
 static const struct
 {
@@ -329,8 +324,8 @@ typedef struct known_option_s known_option_t;
 static known_option_t known_options_gpg_agent[] =
   {
    { "verbose", GC_OPT_FLAG_LIST|GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
-   { "disable-scdaemon", GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME,
-                         GC_LEVEL_ADVANCED },
+   { "quiet", GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
+   { "disable-scdaemon", GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED },
    { "enable-ssh-support", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "ssh-fingerprint-digest", GC_OPT_FLAG_RUNTIME, GC_LEVEL_EXPERT },
    { "enable-putty-support", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
@@ -370,6 +365,7 @@ static known_option_t known_options_gpg_agent[] =
 static known_option_t known_options_scdaemon[] =
   {
    { "verbose", GC_OPT_FLAG_LIST|GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
+   { "quiet", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "no-greeting", GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "reader-port",  GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
    { "ctapi-driver", GC_OPT_FLAG_RUNTIME, GC_LEVEL_ADVANCED },
@@ -378,6 +374,7 @@ static known_option_t known_options_scdaemon[] =
    { "disable-pinpad", GC_OPT_FLAG_NONE|GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
    { "enable-pinpad-varlen", GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
    { "card-timeout",         GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
+   { "application-priority", GC_OPT_FLAG_RUNTIME, GC_LEVEL_ADVANCED },
    { "debug-level", GC_OPT_FLAG_ARG_OPT|GC_OPT_FLAG_RUNTIME, GC_LEVEL_ADVANCED},
    { "log-file",    GC_OPT_FLAG_RUNTIME, GC_LEVEL_ADVANCED,
      GC_ARG_TYPE_FILENAME },
@@ -386,11 +383,29 @@ static known_option_t known_options_scdaemon[] =
    { NULL }
  };
 
+#ifdef BUILD_WITH_TPM2D
+/* The known options of the GC_COMPONENT_TPM2DAEMON component.  */
+static known_option_t known_options_tpm2daemon[] =
+  {
+   { "verbose", GC_OPT_FLAG_LIST|GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
+   { "quiet", GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
+   { "no-greeting", GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
+   { "debug-level", GC_OPT_FLAG_ARG_OPT|GC_OPT_FLAG_RUNTIME, GC_LEVEL_ADVANCED},
+   { "log-file",    GC_OPT_FLAG_RUNTIME, GC_LEVEL_ADVANCED,
+     GC_ARG_TYPE_FILENAME },
+   { "deny-admin",  GC_OPT_FLAG_RUNTIME, GC_LEVEL_BASIC },
+   { "parent",  GC_OPT_FLAG_RUNTIME, GC_LEVEL_ADVANCED },
+
+   { NULL }
+ };
+#endif
+
 
 /* The known options of the GC_COMPONENT_GPG component.  */
 static known_option_t known_options_gpg[] =
   {
    { "verbose",              GC_OPT_FLAG_LIST, GC_LEVEL_BASIC },
+   { "quiet",                GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "no-greeting",          GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "default-key",          GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "encrypt-to",           GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
@@ -405,20 +420,18 @@ static known_option_t known_options_gpg[] =
    { "keyserver",            GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "auto-key-locate",      GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED },
    { "auto-key-import",      GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
-   { "no-auto-key-import",   GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "auto-key-retrieve",    GC_OPT_FLAG_NONE, GC_LEVEL_EXPERT },
-   { "no-auto-key-retrieve", GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "include-key-block",    GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
-   { "no-include-key-block", GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "disable-dirmngr",      GC_OPT_FLAG_NONE, GC_LEVEL_EXPERT },
    { "max-cert-depth",       GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "completes-needed",     GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "marginals-needed",     GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
 
-   /* The next is a pseudo option which we read via --gpgconf-list.
+   /* The next items are pseudo options which we read via --gpgconf-list.
     * The meta information is taken from the table below.  */
    { "default_pubkey_algo",  GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "compliance_de_vs",     GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
+   { "use_keyboxd",          GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
 
    { NULL }
  };
@@ -429,6 +442,11 @@ static const char *known_pseudo_options_gpg[] =
     * result is valid for all components.
     *                  v-- ARGPARSE_TYPE_INT */
    "compliance_de_vs:0:1:@:",
+   /* True is use_keyboxd is enabled.  That option can be set in
+    * common.conf but is not direcly supported by gpgconf.  Thus we
+    * only allow to read it out.
+    *                  v-- ARGPARSE_TYPE_INT */
+   "use_keyboxd:0:1:@:",
    NULL
  };
 
@@ -437,6 +455,7 @@ static const char *known_pseudo_options_gpg[] =
 static known_option_t known_options_gpgsm[] =
  {
    { "verbose",           GC_OPT_FLAG_LIST, GC_LEVEL_BASIC },
+   { "quiet",             GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "no-greeting",       GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "default-key",       GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "encrypt-to",        GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
@@ -474,6 +493,7 @@ static const char *known_pseudo_options_gpgsm[] =
 static known_option_t known_options_dirmngr[] =
  {
    { "verbose",           GC_OPT_FLAG_LIST, GC_LEVEL_BASIC },
+   { "quiet",             GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "no-greeting",       GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "resolver-timeout",  GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
    { "nameserver",        GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
@@ -481,6 +501,7 @@ static known_option_t known_options_dirmngr[] =
    { "log-file",          GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED,
                           GC_ARG_TYPE_FILENAME },
    { "faked-system-time", GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
+   { "batch",             GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "force",             GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "use-tor",           GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "keyserver",         GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
@@ -494,7 +515,7 @@ static known_option_t known_options_dirmngr[] =
    { "ignore-ldap-dp",    GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED },
    { "ldap-proxy",        GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "only-ldap-proxy",   GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED },
-   { "add-servers",       GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED },
+   { "add-servers",       GC_OPT_FLAG_NONE, GC_LEVEL_EXPERT },
    { "ldaptimeout",       GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "max-replies",       GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "allow-ocsp",        GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
@@ -503,6 +524,18 @@ static known_option_t known_options_dirmngr[] =
    { "allow-version-check",     GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
    { "ignore-ocsp-service-url", GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED },
 
+
+   { NULL }
+ };
+
+/* The known options of the GC_COMPONENT_KEYBOXD component.  */
+static known_option_t known_options_keyboxd[] =
+ {
+   { "verbose",           GC_OPT_FLAG_LIST, GC_LEVEL_BASIC },
+   { "quiet",             GC_OPT_FLAG_NONE, GC_LEVEL_BASIC },
+   { "log-file",          GC_OPT_FLAG_NONE, GC_LEVEL_ADVANCED,
+                          GC_ARG_TYPE_FILENAME },
+   { "faked-system-time", GC_OPT_FLAG_NONE, GC_LEVEL_INVISIBLE },
 
    { NULL }
  };
@@ -528,7 +561,7 @@ struct gc_option_s
   unsigned int opt_arg:1;      /* The option's argument is optional.    */
   unsigned int runtime:1;      /* The option is runtime changeable.  */
 
-  unsigned int gpgconf_list:1; /* Has been announced in gpgconf-list.  */
+  unsigned int gpgconf_list:1; /* Mentioned by --gpgconf-list.  */
 
   unsigned int has_default:1;  /* The option has a default value.  */
   unsigned int def_in_desc:1;  /* The default is in the descrition.  */
@@ -607,7 +640,7 @@ static struct
    * header lines and such.  This is suitable to be passed to
    * gpgrt_argparser.  Will be filled in by
    * retrieve_options_from_program. */
-  gnupg_opt_t *opt_table;
+  gpgrt_opt_t *opt_table;
 
   /* The full table including data from OPT_TABLE.  The end of the
    * table is marked by NULL entry for NAME.  Will be filled in by
@@ -630,6 +663,10 @@ static struct
      GNUPG_MODULE_NAME_GPGSM, GPGSM_NAME ".conf",
      known_options_gpgsm, known_pseudo_options_gpgsm },
 
+   { KEYBOXD_NAME, KEYBOXD_DISP_NAME, "gnupg", N_("Public Keys"),
+     GNUPG_MODULE_NAME_KEYBOXD, KEYBOXD_NAME ".conf",
+     known_options_keyboxd, NULL, keyboxd_runtime_change },
+
    { GPG_AGENT_NAME, GPG_AGENT_DISP_NAME, "gnupg", N_("Private Keys"),
      GNUPG_MODULE_NAME_AGENT, GPG_AGENT_NAME ".conf",
      known_options_gpg_agent, NULL, gpg_agent_runtime_change },
@@ -637,6 +674,14 @@ static struct
    { SCDAEMON_NAME, SCDAEMON_DISP_NAME, "gnupg", N_("Smartcards"),
      GNUPG_MODULE_NAME_SCDAEMON, SCDAEMON_NAME ".conf",
      known_options_scdaemon, NULL, scdaemon_runtime_change},
+
+#ifdef BUILD_WITH_TPM2D
+   { TPM2DAEMON_NAME, TPM2DAEMON_DISP_NAME, "gnupg", N_("TPM"),
+     GNUPG_MODULE_NAME_TPM2DAEMON, TPM2DAEMON_NAME ".conf",
+     known_options_tpm2daemon, NULL, tpm2daemon_runtime_change},
+#else
+   { NULL },  /* DUMMY to keep the table in-sync with enums */
+#endif
 
    { DIRMNGR_NAME, DIRMNGR_DISP_NAME, "gnupg",   N_("Network"),
      GNUPG_MODULE_NAME_DIRMNGR, DIRMNGR_NAME ".conf",
@@ -701,6 +746,7 @@ gpg_agent_runtime_change (int killflag)
   const char *argv[5];
   pid_t pid = (pid_t)(-1);
   int i = 0;
+  int cmdidx;
 
   pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CONNECT_AGENT);
   if (!gnupg_default_homedir_p ())
@@ -709,8 +755,10 @@ gpg_agent_runtime_change (int killflag)
       argv[i++] = gnupg_homedir ();
     }
   argv[i++] = "--no-autostart";
+  cmdidx = i;
   argv[i++] = killflag? "KILLAGENT" : "RELOADAGENT";
-  argv[i++] = NULL;
+  argv[i] = NULL;
+  log_assert (i < DIM(argv));
 
   if (!err)
     err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
@@ -718,7 +766,7 @@ gpg_agent_runtime_change (int killflag)
     err = gnupg_wait_process (pgmname, pid, 1, NULL);
   if (err)
     gc_error (0, 0, "error running '%s %s': %s",
-              pgmname, argv[1], gpg_strerror (err));
+              pgmname, argv[cmdidx], gpg_strerror (err));
   gnupg_release_process (pid);
 }
 
@@ -731,6 +779,7 @@ scdaemon_runtime_change (int killflag)
   const char *argv[9];
   pid_t pid = (pid_t)(-1);
   int i = 0;
+  int cmdidx;
 
   (void)killflag;  /* For scdaemon kill and reload are synonyms.  */
 
@@ -749,9 +798,11 @@ scdaemon_runtime_change (int killflag)
   argv[i++] = "--no-autostart";
   argv[i++] = "GETINFO scd_running";
   argv[i++] = "/if ${! $?}";
+  cmdidx = i;
   argv[i++] = "scd killscd";
   argv[i++] = "/end";
-  argv[i++] = NULL;
+  argv[i] = NULL;
+  log_assert (i < DIM(argv));
 
   if (!err)
     err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
@@ -759,9 +810,55 @@ scdaemon_runtime_change (int killflag)
     err = gnupg_wait_process (pgmname, pid, 1, NULL);
   if (err)
     gc_error (0, 0, "error running '%s %s': %s",
-              pgmname, argv[4], gpg_strerror (err));
+              pgmname, argv[cmdidx], gpg_strerror (err));
   gnupg_release_process (pid);
 }
+
+
+#ifdef BUILD_WITH_TPM2D
+static void
+tpm2daemon_runtime_change (int killflag)
+{
+  gpg_error_t err = 0;
+  const char *pgmname;
+  const char *argv[9];
+  pid_t pid = (pid_t)(-1);
+  int i = 0;
+  int cmdidx;
+
+  (void)killflag;  /* For scdaemon kill and reload are synonyms.  */
+
+  /* We use "GETINFO app_running" to see whether the agent is already
+     running and kill it only in this case.  This avoids an explicit
+     starting of the agent in case it is not yet running.  There is
+     obviously a race condition but that should not harm too much.  */
+
+  pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CONNECT_AGENT);
+  if (!gnupg_default_homedir_p ())
+    {
+      argv[i++] = "--homedir";
+      argv[i++] = gnupg_homedir ();
+    }
+  argv[i++] = "-s";
+  argv[i++] = "--no-autostart";
+  argv[i++] = "GETINFO tpm2d_running";
+  argv[i++] = "/if ${! $?}";
+  cmdidx = i;
+  argv[i++] = "scd killtpm2cd";
+  argv[i++] = "/end";
+  argv[i] = NULL;
+  log_assert (i < DIM(argv));
+
+  if (!err)
+    err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
+  if (!err)
+    err = gnupg_wait_process (pgmname, pid, 1, NULL);
+  if (err)
+    gc_error (0, 0, "error running '%s %s': %s",
+              pgmname, argv[cmdidx], gpg_strerror (err));
+  gnupg_release_process (pid);
+}
+#endif
 
 
 static void
@@ -798,6 +895,40 @@ dirmngr_runtime_change (int killflag)
 }
 
 
+static void
+keyboxd_runtime_change (int killflag)
+{
+  gpg_error_t err = 0;
+  const char *pgmname;
+  const char *argv[6];
+  pid_t pid = (pid_t)(-1);
+  int i = 0;
+  int cmdidx;
+
+  pgmname = gnupg_module_name (GNUPG_MODULE_NAME_CONNECT_AGENT);
+  argv[i++] = "--no-autostart";
+  argv[i++] = "--keyboxd";
+  cmdidx = i;
+  argv[i++] = killflag? "KILLKEYBOXD" : "RELOADKEYBOXD";
+  if (!gnupg_default_homedir_p ())
+    {
+      argv[i++] = "--homedir";
+      argv[i++] = gnupg_homedir ();
+    }
+  argv[i] = NULL;
+  log_assert (i < DIM(argv));
+
+  if (!err)
+    err = gnupg_spawn_process_fd (pgmname, argv, -1, -1, -1, &pid);
+  if (!err)
+    err = gnupg_wait_process (pgmname, pid, 1, NULL);
+  if (err)
+    gc_error (0, 0, "error running '%s %s': %s",
+              pgmname, argv[cmdidx], gpg_strerror (err));
+  gnupg_release_process (pid);
+}
+
+
 /* Launch the gpg-agent or the dirmngr if not already running.  */
 gpg_error_t
 gc_component_launch (int component)
@@ -812,11 +943,14 @@ gc_component_launch (int component)
     {
       err = gc_component_launch (GC_COMPONENT_GPG_AGENT);
       if (!err)
+        err = gc_component_launch (GC_COMPONENT_KEYBOXD);
+      if (!err)
         err = gc_component_launch (GC_COMPONENT_DIRMNGR);
       return err;
     }
 
   if (!(component == GC_COMPONENT_GPG_AGENT
+        || component == GC_COMPONENT_KEYBOXD
         || component == GC_COMPONENT_DIRMNGR))
     {
       log_error ("%s\n", _("Component not suitable for launching"));
@@ -829,7 +963,10 @@ gc_component_launch (int component)
                  gc_component[component].name);
       if (!opt.quiet)
         log_info (_("Note: Use the command \"%s%s\" to get details.\n"),
-                  gc_component[component].name, " --gpgconf-test");
+                  gc_component[component].program
+                  ? gc_component[component].program
+                  : gc_component[component].name,
+                  " --gpgconf-test");
       gpgconf_failure (0);
     }
 
@@ -842,6 +979,8 @@ gc_component_launch (int component)
     }
   if (component == GC_COMPONENT_DIRMNGR)
     argv[i++] = "--dirmngr";
+  else if (component == GC_COMPONENT_KEYBOXD)
+    argv[i++] = "--keyboxd";
   argv[i++] = "NOP";
   argv[i] = NULL;
   log_assert (i < DIM(argv));
@@ -852,7 +991,8 @@ gc_component_launch (int component)
   if (err)
     gc_error (0, 0, "error running '%s%s%s': %s",
               pgmname,
-              component == GC_COMPONENT_DIRMNGR? " --dirmngr":"",
+              component == GC_COMPONENT_DIRMNGR? " --dirmngr"
+              : component == GC_COMPONENT_KEYBOXD? " --keyboxd":"",
               " NOP",
               gpg_strerror (err));
   gnupg_release_process (pid);
@@ -905,9 +1045,9 @@ gc_component_reload (int component)
 /* More or less Robust version of dgettext.  It has the side effect of
    switching the codeset to utf-8 because this is what we want to
    output.  In theory it is possible to keep the original code set and
-   switch back for regular disgnostic output (redefine "_(" for that)
-   but given the natur of this tool, being something invoked from
-   other pograms, it does not make much sense.  */
+   switch back for regular diagnostic output (redefine "_(" for that)
+   but given the nature of this tool, being something invoked from
+   other programs, it does not make much sense.  */
 static const char *
 my_dgettext (const char *domain, const char *msgid)
 {
@@ -982,9 +1122,7 @@ gc_percent_escape (const char *src)
 
   if (esc_str_len < new_len)
     {
-      char *new_esc_str = realloc (esc_str, new_len);
-      if (!new_esc_str)
-	gc_error (1, errno, "can not escape string");
+      char *new_esc_str = xrealloc (esc_str, new_len);
       esc_str = new_esc_str;
       esc_str_len = new_len;
     }
@@ -1041,9 +1179,7 @@ percent_deescape (const char *src)
 
   if (str_len < new_len)
     {
-      char *new_str = realloc (str, new_len);
-      if (!new_str)
-	gc_error (1, errno, "can not deescape string");
+      char *new_str = xrealloc (str, new_len);
       str = new_str;
       str_len = new_len;
     }
@@ -1229,11 +1365,12 @@ gc_component_check_options (int component, estream_t out, const char *conf_file)
     argv[i++] = "--version";
   else
     argv[i++] = "--gpgconf-test";
-  argv[i++] = NULL;
+  argv[i] = NULL;
+  log_assert (i < DIM(argv));
 
   result = 0;
   errlines = NULL;
-  err = gnupg_spawn_process (pgmname, argv, NULL, NULL, 0,
+  err = gnupg_spawn_process (pgmname, argv, NULL, 0,
                              NULL, NULL, &errfp, &pid);
   if (err)
     result |= 1; /* Program could not be run.  */
@@ -1535,6 +1672,7 @@ find_option (gc_component_id_t component, const char *name)
 }
 
 
+
 
 struct read_line_wrapper_parm_s
 {
@@ -1585,7 +1723,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
 {
   gpg_error_t err;
   const char *pgmname;
-  const char *argv[4];
+  const char *argv[2];
   estream_t outfp;
   int exitcode;
   pid_t pid;
@@ -1595,10 +1733,10 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
   size_t line_len;
   ssize_t length;
   const char *config_name;
-  gnupg_argparse_t pargs;
+  gpgrt_argparse_t pargs;
   int dummy_argc;
   char *twopartconfig_name = NULL;
-  gnupg_opt_t *opt_table = NULL;      /* A malloced option table.    */
+  gpgrt_opt_t *opt_table = NULL;      /* A malloced option table.    */
   size_t opt_table_used = 0;          /* Its current length.         */
   size_t opt_table_size = 0;          /* Its allocated length.       */
   gc_option_t *opt_info = NULL;       /* A malloced options table.  */
@@ -1621,7 +1759,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
   /* First we need to read the option table from the program.  */
   argv[0] = "--dump-option-table";
   argv[1] = NULL;
-  err = gnupg_spawn_process (pgmname, argv, NULL, NULL, 0,
+  err = gnupg_spawn_process (pgmname, argv, NULL, 0,
                              NULL, &outfp, NULL, &pid);
   if (err)
     {
@@ -1639,12 +1777,13 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
   pseudo_count = 0;
   while ((length = read_line_wrapper (&read_line_parm)) > 0)
     {
-      char *fields[4];
-      char *optname, *optdesc;
+      const char *fields[4];
+      const char *optname, *optdesc;
       unsigned int optflags;
       int short_opt;
       gc_arg_type_t arg_type;
       int pseudo = 0;
+
 
       if (read_line_parm.extra_line_buffer)
         {
@@ -1716,8 +1855,8 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
                                         string_array_size,
                                         sizeof *string_array);
         }
-      string_array[string_array_used++] = optname = xstrdup (fields[0]);
-      string_array[string_array_used++] = optdesc = xstrdup (fields[3]);
+      optname = string_array[string_array_used++] = xstrdup (fields[0]);
+      optdesc = string_array[string_array_used++] = xstrdup (fields[3]);
 
       /* Create an option table which can then be supplied to
        * gpgrt_parser.  Unfortunately there is no private pointer in
@@ -1759,6 +1898,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
       if (pseudo) /* Pseudo options are always no_change.  */
         opt_info[opt_info_used].no_change = 1;
 
+
       if ((optflags & ARGPARSE_OPT_HEADER))
         opt_info[opt_info_used].is_header = 1;
       if (known_option)
@@ -1769,7 +1909,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
            * We need to check the code whether both specifications match.  */
           if ((known_option->flags & GC_OPT_FLAG_ARG_OPT))
             opt_info[opt_info_used].opt_arg = 1;
-          /* Same here.  */
+
           if ((known_option->flags & GC_OPT_FLAG_RUNTIME))
             opt_info[opt_info_used].runtime = 1;
 
@@ -1785,6 +1925,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
   line_len = read_line_parm.line_len;
   log_assert (opt_table_used + pseudo_count == opt_info_used);
 
+
   err = gnupg_wait_process (pgmname, pid, 1, &exitcode);
   if (err)
     gc_error (1, 0, "running %s failed (exitcode=%d): %s",
@@ -1799,7 +1940,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
   /* Now read the default options.  */
   argv[0] = "--gpgconf-list";
   argv[1] = NULL;
-  err = gnupg_spawn_process (pgmname, argv, NULL, NULL, 0,
+  err = gnupg_spawn_process (pgmname, argv, NULL, 0,
                              NULL, &outfp, NULL, &pid);
   if (err)
     {
@@ -1922,7 +2063,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
   if (opt.verbose)
     pargs.flags |= ARGPARSE_FLAG_VERBOSE;
 
-  while (gnupg_argparser (&pargs, opt_table, config_name))
+  while (gpgrt_argparser (&pargs, opt_table, config_name))
     {
       char *opt_value;
 
@@ -2004,6 +2145,7 @@ retrieve_options_from_program (gc_component_id_t component, int only_installed)
   xfree (line);
   xfree (twopartconfig_name);
 }
+
 
 
 /* Retrieve the currently active options and their defaults for this
@@ -2213,7 +2355,7 @@ copy_file (const char *src_name, const char *dst_name)
 
 
 /* Create and verify the new configuration file for the specified
- * component.  Returns 0 on success and -1 on error.  If
+ *  component.  Returns 0 on success and -1 on error.  If
  * VERBATIM is set the profile mode is used.  This function may store
  * pointers to malloced strings in SRC_FILENAMEP, DEST_FILENAMEP, and
  * ORIG_FILENAMEP.  Those must be freed by the caller.  The strings
@@ -2258,7 +2400,6 @@ change_options_program (gc_component_id_t component,
 
   dest_filename = make_absfilename
     (gnupg_homedir (), gc_component[component].option_config_filename, NULL);
-
   src_filename = xasprintf ("%s.%s.%i.new",
                             dest_filename, GPGCONF_NAME, (int)getpid ());
   orig_filename = xasprintf ("%s.%s.%i.bak",
@@ -2797,6 +2938,7 @@ gc_component_change_options (int component, estream_t in, estream_t out,
       char *backup_filename;
 
       log_assert (dest_filename);
+
       backup_filename = xasprintf ("%s.%s.bak",
                                    dest_filename, GPGCONF_NAME);
       gnupg_rename_file (orig_filename, backup_filename, NULL);
@@ -2813,7 +2955,7 @@ gc_component_change_options (int component, estream_t in, estream_t out,
 }
 
 
-/* Check whether USER matches the current user of one of its group.
+/* Check whether USER matches the current user or one of its group.
    This function may change USER.  Returns true is there is a
    match.  */
 static int
@@ -2832,7 +2974,7 @@ key_matches_user_or_group (char *user)
   /* Under Windows we don't support groups. */
   if (group && *group)
     gc_error (0, 0, _("Note that group specifications are ignored\n"));
-#ifndef HAVE_W32CE_SYSTEM
+
   if (*user)
     {
       static char *my_name;
@@ -2852,8 +2994,9 @@ key_matches_user_or_group (char *user)
       if (!strcmp (user, my_name))
         return 1; /* Found.  */
     }
-#endif /*HAVE_W32CE_SYSTEM*/
+
 #else /*!HAVE_W32_SYSTEM*/
+
   /* First check whether the user matches.  */
   if (*user)
     {
@@ -2912,7 +3055,9 @@ key_matches_user_or_group (char *user)
         if (!strcmp (group, my_supgroups[n]))
           return 1; /* Found.  */
     }
+
 #endif /*!HAVE_W32_SYSTEM*/
+
   return 0; /* No match.  */
 }
 
@@ -2958,7 +3103,7 @@ gc_process_gpgconf_conf (const char *fname_arg, int update, int defaults,
          when running in syntax check mode.  */
       if (errno != ENOENT || !update)
         {
-          gc_error (0, errno, "can not open global config file '%s'", fname);
+          gc_error (0, errno, "can't open global config file '%s'", fname);
           result = -1;
         }
       xfree (fname);

@@ -1687,6 +1687,8 @@ ask_about_binding (ctrl_t ctrl,
          GPGSQL_ARG_END);
       if (rc)
         {
+          sqlite3_free (sqerr);
+          sqerr = NULL;
           rc = gpg_error (GPG_ERR_GENERAL);
           break;
         }
@@ -1972,6 +1974,7 @@ ask_about_binding (ctrl_t ctrl,
       else if (!response[0])
         /* Default to unknown.  Don't save it.  */
         {
+          xfree (response);
           tty_printf (_("Defaulting to unknown.\n"));
           *policy = TOFU_POLICY_UNKNOWN;
           break;
@@ -1983,6 +1986,7 @@ ask_about_binding (ctrl_t ctrl,
           if (choice)
             {
               int c = ((size_t) choice - (size_t) choices) / 2;
+              xfree (response);
 
               switch (c)
                 {
@@ -2083,13 +2087,16 @@ build_conflict_set (ctrl_t ctrl, tofu_dbs_t dbs,
    * policy to ask due to a conflict.  */
   for (iter = conflict_set; iter; iter = iter->next)
     {
+      /* Fixme: Why the check against N+1?  */
       int l = strlen (iter->d);
-      if (!(l == 2 * MAX_FINGERPRINT_LEN
-            || l == 2 * MAX_FINGERPRINT_LEN + 1))
+      if (!(l == 2 * 20
+            || l == 2 * 20 + 1
+            || l == 2 * 32
+            || l == 2 * 32 + 1))
         {
           log_error (_("TOFU db corruption detected.\n"));
-          print_further_info ("fingerprint '%s' is not %d characters long",
-                              iter->d, 2 * MAX_FINGERPRINT_LEN);
+          print_further_info ("fingerprint '%s' is %d characters long",
+                              iter->d, l);
         }
 
       if (l >= 1 && iter->d[l - 1] == '!')
@@ -2128,7 +2135,7 @@ build_conflict_set (ctrl_t ctrl, tofu_dbs_t dbs,
   /* If two keys have cross signatures, then they are controlled by
    * the same person and thus are not in conflict.  */
   kb_all = xcalloc (sizeof (kb_all[0]), conflict_set_count);
-  hd = keydb_new ();
+  hd = keydb_new (ctrl);
   for (i = 0, iter = conflict_set;
        i < conflict_set_count;
        i ++, iter = iter->next)
@@ -2468,10 +2475,11 @@ get_policy (ctrl_t ctrl, tofu_dbs_t dbs, PKT_public_key *pk,
   /* See if the key is signed by an ultimately trusted key.  */
   {
     int fingerprint_raw_len = strlen (fingerprint) / 2;
-    char fingerprint_raw[20];
+    char fingerprint_raw[MAX_FINGERPRINT_LEN];
     int len = 0;
 
-    if (fingerprint_raw_len != sizeof fingerprint_raw
+    /* FIXME(fingerprint) */
+    if (fingerprint_raw_len != 20 /*sizeof fingerprint_raw */
         || ((len = hex2bin (fingerprint,
                             fingerprint_raw, fingerprint_raw_len))
             != strlen (fingerprint)))
@@ -3202,7 +3210,7 @@ show_statistics (tofu_dbs_t dbs,
             *p = ' ';
       }
 
-      log_string (GPGRT_LOG_INFO, msg);
+      log_string (GPGRT_LOGLVL_INFO, msg);
       xfree (msg);
 
       if (policy == TOFU_POLICY_AUTO)
@@ -3267,7 +3275,7 @@ show_warning (const char *fingerprint, strlist_t user_id_list)
     log_fatal ("format failed: %s\n",
                gpg_strerror (gpg_error_from_syserror()));
   xfree (tmpmsg);
-  log_string (GPGRT_LOG_INFO, text);
+  log_string (GPGRT_LOGLVL_INFO, text);
   xfree (text);
 
   es_free (set_policy_command);
@@ -3280,7 +3288,7 @@ show_warning (const char *fingerprint, strlist_t user_id_list)
 static char *
 email_from_user_id (const char *user_id)
 {
-  char *email = mailbox_from_userid (user_id);
+  char *email = mailbox_from_userid (user_id, 0);
   if (! email)
     {
       /* Hmm, no email address was provided or we are out of core.  Just

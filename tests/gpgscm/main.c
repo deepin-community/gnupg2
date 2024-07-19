@@ -43,7 +43,6 @@
 #include "scheme-private.h"
 #include "ffi.h"
 #include "../common/i18n.h"
-#include "../../common/argparse.h"
 #include "../../common/init.h"
 #include "../../common/logging.h"
 #include "../../common/strlist.h"
@@ -66,7 +65,7 @@ enum cmd_and_opt_values
   };
 
 /* The list of commands and options. */
-static ARGPARSE_OPTS opts[] =
+static gpgrt_opt_t opts[] =
   {
     ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
     ARGPARSE_end (),
@@ -77,10 +76,9 @@ size_t scmpath_len = 0;
 
 /* Command line parsing.  */
 static void
-parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
+parse_arguments (gpgrt_argparse_t *pargs, gpgrt_opt_t *popts)
 {
-
-  while (gnupg_argparse (NULL, pargs, popts))
+  while (gpgrt_argparse (NULL, pargs, popts))
     {
       switch (pargs->r_opt)
         {
@@ -254,7 +252,7 @@ main (int argc, char **argv)
   int retcode;
   gpg_error_t err;
   char *argv0;
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   scheme *sc;
   char *p;
 #if _WIN32
@@ -281,7 +279,7 @@ main (int argc, char **argv)
     if (*p == pathsep)
       *p = 0, scmpath_len++;
 
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   log_set_prefix ("gpgscm", GPGRT_LOG_WITH_PREFIX);
 
   /* Make sure that our subsystems are ready.  */
@@ -299,7 +297,7 @@ main (int argc, char **argv)
   pargs.argv  = &argv;
   pargs.flags = 0;
   parse_arguments (&pargs, opts);
-  gnupg_argparse (NULL, &pargs, NULL);
+  gpgrt_argparse (NULL, &pargs, NULL);
 
   if (log_get_errorcount (0))
     exit (2);

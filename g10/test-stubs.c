@@ -43,6 +43,9 @@
 #include "call-agent.h"
 
 int g10_errors_seen;
+int assert_signer_true = 0;
+int assert_pubkey_algo_false = 0;
+
 
 
 void
@@ -57,10 +60,13 @@ g10_exit( int rc )
  * We have to override the trustcheck from pkclist.c because
  * this utility assumes that all keys in the keyring are trustworthy
  */
-int
-check_signatures_trust (ctrl_t ctrl, PKT_signature *sig)
+gpg_error_t
+check_signatures_trust (ctrl_t ctrl, kbnode_t kblock,
+                        PKT_public_key *pk, PKT_signature *sig)
 {
   (void)ctrl;
+  (void)kblock;
+  (void)pk;
   (void)sig;
   return 0;
 }
@@ -215,14 +221,6 @@ keyserver_import_cert (const char *name)
   return -1;
 }
 
-int
-keyserver_import_pka (const char *name,unsigned char *fpr)
-{
-  (void)name;
-  (void)fpr;
-  return -1;
-}
-
 gpg_error_t
 keyserver_import_wkd (ctrl_t ctrl, const char *name, unsigned int flags,
                       unsigned char **fpr, size_t *fpr_len)
@@ -236,10 +234,14 @@ keyserver_import_wkd (ctrl_t ctrl, const char *name, unsigned int flags,
 }
 
 int
-keyserver_import_mbox (const char *name,struct keyserver_spec *spec)
+keyserver_import_mbox (ctrl_t ctrl, const char *mbox, unsigned char **fpr,
+                       size_t *fprlen, struct keyserver_spec *keyserver)
 {
-  (void)name;
-  (void)spec;
+  (void)ctrl;
+  (void)mbox;
+  (void)fpr;
+  (void)fprlen;
+  (void)keyserver;
   return -1;
 }
 
@@ -287,7 +289,7 @@ import_included_key_block (ctrl_t ctrl, kbnode_t keyblock)
  * No encryption here but mainproc links to these functions.
  */
 gpg_error_t
-get_session_key (ctrl_t ctrl, PKT_pubkey_enc *k, DEK *dek)
+get_session_key (ctrl_t ctrl, struct pubkey_enc_list *k, DEK *dek)
 {
   (void)ctrl;
   (void)k;
@@ -491,22 +493,6 @@ agent_get_keyinfo (ctrl_t ctrl, const char *hexkeygrip,
 }
 
 gpg_error_t
-gpg_dirmngr_get_pka (ctrl_t ctrl, const char *userid,
-                     unsigned char **r_fpr, size_t *r_fprlen,
-                     char **r_url)
-{
-  (void)ctrl;
-  (void)userid;
-  if (r_fpr)
-    *r_fpr = NULL;
-  if (r_fprlen)
-    *r_fprlen = 0;
-  if (r_url)
-    *r_url = NULL;
-  return gpg_error (GPG_ERR_NOT_FOUND);
-}
-
-gpg_error_t
 export_pubkey_buffer (ctrl_t ctrl, const char *keyspec, unsigned int options,
                       const void *prefix, size_t prefixlen,
                       export_stats_t stats,
@@ -588,4 +574,27 @@ get_revocation_reason (PKT_signature *sig, char **r_reason,
   if (r_comment)
     *r_comment = NULL;
   return 0;
+}
+
+const char *
+impex_filter_getval (void *cookie, const char *propname)
+{
+  (void)cookie;
+  (void)propname;
+  return NULL;
+}
+
+
+void
+check_assert_signer_list (const char *mainpkhex, const char *pkhex)
+{
+  (void)mainpkhex;
+  (void)pkhex;
+}
+
+void
+check_assert_pubkey_algo (const char *algostr, const char *pkhex)
+{
+  (void)algostr;
+  (void)pkhex;
 }

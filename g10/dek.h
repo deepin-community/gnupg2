@@ -1,5 +1,5 @@
 /* dek.h - The data encryption key structure.
- * Copyright (C) 2014 Werner Koch
+ * Copyright (C) 2014, 2017 Werner Koch
  *
  * This file is part of GnuPG.
  *
@@ -19,6 +19,7 @@
 #ifndef G10_DEK_H
 #define G10_DEK_H
 
+
 typedef struct
 {
   /* The algorithm (e.g., CIPHER_ALGO_AES).  */
@@ -31,9 +32,7 @@ typedef struct
    * verbose mode.  */
   unsigned int algo_info_printed : 1;
 
-  /* AEAD shall be used.  The value is the AEAD algo.  Note that in
-   * practise only AEAD_ALGO_OCB, AEAD_ALGO_EAX is only used for
-   * decryption. */
+  /* AEAD shall be used.  The value is the AEAD algo. */
   int use_aead : 4;
 
   /* MDC shall be used.  */

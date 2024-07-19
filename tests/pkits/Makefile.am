@@ -21,7 +21,9 @@
 GPGSM = ../../sm/gpgsm
 
 TESTS_ENVIRONMENT = GNUPGHOME=`/bin/pwd` GPG_AGENT_INFO= LC_ALL=C \
-                    GPGSM=$(GPGSM) silent=yes
+                    GNUPG_BUILD_ROOT="$(abs_top_builddir)" \
+		    GNUPG_IN_TEST_SUITE=fact \
+                    GPGSM=$(GPGSM)$(EXEEXT) silent=yes
 
 
 testscripts = import-all-certs validate-all-certs \
@@ -71,5 +73,3 @@ run-all-tests: inittests.stamp
            elif test $$? -eq 77; then echo "- SKIP $$tst"; \
 	   fi; \
          done
-
-

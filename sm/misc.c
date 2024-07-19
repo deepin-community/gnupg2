@@ -35,6 +35,27 @@
 #include "../common/sexp-parse.h"
 
 
+/* Print a message
+ *   "(further info: %s)\n
+ * in verbose mode to further explain an error.  That message is
+ * intended to help debug a problem and should not be translated.
+ */
+void
+gpgsm_print_further_info (const char *format, ...)
+{
+  va_list arg_ptr;
+
+  if (!opt.verbose)
+    return;
+
+  log_info (_("(further info: "));
+  va_start (arg_ptr, format);
+  log_logv (GPGRT_LOGLVL_CONT, format, arg_ptr);
+  va_end (arg_ptr);
+  log_printf (")\n");
+}
+
+
 /* Setup the environment so that the pinentry is able to get all
    required information.  This is used prior to an exec of the
    protect-tool. */
@@ -109,13 +130,13 @@ transform_sigval (const unsigned char *sigval, size_t sigvallen, int mdalgo,
   gpg_error_t err;
   const unsigned char *buf, *tok;
   size_t buflen, toklen;
-  int depth, last_depth1, last_depth2;
+  int depth, last_depth1, last_depth2, pkalgo;
   int is_pubkey = 0;
-  int pkalgo;
   const unsigned char *rsa_s, *ecc_r, *ecc_s;
   size_t rsa_s_len, ecc_r_len, ecc_s_len;
   const char *oid;
   gcry_sexp_t sexp;
+  const char *eddsa_curve = NULL;
 
   rsa_s = ecc_r = ecc_s = NULL;
   rsa_s_len = ecc_r_len = ecc_s_len = 0;
@@ -149,6 +170,8 @@ transform_sigval (const unsigned char *sigval, size_t sigvallen, int mdalgo,
     pkalgo = GCRY_PK_ECC;
   else if (toklen == 5 && !memcmp ("ecdsa", tok, 5))
     pkalgo = GCRY_PK_ECC;
+  else if (toklen == 5 && !memcmp ("eddsa", tok, 5))
+    pkalgo = GCRY_PK_EDDSA;
   else
     return gpg_error (GPG_ERR_WRONG_PUBKEY_ALGO);
 
@@ -164,14 +187,6 @@ transform_sigval (const unsigned char *sigval, size_t sigvallen, int mdalgo,
         {
           const unsigned char **mpi = NULL;
           size_t *mpi_len = NULL;
-
-          switch (*tok)
-            {
-            case 's': mpi = &rsa_s; mpi_len = &rsa_s_len; break;
-            default:  mpi = NULL;   mpi_len = NULL; break;
-            }
-          if (mpi && *mpi)
-            return gpg_error (GPG_ERR_DUP_VALUE);
 
           switch (*tok)
             {
@@ -200,6 +215,18 @@ transform_sigval (const unsigned char *sigval, size_t sigvallen, int mdalgo,
               *mpi_len = toklen;
             }
         }
+      else if (toklen == 5 && !memcmp (tok, "curve", 5))
+        {
+          if ((err = parse_sexp (&buf, &buflen, &depth, &tok, &toklen)))
+            return err;
+          if ((toklen == 7 && !memcmp (tok, "Ed25519", 7))
+              || (toklen == 22 && !memcmp (tok, "1.3.6.1.4.1.11591.15.1", 22))
+              || (toklen == 11 && !memcmp (tok, "1.3.101.112", 11)))
+            eddsa_curve = "1.3.101.112";
+          else if ((toklen == 5 && !memcmp (tok, "Ed448", 5))
+                   || (toklen == 11 && !memcmp (tok, "1.3.101.113", 11)))
+            eddsa_curve = "1.3.101.113";
+        }
 
       /* Skip to the end of the list. */
       last_depth2 = depth;
@@ -212,8 +239,8 @@ transform_sigval (const unsigned char *sigval, size_t sigvallen, int mdalgo,
   if (err)
     return err;
 
-  if (0)
-    ; /* Just to align it with the code in 2.3.  */
+  if (eddsa_curve)
+    oid = eddsa_curve;
   else
     {
       /* Map the hash algorithm to an OID.  */
@@ -254,6 +281,10 @@ transform_sigval (const unsigned char *sigval, size_t sigvallen, int mdalgo,
           oid = "1.2.840.10045.4.3.4"; /* ecdsa-with-sha512 */
           break;
 
+        case GCRY_MD_SHA512 | (GCRY_PK_EDDSA << 16):
+          oid = "1.3.101.112"; /* ed25519 */
+          break;
+
         default:
           return gpg_error (GPG_ERR_DIGEST_ALGO);
         }
@@ -262,12 +293,11 @@ transform_sigval (const unsigned char *sigval, size_t sigvallen, int mdalgo,
   if (is_pubkey)
     err = gcry_sexp_build (&sexp, NULL, "(sig-val(%s))", oid);
   else if (pkalgo == GCRY_PK_RSA)
-    err = gcry_sexp_build (&sexp, NULL, "(sig-val(%s(s%b)))",
-                           oid, (int)rsa_s_len, rsa_s);
+    err = gcry_sexp_build (&sexp, NULL, "(sig-val(%s(s%b)))", oid,
+                           (int)rsa_s_len, rsa_s);
   else if (pkalgo == GCRY_PK_ECC || pkalgo == GCRY_PK_EDDSA)
     err = gcry_sexp_build (&sexp, NULL, "(sig-val(%s(r%b)(s%b)))", oid,
                            (int)ecc_r_len, ecc_r, (int)ecc_s_len, ecc_s);
-
   if (err)
     return err;
   err = make_canon_sexp (sexp, r_newsigval, r_newsigvallen);

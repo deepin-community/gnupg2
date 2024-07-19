@@ -35,6 +35,7 @@
 # include <netdb.h>
 #endif /*!HAVE_W32_SYSTEM*/
 
+#include <npth.h>
 #include "dirmngr.h"
 #include "misc.h"
 #include "../common/userids.h"
@@ -112,6 +113,8 @@ struct hostinfo_s
    resolved from a pool name and its allocated size.*/
 static hostinfo_t *hosttable;
 static int hosttable_size;
+/* A mutex used to serialize access to the hosttable. */
+static npth_mutex_t hosttable_lock;
 
 /* The number of host slots we initially allocate for HOSTTABLE.  */
 #define INITIAL_HOSTTABLE_SIZE 50
@@ -229,6 +232,9 @@ select_random_host (hostinfo_t hi)
   size_t tblsize;
   int pidx, idx;
 
+  /* CHECKTHIS();  See */
+  /*                 https://sources.debian.org/patches/gnupg2/2.2.20-1/dirmngr-idling/dirmngr-hkp-Avoid-potential-race-condition-when-some.patch/ */
+
   /* We create a new table so that we randomly select only from
      currently alive hosts.  */
   for (idx = 0, tblsize = 0;
@@ -308,7 +314,7 @@ tor_not_running_p (ctrl_t ctrl)
    PROTOCOL.  If NAME specifies a pool (as indicated by IS_POOL),
    update the given reference table accordingly.  */
 static void
-add_host (const char *name, int is_pool,
+add_host (ctrl_t ctrl, const char *name, int is_pool,
           const dns_addrinfo_t ai,
           enum ks_protocol protocol, unsigned short port)
 {
@@ -324,7 +330,7 @@ add_host (const char *name, int is_pool,
   if (is_pool)
     {
       /* For a pool immediately convert the address to a string.  */
-      tmperr = resolve_dns_addr (ai->addr, ai->addrlen,
+      tmperr = resolve_dns_addr (ctrl, ai->addr, ai->addrlen,
                                  (DNS_NUMERICHOST | DNS_WITHBRACKET), &tmphost);
     }
   else if (!is_ip_address (name))
@@ -341,7 +347,7 @@ add_host (const char *name, int is_pool,
     {
       /* Do a PTR lookup on AI.  If a name was not found the function
        * returns the numeric address (with brackets).  */
-      tmperr = resolve_dns_addr (ai->addr, ai->addrlen,
+      tmperr = resolve_dns_addr (ctrl, ai->addr, ai->addrlen,
                                  DNS_WITHBRACKET, &tmphost);
     }
 
@@ -515,7 +521,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
       unsigned int srvscount;
 
       /* Check for SRV records.  */
-      err = get_dns_srv (name, srvtag, NULL, &srvs, &srvscount);
+      err = get_dns_srv (ctrl, name, srvtag, NULL, &srvs, &srvscount);
       if (err)
         {
           if (gpg_err_code (err) == GPG_ERR_ECONNREFUSED)
@@ -531,13 +537,13 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
 
           for (i = 0; i < srvscount; i++)
             {
-              err = resolve_dns_name (srvs[i].target, 0,
+              err = resolve_dns_name (ctrl, srvs[i].target, 0,
                                       AF_UNSPEC, SOCK_STREAM,
                                       &ai, &cname);
               if (err)
                 continue;
               dirmngr_tick (ctrl);
-              add_host (name, is_pool, ai, protocol, srvs[i].port);
+              add_host (ctrl, name, is_pool, ai, protocol, srvs[i].port);
               new_hosts = 1;
             }
 
@@ -552,7 +558,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
     {
       /* Find all A records for this entry and put them into the pool
          list - if any.  */
-      err = resolve_dns_name (name, 0, 0, SOCK_STREAM, &aibuf, &cname);
+      err = resolve_dns_name (ctrl, name, 0, 0, SOCK_STREAM, &aibuf, &cname);
       if (err)
         {
           log_error ("resolving '%s' failed: %s\n", name, gpg_strerror (err));
@@ -583,7 +589,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
                 continue;
               dirmngr_tick (ctrl);
 
-              add_host (name, is_pool, ai, 0, 0);
+              add_host (ctrl, name, is_pool, ai, 0, 0);
               new_hosts = 1;
             }
 
@@ -641,7 +647,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
        * hosttable. */
       char *host;
 
-      err = resolve_dns_name (hi->name, 0, 0, SOCK_STREAM, &aibuf, NULL);
+      err = resolve_dns_name (ctrl, hi->name, 0, 0, SOCK_STREAM, &aibuf, NULL);
       if (!err)
         {
           for (ai = aibuf; ai; ai = ai->next)
@@ -649,7 +655,8 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
               if ((!opt.disable_ipv6 && ai->family == AF_INET6)
                   || (!opt.disable_ipv4 && ai->family == AF_INET))
                 {
-                  err = resolve_dns_addr (ai->addr, ai->addrlen, 0, &host);
+                  err = resolve_dns_addr (ctrl,
+                                          ai->addr, ai->addrlen, 0, &host);
                   if (!err)
                     {
                       /* Okay, we return the first found name.  */
@@ -779,9 +786,15 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
   if (!name || !*name || !strcmp (name, "localhost"))
     return 0;
 
+  if (npth_mutex_lock (&hosttable_lock))
+    log_fatal ("failed to acquire mutex\n");
+
   idx = find_hostinfo (name);
   if (idx == -1)
-    return gpg_error (GPG_ERR_NOT_FOUND);
+    {
+      err = gpg_error (GPG_ERR_NOT_FOUND);
+      goto leave;
+    }
 
   hi = hosttable[idx];
   if (alive && hi->dead)
@@ -840,6 +853,10 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
         }
     }
 
+ leave:
+  if (npth_mutex_unlock (&hosttable_lock))
+    log_fatal ("failed to release mutex\n");
+
   return err;
 }
 
@@ -860,7 +877,9 @@ ks_hkp_print_hosttable (ctrl_t ctrl)
   if (err)
     return err;
 
-  /* FIXME: We need a lock for the hosttable.  */
+  if (npth_mutex_lock (&hosttable_lock))
+    log_fatal ("failed to acquire mutex\n");
+
   curtime = gnupg_get_time ();
   for (idx=0; idx < hosttable_size; idx++)
     if ((hi=hosttable[idx]))
@@ -889,7 +908,7 @@ ks_hkp_print_hosttable (ctrl_t ctrl)
 
                 /* Turn the numerical IP address string into an AI and
                  * then do a DNS PTR lookup.  */
-                if (!resolve_dns_name (hi->name, 0, 0,
+                if (!resolve_dns_name (ctrl, hi->name, 0, 0,
                                        SOCK_STREAM,
                                        &aibuf, &canon))
                   {
@@ -900,7 +919,7 @@ ks_hkp_print_hosttable (ctrl_t ctrl)
                       }
                     for (ai = aibuf; !canon && ai; ai = ai->next)
                       {
-                        resolve_dns_addr (ai->addr, ai->addrlen,
+                        resolve_dns_addr (ctrl, ai->addr, ai->addrlen,
                                           DNS_WITHBRACKET, &canon);
                         if (canon && is_ip_address (canon))
                           {
@@ -920,14 +939,14 @@ ks_hkp_print_hosttable (ctrl_t ctrl)
                 /* Get the IP address as a string from a name.  Note
                  * that resolve_dns_addr allocates CANON on success
                  * and thus terminates the loop. */
-                if (!resolve_dns_name (hi->name, 0,
+                if (!resolve_dns_name (ctrl, hi->name, 0,
                                        hi->v6? AF_INET6 : AF_INET,
                                        SOCK_STREAM,
                                        &aibuf, NULL))
                   {
                     for (ai = aibuf; !canon && ai; ai = ai->next)
                       {
-                        resolve_dns_addr (ai->addr, ai->addrlen,
+                        resolve_dns_addr (ctrl, ai->addr, ai->addrlen,
                                           DNS_NUMERICHOST|DNS_WITHBRACKET,
                                           &canon);
                       }
@@ -953,12 +972,12 @@ ks_hkp_print_hosttable (ctrl_t ctrl)
                               diedstr? ")":""   );
         xfree (died);
         if (err)
-          return err;
+	  goto leave;
 
         if (hi->cname)
           err = ks_printf_help (ctrl, "  .       %s", hi->cname);
         if (err)
-          return err;
+	  goto leave;
 
         if (hi->pool)
           {
@@ -973,14 +992,21 @@ ks_hkp_print_hosttable (ctrl_t ctrl)
             put_membuf( &mb, "", 1);
             p = get_membuf (&mb, NULL);
             if (!p)
-              return gpg_error_from_syserror ();
+	      {
+		err = gpg_error_from_syserror ();
+		goto leave;
+	      }
             err = ks_print_help (ctrl, p);
             xfree (p);
             if (err)
-              return err;
+              goto leave;
           }
       }
-  return 0;
+
+ leave:
+  if (npth_mutex_unlock (&hosttable_lock))
+    log_fatal ("failed to release mutex\n");
+  return err;
 }
 
 
@@ -1049,9 +1075,16 @@ make_host_part (ctrl_t ctrl,
       protocol = KS_PROTOCOL_HKP;
     }
 
+  if (npth_mutex_lock (&hosttable_lock))
+    log_fatal ("failed to acquire mutex\n");
+
   portstr[0] = 0;
   err = map_host (ctrl, host, srvtag, force_reselect, protocol,
                   &hostname, portstr, r_httpflags, r_httphost);
+
+  if (npth_mutex_unlock (&hosttable_lock))
+    log_fatal ("failed to release mutex\n");
+
   if (err)
     return err;
 
@@ -1125,6 +1158,9 @@ ks_hkp_housekeeping (time_t curtime)
   int idx;
   hostinfo_t hi;
 
+  if (npth_mutex_lock (&hosttable_lock))
+    log_fatal ("failed to acquire mutex\n");
+
   for (idx=0; idx < hosttable_size; idx++)
     {
       hi = hosttable[idx];
@@ -1141,6 +1177,9 @@ ks_hkp_housekeeping (time_t curtime)
           log_info ("resurrected host '%s'", hi->name);
         }
     }
+
+  if (npth_mutex_unlock (&hosttable_lock))
+    log_fatal ("failed to release mutex\n");
 }
 
 
@@ -1151,6 +1190,9 @@ ks_hkp_reload (void)
 {
   int idx, count;
   hostinfo_t hi;
+
+  if (npth_mutex_lock (&hosttable_lock))
+    log_fatal ("failed to acquire mutex\n");
 
   for (idx=count=0; idx < hosttable_size; idx++)
     {
@@ -1165,6 +1207,9 @@ ks_hkp_reload (void)
     }
   if (count)
     log_info ("number of resurrected hosts: %d", count);
+
+  if (npth_mutex_unlock (&hosttable_lock))
+    log_fatal ("failed to release mutex\n");
 }
 
 
@@ -1197,8 +1242,9 @@ send_request (ctrl_t ctrl, const char *request, const char *hostportstr,
   redirinfo.orig_url   = request;
   redirinfo.orig_onion = uri->onion;
   redirinfo.allow_downgrade = 1;
-  /* FIXME: I am not sure whey we allow a downgrade for hkp requests.
-   * Needs at least an explanation here..  */
+  /* FIXME: I am not sure why we allow a downgrade for hkp requests.
+   * Needs at least an explanation here.  */
+  redirinfo.restrict_redir = !!(opt.compat_flags & COMPAT_RESTRICT_HTTP_REDIR);
 
  once_more:
   err = http_session_new (&session, httphost,
@@ -1210,7 +1256,7 @@ send_request (ctrl_t ctrl, const char *request, const char *hostportstr,
   http_session_set_log_cb (session, cert_log_cb);
   http_session_set_timeout (session, ctrl->timeout);
 
-  err = http_open (&http,
+  err = http_open (ctrl, &http,
                    post_cb? HTTP_REQ_POST : HTTP_REQ_GET,
                    request,
                    httphost,
@@ -1347,7 +1393,7 @@ handle_send_request_error (ctrl_t ctrl, gpg_error_t err, const char *request,
   int retry = 0;
 
   /* Fixme: Should we disable all hosts of a protocol family if a
-   * request for an address of that familiy returned ENETDOWN?  */
+   * request for an address of that family returned ENETDOWN?  */
 
   switch (gpg_err_code (err))
     {
@@ -1438,7 +1484,7 @@ ks_hkp_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
 {
   gpg_error_t err;
   KEYDB_SEARCH_DESC desc;
-  char fprbuf[2+40+1];
+  char fprbuf[2+64+1];
   char *namebuffer = NULL;
   char *hostport = NULL;
   char *request = NULL;
@@ -1459,6 +1505,7 @@ ks_hkp_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
   err = classify_user_id (pattern, &desc, 1);
   if (err)
     return err;
+  log_assert (desc.fprlen <= 64);
   switch (desc.mode)
     {
     case KEYDB_SEARCH_MODE_EXACT:
@@ -1492,17 +1539,10 @@ ks_hkp_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
                 (ulong)desc.u.kid[0], (ulong)desc.u.kid[1]);
       pattern = fprbuf;
       break;
-    case KEYDB_SEARCH_MODE_FPR16:
-      fprbuf[0] = '0';
-      fprbuf[1] = 'x';
-      bin2hex (desc.u.fpr, 16, fprbuf+2);
-      pattern = fprbuf;
-      break;
-    case KEYDB_SEARCH_MODE_FPR20:
     case KEYDB_SEARCH_MODE_FPR:
       fprbuf[0] = '0';
       fprbuf[1] = 'x';
-      bin2hex (desc.u.fpr, 20, fprbuf+2);
+      bin2hex (desc.u.fpr, desc.fprlen, fprbuf+2);
       pattern = fprbuf;
       break;
     default:
@@ -1607,7 +1647,7 @@ ks_hkp_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec, estream_t *r_fp)
 {
   gpg_error_t err;
   KEYDB_SEARCH_DESC desc;
-  char kidbuf[2+40+1];
+  char kidbuf[2+64+1];
   const char *exactname = NULL;
   char *namebuffer = NULL;
   char *searchkey = NULL;
@@ -1630,6 +1670,7 @@ ks_hkp_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec, estream_t *r_fp)
   err = classify_user_id (keyspec, &desc, 1);
   if (err)
     return err;
+  log_assert (desc.fprlen <= 64);
   switch (desc.mode)
     {
     case KEYDB_SEARCH_MODE_SHORT_KID:
@@ -1639,12 +1680,15 @@ ks_hkp_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec, estream_t *r_fp)
       snprintf (kidbuf, sizeof kidbuf, "0x%08lX%08lX",
 		(ulong)desc.u.kid[0], (ulong)desc.u.kid[1]);
       break;
-    case KEYDB_SEARCH_MODE_FPR20:
     case KEYDB_SEARCH_MODE_FPR:
-      /* This is a v4 fingerprint. */
+      if (desc.fprlen < 20)
+        {
+          log_error ("HKP keyservers do not support v3 fingerprints\n");
+          return gpg_error (GPG_ERR_INV_USER_ID);
+        }
       kidbuf[0] = '0';
       kidbuf[1] = 'x';
-      bin2hex (desc.u.fpr, 20, kidbuf+2);
+      bin2hex (desc.u.fpr, desc.fprlen, kidbuf+2);
       break;
 
     case KEYDB_SEARCH_MODE_EXACT:
@@ -1669,9 +1713,6 @@ ks_hkp_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec, estream_t *r_fp)
         exactname = namebuffer;
       break;
 
-    case KEYDB_SEARCH_MODE_FPR16:
-      log_error ("HKP keyservers do not support v3 fingerprints\n");
-      /* fall through */
     default:
       return gpg_error (GPG_ERR_INV_USER_ID);
     }
@@ -1844,4 +1885,14 @@ ks_hkp_put (ctrl_t ctrl, parsed_uri_t uri, const void *data, size_t datalen)
   xfree (hostport);
   xfree (httphost);
   return err;
+}
+
+void
+ks_hkp_init (void)
+{
+  int err;
+
+  err = npth_mutex_init (&hosttable_lock, NULL);
+  if (err)
+    log_fatal ("error initializing mutex: %s\n", strerror (err));
 }

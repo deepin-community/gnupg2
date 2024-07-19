@@ -21,6 +21,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #ifdef _WIN32
 # ifdef HAVE_WINSOCK2_H
 #  include <winsock2.h>
@@ -35,7 +36,6 @@
 #include "../common/util.h"
 #include "packet.h"
 #include "../common/status.h"
-#include "exec.h"
 #include "keydb.h"
 #include "../common/i18n.h"
 #include "../common/iobuf.h"
@@ -44,6 +44,114 @@
 #include "photoid.h"
 #include "../common/ttyio.h"
 #include "trustdb.h"
+
+#if defined (_WIN32)
+/* This is a nicer system() for windows that waits for programs to
+   return before returning control to the caller.  I hate helpful
+   computers. */
+static int
+w32_system (const char *command)
+{
+  if (!strncmp (command, "!ShellExecute ", 14))
+    {
+      SHELLEXECUTEINFOW see;
+      wchar_t *wname;
+      int waitms;
+
+      command = command + 14;
+      while (spacep (command))
+        command++;
+      waitms = atoi (command);
+      if (waitms < 0)
+        waitms = 0;
+      else if (waitms > 60*1000)
+        waitms = 60000;
+      while (*command && !spacep (command))
+        command++;
+      while (spacep (command))
+        command++;
+
+      wname = utf8_to_wchar (command);
+      if (!wname)
+        return -1;
+
+      memset (&see, 0, sizeof see);
+      see.cbSize = sizeof see;
+      see.fMask = (SEE_MASK_NOCLOSEPROCESS
+                   | SEE_MASK_NOASYNC
+                   | SEE_MASK_FLAG_NO_UI
+                   | SEE_MASK_NO_CONSOLE);
+      see.lpVerb = L"open";
+      see.lpFile = (LPCWSTR)wname;
+      see.nShow = SW_SHOW;
+
+      if (DBG_EXTPROG)
+        log_debug ("running ShellExecuteEx(open,'%s')\n", command);
+      if (!ShellExecuteExW (&see))
+        {
+          if (DBG_EXTPROG)
+            log_debug ("ShellExecuteEx failed: rc=%d\n", (int)GetLastError ());
+          xfree (wname);
+          return -1;
+        }
+      if (DBG_EXTPROG)
+        log_debug ("ShellExecuteEx succeeded (hProcess=%p,hInstApp=%d)\n",
+                   see.hProcess, (int)see.hInstApp);
+
+      if (!see.hProcess)
+        {
+          gnupg_usleep (waitms*1000);
+          if (DBG_EXTPROG)
+            log_debug ("ShellExecuteEx ready (wait=%dms)\n", waitms);
+        }
+      else
+        {
+          WaitForSingleObject (see.hProcess, INFINITE);
+          if (DBG_EXTPROG)
+            log_debug ("ShellExecuteEx ready\n");
+        }
+      CloseHandle (see.hProcess);
+
+      xfree (wname);
+    }
+  else
+    {
+      char *string;
+      wchar_t *wstring;
+      PROCESS_INFORMATION pi;
+      STARTUPINFOW si;
+
+      /* We must use a copy of the command as CreateProcess modifies
+       * this argument. */
+      string = xstrdup (command);
+      wstring = utf8_to_wchar (string);
+      xfree (string);
+      if (!wstring)
+        return -1;
+
+      memset (&pi, 0, sizeof(pi));
+      memset (&si, 0, sizeof(si));
+      si.cb = sizeof (si);
+
+      if (!CreateProcessW (NULL, wstring, NULL, NULL, FALSE,
+                           DETACHED_PROCESS,
+                           NULL, NULL, &si, &pi))
+        {
+          xfree (wstring);
+          return -1;
+        }
+
+      /* Wait for the child to exit */
+      WaitForSingleObject (pi.hProcess, INFINITE);
+
+      CloseHandle (pi.hProcess);
+      CloseHandle (pi.hThread);
+      xfree (wstring);
+    }
+
+  return 0;
+}
+#endif /*_W32*/
 
 /* Generate a new photo id packet, or return NULL if canceled.
    FIXME:  Should we add a duplicates check similar to generate_user_id? */
@@ -239,9 +347,10 @@ int parse_image_header(const struct user_attribute *attr,byte *type,u32 *len)
    make sure it is not too big (see parse-packet.c:parse_attribute).
    Extensions should be 3 characters long for the best cross-platform
    compatibility. */
-char *image_type_to_string(byte type,int style)
+const char *
+image_type_to_string(byte type,int style)
 {
-  char *string;
+  const char *string;
 
   switch(type)
     {
@@ -285,8 +394,6 @@ get_default_photo_command(void)
 #elif defined(__APPLE__)
   /* OS X.  This really needs more than just __APPLE__. */
   return "open %I";
-#elif defined(__riscos__)
-  return "Filer_Run %I";
 #else
   if (!path_access ("xloadimage", X_OK))
     return "xloadimage -fork -quiet -title 'KeyID 0x%k' stdin";
@@ -302,6 +409,322 @@ get_default_photo_command(void)
     return "/bin/true";
 #endif
 }
+#endif
+
+#ifndef DISABLE_PHOTO_VIEWER
+struct spawn_info
+{
+  unsigned int keep_temp_file;
+  char *command;
+  char *tempdir;
+  char *tempfile;
+};
+
+#ifdef NO_EXEC
+static void
+show_photo (const char *command, const char *name, const void *image, u32 len)
+{
+  log_error(_("no remote program execution supported\n"));
+  return GPG_ERR_GENERAL;
+}
+#else /* ! NO_EXEC */
+#include "../common/membuf.h"
+#include "../common/exechelp.h"
+
+/* Makes a temp directory and filenames */
+static int
+setup_input_file (struct spawn_info *info, const char *name)
+{
+  char *tmp = opt.temp_dir;
+  int len;
+#define TEMPLATE "gpg-XXXXXX"
+
+  /* Initialize by the length of last part in the path + 1 */
+  len = strlen (DIRSEP_S) + strlen (TEMPLATE) + 1;
+
+  /* Make up the temp dir and file in case we need them */
+  if (tmp)
+    {
+      len += strlen (tmp);
+      info->tempdir = xmalloc (len);
+    }
+  else
+    {
+#if defined (_WIN32)
+      int ret;
+
+      tmp = xmalloc (MAX_PATH+1);
+      if (!tmp)
+        return -1;
+
+      ret = GetTempPath (MAX_PATH-len, tmp);
+      if (ret == 0 || ret >= MAX_PATH-len)
+	strcpy (tmp, "c:\\windows\\temp");
+      else
+	{
+	  /* GetTempPath may return with \ on the end */
+	  while (ret > 0 && tmp[ret-1] == '\\')
+	    {
+	      tmp[ret-1]='\0';
+	      ret--;
+	    }
+	}
+
+      len += ret;
+      info->tempdir = tmp;
+#else /* More unixish systems */
+      if (!(tmp = getenv ("TMPDIR"))
+          && !(tmp = getenv ("TMP")))
+        tmp = "/tmp";
+
+      len += strlen (tmp);
+      info->tempdir = xmalloc (len);
+#endif
+    }
+
+  if (info->tempdir == NULL)
+    return -1;
+
+  sprintf (info->tempdir, "%s" DIRSEP_S TEMPLATE, tmp);
+
+  if (gnupg_mkdtemp (info->tempdir) == NULL)
+    {
+      log_error (_("can't create directory '%s': %s\n"),
+                 info->tempdir, strerror (errno));
+      return -1;
+    }
+
+  info->tempfile = xmalloc (strlen (info->tempdir) + strlen (DIRSEP_S)
+                               + strlen (name) + 1);
+  if (info->tempfile == NULL)
+    {
+      xfree (info->tempdir);
+      info->tempdir = NULL;
+      return -1;
+    }
+  sprintf (info->tempfile, "%s" DIRSEP_S "%s", info->tempdir, name);
+  return 0;
+}
+
+/* Expands %i or %I in the args to the full temp file within the temp
+   directory. */
+static int
+expand_args (struct spawn_info *info, const char *args_in, const char *name)
+{
+  const char *ch = args_in;
+  membuf_t command;
+
+  info->keep_temp_file = 0;
+
+  if (DBG_EXTPROG)
+    log_debug ("expanding string \"%s\"\n", args_in);
+
+  init_membuf (&command, 100);
+
+  while (*ch != '\0')
+    {
+      if (*ch == '%')
+	{
+	  const char *append = NULL;
+
+	  ch++;
+
+	  switch (*ch)
+	    {
+	    case 'I':
+	      info->keep_temp_file = 1;
+	      /* fall through */
+
+	    case 'i': /* in */
+	      if (info->tempfile == NULL)
+		{
+		  if (setup_input_file (info, name) < 0)
+		    goto fail;
+		}
+	      append = info->tempfile;
+	      break;
+
+	    case '%':
+	      append = "%";
+	      break;
+	    }
+
+	  if (append)
+            put_membuf_str (&command, append);
+	}
+      else
+        put_membuf (&command, ch, 1);
+
+      ch++;
+    }
+
+  put_membuf (&command, "", 1);  /* Terminate string.  */
+
+  info->command = get_membuf (&command, NULL);
+  if (!info->command)
+    return -1;
+
+  if(DBG_EXTPROG)
+    log_debug("args expanded to \"%s\", use %s, keep %u\n", info->command,
+	      info->tempfile, info->keep_temp_file);
+
+  return 0;
+
+ fail:
+  xfree (get_membuf (&command, NULL));
+  return -1;
+}
+
+#ifndef EXEC_TEMPFILE_ONLY
+static void
+fill_command_argv (const char *argv[4], const char *command)
+{
+  argv[0] = getenv ("SHELL");
+  if (argv[0] == NULL)
+    argv[0] = "/bin/sh";
+
+  argv[1] = "-c";
+  argv[2] = command;
+  argv[3] = NULL;
+}
+#endif
+
+static void
+run_with_pipe (struct spawn_info *info, const void *image, u32 len)
+{
+#ifdef EXEC_TEMPFILE_ONLY
+  (void)info;
+  (void)image;
+  (void)len;
+  log_error (_("this platform requires temporary files when calling"
+               " external programs\n"));
+  return;
+#else /* !EXEC_TEMPFILE_ONLY */
+  int to[2];
+  pid_t pid;
+  gpg_error_t err;
+  const char *argv[4];
+
+  err = gnupg_create_pipe (to);
+  if (err)
+    return;
+
+  fill_command_argv (argv, info->command);
+  err = gnupg_spawn_process_fd (argv[0], argv+1, to[0], -1, -1, &pid);
+
+  close (to[0]);
+
+  if (err)
+    {
+      log_error (_("unable to execute shell '%s': %s\n"),
+                 argv[0], gpg_strerror (err));
+      close (to[1]);
+    }
+  else
+    {
+      write (to[1], image, len);
+      close (to[1]);
+
+      err = gnupg_wait_process (argv[0], pid, 1, NULL);
+      if (err)
+        log_error (_("unnatural exit of external program\n"));
+    }
+#endif /* !EXEC_TEMPFILE_ONLY */
+}
+
+static int
+create_temp_file (struct spawn_info *info, const void *ptr, u32 len)
+{
+  if (DBG_EXTPROG)
+    log_debug ("using temp file '%s'\n", info->tempfile);
+
+  /* It's not fork/exec/pipe, so create a temp file */
+  if ( is_secured_filename (info->tempfile) )
+    {
+      log_error (_("can't create '%s': %s\n"),
+                 info->tempfile, strerror (EPERM));
+      gpg_err_set_errno (EPERM);
+      return -1;
+    }
+  else
+    {
+      estream_t fp = es_fopen (info->tempfile, "wb");
+
+      if (fp)
+        {
+          es_fwrite (ptr, len, 1, fp);
+          es_fclose (fp);
+          return 0;
+        }
+      else
+        {
+          int save = errno;
+          log_error (_("can't create '%s': %s\n"),
+                     info->tempfile, strerror(errno));
+          gpg_err_set_errno (save);
+          return -1;
+        }
+    }
+}
+
+static void
+show_photo (const char *command, const char *name, const void *image, u32 len)
+{
+  struct spawn_info *spawn;
+
+  spawn = xmalloc_clear (sizeof (struct spawn_info));
+  if (!spawn)
+    return;
+
+  /* Expand the args */
+  if (expand_args (spawn, command, name) < 0)
+    {
+      xfree (spawn);
+      return;
+    }
+
+  if (DBG_EXTPROG)
+    log_debug ("running command: %s\n", spawn->command);
+
+  if (spawn->tempfile == NULL)
+    run_with_pipe (spawn, image, len);
+  else if (create_temp_file (spawn, image, len) == 0)
+    {
+#if defined (_WIN32)
+      if (w32_system (spawn->command) < 0)
+        log_error (_("system error while calling external program: %s\n"),
+                   strerror (errno));
+#else
+      pid_t pid;
+      gpg_error_t err;
+      const char *argv[4];
+
+      fill_command_argv (argv, spawn->command);
+      err = gnupg_spawn_process_fd (argv[0], argv+1, -1, -1, -1, &pid);
+      if (!err)
+        err = gnupg_wait_process (argv[0], pid, 1, NULL);
+      if (err)
+        log_error (_("unnatural exit of external program\n"));
+#endif
+
+      if (!spawn->keep_temp_file)
+        {
+          if (unlink (spawn->tempfile) < 0)
+            log_info (_("WARNING: unable to remove tempfile (%s) '%s': %s\n"),
+                      "in", spawn->tempfile, strerror(errno));
+
+          if (rmdir (spawn->tempdir) < 0)
+            log_info (_("WARNING: unable to remove temp directory '%s': %s\n"),
+                      spawn->tempdir, strerror(errno));
+        }
+    }
+
+  xfree(spawn->command);
+  xfree(spawn->tempdir);
+  xfree(spawn->tempfile);
+  xfree(spawn);
+}
+#endif
 #endif
 
 
@@ -320,6 +743,20 @@ show_photos (ctrl_t ctrl, const struct user_attribute *attrs, int count,
   u32 len;
   u32 kid[2]={0,0};
 
+  if (opt.exec_disable && !opt.no_perm_warn)
+    {
+      log_info (_("external program calls are disabled due to unsafe "
+                  "options file permissions\n"));
+      return;
+    }
+
+#if defined(HAVE_GETUID) && defined(HAVE_GETEUID)
+  /* There should be no way to get to this spot while still carrying
+     setuid privs.  Just in case, bomb out if we are. */
+  if ( getuid () != geteuid ())
+    BUG ();
+#endif
+
   memset (&args, 0, sizeof(args));
   args.pk = pk;
   args.validity_info = get_validity_info (ctrl, NULL, pk, uid);
@@ -332,23 +769,22 @@ show_photos (ctrl_t ctrl, const struct user_attribute *attrs, int count,
 
   es_fflush (es_stdout);
 
-  for(i=0;i<count;i++)
-    if(attrs[i].type==ATTRIB_IMAGE &&
-       parse_image_header(&attrs[i],&args.imagetype,&len))
-      {
-	char *command,*name;
-	struct exec_info *spawn;
-	int offset=attrs[i].len-len;
-
 #ifdef FIXED_PHOTO_VIEWER
-	opt.photo_viewer=FIXED_PHOTO_VIEWER;
+  opt.photo_viewer = FIXED_PHOTO_VIEWER;
 #else
-	if(!opt.photo_viewer)
-	  opt.photo_viewer=get_default_photo_command();
+  if (!opt.photo_viewer)
+    opt.photo_viewer = get_default_photo_command ();
 #endif
 
+  for (i=0; i<count; i++)
+    if (attrs[i].type == ATTRIB_IMAGE
+        && parse_image_header (&attrs[i], &args.imagetype, &len))
+      {
+        char *command, *name;
+        int offset = attrs[i].len-len;
+
 	/* make command grow */
-	command=pct_expando(opt.photo_viewer,&args);
+	command = pct_expando (ctrl, opt.photo_viewer,&args);
 	if(!command)
 	  goto fail;
         if (!*command)
@@ -357,8 +793,14 @@ show_photos (ctrl_t ctrl, const struct user_attribute *attrs, int count,
             goto fail;
           }
 
-	name=xmalloc(16+strlen(EXTSEP_S)+
-		     strlen(image_type_to_string(args.imagetype,0))+1);
+	name = xmalloc (1 + 16 + strlen(EXTSEP_S)
+                        + strlen (image_type_to_string (args.imagetype, 0)));
+
+	if (!name)
+          {
+            xfree (command);
+            goto fail;
+          }
 
 	/* Make the filename.  Notice we are not using the image
            encoding type for more than cosmetics.  Most external image
@@ -367,36 +809,17 @@ show_photos (ctrl_t ctrl, const struct user_attribute *attrs, int count,
            which.  The spec permits this, by the way. -dms */
 
 #ifdef USE_ONLY_8DOT3
-	sprintf(name,"%08lX" EXTSEP_S "%s",(ulong)kid[1],
-		image_type_to_string(args.imagetype,0));
+	sprintf (name,"%08lX" EXTSEP_S "%s", (ulong)kid[1],
+                 image_type_to_string (args.imagetype, 0));
 #else
-	sprintf(name,"%08lX%08lX" EXTSEP_S "%s",(ulong)kid[0],(ulong)kid[1],
-		image_type_to_string(args.imagetype,0));
+	sprintf (name, "%08lX%08lX" EXTSEP_S "%s",
+                 (ulong)kid[0], (ulong)kid[1],
+                 image_type_to_string (args.imagetype, 0));
 #endif
 
-	if(exec_write(&spawn,NULL,command,name,1,1)!=0)
-	  {
-	    xfree(name);
-	    goto fail;
-	  }
-
-#ifdef __riscos__
-        riscos_set_filetype_by_mimetype(spawn->tempfile_in,
-                                        image_type_to_string(args.imagetype,2));
-#endif
-
-	xfree(name);
-
-	fwrite(&attrs[i].data[offset],attrs[i].len-offset,1,spawn->tochild);
-
-	if(exec_read(spawn)!=0)
-	  {
-	    exec_finish(spawn);
-	    goto fail;
-	  }
-
-	if(exec_finish(spawn)!=0)
-	  goto fail;
+        show_photo (command, name, &attrs[i].data[offset], len);
+        xfree (name);
+        xfree (command);
       }
 
   return;

@@ -885,7 +885,7 @@ _keybox_dump_cut_records (const char *filename, unsigned long from,
                           unsigned long to, FILE *outfp)
 {
   estream_t fp;
-  KEYBOXBLOB blob;
+  KEYBOXBLOB blob = NULL;
   int rc;
   unsigned long recno = 0;
 
@@ -906,6 +906,7 @@ _keybox_dump_cut_records (const char *filename, unsigned long from,
             }
         }
       _keybox_release_blob (blob);
+      blob = NULL;
       recno++;
     }
   if (rc == -1)
@@ -913,6 +914,7 @@ _keybox_dump_cut_records (const char *filename, unsigned long from,
   if (rc)
     fprintf (stderr, "error reading '%s': %s\n", filename, gpg_strerror (rc));
  leave:
+  _keybox_release_blob (blob);
   if (fp != es_stdin)
     es_fclose (fp);
   return rc;

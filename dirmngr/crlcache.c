@@ -125,6 +125,13 @@
 # define O_BINARY 0
 #endif
 
+
+/* Reason flags for an invalid CRL.  */
+#define INVCRL_TOO_OLD       1
+#define INVCRL_UNKNOWN_EXTN  2
+#define INVCRL_GENERAL       127
+
+
 static const char oidstr_crlNumber[] = "2.5.29.20";
 /* static const char oidstr_issuingDistributionPoint[] = "2.5.29.28"; */
 static const char oidstr_authorityKeyIdentifier[] = "2.5.29.35";
@@ -157,7 +164,7 @@ struct crl_cache_entry_s
   unsigned int cdb_use_count;  /* Current use count. */
   unsigned int cdb_lru_count;  /* Used for LRU purposes. */
   int dbfile_checked;          /* Set to true if the dbfile_hash value has
-                                  been checked one. */
+                                  been checked once. */
 };
 
 
@@ -569,8 +576,8 @@ open_dir (crl_cache_t *r_cache)
           if (*line == 'i')
             {
               entry->invalid = atoi (line+1);
-              if (entry->invalid < 1)
-                entry->invalid = 1;
+              if (!entry->invalid)
+                entry->invalid = INVCRL_GENERAL;
             }
           else if (*line == 'u')
             entry->user_trust_req = 1;
@@ -984,8 +991,8 @@ make_db_file_name (const char *issuer_hash)
 
 
 /* Hash the file FNAME and return the MD5 digest in MD5BUFFER. The
-   caller must allocate MD%buffer wityh at least 16 bytes. Returns 0
-   on success. */
+ * caller must allocate MD5buffer with at least 16 bytes. Returns 0
+ * on success. */
 static int
 hash_dbfile (const char *fname, unsigned char *md5buffer)
 {
@@ -1395,7 +1402,7 @@ cache_isvalid (ctrl_t ctrl, const char *issuer_hash,
         {
           if (opt.verbose)
             log_info ("no system trust and client does not trust either\n");
-          retval = CRL_CACHE_CANTUSE;
+          retval = CRL_CACHE_NOTTRUSTED;
         }
       else
         {
@@ -1515,8 +1522,11 @@ crl_cache_cert_isvalid (ctrl_t ctrl, ksba_cert_t cert,
     case CRL_CACHE_DONTKNOW:
       err = gpg_error (GPG_ERR_NO_CRL_KNOWN);
       break;
+    case CRL_CACHE_NOTTRUSTED:
+      err = gpg_error (GPG_ERR_NOT_TRUSTED);
+      break;
     case CRL_CACHE_CANTUSE:
-      err = gpg_error (GPG_ERR_NO_CRL_KNOWN);
+      err = gpg_error (GPG_ERR_INV_CRL_OBJ);
       break;
     default:
       log_fatal ("cache_isvalid returned invalid status code %d\n", result);
@@ -1625,21 +1635,8 @@ start_sig_check (ksba_crl_t crl, gcry_md_hd_t *md, int *algo, int *use_pss)
     }
   else
     *algo = gcry_md_map_name (algoid);
-  if (!*algo && algoid)
-    {
-      if (!strcmp (algoid, "1.2.840.10045.4.3.1"))
-        *algo = GCRY_MD_SHA224; /* ecdsa-with-sha224 */
-      else if (!strcmp (algoid, "1.2.840.10045.4.3.2"))
-        *algo = GCRY_MD_SHA256; /* ecdsa-with-sha256 */
-      else if (!strcmp (algoid, "1.2.840.10045.4.3.3"))
-        *algo = GCRY_MD_SHA384; /* ecdsa-with-sha384 */
-      else if (!strcmp (algoid, "1.2.840.10045.4.3.4"))
-        *algo = GCRY_MD_SHA512; /* ecdsa-with-sha512 */
-    }
   if (!*algo)
     {
-      log_debug ("XXXXX %s: %s <%s>\n",
-                 __func__, gpg_strerror (err), gpg_strsource (err));
       log_error (_("unknown hash algorithm '%s'\n"), algoid? algoid:"?");
       return gpg_error (GPG_ERR_DIGEST_ALGO);
     }
@@ -1739,7 +1736,8 @@ finish_sig_check (ksba_crl_t crl, gcry_md_hd_t md, int algo,
         {
           log_error ("hash algo mismatch: %d announced but %d used\n",
                      algo, hashalgo);
-          return gpg_error (GPG_ERR_INV_CRL);
+          err = gpg_error (GPG_ERR_INV_CRL);
+          goto leave;
         }
       /* Add some restrictions; see ../sm/certcheck.c for details.  */
       switch (algo)
@@ -1755,14 +1753,16 @@ finish_sig_check (ksba_crl_t crl, gcry_md_hd_t md, int algo,
         default:
           log_error ("PSS hash algorithm '%s' rejected\n",
                      gcry_md_algo_name (algo));
-          return gpg_error (GPG_ERR_DIGEST_ALGO);
+          err = gpg_error (GPG_ERR_DIGEST_ALGO);
+          goto leave;
         }
 
       if (gcry_md_get_algo_dlen (algo) != saltlen)
         {
           log_error ("PSS hash algorithm '%s' rejected due to salt length %u\n",
                      gcry_md_algo_name (algo), saltlen);
-          return gpg_error (GPG_ERR_DIGEST_ALGO);
+          err = gpg_error (GPG_ERR_DIGEST_ALGO);
+          goto leave;
         }
     }
 
@@ -2012,7 +2012,7 @@ crl_parse_insert (ctrl_t ctrl, ksba_crl_t crl,
             ksba_sexp_t keyid;
 
             /* We need to look for the issuer only after having read
-               all items.  The issuer itselfs comes before the items
+               all items.  The issuer itself comes before the items
                but the optional authorityKeyIdentifier comes after the
                items. */
             err = ksba_crl_get_issuer (crl, &crlissuer);
@@ -2108,7 +2108,7 @@ crl_parse_insert (ctrl_t ctrl, ksba_crl_t crl,
         }
     }
   while (stopreason != KSBA_SR_READY);
-  assert (!err);
+  log_assert (!err);
 
 
  failure:
@@ -2138,7 +2138,7 @@ get_crl_number (ksba_crl_t crl)
 
 
 /* Return the authorityKeyIdentifier or NULL if it is not available.
-   The issuer name may consists of several parts - they are delimted by
+   The issuer name may consists of several parts - they are delimited by
    0x01. */
 static char *
 get_auth_key_id (ksba_crl_t crl, char **serialno)
@@ -2349,7 +2349,7 @@ crl_cache_insert (ctrl_t ctrl, const char *url, ksba_reader_t reader)
                      nextupdate);
           if (!err2)
             err2 = gpg_error (GPG_ERR_CRL_TOO_OLD);
-          invalidate_crl |= 1;
+          invalidate_crl |= INVCRL_TOO_OLD;
         }
     }
 
@@ -2374,7 +2374,7 @@ crl_cache_insert (ctrl_t ctrl, const char *url, ksba_reader_t reader)
       log_info ("(CRL='%s')\n", url);
       if (!err2)
         err2 = gpg_error (GPG_ERR_INV_CRL);
-      invalidate_crl |= 2;
+      invalidate_crl |= INVCRL_UNKNOWN_EXTN;
     }
   if (gpg_err_code (err) == GPG_ERR_EOF
       || gpg_err_code (err) == GPG_ERR_NO_DATA )
@@ -2513,6 +2513,7 @@ list_one_crl_entry (crl_cache_t cache, crl_cache_entry_t e, estream_t fp)
   int rc;
   int warn = 0;
   const unsigned char *s;
+  unsigned int invalid;
 
   es_fputs ("--------------------------------------------------------\n", fp );
   es_fprintf (fp, _("Begin CRL dump (retrieved via %s)\n"), e->url );
@@ -2537,13 +2538,20 @@ list_one_crl_entry (crl_cache_t cache, crl_cache_entry_t e, estream_t fp)
               !e->user_trust_req? "[system]" :
               e->check_trust_anchor? e->check_trust_anchor:"[missing]");
 
-  if ((e->invalid & 1))
-    es_fprintf (fp, _(" ERROR: The CRL will not be used "
-                      "because it was still too old after an update!\n"));
-  if ((e->invalid & 2))
-    es_fprintf (fp, _(" ERROR: The CRL will not be used "
+  invalid = e->invalid;
+  if ((invalid & INVCRL_TOO_OLD))
+    {
+      invalid &= ~INVCRL_TOO_OLD;
+      es_fprintf (fp, _(" ERROR: The CRL will not be used "
+                        "because it was still too old after an update!\n"));
+    }
+  if ((invalid & INVCRL_UNKNOWN_EXTN))
+    {
+      invalid &= ~INVCRL_UNKNOWN_EXTN;
+      es_fprintf (fp, _(" ERROR: The CRL will not be used "
                       "due to an unknown critical extension!\n"));
-  if ((e->invalid & ~3))
+    }
+  if (invalid)  /* INVCRL_GENERAL or some other bits are set.  */
     es_fprintf (fp, _(" ERROR: The CRL will not be used\n"));
 
   cdb = lock_db_file (cache, e);
@@ -2735,8 +2743,6 @@ crl_cache_reload_crl (ctrl_t ctrl, ksba_cert_t cert)
 
           any_dist_point = 1;
 
-          if (opt.verbose)
-            log_info ("fetching CRL from '%s'\n", distpoint_uri);
           crl_close_reader (reader);
           err = crl_fetch (ctrl, distpoint_uri, &reader);
           if (err)

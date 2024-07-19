@@ -18,22 +18,30 @@
 
 ## Process this file with automake to produce Makefile.in
 
-EXTRA_DIST = mkerrors
+EXTRA_DIST = mkerrors keyboxd-w32info.rc keyboxd.w32-manifest.in
 
 AM_CPPFLAGS =
 
 include $(top_srcdir)/am/cmacros.am
 
+if HAVE_W32_SYSTEM
+resource_objs += keyboxd-w32info.o
+
+keyboxd-w32info.o : keyboxd.w32-manifest ../common/w32info-rc.h
+endif
+
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS)
 
-noinst_LIBRARIES = libkeybox.a libkeybox509.a
 bin_PROGRAMS = kbxutil
-
-if HAVE_W32CE_SYSTEM
-extra_libs =  $(LIBASSUAN_LIBS)
+noinst_LIBRARIES = libkeybox.a libkeybox509.a
+if BUILD_KEYBOXD
+libexec_PROGRAMS = keyboxd
 else
-extra_libs =
+libexec_PROGRAMS =
 endif
+
+common_libs = $(libcommon)
+commonpth_libs = $(libcommonpth)
 
 common_sources = \
 	keybox.h keybox-defs.h keybox-search-desc.h \
@@ -46,22 +54,51 @@ common_sources = \
 	keybox-openpgp.c \
 	keybox-dump.c
 
+client_sources = \
+        kbx-client-util.h \
+        kbx-client-util.c
 
-libkeybox_a_SOURCES = $(common_sources)
-libkeybox509_a_SOURCES = $(common_sources)
 
-libkeybox_a_CFLAGS    = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
-libkeybox509_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) \
-                          -DKEYBOX_WITH_X509=1
+libkeybox_a_SOURCES = $(common_sources) $(client_sources)
+libkeybox509_a_SOURCES = $(common_sources) $(client_sources)
+
+libkeybox_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
+libkeybox509_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) -DKEYBOX_WITH_X509=1
+
 
 # We need W32SOCKLIBS because the init subsystem code in libcommon
 # requires it - although we don't actually need it.  It is easier
 # to do it this way.
 kbxutil_SOURCES = kbxutil.c $(common_sources)
 kbxutil_CFLAGS = $(AM_CFLAGS) -DKEYBOX_WITH_X509=1
-kbxutil_LDADD   = ../common/libcommon.a \
-                  $(KSBA_LIBS) $(LIBGCRYPT_LIBS) $(extra_libs) \
+kbxutil_LDADD   = $(common_libs) \
+                  $(KSBA_LIBS) $(LIBGCRYPT_LIBS) \
                   $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV) $(W32SOCKLIBS) \
 		  $(NETLIBS)
 
-$(PROGRAMS) : ../common/libcommon.a
+
+keyboxd_SOURCES = \
+	keyboxd.c keyboxd.h   \
+	kbxserver.c           \
+	frontend.c frontend.h \
+	backend.h backend-support.c \
+	backend-cache.c \
+	backend-kbx.c \
+	backend-sqlite.c \
+	$(common_sources)
+
+keyboxd_CFLAGS = $(AM_CFLAGS) -DKEYBOX_WITH_X509=1 \
+                 $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) $(SQLITE3_CFLAGS) \
+                 $(INCICONV)
+keyboxd_LDADD = $(commonpth_libs) \
+                $(KSBA_LIBS) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
+	        $(SQLITE3_LIBS) $(GPG_ERROR_LIBS) \
+                $(LIBINTL) $(NETLIBS) $(LIBICONV) \
+		$(resource_objs)
+keyboxd_LDFLAGS =
+keyboxd_DEPENDENCIES = $(resource_objs)
+
+
+# Make sure that all libs are build before we use them.  This is
+# important for things like make -j2.
+$(PROGRAMS): $(common_libs) $(commonpth_libs)

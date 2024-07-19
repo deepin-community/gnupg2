@@ -1,6 +1,6 @@
 /* exechelp.c - Fork and exec helpers for POSIX
- * Copyright (C) 2004, 2007, 2008, 2009,
- *               2010 Free Software Foundation, Inc.
+ * Copyright (C) 2004, 2007-2009, 2010 Free Software Foundation, Inc.
+ * Copyright (C) 2004, 2006-2012, 2014-2017 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -26,11 +26,12 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: (LGPL-3.0+ OR GPL-2.0+)
  */
 
 #include <config.h>
 
-#if defined(HAVE_W32_SYSTEM) || defined (HAVE_W32CE_SYSTEM)
+#if defined(HAVE_W32_SYSTEM)
 #error This code is only used on POSIX
 #endif
 
@@ -276,7 +277,7 @@ get_all_open_fds (void)
 static void
 do_exec (const char *pgmname, const char *argv[],
          int fd_in, int fd_out, int fd_err,
-         int *except, void (*preexec)(void), unsigned int flags)
+         int *except, unsigned int flags)
 {
   char **arg_list;
   int i, j;
@@ -333,8 +334,6 @@ do_exec (const char *pgmname, const char *argv[],
   /* Close all other files. */
   close_all_fds (3, except);
 
-  if (preexec)
-    preexec ();
   execv (pgmname, arg_list);
   /* No way to print anything, as we have closed all streams. */
   _exit (127);
@@ -424,10 +423,19 @@ gnupg_create_pipe (int filedes[2])
 }
 
 
+/* Close the end of a pipe.  */
+void
+gnupg_close_pipe (int fd)
+{
+  if (fd != -1)
+    close (fd);
+}
+
+
 /* Fork and exec the PGMNAME, see exechelp.h for details.  */
 gpg_error_t
 gnupg_spawn_process (const char *pgmname, const char *argv[],
-                     int *except, void (*preexec)(void), unsigned int flags,
+                     int *except, unsigned int flags,
                      estream_t *r_infp,
                      estream_t *r_outfp,
                      estream_t *r_errfp,
@@ -534,7 +542,7 @@ gnupg_spawn_process (const char *pgmname, const char *argv[],
       es_fclose (outfp);
       es_fclose (errfp);
       do_exec (pgmname, argv, inpipe[0], outpipe[1], errpipe[1],
-               except, preexec, flags);
+               except, flags);
       /*NOTREACHED*/
     }
 
@@ -584,7 +592,7 @@ gnupg_spawn_process_fd (const char *pgmname, const char *argv[],
     {
       gcry_control (GCRYCTL_TERM_SECMEM);
       /* Run child. */
-      do_exec (pgmname, argv, infd, outfd, errfd, NULL, NULL, 0);
+      do_exec (pgmname, argv, infd, outfd, errfd, NULL, 0);
       /*NOTREACHED*/
     }
 
@@ -883,7 +891,7 @@ gnupg_spawn_process_detached (const char *pgmname, const char *argv[],
         for (i=0; envp[i]; i++)
           putenv (xstrdup (envp[i]));
 
-      do_exec (pgmname, argv, -1, -1, -1, NULL, NULL, 0);
+      do_exec (pgmname, argv, -1, -1, -1, NULL, 0);
 
       /*NOTREACHED*/
     }

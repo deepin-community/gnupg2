@@ -1,6 +1,6 @@
-# configure.ac - for GnuPG 2.2
-# Copyright (C) 1998-2019 Free Software Foundation, Inc.
+# configure.ac - for GnuPG 2.1
 # Copyright (C) 1998-2019 Werner Koch
+# Copyright (C) 1998-2021 Free Software Foundation, Inc.
 # Copyright (C) 2003-2023 g10 Code GmbH
 #
 # This file is part of GnuPG.
@@ -28,8 +28,8 @@ min_automake_version="1.16.3"
 # another commit and push so that the git magic is able to work.
 m4_define([mym4_package],[gnupg])
 m4_define([mym4_major], [2])
-m4_define([mym4_minor], [2])
-m4_define([mym4_micro], [43])
+m4_define([mym4_minor], [4])
+m4_define([mym4_micro], [5])
 
 # To start a new development series, i.e a new major or minor number
 # you need to mark an arbitrary commit before the first beta release
@@ -51,19 +51,20 @@ m4_esyscmd([echo ]mym4_version[>VERSION])
 AC_INIT([mym4_package],[mym4_version],[https://bugs.gnupg.org])
 
 # When changing the SWDB tag please also adjust the hard coded tags in
-# build-aux/speedo.mk and Makefile.am
-AC_DEFINE_UNQUOTED(GNUPG_SWDB_TAG, "gnupg22", [swdb tag for this branch])
+# build-aux/speedo.mk, build-aux/getswdb.sh, and Makefile.am
+# As well as the source info for the man pages.
+AC_DEFINE_UNQUOTED(GNUPG_SWDB_TAG, "gnupg24", [swdb tag for this branch])
 
-NEED_GPG_ERROR_VERSION=1.38
+NEED_GPGRT_VERSION=1.46
 
 NEED_LIBGCRYPT_API=1
-NEED_LIBGCRYPT_VERSION=1.8.0
+NEED_LIBGCRYPT_VERSION=1.9.1
 
 NEED_LIBASSUAN_API=2
 NEED_LIBASSUAN_VERSION=2.5.0
 
 NEED_KSBA_API=1
-NEED_KSBA_VERSION=1.4.0
+NEED_KSBA_VERSION=1.6.3
 
 NEED_NTBTLS_API=1
 NEED_NTBTLS_VERSION=0.2.0
@@ -74,7 +75,7 @@ NEED_NPTH_VERSION=1.2
 
 NEED_GNUTLS_VERSION=3.2
 
-NEED_SQLITE_VERSION=3.7
+NEED_SQLITE_VERSION=3.27
 
 development_version=mym4_isbeta
 PACKAGE=$PACKAGE_NAME
@@ -101,6 +102,7 @@ have_gnutls=no
 have_sqlite=no
 have_npth=no
 have_libusb=no
+have_libtss=no
 have_system_resolver=no
 gnupg_have_ldap="n/a"
 
@@ -117,13 +119,16 @@ use_tls_library=no
 large_secmem=no
 show_tor_support=no
 
-GNUPG_BUILD_PROGRAM(gpg, yes)
+# gpg is a required part and can't be disabled anymore.
+build_gpg=yes
 GNUPG_BUILD_PROGRAM(gpgsm, yes)
 # The agent is a required part and can't be disabled anymore.
 build_agent=yes
 GNUPG_BUILD_PROGRAM(scdaemon, yes)
 GNUPG_BUILD_PROGRAM(g13, no)
 GNUPG_BUILD_PROGRAM(dirmngr, yes)
+GNUPG_BUILD_PROGRAM(keyboxd, yes)
+GNUPG_BUILD_PROGRAM(tpm2d, yes)
 GNUPG_BUILD_PROGRAM(doc, yes)
 # We use gpgtar to unpack test data, hence we always build it.  If the
 # user opts out, we simply don't install it.
@@ -182,6 +187,15 @@ show_gnupg_scdaemon_pgm="(default)"
 test -n "$GNUPG_SCDAEMON_PGM" && show_gnupg_scdaemon_pgm="$GNUPG_SCDAEMON_PGM"
 
 
+AC_ARG_WITH(tpm2daemon-pgm,
+    [  --with-tpm2daemon-pgm=PATH  Use PATH as the default for the tpm2daemon)],
+          GNUPG_TPM2DAEMON_PGM="$withval", GNUPG_TPM2DAEMON_PGM="" )
+AC_SUBST(GNUPG_TPM2DAEMON_PGM)
+AM_CONDITIONAL(GNUPG_TPM2DAEMON_PGM, test -n "$GNUPG_TPM2DAEMON_PGM")
+show_gnupg_tpm2daemon_pgm="(default)"
+test -n "$GNUPG_TPM2DAEMON_PGM" && show_gnupg_tpm2daemon_pgm="$GNUPG_TPM2DAEMON_PGM"
+
+
 AC_ARG_WITH(dirmngr-pgm,
     [  --with-dirmngr-pgm=PATH  Use PATH as the default for the dirmngr)],
           GNUPG_DIRMNGR_PGM="$withval", GNUPG_DIRMNGR_PGM="" )
@@ -189,6 +203,14 @@ AC_SUBST(GNUPG_DIRMNGR_PGM)
 AM_CONDITIONAL(GNUPG_DIRMNGR_PGM, test -n "$GNUPG_DIRMNGR_PGM")
 show_gnupg_dirmngr_pgm="(default)"
 test -n "$GNUPG_DIRMNGR_PGM" && show_gnupg_dirmngr_pgm="$GNUPG_DIRMNGR_PGM"
+
+AC_ARG_WITH(keyboxd-pgm,
+    [  --with-keyboxd-pgm=PATH  Use PATH as the default for the keyboxd)],
+          GNUPG_KEYBOXD_PGM="$withval", GNUPG_KEYBOXD_PGM="" )
+AC_SUBST(GNUPG_KEYBOXD_PGM)
+AM_CONDITIONAL(GNUPG_KEYBOXD_PGM, test -n "$GNUPG_KEYBOXD_PGM")
+show_gnupg_keyboxd_pgm="(default)"
+test -n "$GNUPG_KEYBOXD_PGM" && show_gnupg_keyboxd_pgm="$GNUPG_KEYBOXD_PGM"
 
 AC_ARG_WITH(protect-tool-pgm,
     [  --with-protect-tool-pgm=PATH  Use PATH as the default for the protect-tool)],
@@ -485,14 +507,6 @@ AH_BOTTOM([
 #define EXEEXT_S ""
 #endif
 
-/* This is the same as VERSION, but should be overridden if the
-   platform cannot handle things like dots '.' in filenames. Set
-   SAFE_VERSION_DOT and SAFE_VERSION_DASH to whatever SAFE_VERSION
-   uses for dots and dashes. */
-#define SAFE_VERSION VERSION
-#define SAFE_VERSION_DOT  '.'
-#define SAFE_VERSION_DASH '-'
-
 /* Some global constants.
  * Note that the homedir must not end in a slash.  */
 #ifdef HAVE_DOSISH_SYSTEM
@@ -507,10 +521,11 @@ AH_BOTTOM([
 #define GNUPG_DEFAULT_HOMEDIR "~/.gnupg"
 #endif
 #define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
+#define GNUPG_PUBLIC_KEYS_DIR   "public-keys.d"
 #define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
+#define GNUPG_CACHE_DIR         "cache.d"
 
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2023 g10 Code GmbH"
-
+#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2024 g10 Code GmbH"
 
 /* For some systems (DOS currently), we hardcode the path here.  For
    POSIX systems the values are constructed by the Makefiles, so that
@@ -562,8 +577,11 @@ AH_BOTTOM([
 # endif
 #endif
 
-/* Provide the es_ macro for estream.  */
+/* Enable the es_ macros from gpgrt.  */
 #define GPGRT_ENABLE_ES_MACROS 1
+
+/* Enable the log_ macros from gpgrt.  */
+#define GPGRT_ENABLE_LOG_MACROS 1
 
 /* We want the argparse macros from gpgrt.  */
 #define GPGRT_ENABLE_ARGPARSE_MACROS 1
@@ -619,12 +637,11 @@ AC_PROG_RANLIB
 AC_CHECK_TOOL(AR, ar, :)
 AC_PATH_PROG(PERL,"perl")
 AC_CHECK_TOOL(WINDRES, windres, :)
-AC_PATH_PROG(YAT2M, "yat2m")
+AC_PATH_PROG(YAT2M, "yat2m", "./yat2m" )
 AC_ARG_VAR(YAT2M, [tool to convert texi to man pages])
 AM_CONDITIONAL(HAVE_YAT2M, test -n "$ac_cv_path_YAT2M")
 AC_SEARCH_LIBS([strerror],[cposix])
 AC_SYS_LARGEFILE
-GNUPG_CHECK_USTAR
 
 
 # GNU AWK requires -n option to interpret "0xHH" as a number
@@ -661,7 +678,6 @@ try_gettext=yes
 require_iconv=yes
 have_dosish_system=no
 have_w32_system=no
-have_w32ce_system=no
 have_android_system=no
 use_simple_gettext=no
 mmap_needed=yes
@@ -680,15 +696,7 @@ case "${host}" in
         have_w32_system=yes
         require_iconv=no
         require_pipe_to_unblock_pselect=no
-        case "${host}" in
-          *-mingw32ce*)
-            have_w32ce_system=yes
-            ;;
-          *)
-            AC_DEFINE(HAVE_DRIVE_LETTERS,1,
-                      [Defined if the OS supports drive letters.])
-            ;;
-        esac
+        AC_DEFINE(HAVE_DRIVE_LETTERS,1, [Defined if the OS supports drive letters.])
         try_gettext="no"
 	use_simple_gettext=yes
 	mmap_needed=no
@@ -773,12 +781,9 @@ AM_CONDITIONAL(USE_SIMPLE_GETTEXT, test x"$use_simple_gettext" = xyes)
 
 if test "$have_w32_system" = yes; then
    AC_DEFINE(HAVE_W32_SYSTEM,1, [Defined if we run on a W32 API based system])
-   if test "$have_w32ce_system" = yes; then
-      AC_DEFINE(HAVE_W32CE_SYSTEM,1,[Defined if we run on WindowsCE])
-   fi
+   AC_CHECK_HEADERS([winsock2.h])
 fi
 AM_CONDITIONAL(HAVE_W32_SYSTEM, test "$have_w32_system" = yes)
-AM_CONDITIONAL(HAVE_W32CE_SYSTEM, test "$have_w32ce_system" = yes)
 
 if test "$have_android_system" = yes; then
    AC_DEFINE(HAVE_ANDROID_SYSTEM,1, [Defined if we build for an Android system])
@@ -797,10 +802,10 @@ AC_MSG_NOTICE([checking for libraries])
 
 
 #
-# libgpg-error is a library with error codes shared between GnuPG
-# related projects.
+# gpgrt (aka libgpg-error) is a library with error codes shared
+# between GnuPG related projects.
 #
-AM_PATH_GPG_ERROR("$NEED_GPG_ERROR_VERSION",
+AM_PATH_GPG_ERROR("$NEED_GPGRT_VERSION",
                   have_gpg_error=yes,have_gpg_error=no)
 
 
@@ -809,7 +814,29 @@ AM_PATH_GPG_ERROR("$NEED_GPG_ERROR_VERSION",
 #
 AM_PATH_LIBGCRYPT("$NEED_LIBGCRYPT_API:$NEED_LIBGCRYPT_VERSION",
         have_libgcrypt=yes,have_libgcrypt=no)
-
+# And, then, check if it's newer than 1.9.0 so that we can
+# conditionally build some programs.
+# Note: This is not anymore needed but keep the code commented in case
+# we need it again with some future libgcrypt.
+#have_libgcrypt_newer=no
+#if test $ok = yes; then
+#    if test "$major" -gt 1; then
+#        have_libgcrypt_newer=yes
+#    else
+#        if test "$major" -eq 1; then
+#            if test "$minor" -gt 9; then
+#               have_libgcrypt_newer=yes
+#            else
+#               if test "$minor" -eq 9; then
+#                   if test "$micro" -ge 0; then
+#                     have_libgcrypt_newer=yes
+#                   fi
+#               fi
+#            fi
+#        fi
+#    fiy
+#fi
+#AM_CONDITIONAL(HAVE_NEWER_LIBGCRYPT, [test $have_libgcrypt_newer = yes])
 
 #
 # libassuan is used for IPC
@@ -932,11 +959,15 @@ if test x"$use_tofu" = xyes ; then
     tmp=$(echo "$SQLITE3_PKG_ERRORS" | tr '\n' '\v' | sed 's/\v/\n*** /g')
     AC_MSG_WARN([[
 ***
-*** Building without SQLite support - TOFU disabled
+*** Building without SQLite support - TOFU and Keyboxd disabled
 ***
 *** $tmp]])
   fi
 fi
+if test "$have_sqlite" != "yes"; then
+    build_keyboxd=no
+fi
+
 
 AM_CONDITIONAL(SQLITE3, test "$have_sqlite" = "yes")
 
@@ -955,26 +986,6 @@ AC_PATH_PROG(FUSERMOUNT, fusermount, /usr/bin/fusermount)
 AC_DEFINE_UNQUOTED(FUSERMOUNT,
 	"${FUSERMOUNT}", [defines the filename of the fusermount program])
 
-
-# Checks for dirmngr
-
-
-#
-# Checks formerly used for symcryptrun.
-#
-
-# libutil has openpty() and login_tty().
-AC_CHECK_LIB(util, openpty,
-              [ LIBUTIL_LIBS="$LIBUTIL_LIBS -lutil"
-                AC_DEFINE(HAVE_LIBUTIL,1,
-                         [defined if libutil is available])
-             ])
-AC_SUBST(LIBUTIL_LIBS)
-
-# shred is used to clean temporary plain text files.
-AC_PATH_PROG(SHRED, shred, /usr/bin/shred)
-AC_DEFINE_UNQUOTED(SHRED,
-	"${SHRED}", [defines the filename of the shred program])
 
 
 #
@@ -1007,7 +1018,7 @@ AC_ARG_ENABLE(npth-debug,
 
 
 #
-# NTBTLS is our TLS library.  If it is not available fallback to
+# NTBTLS is our TLS library.  If it is not available we fall back to
 # GNUTLS.
 #
 AC_ARG_ENABLE(ntbtls,
@@ -1038,9 +1049,10 @@ else
     AC_DEFINE(HTTP_USE_GNUTLS, 1, [Enable GNUTLS support in http.c])
   else
     tmp=$(echo "$LIBGNUTLS_PKG_ERRORS" | tr '\n' '\v' | sed 's/\v/\n*** /g')
+    build_dirmngr=no
     AC_MSG_WARN([[
 ***
-*** Building without NTBTLS and GNUTLS - no TLS access to keyservers.
+*** Neither NTBTLS nor GNUTLS available - not building dirmngr.
 ***
 *** $tmp]])
   fi
@@ -1209,6 +1221,7 @@ if test "$gnupg_have_ldap" = yes ; then
 fi
 
 
+
 #
 # Check for sendmail
 #
@@ -1234,9 +1247,6 @@ AC_DEFINE_UNQUOTED(NAME_OF_SENDMAIL,"$SENDMAIL",
 # Construct a printable name of the OS
 #
 case "${host}" in
-    *-mingw32ce*)
-        PRINTABLE_OS_NAME="W32CE"
-        ;;
     *-mingw32*)
         PRINTABLE_OS_NAME="MingW32"
         ;;
@@ -1327,7 +1337,6 @@ AC_CHECK_HEADERS([unistd.h langinfo.h termio.h locale.h \
                   ucred.h sys/ucred.h sys/sysmacros.h sys/mkdev.h])
 
 
-
 #
 # Checks for typedefs, structures, and compiler characteristics.
 #
@@ -1346,7 +1355,6 @@ AC_CHECK_DECLS([sys_siglist],[],[],[#include <signal.h>
 ])
 
 
-gl_HEADER_SYS_SOCKET
 gl_TYPE_SOCKLEN_T
 
 AC_SEARCH_LIBS([inet_addr], [nsl])
@@ -1366,6 +1374,7 @@ AC_CHECK_SIZEOF(unsigned short)
 AC_CHECK_SIZEOF(unsigned int)
 AC_CHECK_SIZEOF(unsigned long)
 AC_CHECK_SIZEOF(unsigned long long)
+AC_CHECK_SIZEOF(size_t)
 AC_CHECK_SIZEOF(time_t,,[[
 #include <stdio.h>
 #ifdef HAVE_SYS_TIME_H
@@ -1537,16 +1546,86 @@ GNUPG_CHECK_GNUMAKE
 # requiring any network stuff but linking to code in libcommon which
 # tracks in winsock stuff (e.g. init_common_subsystems).
 if test "$have_w32_system" = yes; then
-   if test "$have_w32ce_system" = yes; then
-     W32SOCKLIBS="-lws2"
-   else
-     W32SOCKLIBS="-lws2_32"
-   fi
+   W32SOCKLIBS="-lws2_32"
    NETLIBS="${NETLIBS} ${W32SOCKLIBS}"
 fi
 
 AC_SUBST(NETLIBS)
 AC_SUBST(W32SOCKLIBS)
+
+#
+# TPM libtss library .. don't compile TPM support if we don't have it
+#
+AC_ARG_WITH([tss],
+            [AS_HELP_STRING([--with-tss=TSS],
+                            [use the specified TPM Software Stack (ibm, intel, or autodetect)])],
+            [with_tss=$withval],
+            [with_tss=autodetect])
+LIBTSS_LIBS=
+LIBTSS_CFLAGS=
+if test "$build_tpm2d" = "yes"; then
+  _save_libs="$LIBS"
+  _save_cflags="$CFLAGS"
+  LIBS=""
+  if test "$with_tss" = autodetect; then
+    AC_SEARCH_LIBS([TSS_Create],[tss ibmtss],have_libtss=IBM,
+                   AC_SEARCH_LIBS([Esys_Initialize],[tss2-esys],have_libtss=Intel,have_libtss=no))
+  elif test "$with_tss" = ibm; then
+    AC_SEARCH_LIBS([TSS_Create],[tss ibmtss],have_libtss=IBM,
+                   [AC_MSG_ERROR([IBM TPM Software Stack requested but not found])])
+  elif test "$with_tss" = intel; then
+    AC_SEARCH_LIBS([Esys_Initialize],[tss2-esys],have_libtss=Intel,
+                   [AC_MSG_ERROR([Intel TPM Software Stack requested but not found])])
+  else
+    AC_MSG_ERROR([Invalid TPM Software Stack requested: $with_tss])
+  fi
+
+  if test "$have_libtss" = IBM; then
+    LIBTSS_CFLAGS="-DTPM_POSIX"
+    CFLAGS="$CFLAGS ${LIBTSS_CFLAGS}"
+    AC_CHECK_HEADER([tss2/tss.h],
+                    [AC_DEFINE(TSS_INCLUDE,tss2, [tss2 include location])], [
+      AC_CHECK_HEADER([ibmtss/tss.h],[AC_DEFINE(TSS_INCLUDE,ibmtss,
+                                                [ibmtss include location])], [
+        AC_MSG_WARN([No TSS2 include directory found, disabling TPM support])
+        have_libtss=no
+      ])
+    ])
+    LIBTSS_LIBS=$LIBS
+    AC_SUBST(TSS_INCLUDE)
+  elif test "$have_libtss" = Intel; then
+    ##
+    # Intel TSS has an API issue: Esys_TR_GetTpmHandle wasn't introduced
+    # until version 2.4.0.
+    #
+    # Note: the missing API is fairly serious and is also easily backportable
+    # so keep the check below as is intead of going by library version number.
+    ##
+    AC_CHECK_LIB(tss2-esys, Esys_TR_GetTpmHandle, [], [
+	AC_MSG_WARN([Need Esys_TR_GetTpmHandle API (usually requires Intel TSS 2.4.0 or later, disabling TPM support)])
+	have_libtss=no
+    ])
+    LIBTSS_LIBS="$LIBS -ltss2-mu -ltss2-rc -ltss2-tctildr"
+    AC_DEFINE(HAVE_INTEL_TSS, 1, [Defined if we have the Intel TSS])
+  fi
+  LIBS="$_save_libs"
+  CFLAGS="$_save_cflags"
+  if test "$have_libtss" != no; then
+    AC_DEFINE(HAVE_LIBTSS, 1, [Defined if we have TPM2 support library])
+    # look for a TPM emulator for testing
+    AC_PATH_PROG(TPMSERVER, tpm_server)
+    AC_PATH_PROG(TSSSTARTUP, tssstartup)
+    AC_PATH_PROG(SWTPM, swtpm)
+  fi
+fi
+if test "$have_libtss" = no; then
+  build_tpm2d=no
+fi
+AC_SUBST(LIBTSS_LIBS)
+AC_SUBST(LIBTSS_CFLAGS)
+AM_CONDITIONAL(HAVE_LIBTSS, test "$have_libtss" != no)
+AM_CONDITIONAL(TEST_LIBTSS, test -n "$SWTPM" -o -n "$TPMSERVER" -a -n "$TSSSTARTUP")
+AC_SUBST(HAVE_LIBTSS)
 
 #
 # Setup gcc specific options
@@ -1584,7 +1663,6 @@ if test "$GCC" = yes; then
         if test x"$_gcc_wopt" = xyes ; then
           mycflags="$mycflags -W -Wno-sign-compare -Wno-format-zero-length"
           mycflags="$mycflags -Wno-missing-field-initializers"
-          mycflags="$mycflags -Wno-format-zero-length"
         fi
 
         AC_MSG_CHECKING([if gcc supports -Wdeclaration-after-statement])
@@ -1659,6 +1737,20 @@ AC_ARG_ENABLE(optimization,
                   [if test $enableval = no ; then
                       CFLAGS=`echo $CFLAGS | sed s/-O[[1-9]]\ /-O0\ /g`
                    fi])
+
+#
+# log_debug has certain requirements which might hamper portability.
+# Thus we use an option to enable it.
+#
+AC_MSG_CHECKING([whether to enable log_clock])
+AC_ARG_ENABLE(log_clock,
+              AS_HELP_STRING([--enable-log-clock],
+                             [enable log_clock timestamps]),
+              enable_log_clock=$enableval, enable_log_clock=no)
+AC_MSG_RESULT($enable_log_clock)
+if test "$enable_log_clock" = yes ; then
+  AC_DEFINE(ENABLE_LOG_CLOCK,1,[Defined to use log_clock timestamps])
+fi
 
 # Add -Werror to CFLAGS.  This hack can be used to avoid problems with
 # misbehaving autoconf tests in case the user supplied -Werror.
@@ -1749,6 +1841,8 @@ AM_CONDITIONAL(BUILD_AGENT,       test "$build_agent" = "yes")
 AM_CONDITIONAL(BUILD_SCDAEMON,    test "$build_scdaemon" = "yes")
 AM_CONDITIONAL(BUILD_G13,         test "$build_g13" = "yes")
 AM_CONDITIONAL(BUILD_DIRMNGR,     test "$build_dirmngr" = "yes")
+AM_CONDITIONAL(BUILD_KEYBOXD,     test "$build_keyboxd" = "yes")
+AM_CONDITIONAL(BUILD_TPM2D,       test "$build_tpm2d" = "yes")
 AM_CONDITIONAL(BUILD_DOC,         test "$build_doc" = "yes")
 AM_CONDITIONAL(BUILD_GPGTAR,      test "$build_gpgtar" = "yes")
 AM_CONDITIONAL(BUILD_WKS_TOOLS,   test "$build_wks_tools" = "yes")
@@ -1776,6 +1870,12 @@ fi
 if test "$build_dirmngr" = yes ; then
     AC_DEFINE(BUILD_WITH_DIRMNGR,1,[Defined if DIRMNGR is to be build])
 fi
+if test "$build_keyboxd" = yes ; then
+    AC_DEFINE(BUILD_WITH_KEYBOXD,1,[Defined if KEYBOXD is to be build])
+fi
+if test "$build_tpm2d" = yes ; then
+    AC_DEFINE(BUILD_WITH_TPM2D,1,[Defined if TPM2D to be build])
+fi
 if test "$build_g13" = yes ; then
     AC_DEFINE(BUILD_WITH_G13,1,[Defined if G13 is to be build])
 fi
@@ -1796,6 +1896,10 @@ AC_DEFINE_UNQUOTED(GPG_AGENT_NAME, "gpg-agent", [The name of the agent])
 AC_DEFINE_UNQUOTED(GPG_AGENT_DISP_NAME, "GPG Agent",
                                         [The displayed name of gpg-agent])
 
+AC_DEFINE_UNQUOTED(TPM2DAEMON_NAME, "tpm2daemon", [The name of the TPM2 daemon])
+AC_DEFINE_UNQUOTED(TPM2DAEMON_DISP_NAME, "TPM2 Daemon",
+                                       [The displayed name of TPM2 daemon])
+
 AC_DEFINE_UNQUOTED(SCDAEMON_NAME, "scdaemon", [The name of the scdaemon])
 AC_DEFINE_UNQUOTED(SCDAEMON_DISP_NAME, "SCDaemon",
                                        [The displayed name of scdaemon])
@@ -1803,6 +1907,10 @@ AC_DEFINE_UNQUOTED(SCDAEMON_DISP_NAME, "SCDaemon",
 AC_DEFINE_UNQUOTED(DIRMNGR_NAME, "dirmngr", [The name of the dirmngr])
 AC_DEFINE_UNQUOTED(DIRMNGR_DISP_NAME, "DirMngr",
                                       [The displayed name of dirmngr])
+
+AC_DEFINE_UNQUOTED(KEYBOXD_NAME, "keyboxd", [The name of the keyboxd])
+AC_DEFINE_UNQUOTED(KEYBOXD_DISP_NAME, "Keyboxd",
+                                      [The displayed name of keyboxd])
 
 AC_DEFINE_UNQUOTED(G13_NAME, "g13", [The name of the g13 tool])
 AC_DEFINE_UNQUOTED(G13_DISP_NAME, "G13", [The displayed name of g13])
@@ -1825,6 +1933,10 @@ AC_DEFINE_UNQUOTED(DIRMNGR_INFO_NAME, "DIRMNGR_INFO",
                    [The name of the dirmngr info envvar])
 AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
                    [The name of the SCdaemon socket])
+AC_DEFINE_UNQUOTED(KEYBOXD_SOCK_NAME, "S.keyboxd",
+                   [The name of the keyboxd socket])
+AC_DEFINE_UNQUOTED(TPM2DAEMON_SOCK_NAME, "S.tpm2daemon",
+                   [The name of the TPM2 daemon socket])
 AC_DEFINE_UNQUOTED(DIRMNGR_SOCK_NAME, "S.dirmngr",
                    [The name of the dirmngr socket])
 AC_DEFINE_UNQUOTED(DIRMNGR_DEFAULT_KEYSERVER,
@@ -1884,8 +1996,8 @@ if test "$have_gpg_error" = "no"; then
 ***
 *** You need libgpg-error to build this program.
 **  This library is for example available at
-***   https://gnupg.org/ftp/gcrypt/libgpg-error
-*** (at least version $NEED_GPG_ERROR_VERSION is required.)
+***   https://gnupg.org/ftp/gcrypt/gpgrt
+*** (at least version $NEED_GPGRT_VERSION is required.)
 ***]])
 fi
 if test "$have_libgcrypt" = "no"; then
@@ -1917,16 +2029,6 @@ if test "$have_ksba" = "no"; then
 ***   https://gnupg.org/ftp/gcrypt/libksba/
 *** (at least version $NEED_KSBA_VERSION using API $NEED_KSBA_API is required).
 ***]])
-fi
-if test "$gnupg_have_ldap" = yes; then
-  if test "$have_w32ce_system" = yes; then
-    AC_MSG_NOTICE([[
-*** Note that CeGCC might be broken, a package fixing this is:
-***    http://files.kolab.org/local/windows-ce/
-***                           source/wldap32_0.1-mingw32ce.orig.tar.gz
-***                           binary/wldap32-ce-arm-dev_0.1-1_all.deb
-***]])
-   fi
 fi
 if test "$have_npth" = "no"; then
     die=yes
@@ -1985,36 +2087,43 @@ g10/Makefile
 sm/Makefile
 agent/Makefile
 scd/Makefile
+tpm2d/Makefile
 g13/Makefile
 dirmngr/Makefile
-tools/gpg-zip
 tools/Makefile
 doc/Makefile
 tests/Makefile
 tests/gpgscm/Makefile
 tests/openpgp/Makefile
+tests/cms/Makefile
 tests/migrations/Makefile
-tests/gpgsm/Makefile
+tests/tpm2dtests/Makefile
 tests/gpgme/Makefile
 tests/pkits/Makefile
 g10/gpg.w32-manifest
 g10/gpgv.w32-manifest
 sm/gpgsm.w32-manifest
+kbx/keyboxd.w32-manifest
 agent/gpg-agent.w32-manifest
 scd/scdaemon.w32-manifest
 dirmngr/dirmngr.w32-manifest
 dirmngr/dirmngr_ldap.w32-manifest
 dirmngr/dirmngr-client.w32-manifest
+tools/gpg-connect-agent.w32-manifest
 tools/gpgconf.w32-manifest
 tools/gpgtar.w32-manifest
-tools/gpg-connect-agent.w32-manifest
 tools/gpg-check-pattern.w32-manifest
 tools/gpg-wks-client.w32-manifest
+tools/gpg-card.w32-manifest
 ])
 
 
 AC_OUTPUT
 
+show_tss_type=
+if test "$build_tpm2d" = "yes"; then
+  show_tss_type="($have_libtss)"
+fi
 
 echo "
         GnuPG v${VERSION} has been configured as follows:
@@ -2026,17 +2135,21 @@ echo "
         S/MIME:    $build_gpgsm
         Agent:     $build_agent
         Smartcard: $build_scdaemon $build_scdaemon_extra
+        TPM:       $build_tpm2d $show_tss_type
         G13:       $build_g13
         Dirmngr:   $build_dirmngr
+        Keyboxd:   $build_keyboxd
         Gpgtar:    $build_gpgtar
         WKS tools: $build_wks_tools
 
-        Protect tool:      $show_gnupg_protect_tool_pgm
-        LDAP wrapper:      $show_gnupg_dirmngr_ldap_pgm
-        Default agent:     $show_gnupg_agent_pgm
-        Default pinentry:  $show_gnupg_pinentry_pgm
-        Default scdaemon:  $show_gnupg_scdaemon_pgm
-        Default dirmngr:   $show_gnupg_dirmngr_pgm
+        Protect tool:       $show_gnupg_protect_tool_pgm
+        LDAP wrapper:       $show_gnupg_dirmngr_ldap_pgm
+        Default agent:      $show_gnupg_agent_pgm
+        Default pinentry:   $show_gnupg_pinentry_pgm
+        Default scdaemon:   $show_gnupg_scdaemon_pgm
+        Default keyboxd:    $show_gnupg_keyboxd_pgm
+        Default tpm2daemon: $show_gnupg_tpm2daemon_pgm
+        Default dirmngr:    $show_gnupg_dirmngr_pgm
 
         Dirmngr auto start:  $dirmngr_auto_start
         Readline support:    $gnupg_cv_have_readline
@@ -2045,6 +2158,13 @@ echo "
         TOFU support:        $use_tofu
         Tor support:         $show_tor_support
 "
+if test "$have_libtss" != no -a -z "$TPMSERVER" -a -z "$SWTPM"; then
+cat <<G10EOF
+        Warning: TPM support is compiled in but no software TPM
+                 for testing was discovered. TPM tests are disabled
+
+G10EOF
+fi
 if test "x${gpg_config_script_warn}" != x; then
 cat <<G10EOF
         Warning: Mismatches between the target platform and the

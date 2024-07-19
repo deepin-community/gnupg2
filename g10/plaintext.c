@@ -146,7 +146,6 @@ get_output_file (const byte *embedded_name, int embedded_namelen,
 	}
     }
 
-#ifndef __riscos__
   if (opt.outfp && is_secured_file (es_fileno (opt.outfp)))
     {
       err = gpg_error (GPG_ERR_EPERM);
@@ -168,44 +167,6 @@ get_output_file (const byte *embedded_name, int embedded_namelen,
       log_error (_("error creating '%s': %s\n"), fname, gpg_strerror (err));
       goto leave;
     }
-#else /* __riscos__ */
-  /* If no output filename was given, i.e. we constructed it, convert
-     all '.' in fname to '/' but not vice versa as we don't create
-     directories! */
-  if (!opt.outfile)
-    for (c = 0; fname[c]; ++c)
-      if (fname[c] == '.')
-	fname[c] = '/';
-
-  if (fp || nooutput)
-    ;
-  else
-    {
-      /* Note: riscos stuff is not expected to work anymore.  If we
-         want to port it again to riscos we should do most of the suff
-         in estream.  FIXME: Consider to remove all riscos special
-         cases.  */
-      fp = gnupg_fopen (fname, "wb");
-      if (!fp)
-	{
-	  log_error (_("error creating '%s': %s\n"), fname, gpg_strerror (err));
-	  err = GPG_ERR_CREATE_FILE;
-	  if (errno == 106)
-	    log_info ("Do output file and input file have the same name?\n");
-	  goto leave;
-	}
-
-      /* If there's a ,xxx extension in the embedded filename,
-         use that, else check whether the user input (in fname)
-         has a ,xxx appended, then use that in preference */
-      if ((c = riscos_get_filetype_from_string (embedded_name,
-                                                embedded_namelen)) != -1)
-	filetype = c;
-      if ((c = riscos_get_filetype_from_string (fname, strlen (fname))) != -1)
-	filetype = c;
-      riscos_set_filetype_by_number (fname, filetype);
-    }
-#endif /* __riscos__ */
 
  leave:
   if (err)
@@ -330,10 +291,26 @@ handle_plaintext (PKT_plaintext * pt, md_filter_context_t * mfx,
 	}
       else  /* Binary mode.  */
 	{
-	  byte *buffer = xmalloc (32768);
+	  size_t temp_size = iobuf_set_buffer_size(0) * 1024;
+	  byte *buffer;
+
+	  if (fp)
+	    {
+	      /* Disable buffering in estream as we are passing large
+	       * buffers to es_fwrite. */
+	      es_setbuf (fp, NULL);
+	    }
+
+	  buffer = xmalloc (temp_size);
+          if (!buffer)
+            {
+              err = gpg_error_from_syserror ();
+              goto leave;
+            }
+
 	  while (pt->len)
 	    {
-	      int len = pt->len > 32768 ? 32768 : pt->len;
+	      int len = pt->len > temp_size ? temp_size : pt->len;
 	      len = iobuf_read (pt->buf, buffer, len);
 	      if (len == -1)
 		{
@@ -405,10 +382,18 @@ handle_plaintext (PKT_plaintext * pt, md_filter_context_t * mfx,
 	}
       else
 	{			/* binary mode */
+	  size_t temp_size = iobuf_set_buffer_size(0) * 1024;
 	  byte *buffer;
 	  int eof_seen = 0;
 
-          buffer = xtrymalloc (32768);
+	  if (fp)
+	    {
+	      /* Disable buffering in estream as we are passing large
+	       * buffers to es_fwrite. */
+	      es_setbuf (fp, NULL);
+	    }
+
+          buffer = xtrymalloc (temp_size);
           if (!buffer)
             {
               err = gpg_error_from_syserror ();
@@ -417,16 +402,16 @@ handle_plaintext (PKT_plaintext * pt, md_filter_context_t * mfx,
 
 	  while (!eof_seen)
 	    {
-	      /* Why do we check for len < 32768:
+	      /* Why do we check for len < temp_size:
 	       * If we won't, we would practically read 2 EOFs but
 	       * the first one has already popped the block_filter
 	       * off and therefore we don't catch the boundary.
 	       * So, always assume EOF if iobuf_read returns less bytes
 	       * then requested */
-	      int len = iobuf_read (pt->buf, buffer, 32768);
+	      int len = iobuf_read (pt->buf, buffer, temp_size);
 	      if (len == -1)
 		break;
-	      if (len < 32768)
+	      if (len < temp_size)
 		eof_seen = 1;
 	      if (mfx->md)
 		gcry_md_write (mfx->md, buffer, len);
@@ -584,10 +569,11 @@ do_hash (gcry_md_hd_t md, gcry_md_hd_t md2, IOBUF fp, int textmode)
     }
   else
     {
-      byte *buffer = xmalloc (32768);
+      size_t temp_size = iobuf_set_buffer_size(0) * 1024;
+      byte *buffer = xmalloc (temp_size);
       int ret;
 
-      while ((ret = iobuf_read (fp, buffer, 32768)) != -1)
+      while ((ret = iobuf_read (fp, buffer, temp_size)) != -1)
 	{
 	  if (md)
 	    gcry_md_write (md, buffer, ret);

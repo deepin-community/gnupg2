@@ -65,6 +65,9 @@
  *   (note that you can't search for these characters). Compare
  *   is not case sensitive.
  * - If the userid starts with a '&' a 40 hex digits keygrip is expected.
+ * - If the userid starts with a '^' followed by 40 hex digits it describes
+ *   a Unique-Blob-ID (UBID) which is the hash of keyblob or certificate as
+ *   stored in the database.  This is used in the IPC of the keyboxd.
  */
 
 gpg_error_t
@@ -112,6 +115,7 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
       mode = KEYDB_SEARCH_MODE_MAILEND;
       s++;
       desc->u.name = s;
+      desc->name_used = 1;
       break;
 
     case '<': /* An email address.  */
@@ -123,24 +127,28 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
       if (!openpgp_hack)
         s++;
       desc->u.name = s;
+      desc->name_used = 1;
       break;
 
     case '@':  /* Part of an email address.  */
       mode = KEYDB_SEARCH_MODE_MAILSUB;
       s++;
       desc->u.name = s;
+      desc->name_used = 1;
       break;
 
     case '=':  /* Exact compare.  */
       mode = KEYDB_SEARCH_MODE_EXACT;
       s++;
       desc->u.name = s;
+      desc->name_used = 1;
       break;
 
     case '*':  /* Case insensitive substring search.  */
       mode = KEYDB_SEARCH_MODE_SUBSTR;
       s++;
       desc->u.name = s;
+      desc->name_used = 1;
       break;
 
     case '+':  /* Compare individual words.  Note that this has not
@@ -148,6 +156,7 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
       mode = KEYDB_SEARCH_MODE_WORDS;
       s++;
       desc->u.name = s;
+      desc->name_used = 1;
       break;
 
     case '/': /* Subject's DN.  */
@@ -158,6 +167,7 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
           goto out;
         }
       desc->u.name = s;
+      desc->name_used = 1;
       mode = KEYDB_SEARCH_MODE_SUBJECT;
       break;
 
@@ -175,6 +185,7 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                 goto out;
               }
             desc->u.name = s;
+            desc->name_used = 1;
             mode = KEYDB_SEARCH_MODE_ISSUER;
           }
         else
@@ -189,7 +200,8 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                   }
               }
             desc->sn = (const unsigned char*)s;
-            desc->snlen = -1;
+            desc->snlen = si - s;
+            desc->snhex = 1;
             if (!*si)
               mode = KEYDB_SEARCH_MODE_SN;
             else
@@ -201,6 +213,7 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                     goto out;
                   }
                 desc->u.name = s;
+                desc->name_used = 1;
                 mode = KEYDB_SEARCH_MODE_ISSUER_SN;
               }
           }
@@ -226,14 +239,15 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                 goto out;
               }
           }
-        if (i != 32 && i != 40)
+        if (i != 32 && i != 40 && i != 64)
           {
             rc = gpg_error (GPG_ERR_INV_USER_ID); /* Invalid length of fpr.  */
             goto out;
           }
         for (i=0,si=s; si < se; i++, si +=2)
           desc->u.fpr[i] = hextobyte(si);
-        for (; i < 20; i++)
+        desc->fprlen = i;
+        for (; i < 32; i++)
           desc->u.fpr[i]= 0;
         mode = KEYDB_SEARCH_MODE_FPR;
       }
@@ -247,6 +261,17 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
             goto out;
           }
         mode = KEYDB_SEARCH_MODE_KEYGRIP;
+      }
+      break;
+
+    case '^': /* UBID */
+      {
+        if (hex2bin (s+1, desc->u.ubid, UBID_LEN) < 0)
+          {
+            rc = gpg_error (GPG_ERR_INV_USER_ID); /* Invalid. */
+            goto out;
+          }
+        mode = KEYDB_SEARCH_MODE_UBID;
       }
       break;
 
@@ -326,14 +351,17 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                 }
               desc->u.fpr[i] = c;
             }
-          mode = KEYDB_SEARCH_MODE_FPR16;
+          desc->fprlen = 16;
+          for (; i < 32; i++)
+            desc->u.fpr[i]= 0;
+          mode = KEYDB_SEARCH_MODE_FPR;
         }
       else if ((hexlength == 40
                 && (s[hexlength] == 0
                     || (s[hexlength] == '!' && s[hexlength + 1] == 0)))
                || (!hexprefix && hexlength == 41 && *s == '0'))
         {
-          /* SHA1/RMD160 fingerprint.  */
+          /* SHA1 fingerprint.  */
           int i;
           if (hexlength == 41)
             s++;
@@ -347,7 +375,32 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                 }
               desc->u.fpr[i] = c;
             }
-          mode = KEYDB_SEARCH_MODE_FPR20;
+          desc->fprlen = 20;
+          for (; i < 32; i++)
+            desc->u.fpr[i]= 0;
+          mode = KEYDB_SEARCH_MODE_FPR;
+        }
+      else if ((hexlength == 64
+                && (s[hexlength] == 0
+                    || (s[hexlength] == '!' && s[hexlength + 1] == 0)))
+               || (!hexprefix && hexlength == 65 && *s == '0'))
+        {
+          /* SHA256 fingerprint.  */
+          int i;
+          if (hexlength == 65)
+            s++;
+          for (i=0; i < 32; i++, s+=2)
+            {
+              int c = hextobyte(s);
+              if (c == -1)
+                {
+                  rc = gpg_error (GPG_ERR_INV_USER_ID);
+                  goto out;
+                }
+              desc->u.fpr[i] = c;
+            }
+          desc->fprlen = 32;
+          mode = KEYDB_SEARCH_MODE_FPR;
         }
       else if (!hexprefix)
         {
@@ -369,15 +422,21 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                   desc->u.fpr[i] = c;
                 }
               if (i == 20)
-                mode = KEYDB_SEARCH_MODE_FPR20;
+                {
+                  desc->fprlen = 20;
+                  mode = KEYDB_SEARCH_MODE_FPR;
+                }
+              for (; i < 32; i++)
+                desc->u.fpr[i]= 0;
             }
           if (!mode)
             {
               /* Still not found.  Now check for a space separated
-                 OpenPGP v4 fingerprint like:
-                   8061 5870 F5BA D690 3336  86D0 F2AD 85AC 1E42 B367
-                 or
-                   8061 5870 F5BA D690 3336 86D0 F2AD 85AC 1E42 B367
+               * OpenPGP v4 fingerprint like:
+               *   8061 5870 F5BA D690 3336  86D0 F2AD 85AC 1E42 B367
+               * or
+               *   8061 5870 F5BA D690 3336 86D0 F2AD 85AC 1E42 B367
+               * FIXME: Support OpenPGP v5 fingerprint
                */
               hexlength = strspn (s, " 0123456789abcdefABCDEF");
               if (s[hexlength] && s[hexlength] != ' ')
@@ -411,12 +470,18 @@ classify_user_id (const char *name, KEYDB_SEARCH_DESC *desc, int openpgp_hack)
                       s += 2;
                     }
                   if (i == 20)
-                    mode = KEYDB_SEARCH_MODE_FPR20;
+                    {
+                      desc->fprlen = 20;
+                      mode = KEYDB_SEARCH_MODE_FPR;
+                    }
+                  for (; i < 32; i++)
+                    desc->u.fpr[i]= 0;
                 }
             }
           if (!mode) /* Default to substring search.  */
             {
               desc->u.name = s;
+              desc->name_used = 1;
               mode = KEYDB_SEARCH_MODE_SUBSTR;
             }
         }

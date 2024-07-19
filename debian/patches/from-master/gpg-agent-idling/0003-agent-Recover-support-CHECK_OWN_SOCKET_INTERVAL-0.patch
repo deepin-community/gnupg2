@@ -1,0 +1,67 @@
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Wed, 30 Aug 2023 13:21:37 +0900
+Subject: [PATCH 3/9] agent: Recover support CHECK_OWN_SOCKET_INTERVAL == 0.
+Applied-Upstream: commit 76896e2339a44f882d076171e52f5a45e1d05a45
+Last-Update: 2023-09-04
+
+* agent/gpg-agent.c (handle_connections): Only spawn the thread
+when CHECK_OWN_SOCKET_INTERVAL > 0.
+[CHECK_OWN_SOCKET_INTERVAL == 0] (check_own_socket_pid_cb)
+(do_check_own_socket, check_own_socket_thread): Ifdef out.
+
+--
+
+GnuPG-bug-id: 6692
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+---
+ agent/gpg-agent.c | 9 ++++++---
+ 1 file changed, 6 insertions(+), 3 deletions(-)
+
+Index: gnupg2/agent/gpg-agent.c
+===================================================================
+--- gnupg2.orig/agent/gpg-agent.c
++++ gnupg2/agent/gpg-agent.c
+@@ -532,7 +532,9 @@ static void handle_connections (gnupg_fd
+                                 gnupg_fd_t listen_fd_browser,
+                                 gnupg_fd_t listen_fd_ssh);
+ static int check_for_running_agent (int silent);
++#if CHECK_OWN_SOCKET_INTERVAL > 0
+ static void *check_own_socket_thread (void *arg);
++#endif
+ 
+ /* Pth wrapper function definitions. */
+ ASSUAN_SYSTEM_NPTH_IMPL;
+@@ -3095,6 +3097,7 @@ handle_connections (gnupg_fd_t listen_fd
+   else
+     have_homedir_inotify = 1;
+ 
++#if CHECK_OWN_SOCKET_INTERVAL > 0
+   if (!disable_check_own_socket)
+     {
+       npth_t thread;
+@@ -3103,6 +3106,7 @@ handle_connections (gnupg_fd_t listen_fd
+       if (err)
+         log_error ("error spawning check_own_socket_thread: %s\n", strerror (err));
+     }
++#endif
+ 
+   /* On Windows we need to fire up a separate thread to listen for
+      requests from Putty (an SSH client), so we can replace Putty's
+@@ -3362,7 +3366,7 @@ handle_connections (gnupg_fd_t listen_fd
+ }
+ 
+ 
+-
++#if CHECK_OWN_SOCKET_INTERVAL > 0
+ /* Helper for check_own_socket.  */
+ static gpg_error_t
+ check_own_socket_pid_cb (void *opaque, const void *buffer, size_t length)
+@@ -3454,7 +3458,7 @@ check_own_socket_thread (void *arg)
+ 
+   return NULL;
+ }
+-
++#endif
+ 
+ /* Figure out whether an agent is available and running. Prints an
+    error if not.  If SILENT is true, no messages are printed.

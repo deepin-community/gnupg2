@@ -34,10 +34,9 @@
 #ifndef __MINGW32__
 # include <dlfcn.h>
 #else
-# ifdef HAVE_WINSOCK2_H
-#  include <winsock2.h>  /* needs to be included before windows.h */
-# endif
-# include <windows.h>
+# include <errhandlingapi.h>
+# include <handleapi.h>
+# include <libloaderapi.h>
 # include "utf8conv.h"
 # include "mischelp.h"
 # define RTLD_LAZY 0
@@ -46,14 +45,9 @@ static inline void *
 dlopen (const char *name, int flag)
 {
   void *hd;
-#ifdef HAVE_W32CE_SYSTEM
-  wchar_t *wname = utf8_to_wchar (name);
-  hd = wname? LoadLibrary (wname) : NULL;
-  xfree (wname);
-#else
-  hd = LoadLibrary (name);
-#endif
   (void)flag;
+
+  hd = LoadLibraryEx (name, NULL, 0);
   return hd;
 }
 
@@ -62,13 +56,7 @@ dlsym (void *hd, const char *sym)
 {
   if (hd && sym)
     {
-#ifdef HAVE_W32CE_SYSTEM
-      wchar_t *wsym = utf8_to_wchar (sym);
-      void *fnc = wsym? GetProcAddress (hd, wsym) : NULL;
-      xfree (wsym);
-#else
       void *fnc = GetProcAddress (hd, sym);
-#endif
       if (!fnc)
         return NULL;
       return fnc;

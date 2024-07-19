@@ -77,6 +77,14 @@
 #endif
 
 
+/* Mode flags for unix_rootdir.  */
+enum wantdir_values {
+  WANTDIR_ROOT = 0,
+  WANTDIR_SYSCONF,
+  WANTDIR_SOCKET
+};
+
+
 /* The GnuPG homedir.  This is only accessed by the functions
  * gnupg_homedir and gnupg_set_homedir.  Malloced.  */
 static char *the_gnupg_homedir;
@@ -101,7 +109,7 @@ static byte w32_portable_app;
 #endif /*HAVE_W32_SYSTEM*/
 
 #ifdef HAVE_W32_SYSTEM
-/* This flag is true if this process' binary has been installed under
+/* This flag is true if this process's binary has been installed under
    bin and not in the root directory as often used before GnuPG 2.1. */
 static byte w32_bin_is_bin;
 #endif /*HAVE_W32_SYSTEM*/
@@ -110,6 +118,7 @@ static byte w32_bin_is_bin;
 #ifdef HAVE_W32_SYSTEM
 static const char *w32_rootdir (void);
 #endif
+
 
 
 /* This is a helper function to load and call a Windows function from
@@ -152,6 +161,42 @@ w32_shgetfolderpath (HWND a, int b, HANDLE c, DWORD d)
     return NULL;
 }
 #endif /*HAVE_W32_SYSTEM*/
+
+/* Given the directory name DNAME try to create a common.conf and
+ * enable the keyboxd.  This should only be called for the standard
+ * home directory and only if that directory has just been created.  */
+static void
+create_common_conf (const char *dname)
+{
+#ifdef BUILD_WITH_KEYBOXD
+  estream_t fp;
+  char *fcommon;
+
+  fcommon = make_filename (dname, "common.conf", NULL);
+  fp = es_fopen (fcommon, "wx,mode=-rw-r");
+  if (!fp)
+    {
+      log_info (_("error creating '%s': %s\n"), fcommon,
+                gpg_strerror (gpg_error_from_syserror ()));
+    }
+  else
+    {
+      if (es_fputs ("use-keyboxd\n", fp) == EOF)
+        {
+          log_info (_("error writing to '%s': %s\n"), fcommon,
+                    gpg_strerror (es_ferror (fp)
+                                  ? gpg_error_from_syserror ()
+                                  : gpg_error (GPG_ERR_EOF)));
+          es_fclose (fp);
+        }
+      else if (es_fclose (fp))
+        {
+          log_info (_("error closing '%s': %s\n"), fcommon,
+                    gpg_strerror (gpg_error_from_syserror ()));
+        }
+    }
+#endif /* BUILD_WITH_KEYBOXD */
+}
 
 
 /* Check whether DIR is the default homedir.  */
@@ -254,7 +299,7 @@ copy_dir_with_fixup (const char *newdir)
 /* Get the standard home directory.  In general this function should
    not be used as it does not consider a registry value (under W32) or
    the GNUPGHOME environment variable.  It is better to use
-   default_homedir(). */
+   gnupg_homedir(). */
 const char *
 standard_homedir (void)
 {
@@ -269,6 +314,7 @@ standard_homedir (void)
       if (w32_portable_app)
         {
           dir = xstrconcat (rdir, DIRSEP_S "home", NULL);
+          gpgrt_annotate_leaked_object (dir);
         }
       else
         {
@@ -280,10 +326,13 @@ standard_homedir (void)
             {
               dir = xstrconcat (path, "\\gnupg", NULL);
               xfree (path);
+              gpgrt_annotate_leaked_object (dir);
 
               /* Try to create the directory if it does not yet exists.  */
               if (gnupg_access (dir, F_OK))
-                gnupg_mkdir (dir, "-rwx");
+                if (!gnupg_mkdir (dir, "-rwx"))
+                  create_common_conf (dir);
+
             }
           else
             dir = GNUPG_DEFAULT_HOMEDIR;
@@ -297,7 +346,7 @@ standard_homedir (void)
 
 /* Set up the default home directory.  The usual --homedir option
    should be parsed later. */
-const char *
+static const char *
 default_homedir (void)
 {
   const char *dir;
@@ -357,7 +406,18 @@ default_homedir (void)
 
       p = copy_dir_with_fixup (dir);
       if (p)
-        dir = p;
+        {
+          /* A new buffer has been allocated with proper semantics.
+           * Assign this to DIR.  If DIR is passed again to
+           * copy_dir_with_fixup there will be no need for a fix up
+           * and the function returns NULL.  Thus we leak only once.
+           * Setting the homedir is usually a one-off task but might
+           * be called a second time.  We also ignore such extra leaks
+           * because we don't know who still references the former
+           * string.  */
+          gpgrt_annotate_leaked_object (p);
+          dir = p;
+        }
 
       if (!is_gnupg_default_homedir (dir))
         non_default_homedir = 1;
@@ -466,11 +526,12 @@ w32_rootdir (void)
  * file system.  If WANT_SYSCONFDIR is true the optional sysconfdir
  * entry is returned.  */
 static const char *
-unix_rootdir (int want_sysconfdir)
+unix_rootdir (enum wantdir_values wantdir)
 {
   static int checked;
   static char *dir;   /* for the rootdir  */
   static char *sdir;  /* for the sysconfdir */
+  static char *s2dir; /* for the socketdir */
 
   if (!checked)
     {
@@ -485,7 +546,10 @@ unix_rootdir (int want_sysconfdir)
       estream_t fp;
       char *rootdir;
       char *sysconfdir;
+      char *socketdir;
       const char *name;
+      int ignoreall = 0;
+      int okay;
 
       for (;;)
         {
@@ -576,35 +640,44 @@ unix_rootdir (int want_sysconfdir)
       linelen = 0;
       rootdir = NULL;
       sysconfdir = NULL;
+      socketdir = NULL;
       while ((length = es_read_line (fp, &line, &linelen, NULL)) > 0)
         {
+          static const char *names[] =
+            {
+              "rootdir",
+              "sysconfdir",
+              "socketdir",
+              ".enable"
+            };
+          int i;
+          size_t n;
+
           /* Strip NL and CR, if present.  */
           while (length > 0
                  && (line[length - 1] == '\n' || line[length - 1] == '\r'))
             line[--length] = 0;
           trim_spaces (line);
-          if (!strncmp (line, "rootdir=", 8))
+          /* Find the stamement.  */
+          name = NULL;
+          for (i=0; i < DIM (names); i++)
             {
-              name = "rootdir";
-              p = line + 8;
+              n = strlen (names[i]);
+              if (!strncmp (line, names[i], n))
+                {
+                  while (line[n] == ' ' || line[n] == '\t')
+                    n++;
+                  if (line[n] == '=')
+                    {
+                      name = names[i];
+                      p = line + n + 1;
+                      break;
+                    }
+                }
             }
-          else if (!strncmp (line, "rootdir =", 9))  /* (What a kludge) */
-            {
-              name = "rootdir";
-              p = line + 9;
-            }
-          else if (!strncmp (line, "sysconfdir=", 11))
-            {
-              name = "sysconfdir";
-              p = line + 11;
-            }
-          else if (!strncmp (line, "sysconfdir =", 12))  /* (What a kludge) */
-            {
-              name = "sysconfdir";
-              p = line + 12;
-            }
-          else
-            continue;
+          if (!name)
+            continue;  /* Statement not known.  */
+
           trim_spaces (p);
           p = substitute_envvars (p);
           if (!p)
@@ -613,10 +686,26 @@ unix_rootdir (int want_sysconfdir)
               log_info ("error getting %s from gpgconf.ctl: %s\n",
                         name, gpg_strerror (err));
             }
+          else if (!strcmp (name, ".enable"))
+            {
+              if (atoi (p)
+                  || !ascii_strcasecmp (p, "yes")
+                  || !ascii_strcasecmp (p, "true")
+                  || !ascii_strcasecmp (p, "fact"))
+                ;  /* Yes, this file shall be used.    */
+              else
+                ignoreall = 1; /* No, this file shall be ignored.  */
+              xfree (p);
+            }
           else if (!strcmp (name, "sysconfdir"))
             {
               xfree (sysconfdir);
               sysconfdir = p;
+            }
+          else if (!strcmp (name, "socketdir"))
+            {
+              xfree (socketdir);
+              socketdir = p;
             }
           else
             {
@@ -631,6 +720,9 @@ unix_rootdir (int want_sysconfdir)
           es_fclose (fp);
           xfree (buffer);
           xfree (line);
+          xfree (rootdir);
+          xfree (sysconfdir);
+          xfree (socketdir);
           checked = 1;
           return NULL;
         }
@@ -638,23 +730,26 @@ unix_rootdir (int want_sysconfdir)
       xfree (buffer);
       xfree (line);
 
-      if (!rootdir || !*rootdir || *rootdir != '/')
+      okay = 0;
+      if (ignoreall)
+        ;
+      else if (!rootdir || !*rootdir || *rootdir != '/')
         {
           log_info ("invalid rootdir '%s' specified in gpgconf.ctl\n", rootdir);
-          xfree (rootdir);
-          xfree (sysconfdir);
-          dir = NULL;
         }
       else if (sysconfdir && (!*sysconfdir || *sysconfdir != '/'))
         {
           log_info ("invalid sysconfdir '%s' specified in gpgconf.ctl\n",
                     sysconfdir);
-          xfree (rootdir);
-          xfree (sysconfdir);
-          dir = NULL;
+        }
+      else if (socketdir && (!*socketdir || *socketdir != '/'))
+        {
+          log_info ("invalid socketdir '%s' specified in gpgconf.ctl\n",
+                    socketdir);
         }
       else
         {
+          okay = 1;
           while (*rootdir && rootdir[strlen (rootdir)-1] == '/')
             rootdir[strlen (rootdir)-1] = 0;
           dir = rootdir;
@@ -668,11 +763,34 @@ unix_rootdir (int want_sysconfdir)
               gpgrt_annotate_leaked_object (sdir);
               /* log_info ("want sysconfdir '%s'\n", sdir); */
             }
+          if (socketdir)
+            {
+              while (*socketdir && socketdir[strlen (socketdir)-1] == '/')
+                socketdir[strlen (socketdir)-1] = 0;
+              s2dir = socketdir;
+              gpgrt_annotate_leaked_object (s2dir);
+              /* log_info ("want socketdir '%s'\n", s2dir); */
+            }
+        }
+
+      if (!okay)
+        {
+          xfree (rootdir);
+          xfree (sysconfdir);
+          xfree (socketdir);
+          dir = sdir = s2dir = NULL;
         }
       checked = 1;
     }
 
-  return want_sysconfdir? sdir : dir;
+  switch (wantdir)
+    {
+    case WANTDIR_ROOT:    return dir;
+    case WANTDIR_SYSCONF: return sdir;
+    case WANTDIR_SOCKET:  return s2dir;
+    }
+
+  return NULL; /* Not reached.  */
 }
 #endif /* Unix */
 
@@ -709,6 +827,7 @@ w32_commondir (void)
            * version.  Use the installation directory instead.  */
           dir = xstrdup (rdir);
         }
+      gpgrt_annotate_leaked_object (dir);
     }
 
   return dir;
@@ -738,6 +857,10 @@ gnupg_set_homedir (const char *newdir)
   xfree (the_gnupg_homedir);
   the_gnupg_homedir = make_absfilename (newdir, NULL);;
   xfree (tmp);
+  /* Fixme: Should we use
+   *   gpgrt_annotate_leaked_object(the_gnupg_homedir)
+   * despite that we may free and allocate a new one in some
+   * cases?  */
 }
 
 
@@ -767,8 +890,12 @@ gnupg_maybe_make_homedir (const char *fname, int quiet)
       if (gnupg_mkdir (fname, "-rwx"))
         log_fatal ( _("can't create directory '%s': %s\n"),
                     fname, strerror(errno) );
-      else if (!quiet )
-        log_info ( _("directory '%s' created\n"), fname );
+      else
+        {
+          if (!quiet )
+            log_info ( _("directory '%s' created\n"), fname );
+          create_common_conf (fname);
+        }
     }
 }
 
@@ -812,6 +939,7 @@ gnupg_daemon_rootdir (void)
         name = xstrdup ("/"); /* Error - use the curret top dir instead.  */
       else
         name = xstrdup (path);
+      gpgrt_annotate_leaked_object (name);
     }
 
   return name;
@@ -973,7 +1101,8 @@ _gnupg_socketdir_internal (int skip_checks, unsigned *r_info)
   };
   int i;
   struct stat sb;
-  char prefix[19 + 1 + 20 + 6 + 1];
+  char prefixbuffer[19 + 1 + 20 + 6 + 1];
+  const char *prefix;
   const char *s;
   char *name = NULL;
 
@@ -988,35 +1117,42 @@ _gnupg_socketdir_internal (int skip_checks, unsigned *r_info)
    * as a background process with no (desktop) user logged in.  Thus
    * we better don't do that.  */
 
-  /* Check whether we have a /run/[gnupg/]user dir.  */
-  for (i=0; bases[i]; i++)
+  prefix = unix_rootdir (WANTDIR_SOCKET);
+  if (!prefix)
     {
-      snprintf (prefix, sizeof prefix, "%s/user/%u",
-                bases[i], (unsigned int)getuid ());
-      if (!stat (prefix, &sb) && S_ISDIR(sb.st_mode))
-        break;
-    }
-  if (!bases[i])
-    {
-      *r_info |= 2; /* No /run/user directory.  */
-      goto leave;
+      /* gpgconf.ctl does not specify a directory.  Check whether we
+       * have the usual /run/[gnupg/]user dir.  */
+      for (i=0; bases[i]; i++)
+        {
+          snprintf (prefixbuffer, sizeof prefixbuffer, "%s/user/%u",
+                    bases[i], (unsigned int)getuid ());
+          prefix = prefixbuffer;
+          if (!stat (prefix, &sb) && S_ISDIR(sb.st_mode))
+            break;
+        }
+      if (!bases[i])
+        {
+          *r_info |= 2; /* No /run/user directory.  */
+          goto leave;
+        }
+
+      if (sb.st_uid != getuid ())
+        {
+          *r_info |= 4; /* Not owned by the user.  */
+          if (!skip_checks)
+            goto leave;
+        }
+
+      if (strlen (prefix) + 7 >= sizeof prefixbuffer)
+        {
+          *r_info |= 1; /* Ooops: Buffer too short to append "/gnupg".  */
+          goto leave;
+        }
+      strcat (prefixbuffer, "/gnupg");
     }
 
-  if (sb.st_uid != getuid ())
-    {
-      *r_info |= 4; /* Not owned by the user.  */
-      if (!skip_checks)
-        goto leave;
-    }
-
-  if (strlen (prefix) + 7 >= sizeof prefix)
-    {
-      *r_info |= 1; /* Ooops: Buffer too short to append "/gnupg".  */
-      goto leave;
-    }
-  strcat (prefix, "/gnupg");
-
-  /* Check whether the gnupg sub directory has proper permissions.  */
+  /* Check whether the gnupg sub directory (or the specified diretory)
+   * has proper permissions.  */
   if (stat (prefix, &sb))
     {
       if (errno != ENOENT)
@@ -1149,6 +1285,7 @@ gnupg_socketdir (void)
     {
       unsigned int dummy;
       name = _gnupg_socketdir_internal (0, &dummy);
+      gpgrt_annotate_leaked_object (name);
     }
 
   return name;
@@ -1171,10 +1308,11 @@ gnupg_sysconfdir (void)
       s2 = DIRSEP_S "etc" DIRSEP_S "gnupg";
       name = xmalloc (strlen (s1) + strlen (s2) + 1);
       strcpy (stpcpy (name, s1), s2);
+      gpgrt_annotate_leaked_object (name);
     }
   return name;
 #else /*!HAVE_W32_SYSTEM*/
-  const char *dir = unix_rootdir (1);
+  const char *dir = unix_rootdir (WANTDIR_SYSCONF);
   if (dir)
     return dir;
   else
@@ -1194,13 +1332,16 @@ gnupg_bindir (void)
   if (w32_bin_is_bin)
     {
       if (!name)
-        name = xstrconcat (rdir, DIRSEP_S "bin", NULL);
+        {
+          name = xstrconcat (rdir, DIRSEP_S "bin", NULL);
+          gpgrt_annotate_leaked_object (name);
+        }
       return name;
     }
   else
     return rdir;
 #else /*!HAVE_W32_SYSTEM*/
-  rdir = unix_rootdir (0);
+  rdir = unix_rootdir (WANTDIR_ROOT);
   if (rdir)
     {
       if (!name)
@@ -1227,7 +1368,7 @@ gnupg_libexecdir (void)
   static char *name;
   const char *rdir;
 
-  rdir = unix_rootdir (0);
+  rdir = unix_rootdir (WANTDIR_ROOT);
   if (rdir)
     {
       if (!name)
@@ -1249,12 +1390,15 @@ gnupg_libdir (void)
 
 #ifdef HAVE_W32_SYSTEM
   if (!name)
-    name = xstrconcat (w32_rootdir (), DIRSEP_S "lib" DIRSEP_S "gnupg", NULL);
+    {
+      name = xstrconcat (w32_rootdir (), DIRSEP_S "lib" DIRSEP_S "gnupg", NULL);
+      gpgrt_annotate_leaked_object (name);
+    }
   return name;
 #else /*!HAVE_W32_SYSTEM*/
   const char *rdir;
 
-  rdir = unix_rootdir (0);
+  rdir = unix_rootdir (WANTDIR_ROOT);
   if (rdir)
     {
       if (!name)
@@ -1276,12 +1420,16 @@ gnupg_datadir (void)
 
 #ifdef HAVE_W32_SYSTEM
   if (!name)
-    name = xstrconcat (w32_rootdir (), DIRSEP_S "share" DIRSEP_S "gnupg", NULL);
+    {
+      name = xstrconcat (w32_rootdir (), DIRSEP_S "share" DIRSEP_S "gnupg",
+                         NULL);
+      gpgrt_annotate_leaked_object (name);
+    }
   return name;
 #else /*!HAVE_W32_SYSTEM*/
   const char *rdir;
 
-  rdir = unix_rootdir (0);
+  rdir = unix_rootdir (WANTDIR_ROOT);
   if (rdir)
     {
       if (!name)
@@ -1304,13 +1452,16 @@ gnupg_localedir (void)
 
 #ifdef HAVE_W32_SYSTEM
   if (!name)
-    name = xstrconcat (w32_rootdir (), DIRSEP_S "share" DIRSEP_S "locale",
-                       NULL);
+    {
+      name = xstrconcat (w32_rootdir (), DIRSEP_S "share" DIRSEP_S "locale",
+                         NULL);
+      gpgrt_annotate_leaked_object (name);
+    }
   return name;
 #else /*!HAVE_W32_SYSTEM*/
   const char *rdir;
 
-  rdir = unix_rootdir (0);
+  rdir = unix_rootdir (WANTDIR_ROOT);
   if (rdir)
     {
       if (!name)
@@ -1340,7 +1491,6 @@ gpg_agent_socket_name (void)
   return name;
 }
 
-
 /* Return the user socket name used by DirMngr.  */
 const char *
 dirmngr_socket_name (void)
@@ -1348,7 +1498,25 @@ dirmngr_socket_name (void)
   static char *name;
 
   if (!name)
-    name = make_filename (gnupg_socketdir (), DIRMNGR_SOCK_NAME, NULL);
+    {
+      name = make_filename (gnupg_socketdir (), DIRMNGR_SOCK_NAME, NULL);
+      gpgrt_annotate_leaked_object (name);
+    }
+  return name;
+}
+
+
+/* Return the user socket name used by Keyboxd.  */
+const char *
+keyboxd_socket_name (void)
+{
+  static char *name;
+
+  if (!name)
+    {
+      name = make_filename (gnupg_socketdir (), KEYBOXD_SOCK_NAME, NULL);
+      gpgrt_annotate_leaked_object (name);
+    }
   return name;
 }
 
@@ -1409,6 +1577,8 @@ get_default_pinentry_name (int reset)
           else
             xfree (name2);
         }
+      if (name)
+        gpgrt_annotate_leaked_object (name);
     }
 
   return name;
@@ -1467,11 +1637,13 @@ gnupg_module_name (int which)
 
 #define X(a,b,c) do {                                                   \
     static char *name;                                                  \
-    if (!name)                                                          \
+    if (!name) {                                                        \
       name = gnupg_build_directory                                      \
         ? xstrconcat (gnupg_build_directory,                            \
                       DIRSEP_S b DIRSEP_S c EXEEXT_S, NULL)             \
         : xstrconcat (gnupg_ ## a (), DIRSEP_S c EXEEXT_S, NULL);       \
+      gpgrt_annotate_leaked_object (name);                              \
+    }                                                                   \
     return name;                                                        \
   } while (0)
 
@@ -1498,11 +1670,25 @@ gnupg_module_name (int which)
       X(libexecdir, "scd", "scdaemon");
 #endif
 
+    case GNUPG_MODULE_NAME_TPM2DAEMON:
+#ifdef GNUPG_DEFAULT_TPM2DAEMON
+      return GNUPG_DEFAULT_TPM2DAEMON;
+#else
+      X(libexecdir, "tpm2d", TPM2DAEMON_NAME);
+#endif
+
     case GNUPG_MODULE_NAME_DIRMNGR:
 #ifdef GNUPG_DEFAULT_DIRMNGR
       return GNUPG_DEFAULT_DIRMNGR;
 #else
       X(bindir, "dirmngr", DIRMNGR_NAME);
+#endif
+
+    case GNUPG_MODULE_NAME_KEYBOXD:
+#ifdef GNUPG_DEFAULT_KEYBOXD
+      return GNUPG_DEFAULT_KEYBOXD;
+#else
+      X(libexecdir, "kbx", KEYBOXD_NAME);
 #endif
 
     case GNUPG_MODULE_NAME_PROTECT_TOOL:
@@ -1546,6 +1732,12 @@ gnupg_module_name (int which)
 
     case GNUPG_MODULE_NAME_GPGCONF:
       X(bindir, "tools", "gpgconf");
+
+    case GNUPG_MODULE_NAME_CARD:
+      X(bindir, "tools", "gpg-card");
+
+    case GNUPG_MODULE_NAME_GPGTAR:
+      X(bindir, "tools", "gpgtar");
 
     default:
       BUG ();

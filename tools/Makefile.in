@@ -139,19 +139,22 @@ host_triplet = @host@
 @GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
 @GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-libexec_PROGRAMS = gpg-wks-client$(EXEEXT) gpg-check-pattern$(EXEEXT)
+@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
 bin_PROGRAMS = gpgconf$(EXEEXT) gpg-connect-agent$(EXEEXT) \
-	$(am__EXEEXT_2) $(am__EXEEXT_3) $(am__EXEEXT_4)
-@HAVE_W32_SYSTEM_FALSE@am__append_8 = watchgnupg gpgparsemail ${gpg_wks_server} gpgsplit
-@HAVE_W32_SYSTEM_TRUE@am__append_9 = gpgconf-w32
-@HAVE_W32CE_SYSTEM_FALSE@noinst_PROGRAMS = clean-sat$(EXEEXT) \
-@HAVE_W32CE_SYSTEM_FALSE@	make-dns-cert$(EXEEXT) \
-@HAVE_W32CE_SYSTEM_FALSE@	$(am__EXEEXT_5)
-@BUILD_GPGTAR_TRUE@@HAVE_W32CE_SYSTEM_FALSE@am__append_10 = gpgtar
-@BUILD_GPGTAR_FALSE@@HAVE_W32CE_SYSTEM_FALSE@am__append_11 = gpgtar
+	gpg-card$(EXEEXT) gpg-wks-client$(EXEEXT) $(am__EXEEXT_2) \
+	$(am__EXEEXT_3) $(am__EXEEXT_4)
+@HAVE_W32_SYSTEM_FALSE@am__append_9 = watchgnupg gpgparsemail ${gpg_wks_server} gpgsplit
+@HAVE_W32_SYSTEM_TRUE@am__append_10 = gpgconf-w32
+libexec_PROGRAMS = gpg-check-pattern$(EXEEXT) gpg-pair-tool$(EXEEXT) \
+	$(am__EXEEXT_5)
+@HAVE_W32_SYSTEM_FALSE@am__append_11 = gpg-auth
+noinst_PROGRAMS = clean-sat$(EXEEXT) make-dns-cert$(EXEEXT) \
+	$(am__EXEEXT_6)
+@BUILD_GPGTAR_TRUE@am__append_12 = gpgtar
+@BUILD_GPGTAR_FALSE@am__append_13 = gpgtar
 subdir = tools
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -165,54 +168,70 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
-	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
 mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
-CONFIG_CLEAN_FILES = gpg-zip gpgconf.w32-manifest gpgtar.w32-manifest \
-	gpg-connect-agent.w32-manifest gpg-check-pattern.w32-manifest \
-	gpg-wks-client.w32-manifest
+CONFIG_CLEAN_FILES = gpg-connect-agent.w32-manifest \
+	gpgconf.w32-manifest gpgtar.w32-manifest \
+	gpg-check-pattern.w32-manifest gpg-wks-client.w32-manifest \
+	gpg-card.w32-manifest
 CONFIG_CLEAN_VPATH_FILES =
 @BUILD_WKS_TOOLS_TRUE@am__EXEEXT_1 = gpg-wks-server$(EXEEXT)
 @HAVE_W32_SYSTEM_FALSE@am__EXEEXT_2 = watchgnupg$(EXEEXT) \
 @HAVE_W32_SYSTEM_FALSE@	gpgparsemail$(EXEEXT) $(am__EXEEXT_1) \
 @HAVE_W32_SYSTEM_FALSE@	gpgsplit$(EXEEXT)
 @HAVE_W32_SYSTEM_TRUE@am__EXEEXT_3 = gpgconf-w32$(EXEEXT)
-@BUILD_GPGTAR_TRUE@@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_4 =  \
-@BUILD_GPGTAR_TRUE@@HAVE_W32CE_SYSTEM_FALSE@	gpgtar$(EXEEXT)
+@BUILD_GPGTAR_TRUE@am__EXEEXT_4 = gpgtar$(EXEEXT)
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)" \
 	"$(DESTDIR)$(sbindir)"
-@BUILD_GPGTAR_FALSE@@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_5 =  \
-@BUILD_GPGTAR_FALSE@@HAVE_W32CE_SYSTEM_FALSE@	gpgtar$(EXEEXT)
+@HAVE_W32_SYSTEM_FALSE@am__EXEEXT_5 = gpg-auth$(EXEEXT)
+@BUILD_GPGTAR_FALSE@am__EXEEXT_6 = gpgtar$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS) $(libexec_PROGRAMS) $(noinst_PROGRAMS)
 clean_sat_SOURCES = clean-sat.c
 clean_sat_OBJECTS = clean-sat.$(OBJEXT)
 clean_sat_LDADD = $(LDADD)
+am_gpg_auth_OBJECTS = gpg-auth.$(OBJEXT)
+gpg_auth_OBJECTS = $(am_gpg_auth_OBJECTS)
+am__DEPENDENCIES_1 =
+gpg_auth_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1)
+am_gpg_card_OBJECTS = gpg-card.$(OBJEXT) card-call-scd.$(OBJEXT) \
+	card-keys.$(OBJEXT) card-yubikey.$(OBJEXT) card-misc.$(OBJEXT)
+gpg_card_OBJECTS = $(am_gpg_card_OBJECTS)
+gpg_card_DEPENDENCIES = ../common/libgpgrl.a $(common_libs) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(gpg_card_rc_objs)
 am_gpg_check_pattern_OBJECTS =  \
 	gpg_check_pattern-gpg-check-pattern.$(OBJEXT)
 gpg_check_pattern_OBJECTS = $(am_gpg_check_pattern_OBJECTS)
-am__DEPENDENCIES_1 =
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpg-check-pattern-w32info.o
 gpg_check_pattern_DEPENDENCIES = $(common_libs) $(regexp_libs) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2)
+	$(am__DEPENDENCIES_1) $(gpg_check_pattern_rc_objs)
 gpg_check_pattern_LINK = $(CCLD) $(gpg_check_pattern_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_gpg_connect_agent_OBJECTS = gpg-connect-agent.$(OBJEXT)
 gpg_connect_agent_OBJECTS = $(am_gpg_connect_agent_OBJECTS)
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_3 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpg-connect-agent-w32info.o
 gpg_connect_agent_DEPENDENCIES = ../common/libgpgrl.a $(common_libs) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_3)
+	$(am__DEPENDENCIES_1) $(gpg_connect_agent_rc_objs)
+am_gpg_pair_tool_OBJECTS = gpg_pair_tool-gpg-pair-tool.$(OBJEXT)
+gpg_pair_tool_OBJECTS = $(am_gpg_pair_tool_OBJECTS)
+gpg_pair_tool_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+gpg_pair_tool_LINK = $(CCLD) $(gpg_pair_tool_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_gpg_wks_client_OBJECTS = gpg_wks_client-gpg-wks-client.$(OBJEXT) \
 	gpg_wks_client-wks-util.$(OBJEXT) \
 	gpg_wks_client-wks-receive.$(OBJEXT) \
@@ -222,12 +241,10 @@ am_gpg_wks_client_OBJECTS = gpg_wks_client-gpg-wks-client.$(OBJEXT) \
 	gpg_wks_client-send-mail.$(OBJEXT) \
 	gpg_wks_client-call-dirmngr.$(OBJEXT)
 gpg_wks_client_OBJECTS = $(am_gpg_wks_client_OBJECTS)
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_4 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpg-wks-client-w32info.o
 gpg_wks_client_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_4)
+	$(am__DEPENDENCIES_1) $(gpg_wks_client_rc_objs)
 gpg_wks_client_LINK = $(CCLD) $(gpg_wks_client_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_gpg_wks_server_OBJECTS = gpg_wks_server-gpg-wks-server.$(OBJEXT) \
@@ -245,25 +262,20 @@ gpg_wks_server_LINK = $(CCLD) $(gpg_wks_server_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_gpgconf_OBJECTS = gpgconf.$(OBJEXT) gpgconf-comp.$(OBJEXT)
 gpgconf_OBJECTS = $(am_gpgconf_OBJECTS)
-@HAVE_W32CE_SYSTEM_TRUE@am__DEPENDENCIES_5 = $(am__DEPENDENCIES_1)
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_6 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpgconf-w32info.o
-gpgconf_DEPENDENCIES = $(maybe_commonpth_libs) $(am__DEPENDENCIES_5) \
+gpgconf_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_6)
+	$(am__DEPENDENCIES_1) $(gpgconf_rc_objs)
 gpgconf_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgconf_LDFLAGS) \
 	$(LDFLAGS) -o $@
 am__objects_1 = gpgconf.$(OBJEXT) gpgconf-comp.$(OBJEXT)
 am_gpgconf_w32_OBJECTS = $(am__objects_1)
 gpgconf_w32_OBJECTS = $(am_gpgconf_w32_OBJECTS)
-am__DEPENDENCIES_7 = $(maybe_commonpth_libs) $(am__DEPENDENCIES_5) \
+am__DEPENDENCIES_2 = $(common_libs) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_6)
-gpgconf_w32_DEPENDENCIES = $(am__DEPENDENCIES_7)
+	$(am__DEPENDENCIES_1) $(gpgconf_rc_objs)
+gpgconf_w32_DEPENDENCIES = $(am__DEPENDENCIES_2)
 gpgconf_w32_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) \
 	$(gpgconf_w32_LDFLAGS) $(LDFLAGS) -o $@
 am_gpgparsemail_OBJECTS = gpgparsemail.$(OBJEXT) rfc822parse.$(OBJEXT)
@@ -279,12 +291,10 @@ am_gpgtar_OBJECTS = gpgtar-gpgtar.$(OBJEXT) \
 	gpgtar-gpgtar-create.$(OBJEXT) gpgtar-gpgtar-extract.$(OBJEXT) \
 	gpgtar-gpgtar-list.$(OBJEXT)
 gpgtar_OBJECTS = $(am_gpgtar_OBJECTS)
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_8 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpgtar-w32info.o
 gpgtar_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_8)
+	$(am__DEPENDENCIES_1) $(gpgtar_rc_objs)
 gpgtar_LINK = $(CCLD) $(gpgtar_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
 make_dns_cert_SOURCES = make-dns-cert.c
@@ -320,7 +330,7 @@ am__uninstall_files_from_dir = { \
     || { echo " ( cd '$$dir' && rm -f" $$files ")"; \
          $(am__cd) "$$dir" && rm -f $$files; }; \
   }
-SCRIPTS = $(noinst_SCRIPTS) $(sbin_SCRIPTS)
+SCRIPTS = $(sbin_SCRIPTS)
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -336,9 +346,13 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/clean-sat.Po \
+am__depfiles_remade = ./$(DEPDIR)/card-call-scd.Po \
+	./$(DEPDIR)/card-keys.Po ./$(DEPDIR)/card-misc.Po \
+	./$(DEPDIR)/card-yubikey.Po ./$(DEPDIR)/clean-sat.Po \
+	./$(DEPDIR)/gpg-auth.Po ./$(DEPDIR)/gpg-card.Po \
 	./$(DEPDIR)/gpg-connect-agent.Po \
 	./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po \
+	./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po \
 	./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po \
 	./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po \
 	./$(DEPDIR)/gpg_wks_client-mime-maker.Po \
@@ -378,13 +392,15 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = clean-sat.c $(gpg_check_pattern_SOURCES) \
-	$(gpg_connect_agent_SOURCES) $(gpg_wks_client_SOURCES) \
+SOURCES = clean-sat.c $(gpg_auth_SOURCES) $(gpg_card_SOURCES) \
+	$(gpg_check_pattern_SOURCES) $(gpg_connect_agent_SOURCES) \
+	$(gpg_pair_tool_SOURCES) $(gpg_wks_client_SOURCES) \
 	$(gpg_wks_server_SOURCES) $(gpgconf_SOURCES) \
 	$(gpgconf_w32_SOURCES) $(gpgparsemail_SOURCES) gpgsplit.c \
 	$(gpgtar_SOURCES) make-dns-cert.c $(watchgnupg_SOURCES)
-DIST_SOURCES = clean-sat.c $(gpg_check_pattern_SOURCES) \
-	$(gpg_connect_agent_SOURCES) $(gpg_wks_client_SOURCES) \
+DIST_SOURCES = clean-sat.c $(gpg_auth_SOURCES) $(gpg_card_SOURCES) \
+	$(gpg_check_pattern_SOURCES) $(gpg_connect_agent_SOURCES) \
+	$(gpg_pair_tool_SOURCES) $(gpg_wks_client_SOURCES) \
 	$(gpg_wks_server_SOURCES) $(gpgconf_SOURCES) \
 	$(gpgconf_w32_SOURCES) $(gpgparsemail_SOURCES) gpgsplit.c \
 	$(gpgtar_SOURCES) make-dns-cert.c $(watchgnupg_SOURCES)
@@ -413,9 +429,10 @@ am__define_uniq_tagged_files = \
 ETAGS = etags
 CTAGS = ctags
 am__DIST_COMMON = $(srcdir)/Makefile.in \
+	$(srcdir)/gpg-card.w32-manifest.in \
 	$(srcdir)/gpg-check-pattern.w32-manifest.in \
 	$(srcdir)/gpg-connect-agent.w32-manifest.in \
-	$(srcdir)/gpg-wks-client.w32-manifest.in $(srcdir)/gpg-zip.in \
+	$(srcdir)/gpg-wks-client.w32-manifest.in \
 	$(srcdir)/gpgconf.w32-manifest.in \
 	$(srcdir)/gpgtar.w32-manifest.in $(top_srcdir)/am/cmacros.am \
 	$(top_srcdir)/build-aux/depcomp \
@@ -460,9 +477,11 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
+GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
+GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -471,6 +490,7 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
+HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -498,9 +518,10 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
+LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
+LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
-LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -537,13 +558,14 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
-SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
+SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-SYS_SOCKET_H = @SYS_SOCKET_H@
-TAR = @TAR@
+TPMSERVER = @TPMSERVER@
+TSSSTARTUP = @TSSSTARTUP@
+TSS_INCLUDE = @TSS_INCLUDE@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -611,28 +633,20 @@ EXTRA_DIST = \
 	addgnupghome applygnupgdefaults \
 	lspgpot mail-signed-keys convert-from-106 sockprox.c \
 	ccidmon.c ChangeLog-2011 \
+	gpg-connect-agent-w32info.rc gpg-connect-agent.w32-manifest.in \
 	gpgconf-w32info.rc           gpgconf.w32-manifest.in \
 	gpgtar-w32info.rc            gpgtar.w32-manifest.in \
-        gpg-connect-agent-w32info.rc gpg-connect-agent.w32-manifest.in \
 	gpg-check-pattern-w32info.rc gpg-check-pattern.w32-manifest.in \
-	gpg-wks-client-w32info.rc    gpg-wks-client.w32-manifest.in
+	gpg-wks-client-w32info.rc    gpg-wks-client.w32-manifest.in \
+	gpg-card-w32info.rc          gpg-card.w32-manifest.in
 
 
 # NB: AM_CFLAGS may also be used by tools running on the build
 # platform to create source files.
 AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_1) \
 	$(am__append_2) $(am__append_3) $(am__append_4) \
-	$(am__append_5) $(am__append_6) $(am__append_7)
-@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
-
-# Under Windows we use LockFileEx.  WindowsCE provides this only on
-# the WindowsMobile 6 platform and thus we need to use the coredll6
-# import library.  We also want to use a stacksize of 256k instead of
-# the 2MB which is the default with cegcc.  256k is the largest stack
-# we use with pth.
-@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
-@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
-@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
+	$(am__append_5) $(am__append_6) $(am__append_7) \
+	$(am__append_8)
 resource_objs = 
 
 # Convenience macros
@@ -640,27 +654,19 @@ libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
-@HAVE_W32_SYSTEM_TRUE@gpgconf_rc_objs = $(resource_objs) gpgconf-w32info.o
-@HAVE_W32_SYSTEM_TRUE@gpgtar_rc_objs = $(resource_objs) gpgtar-w32info.o
-@HAVE_W32_SYSTEM_TRUE@gpg_connect_agent_rc_objs = $(resource_objs) gpg-connect-agent-w32info.o
-@HAVE_W32_SYSTEM_TRUE@gpg_check_pattern_rc_objs = $(resource_objs) gpg-check-pattern-w32info.o
-@HAVE_W32_SYSTEM_TRUE@gpg_wks_client_rc_objs = $(resource_objs) gpg-wks-client-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_connect_agent_rc_objs = gpg-connect-agent-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpgconf_rc_objs = gpgconf-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_card_rc_objs = gpg-card-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpgtar_rc_objs = gpgtar-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_check_pattern_rc_objs = gpg-check-pattern-w32info.o
+@HAVE_W32_SYSTEM_TRUE@gpg_wks_client_rc_objs = gpg-wks-client-w32info.o
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(LIBASSUAN_CFLAGS)
 sbin_SCRIPTS = addgnupghome applygnupgdefaults
-
-# bin_SCRIPTS += gpg-zip
-@HAVE_USTAR_TRUE@noinst_SCRIPTS = gpg-zip
 @BUILD_WKS_TOOLS_FALSE@gpg_wks_server = 
 @BUILD_WKS_TOOLS_TRUE@gpg_wks_server = gpg-wks-server
 common_libs = $(libcommon)
 commonpth_libs = $(libcommonpth)
-@HAVE_W32CE_SYSTEM_FALSE@maybe_commonpth_libs = $(common_libs)
-
-# Some modules require PTH under W32CE.
-@HAVE_W32CE_SYSTEM_TRUE@maybe_commonpth_libs = $(commonpth_libs)
-@HAVE_W32CE_SYSTEM_FALSE@pwquery_libs = ../common/libsimple-pwquery.a
-@HAVE_W32CE_SYSTEM_TRUE@pwquery_libs = 
-@HAVE_W32CE_SYSTEM_TRUE@opt_libassuan_libs = $(LIBASSUAN_LIBS)
+pwquery_libs = ../common/libsimple-pwquery.a
 regexp_libs = ../regexp/libregexp.a
 gpgsplit_LDADD = $(common_libs) \
 	         $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
@@ -670,12 +676,12 @@ gpgconf_SOURCES = gpgconf.c gpgconf.h gpgconf-comp.c
 
 # common sucks in gpg-error, will they, nil they (some compilers
 # do not eliminate the supposed-to-be-unused-inline-functions).
-gpgconf_LDADD = $(maybe_commonpth_libs) $(opt_libassuan_libs) \
+gpgconf_LDADD = $(common_libs) \
                 $(LIBINTL) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	        $(LIBICONV) $(W32SOCKLIBS) \
 	        $(gpgconf_rc_objs)
 
-gpgconf_LDFLAGS = $(extra_bin_ldflags)
+gpgconf_LDFLAGS = 
 gpgconf_w32_SOURCES = $(gpgconf_SOURCES)
 gpgconf_w32_LDADD = $(gpgconf_LDADD)
 gpgconf_w32_LDFLAGS = $(gpgconf_LDFLAGS) -Wl,-subsystem,windows
@@ -690,12 +696,28 @@ gpg_connect_agent_LDADD = ../common/libgpgrl.a $(common_libs) \
                           $(LIBREADLINE) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
                           $(gpg_connect_agent_rc_objs)
 
+gpg_card_SOURCES = \
+	gpg-card.c \
+	gpg-card.h     \
+	card-call-scd.c \
+	card-keys.c \
+	card-yubikey.c \
+	card-misc.c
+
+gpg_card_LDADD = \
+	../common/libgpgrl.a $(common_libs) \
+	$(LIBASSUAN_LIBS) $(LIBGCRYPT_LIBS) \
+	$(GPG_ERROR_LIBS) \
+        $(LIBREADLINE) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
+        $(gpg_card_rc_objs)
+
 gpg_check_pattern_SOURCES = gpg-check-pattern.c
 gpg_check_pattern_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(INCICONV)
 gpg_check_pattern_LDADD = $(common_libs) $(regexp_libs) $(LIBGCRYPT_LIBS) \
 			  $(GPG_ERROR_LIBS) \
 			  $(LIBINTL) $(NETLIBS) $(LIBICONV) $(W32SOCKLIBS) \
-			  $(LIBICONV) $(gpg_check_pattern_rc_objs)
+			  $(LIBICONV) \
+		          $(gpg_check_pattern_rc_objs)
 
 gpgtar_SOURCES = \
 	gpgtar.c gpgtar.h \
@@ -739,7 +761,21 @@ gpg_wks_client_CFLAGS = $(LIBASSUAN_CFLAGS) $(LIBGCRYPT_CFLAGS) \
 gpg_wks_client_LDADD = $(libcommon) \
 		       $(LIBASSUAN_LIBS) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
 		       $(LIBINTL) $(LIBICONV) $(NETLIBS) \
-		       $(gpg_wks_client_rc_objs)
+	               $(gpg_wks_client_rc_objs)
+
+gpg_pair_tool_SOURCES = \
+	gpg-pair-tool.c
+
+gpg_pair_tool_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(INCICONV)
+gpg_pair_tool_LDADD = $(libcommon) \
+		       $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+		       $(LIBINTL) $(LIBICONV) $(W32SOCKLIBS)
+
+gpg_auth_SOURCES = gpg-auth.c
+gpg_auth_LDADD = $(common_libs) \
+	         $(LIBASSUAN_LIBS) $(LIBGCRYPT_LIBS) \
+                 $(GPG_ERROR_LIBS) \
+                 $(LIBINTL) $(NETLIBS) $(LIBICONV)
 
 all: all-am
 
@@ -775,17 +811,17 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
-gpg-zip: $(top_builddir)/config.status $(srcdir)/gpg-zip.in
+gpg-connect-agent.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpg-connect-agent.w32-manifest.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 gpgconf.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpgconf.w32-manifest.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 gpgtar.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpgtar.w32-manifest.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
-gpg-connect-agent.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpg-connect-agent.w32-manifest.in
-	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 gpg-check-pattern.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpg-check-pattern.w32-manifest.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 gpg-wks-client.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpg-wks-client.w32-manifest.in
+	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
+gpg-card.w32-manifest: $(top_builddir)/config.status $(srcdir)/gpg-card.w32-manifest.in
 	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
@@ -879,6 +915,14 @@ clean-sat$(EXEEXT): $(clean_sat_OBJECTS) $(clean_sat_DEPENDENCIES) $(EXTRA_clean
 	@rm -f clean-sat$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(clean_sat_OBJECTS) $(clean_sat_LDADD) $(LIBS)
 
+gpg-auth$(EXEEXT): $(gpg_auth_OBJECTS) $(gpg_auth_DEPENDENCIES) $(EXTRA_gpg_auth_DEPENDENCIES) 
+	@rm -f gpg-auth$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(gpg_auth_OBJECTS) $(gpg_auth_LDADD) $(LIBS)
+
+gpg-card$(EXEEXT): $(gpg_card_OBJECTS) $(gpg_card_DEPENDENCIES) $(EXTRA_gpg_card_DEPENDENCIES) 
+	@rm -f gpg-card$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(gpg_card_OBJECTS) $(gpg_card_LDADD) $(LIBS)
+
 gpg-check-pattern$(EXEEXT): $(gpg_check_pattern_OBJECTS) $(gpg_check_pattern_DEPENDENCIES) $(EXTRA_gpg_check_pattern_DEPENDENCIES) 
 	@rm -f gpg-check-pattern$(EXEEXT)
 	$(AM_V_CCLD)$(gpg_check_pattern_LINK) $(gpg_check_pattern_OBJECTS) $(gpg_check_pattern_LDADD) $(LIBS)
@@ -886,6 +930,10 @@ gpg-check-pattern$(EXEEXT): $(gpg_check_pattern_OBJECTS) $(gpg_check_pattern_DEP
 gpg-connect-agent$(EXEEXT): $(gpg_connect_agent_OBJECTS) $(gpg_connect_agent_DEPENDENCIES) $(EXTRA_gpg_connect_agent_DEPENDENCIES) 
 	@rm -f gpg-connect-agent$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(gpg_connect_agent_OBJECTS) $(gpg_connect_agent_LDADD) $(LIBS)
+
+gpg-pair-tool$(EXEEXT): $(gpg_pair_tool_OBJECTS) $(gpg_pair_tool_DEPENDENCIES) $(EXTRA_gpg_pair_tool_DEPENDENCIES) 
+	@rm -f gpg-pair-tool$(EXEEXT)
+	$(AM_V_CCLD)$(gpg_pair_tool_LINK) $(gpg_pair_tool_OBJECTS) $(gpg_pair_tool_LDADD) $(LIBS)
 
 gpg-wks-client$(EXEEXT): $(gpg_wks_client_OBJECTS) $(gpg_wks_client_DEPENDENCIES) $(EXTRA_gpg_wks_client_DEPENDENCIES) 
 	@rm -f gpg-wks-client$(EXEEXT)
@@ -964,9 +1012,16 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/card-call-scd.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/card-keys.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/card-misc.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/card-yubikey.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/clean-sat.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg-auth.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg-card.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg-connect-agent.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_wks_client-mime-maker.Po@am__quote@ # am--include-marker
@@ -1027,6 +1082,20 @@ gpg_check_pattern-gpg-check-pattern.obj: gpg-check-pattern.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpg-check-pattern.c' object='gpg_check_pattern-gpg-check-pattern.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_check_pattern_CFLAGS) $(CFLAGS) -c -o gpg_check_pattern-gpg-check-pattern.obj `if test -f 'gpg-check-pattern.c'; then $(CYGPATH_W) 'gpg-check-pattern.c'; else $(CYGPATH_W) '$(srcdir)/gpg-check-pattern.c'; fi`
+
+gpg_pair_tool-gpg-pair-tool.o: gpg-pair-tool.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_pair_tool_CFLAGS) $(CFLAGS) -MT gpg_pair_tool-gpg-pair-tool.o -MD -MP -MF $(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Tpo -c -o gpg_pair_tool-gpg-pair-tool.o `test -f 'gpg-pair-tool.c' || echo '$(srcdir)/'`gpg-pair-tool.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Tpo $(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpg-pair-tool.c' object='gpg_pair_tool-gpg-pair-tool.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_pair_tool_CFLAGS) $(CFLAGS) -c -o gpg_pair_tool-gpg-pair-tool.o `test -f 'gpg-pair-tool.c' || echo '$(srcdir)/'`gpg-pair-tool.c
+
+gpg_pair_tool-gpg-pair-tool.obj: gpg-pair-tool.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_pair_tool_CFLAGS) $(CFLAGS) -MT gpg_pair_tool-gpg-pair-tool.obj -MD -MP -MF $(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Tpo -c -o gpg_pair_tool-gpg-pair-tool.obj `if test -f 'gpg-pair-tool.c'; then $(CYGPATH_W) 'gpg-pair-tool.c'; else $(CYGPATH_W) '$(srcdir)/gpg-pair-tool.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Tpo $(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpg-pair-tool.c' object='gpg_pair_tool-gpg-pair-tool.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_pair_tool_CFLAGS) $(CFLAGS) -c -o gpg_pair_tool-gpg-pair-tool.obj `if test -f 'gpg-pair-tool.c'; then $(CYGPATH_W) 'gpg-pair-tool.c'; else $(CYGPATH_W) '$(srcdir)/gpg-pair-tool.c'; fi`
 
 gpg_wks_client-gpg-wks-client.o: gpg-wks-client.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_wks_client_CFLAGS) $(CFLAGS) -MT gpg_wks_client-gpg-wks-client.o -MD -MP -MF $(DEPDIR)/gpg_wks_client-gpg-wks-client.Tpo -c -o gpg_wks_client-gpg-wks-client.o `test -f 'gpg-wks-client.c' || echo '$(srcdir)/'`gpg-wks-client.c
@@ -1422,9 +1491,16 @@ clean-am: clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
 	clean-noinstPROGRAMS mostlyclean-am
 
 distclean: distclean-am
-		-rm -f ./$(DEPDIR)/clean-sat.Po
+		-rm -f ./$(DEPDIR)/card-call-scd.Po
+	-rm -f ./$(DEPDIR)/card-keys.Po
+	-rm -f ./$(DEPDIR)/card-misc.Po
+	-rm -f ./$(DEPDIR)/card-yubikey.Po
+	-rm -f ./$(DEPDIR)/clean-sat.Po
+	-rm -f ./$(DEPDIR)/gpg-auth.Po
+	-rm -f ./$(DEPDIR)/gpg-card.Po
 	-rm -f ./$(DEPDIR)/gpg-connect-agent.Po
 	-rm -f ./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po
+	-rm -f ./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-mime-maker.Po
@@ -1473,8 +1549,8 @@ install-dvi: install-dvi-am
 
 install-dvi-am:
 
-install-exec-am: install-binPROGRAMS install-libexecPROGRAMS \
-	install-sbinSCRIPTS
+install-exec-am: install-binPROGRAMS install-exec-local \
+	install-libexecPROGRAMS install-sbinSCRIPTS
 
 install-html: install-html-am
 
@@ -1497,9 +1573,16 @@ install-ps-am:
 installcheck-am:
 
 maintainer-clean: maintainer-clean-am
-		-rm -f ./$(DEPDIR)/clean-sat.Po
+		-rm -f ./$(DEPDIR)/card-call-scd.Po
+	-rm -f ./$(DEPDIR)/card-keys.Po
+	-rm -f ./$(DEPDIR)/card-misc.Po
+	-rm -f ./$(DEPDIR)/card-yubikey.Po
+	-rm -f ./$(DEPDIR)/clean-sat.Po
+	-rm -f ./$(DEPDIR)/gpg-auth.Po
+	-rm -f ./$(DEPDIR)/gpg-card.Po
 	-rm -f ./$(DEPDIR)/gpg-connect-agent.Po
 	-rm -f ./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po
+	-rm -f ./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-mime-maker.Po
@@ -1542,7 +1625,7 @@ ps: ps-am
 ps-am:
 
 uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS \
-	uninstall-sbinSCRIPTS
+	uninstall-local uninstall-sbinSCRIPTS
 
 .MAKE: install-am install-strip
 
@@ -1552,15 +1635,15 @@ uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS \
 	distclean-compile distclean-generic distclean-tags distdir dvi \
 	dvi-am html html-am info info-am install install-am \
 	install-binPROGRAMS install-data install-data-am install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-info install-info-am \
+	install-dvi-am install-exec install-exec-am install-exec-local \
+	install-html install-html-am install-info install-info-am \
 	install-libexecPROGRAMS install-man install-pdf install-pdf-am \
 	install-ps install-ps-am install-sbinSCRIPTS install-strip \
 	installcheck installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
 	uninstall-am uninstall-binPROGRAMS uninstall-libexecPROGRAMS \
-	uninstall-sbinSCRIPTS
+	uninstall-local uninstall-sbinSCRIPTS
 
 .PRECIOUS: Makefile
 
@@ -1571,11 +1654,28 @@ uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS \
 @HAVE_W32_SYSTEM_TRUE@gpg-connect-agent-w32info.o  : gpg-connect-agent.w32-manifest \
 @HAVE_W32_SYSTEM_TRUE@                                                     ../common/w32info-rc.h
 @HAVE_W32_SYSTEM_TRUE@gpgconf-w32info.o            : gpgconf.w32-manifest  ../common/w32info-rc.h
+@HAVE_W32_SYSTEM_TRUE@gpg-card-w32info.o           : gpg-card.w32-manifest ../common/w32info-rc.h
 @HAVE_W32_SYSTEM_TRUE@gpgtar-w32info.o             : gpgtar.w32-manifest   ../common/w32info-rc.h
 @HAVE_W32_SYSTEM_TRUE@gpg-check-pattern-w32info.o  : gpg-check-pattern.w32-manifest \
 @HAVE_W32_SYSTEM_TRUE@                                                     ../common/w32info-rc.h
 @HAVE_W32_SYSTEM_TRUE@gpg-wks-client-w32info.o     : gpg-wks-client.w32-manifest \
 @HAVE_W32_SYSTEM_TRUE@                                                     ../common/w32info-rc.h
+
+# Instead of a symlink we install a simple wrapper script for the new
+# gpg-wks-client location.  We assume bin is a sibling of libexec.
+install-exec-local:
+	$(mkinstalldirs) $(DESTDIR)$(libexecdir)
+	(set -e ;\
+	 if [ "$(libexecdir)" != "$(bindir)" ]; then \
+	   printf '#!/bin/sh\nexec "$(bindir)/gpg-wks-client" "$$@"\n' \
+	          > $(DESTDIR)$(libexecdir)/gpg-wks-client ;\
+	   chmod +x $(DESTDIR)$(libexecdir)/gpg-wks-client ;\
+	 fi )
+
+uninstall-local:
+	(if [ "$(libexecdir)" != "$(bindir)" ]; then \
+	   rm $(DESTDIR)$(libexecdir)/gpg-wks-client || true ;\
+         fi )
 
 # Make sure that all libs are build before we use them.  This is
 # important for things like make -j2.

@@ -38,7 +38,7 @@ and solving problems.
 
 A keybox is a file format used to store public keys along with meta
 information and indices.  The commonly used one is the file
-@file{pubring.kbx} in the @file{.gnupg} directory. It contains all
+@file{pubring.kbx} in the @file{.gnupg} directory.  It contains all
 X.509 certificates as well as OpenPGP keys.
 
 @noindent

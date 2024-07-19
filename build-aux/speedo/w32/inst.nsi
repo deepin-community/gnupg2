@@ -46,7 +46,7 @@ Unicode true
 !define PRETTY_PACKAGE "GNU Privacy Guard"
 !define PRETTY_PACKAGE_SHORT "GnuPG"
 !define COMPANY "The GnuPG Project"
-!define COPYRIGHT "Copyright (C) 2017 The GnuPG Project"
+!define COPYRIGHT "Copyright (C) 2021 g10 Code GmbH"
 !define DESCRIPTION "GnuPG: The GNU Privacy Guard for Windows"
 
 !define INSTALL_DIR "GnuPG"
@@ -603,6 +603,7 @@ Section "-gnupginst"
   ifFileExists "$INSTDIR\bin\gpgconf.exe"  0 no_gpgconf
     nsExec::ExecToLog '"$INSTDIR\bin\gpgconf" "--kill" "dirmngr"'
     nsExec::ExecToLog '"$INSTDIR\bin\gpgconf" "--kill" "gpg-agent"'
+    nsExec::ExecToLog '"$INSTDIR\bin\gpgconf" "--kill" "keyboxd"'
 
   no_gpgconf:
 
@@ -627,11 +628,12 @@ Section "GnuPG" SEC_gnupg
   File "bin/gpgsm.exe"
   File "bin/gpgconf.exe"
   File "bin/gpg-connect-agent.exe"
+  File "bin/gpg-card.exe"
   File "bin/gpgtar.exe"
+  File "bin/gpg-wks-client.exe"
   File "libexec/dirmngr_ldap.exe"
   File "libexec/gpg-preset-passphrase.exe"
   File "libexec/gpg-check-pattern.exe"
-  File "libexec/gpg-wks-client.exe"
 
   ClearErrors
   SetOverwrite try
@@ -657,12 +659,19 @@ Section "GnuPG" SEC_gnupg
       File /oname=scdaemon.exe.tmp "libexec/scdaemon.exe"
       Rename /REBOOTOK scdaemon.exe.tmp scdaemon.exe
 
+  ClearErrors
+  SetOverwrite try
+  File "libexec/keyboxd.exe"
+  SetOverwrite lastused
+  ifErrors 0 +3
+      File /oname=keyboxd.exe.tmp "libexec/keyboxd.exe"
+      Rename /REBOOTOK keyboxd.exe.tmp keyboxd.exe
+
   SetOutPath "$INSTDIR\share\gnupg"
   File "share/gnupg/distsigkey.gpg"
   File "share/gnupg/sks-keyservers.netCA.pem"
 
   SetOutPath "$INSTDIR\share\doc\gnupg\examples"
-  File "share/doc/gnupg/examples/Automatic.prf"
   File "share/doc/gnupg/examples/pwpattern.list"
 
   SetOutPath "$INSTDIR\share\locale\ca\LC_MESSAGES"
@@ -1058,8 +1067,7 @@ Section "-un.gnupglast"
     nsExec::ExecToLog '"$INSTDIR\bin\launch-gpa" "--stop-server"'
   no_uiserver:
   ifFileExists "$INSTDIR\bin\gpgconf.exe"  0 no_gpgconf
-    nsExec::ExecToLog '"$INSTDIR\bin\gpgconf" "--kill" "gpg-agent"'
-    nsExec::ExecToLog '"$INSTDIR\bin\gpgconf" "--kill" "dirmngr"'
+    nsExec::ExecToLog '"$INSTDIR\bin\gpgconf" "--kill" "all"'
   no_gpgconf:
 SectionEnd
 
@@ -1317,19 +1325,19 @@ Section "-un.gnupg"
   Delete "$INSTDIR\bin\gpgsm.exe"
   Delete "$INSTDIR\bin\gpg-agent.exe"
   Delete "$INSTDIR\bin\scdaemon.exe"
+  Delete "$INSTDIR\bin\keyboxd.exe"
   Delete "$INSTDIR\bin\dirmngr.exe"
   Delete "$INSTDIR\bin\gpgconf.exe"
   Delete "$INSTDIR\bin\gpg-connect-agent.exe"
   Delete "$INSTDIR\bin\gpgtar.exe"
+  Delete "$INSTDIR\bin\gpg-card.exe"
   Delete "$INSTDIR\bin\dirmngr_ldap.exe"
   Delete "$INSTDIR\bin\gpg-preset-passphrase.exe"
   Delete "$INSTDIR\bin\gpg-check-pattern.exe"
   Delete "$INSTDIR\bin\gpg-wks-client.exe"
 
-  Delete "$INSTDIR\share\doc\gnupg\examples\Automatic.prf"
   Delete "$INSTDIR\share\doc\gnupg\examples\pwpattern.list"
   RMDir  "$INSTDIR\share\doc\gnupg\examples"
-  RMDir  "$INSTDIR\share\doc\gnupg"
 
   Delete "$INSTDIR\share\gnupg\sks-keyservers.netCA.pem"
   Delete "$INSTDIR\share\gnupg\dirmngr-conf.skel"
