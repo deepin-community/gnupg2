@@ -29,8 +29,8 @@ Build-Depends:
  libusb-1.0-0-dev [!hurd-any],
  openssh-client <!nocheck>,
  pkgconf,
- unicode-data,
  texinfo <!nodoc>,
+ unicode-data,
  zlib1g-dev | libz-dev,
 Build-Depends-Indep:
  binutils-multiarch [!amd64 !i386],
@@ -41,7 +41,7 @@ Build-Depends-Indep:
  libnpth-mingw-w64-dev (>= 1.2),
  libz-mingw-w64-dev,
  mingw-w64,
-Vcs-Git: https://salsa.debian.org/debian/gnupg2.git -b debian/main
+Vcs-Git: https://salsa.debian.org/debian/gnupg2.git
 Vcs-Browser: https://salsa.debian.org/debian/gnupg2
 Homepage: https://www.gnupg.org/
 Rules-Requires-Root: no
@@ -236,32 +236,33 @@ Description: GNU Privacy Guard -- minimalist public key operations
 
 Package: gnupg
 Architecture: all
+Section: metapackages
 Multi-Arch: foreign
 Depends:
  dirmngr (<< ${source:Version}.1~),
  dirmngr (>= ${source:Version}),
  gnupg-l10n (= ${source:Version}),
- gnupg-utils (<< ${source:Version}.1~),
- gnupg-utils (>= ${source:Version}),
  gpg (<< ${source:Version}.1~),
  gpg (>= ${source:Version}),
  gpg-agent (<< ${source:Version}.1~),
  gpg-agent (>= ${source:Version}),
- gpg-wks-client (<< ${source:Version}.1~),
- gpg-wks-client (>= ${source:Version}),
  gpgsm (<< ${source:Version}.1~),
  gpgsm (>= ${source:Version}),
- gpgv (<< ${source:Version}.1~),
- gpgv (>= ${source:Version}),
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
+ gnupg-utils (<< ${source:Version}.1~),
+ gnupg-utils (>= ${source:Version}),
+ gpg-wks-client (<< ${source:Version}.1~),
+ gpg-wks-client (>= ${source:Version}),
+ gpgv (<< ${source:Version}.1~),
+ gpgv (>= ${source:Version}),
  ${shlibs:Recommends},
 Suggests:
- parcimonie,
- xloadimage,
  gpg-wks-server (<< ${source:Version}.1~),
  gpg-wks-server (>= ${source:Version}),
+ parcimonie,
+ xloadimage,
 Breaks:
  debsig-verify (<< 0.15),
  dirmngr (<< ${binary:Version}),

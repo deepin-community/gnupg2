@@ -1,3 +1,27 @@
+gnupg2 (2.2.43-7) unstable; urgency=medium
+
+  [ наб ]
+  * d/control: fix Vcs-Git
+  * Port scripts from bash to /bin/sh
+
+  [ Otto Kekäläinen ]
+  * Enable Salsa-CI
+
+  [ Daniel Kahn Gillmor ]
+  * wrap-and-sort -ast
+  * Move the gnupg package into the metapackages section
+  * Move gpgv, gnupg-utils, and gpg-wks-client into Recommends of gnupg
+
+  [ Andreas Metzler ]
+  * Cherrypick fix for Yubikey with KDF enabled (Closes: #1071168)
+  * Fix blhc CI
+
+  [ Daniel Kahn Gillmor ]
+  * Avoid breakage with epg.el (Closes: #1071552)
+  * autopkgtest: Add a test for #1071552
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Fri, 31 May 2024 19:22:29 -0400
+
 gnupg2 (2.2.43-6) unstable; urgency=medium
 
   * actually fix arch-independent (win32) builds

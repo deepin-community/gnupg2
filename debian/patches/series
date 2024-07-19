@@ -26,3 +26,5 @@ from-master/build-Use-LDAP_DEPRECATED-to-detect-ldap-library.patch
 debian-packaging/Build-regexp-against-debian-s-unicode-data-package.patch
 debian-packaging/Always-build-common-status-codes.h-and-common-audit-event.patch
 restore-nl.po.patch
+from-upstream/scd-openpgp-Fix-PIN-pin2hash_if_kdf.patch
+from-master/gpg-Report-BEGIN_-status-before-examining-the-input.patch

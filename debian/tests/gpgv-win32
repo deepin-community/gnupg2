@@ -1,18 +1,21 @@
-#!/bin/bash
+#!/bin/sh
 
 set -e
 
-export GNUPGHOME=$(mktemp -d)
-gpgargs=(--batch --quiet --pinentry-mode=loopback --passphrase '' --with-colons)
+GNUPGHOME=$(mktemp -d)
+export GNUPGHOME
+gpg_args() {
+	gpg --batch --quiet --pinentry-mode=loopback --passphrase '' --with-colons "$@"
+}
 
 # Generate a minimal signing key:
-gpg "${gpgargs[@]}" --quick-gen-key 'Test key for gpgv-win32 <test-key@example.com>'
+gpg_args --quick-gen-key 'Test key for gpgv-win32 <test-key@example.com>'
 
-gpg "${gpgargs[@]}" -o "$GNUPGHOME/key.gpg" --export test-key@example.com
+gpg_args -o "$GNUPGHOME/key.gpg" --export test-key@example.com
 
 # Sign this very script
 rm -f "${0}.gpg"
-gpg "${gpgargs[@]}" --output "${0}.gpg" --detach-sign "${0}"
+gpg_args --output "${0}.gpg" --detach-sign "${0}"
 
 # Verify using gpgv
 gpgv --quiet --status-fd 3 3> native.status --keyring "$GNUPGHOME/key.gpg" "${0}.gpg" "${0}"

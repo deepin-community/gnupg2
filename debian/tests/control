@@ -22,3 +22,10 @@ Depends:
  gnupg1,
  gpg,
 Restrictions: allow-stderr
+
+tests: emacs-epg-message-mode
+Depends:
+ coreutils,
+ emacs-nox,
+ findutils,
+ gnupg,

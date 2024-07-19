@@ -52,6 +52,12 @@ execute_after_dh_auto_configure:
 		--enable-large-secmem \
 		--with-mailprog=/usr/sbin/sendmail \
 		$(NODOC)
+	# win32 uses hand-written *FLAGS
+	# mkdefsinc is built with *_FOR_BUILD
+	# gpgscm is also not shipped
+	@echo 'blhc: ignore-line-regexp: .*i686-w64-mingw32-gcc .*'
+	@echo 'blhc: ignore-line-regexp: .*-o mkdefsinc .*'
+	@echo 'blhc: ignore-line-regexp: .*-o gpgscm .*'
 
 override_dh_auto_configure-arch:
 	dh_auto_configure --builddirectory=build-maintainer -- \
