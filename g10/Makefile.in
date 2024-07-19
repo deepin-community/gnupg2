@@ -139,14 +139,12 @@ host_triplet = @host@
 @GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
 @GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-noinst_PROGRAMS = gpg$(EXEEXT) $(am__EXEEXT_1) $(am__EXEEXT_2) \
-	$(am__EXEEXT_3)
-@HAVE_W32CE_SYSTEM_FALSE@am__append_8 = gpgv
-@MAINTAINER_MODE_TRUE@am__append_9 = gpgcompose
-@DISABLE_TESTS_FALSE@TESTS = $(am__EXEEXT_3)
+@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+noinst_PROGRAMS = gpg$(EXEEXT) gpgv$(EXEEXT) $(am__EXEEXT_1)
+@DISABLE_TESTS_FALSE@TESTS = $(am__EXEEXT_1)
 subdir = g10
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -160,7 +158,6 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
-	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -169,51 +166,52 @@ mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = gpg.w32-manifest gpgv.w32-manifest
 CONFIG_CLEAN_VPATH_FILES =
-@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_1 = gpgv$(EXEEXT)
-@MAINTAINER_MODE_TRUE@am__EXEEXT_2 = gpgcompose$(EXEEXT)
-am__EXEEXT_3 = t-rmd160$(EXEEXT) t-keydb$(EXEEXT) \
-	t-keydb-get-keyblock$(EXEEXT) t-stutter$(EXEEXT)
+am__EXEEXT_1 = t-rmd160$(EXEEXT) t-keydb$(EXEEXT) \
+	t-keydb-get-keyblock$(EXEEXT) t-stutter$(EXEEXT) \
+	t-keyid$(EXEEXT)
 PROGRAMS = $(noinst_PROGRAMS)
 am__gpg_SOURCES_DIST = gpg.c keyedit.c keyedit.h server.c gpg.h dek.h \
 	build-packet.c compress.c compress-bz2.c filter.h \
-	free-packet.c getkey.c keydb.c keydb.h keyring.c keyring.h \
-	seskey.c kbnode.c main.h mainproc.c armor.c mdfilter.c \
-	textfilter.c progress.c misc.c rmd160.c rmd160.h options.h \
-	openfile.c keyid.c packet.h parse-packet.c cpr.c plaintext.c \
-	sig-check.c keylist.c pkglue.c pkglue.h ecdh.c pkclist.c \
+	free-packet.c getkey.c expand-group.c keydb.h keydb-private.h \
+	call-keyboxd.c keydb.c keyring.c keyring.h seskey.c kbnode.c \
+	main.h mainproc.c armor.c mdfilter.c textfilter.c progress.c \
+	misc.c rmd160.c rmd160.h options.h openfile.c keyid.c packet.h \
+	parse-packet.c cpr.c plaintext.c sig-check.c keylist.c \
+	pkglue.c pkglue.h objcache.c objcache.h ecdh.c pkclist.c \
 	skclist.c pubkey-enc.c passphrase.c decrypt.c decrypt-data.c \
-	cipher.c encrypt.c sign.c verify.c revoke.c dearmor.c import.c \
-	export.c migrate.c delkey.c keygen.c helptext.c keyserver.c \
-	keyserver-internal.h call-dirmngr.c call-dirmngr.h photoid.c \
-	photoid.h call-agent.c call-agent.h trust.c trustdb.c \
-	trustdb.h tdbdump.c tdbio.c tdbio.h tofu.h tofu.c gpgsql.c \
-	gpgsql.h card-util.c exec.c exec.h key-clean.c key-clean.h \
-	key-check.c key-check.h
+	cipher-cfb.c cipher-aead.c encrypt.c sign.c verify.c revoke.c \
+	dearmor.c import.c export.c migrate.c delkey.c keygen.c \
+	helptext.c keyserver.c keyserver-internal.h call-dirmngr.c \
+	call-dirmngr.h photoid.c photoid.h call-agent.c call-agent.h \
+	trust.c trustdb.c trustdb.h tdbdump.c tdbio.c tdbio.h tofu.h \
+	tofu.c gpgsql.c gpgsql.h card-util.c exec.c exec.h key-clean.c \
+	key-clean.h key-check.c key-check.h
 @ENABLE_BZIP2_SUPPORT_TRUE@am__objects_1 = compress-bz2.$(OBJEXT)
 am__objects_2 = build-packet.$(OBJEXT) compress.$(OBJEXT) \
 	$(am__objects_1) free-packet.$(OBJEXT) getkey.$(OBJEXT) \
-	keydb.$(OBJEXT) keyring.$(OBJEXT) seskey.$(OBJEXT) \
-	kbnode.$(OBJEXT) mainproc.$(OBJEXT) armor.$(OBJEXT) \
-	mdfilter.$(OBJEXT) textfilter.$(OBJEXT) progress.$(OBJEXT) \
-	misc.$(OBJEXT) rmd160.$(OBJEXT) openfile.$(OBJEXT) \
-	keyid.$(OBJEXT) parse-packet.$(OBJEXT) cpr.$(OBJEXT) \
-	plaintext.$(OBJEXT) sig-check.$(OBJEXT) keylist.$(OBJEXT) \
-	pkglue.$(OBJEXT) ecdh.$(OBJEXT)
+	expand-group.$(OBJEXT) call-keyboxd.$(OBJEXT) keydb.$(OBJEXT) \
+	keyring.$(OBJEXT) seskey.$(OBJEXT) kbnode.$(OBJEXT) \
+	mainproc.$(OBJEXT) armor.$(OBJEXT) mdfilter.$(OBJEXT) \
+	textfilter.$(OBJEXT) progress.$(OBJEXT) misc.$(OBJEXT) \
+	rmd160.$(OBJEXT) openfile.$(OBJEXT) keyid.$(OBJEXT) \
+	parse-packet.$(OBJEXT) cpr.$(OBJEXT) plaintext.$(OBJEXT) \
+	sig-check.$(OBJEXT) keylist.$(OBJEXT) pkglue.$(OBJEXT) \
+	objcache.$(OBJEXT) ecdh.$(OBJEXT)
 @NO_TRUST_MODELS_FALSE@am__objects_3 = trustdb.$(OBJEXT) \
 @NO_TRUST_MODELS_FALSE@	tdbdump.$(OBJEXT) tdbio.$(OBJEXT)
 @USE_TOFU_TRUE@am__objects_4 = tofu.$(OBJEXT) gpgsql.$(OBJEXT)
 @ENABLE_CARD_SUPPORT_TRUE@am__objects_5 = card-util.$(OBJEXT)
 am__objects_6 = server.$(OBJEXT) $(am__objects_2) pkclist.$(OBJEXT) \
 	skclist.$(OBJEXT) pubkey-enc.$(OBJEXT) passphrase.$(OBJEXT) \
-	decrypt.$(OBJEXT) decrypt-data.$(OBJEXT) cipher.$(OBJEXT) \
-	encrypt.$(OBJEXT) sign.$(OBJEXT) verify.$(OBJEXT) \
-	revoke.$(OBJEXT) dearmor.$(OBJEXT) import.$(OBJEXT) \
-	export.$(OBJEXT) migrate.$(OBJEXT) delkey.$(OBJEXT) \
-	keygen.$(OBJEXT) helptext.$(OBJEXT) keyserver.$(OBJEXT) \
-	call-dirmngr.$(OBJEXT) photoid.$(OBJEXT) call-agent.$(OBJEXT) \
-	trust.$(OBJEXT) $(am__objects_3) $(am__objects_4) \
-	$(am__objects_5) exec.$(OBJEXT) key-clean.$(OBJEXT) \
-	key-check.$(OBJEXT)
+	decrypt.$(OBJEXT) decrypt-data.$(OBJEXT) cipher-cfb.$(OBJEXT) \
+	cipher-aead.$(OBJEXT) encrypt.$(OBJEXT) sign.$(OBJEXT) \
+	verify.$(OBJEXT) revoke.$(OBJEXT) dearmor.$(OBJEXT) \
+	import.$(OBJEXT) export.$(OBJEXT) migrate.$(OBJEXT) \
+	delkey.$(OBJEXT) keygen.$(OBJEXT) helptext.$(OBJEXT) \
+	keyserver.$(OBJEXT) call-dirmngr.$(OBJEXT) photoid.$(OBJEXT) \
+	call-agent.$(OBJEXT) trust.$(OBJEXT) $(am__objects_3) \
+	$(am__objects_4) $(am__objects_5) exec.$(OBJEXT) \
+	key-clean.$(OBJEXT) key-check.$(OBJEXT)
 am_gpg_OBJECTS = gpg.$(OBJEXT) keyedit.$(OBJEXT) $(am__objects_6)
 gpg_OBJECTS = $(am_gpg_OBJECTS)
 am__DEPENDENCIES_1 =
@@ -222,90 +220,89 @@ am__DEPENDENCIES_2 = $(needed_libs) ../common/libgpgrl.a \
 gpg_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) $(gpg_rc_objs) \
-	$(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(gpg_rc_objs)
 gpg_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpg_LDFLAGS) $(LDFLAGS) -o \
 	$@
-am__gpgcompose_SOURCES_DIST = gpgcompose.c server.c gpg.h dek.h \
-	build-packet.c compress.c compress-bz2.c filter.h \
-	free-packet.c getkey.c keydb.c keydb.h keyring.c keyring.h \
-	seskey.c kbnode.c main.h mainproc.c armor.c mdfilter.c \
-	textfilter.c progress.c misc.c rmd160.c rmd160.h options.h \
-	openfile.c keyid.c packet.h parse-packet.c cpr.c plaintext.c \
-	sig-check.c keylist.c pkglue.c pkglue.h ecdh.c pkclist.c \
-	skclist.c pubkey-enc.c passphrase.c decrypt.c decrypt-data.c \
-	cipher.c encrypt.c sign.c verify.c revoke.c dearmor.c import.c \
-	export.c migrate.c delkey.c keygen.c helptext.c keyserver.c \
-	keyserver-internal.h call-dirmngr.c call-dirmngr.h photoid.c \
-	photoid.h call-agent.c call-agent.h trust.c trustdb.c \
-	trustdb.h tdbdump.c tdbio.c tdbio.h tofu.h tofu.c gpgsql.c \
-	gpgsql.h card-util.c exec.c exec.h key-clean.c key-clean.h \
-	key-check.c key-check.h
-am_gpgcompose_OBJECTS = gpgcompose.$(OBJEXT) $(am__objects_6)
-gpgcompose_OBJECTS = $(am_gpgcompose_OBJECTS)
-gpgcompose_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1)
-gpgcompose_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgcompose_LDFLAGS) \
-	$(LDFLAGS) -o $@
 am__gpgv_SOURCES_DIST = gpgv.c gpg.h dek.h build-packet.c compress.c \
-	compress-bz2.c filter.h free-packet.c getkey.c keydb.c keydb.h \
-	keyring.c keyring.h seskey.c kbnode.c main.h mainproc.c \
-	armor.c mdfilter.c textfilter.c progress.c misc.c rmd160.c \
-	rmd160.h options.h openfile.c keyid.c packet.h parse-packet.c \
-	cpr.c plaintext.c sig-check.c keylist.c pkglue.c pkglue.h \
-	ecdh.c verify.c
+	compress-bz2.c filter.h free-packet.c getkey.c expand-group.c \
+	keydb.h keydb-private.h call-keyboxd.c keydb.c keyring.c \
+	keyring.h seskey.c kbnode.c main.h mainproc.c armor.c \
+	mdfilter.c textfilter.c progress.c misc.c rmd160.c rmd160.h \
+	options.h openfile.c keyid.c packet.h parse-packet.c cpr.c \
+	plaintext.c sig-check.c keylist.c pkglue.c pkglue.h objcache.c \
+	objcache.h ecdh.c verify.c
 am_gpgv_OBJECTS = gpgv.$(OBJEXT) $(am__objects_2) verify.$(OBJEXT)
 gpgv_OBJECTS = $(am_gpgv_OBJECTS)
 gpgv_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(gpgv_rc_objs) $(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(gpgv_rc_objs)
 gpgv_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgv_LDFLAGS) $(LDFLAGS) \
 	-o $@
 am__t_keydb_SOURCES_DIST = t-keydb.c test-stubs.c gpg.h dek.h \
 	build-packet.c compress.c compress-bz2.c filter.h \
-	free-packet.c getkey.c keydb.c keydb.h keyring.c keyring.h \
-	seskey.c kbnode.c main.h mainproc.c armor.c mdfilter.c \
-	textfilter.c progress.c misc.c rmd160.c rmd160.h options.h \
-	openfile.c keyid.c packet.h parse-packet.c cpr.c plaintext.c \
-	sig-check.c keylist.c pkglue.c pkglue.h ecdh.c
+	free-packet.c getkey.c expand-group.c keydb.h keydb-private.h \
+	call-keyboxd.c keydb.c keyring.c keyring.h seskey.c kbnode.c \
+	main.h mainproc.c armor.c mdfilter.c textfilter.c progress.c \
+	misc.c rmd160.c rmd160.h options.h openfile.c keyid.c packet.h \
+	parse-packet.c cpr.c plaintext.c sig-check.c keylist.c \
+	pkglue.c pkglue.h objcache.c objcache.h ecdh.c
 am_t_keydb_OBJECTS = t-keydb.$(OBJEXT) test-stubs.$(OBJEXT) \
 	$(am__objects_2)
 t_keydb_OBJECTS = $(am_t_keydb_OBJECTS)
 t_keydb_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 am__t_keydb_get_keyblock_SOURCES_DIST = t-keydb-get-keyblock.c \
 	test-stubs.c gpg.h dek.h build-packet.c compress.c \
-	compress-bz2.c filter.h free-packet.c getkey.c keydb.c keydb.h \
-	keyring.c keyring.h seskey.c kbnode.c main.h mainproc.c \
-	armor.c mdfilter.c textfilter.c progress.c misc.c rmd160.c \
-	rmd160.h options.h openfile.c keyid.c packet.h parse-packet.c \
-	cpr.c plaintext.c sig-check.c keylist.c pkglue.c pkglue.h \
-	ecdh.c
+	compress-bz2.c filter.h free-packet.c getkey.c expand-group.c \
+	keydb.h keydb-private.h call-keyboxd.c keydb.c keyring.c \
+	keyring.h seskey.c kbnode.c main.h mainproc.c armor.c \
+	mdfilter.c textfilter.c progress.c misc.c rmd160.c rmd160.h \
+	options.h openfile.c keyid.c packet.h parse-packet.c cpr.c \
+	plaintext.c sig-check.c keylist.c pkglue.c pkglue.h objcache.c \
+	objcache.h ecdh.c
 am_t_keydb_get_keyblock_OBJECTS = t-keydb-get-keyblock.$(OBJEXT) \
 	test-stubs.$(OBJEXT) $(am__objects_2)
 t_keydb_get_keyblock_OBJECTS = $(am_t_keydb_get_keyblock_OBJECTS)
 t_keydb_get_keyblock_DEPENDENCIES = $(am__DEPENDENCIES_2) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
+am__t_keyid_SOURCES_DIST = t-keyid.c test-stubs.c gpg.h dek.h \
+	build-packet.c compress.c compress-bz2.c filter.h \
+	free-packet.c getkey.c expand-group.c keydb.h keydb-private.h \
+	call-keyboxd.c keydb.c keyring.c keyring.h seskey.c kbnode.c \
+	main.h mainproc.c armor.c mdfilter.c textfilter.c progress.c \
+	misc.c rmd160.c rmd160.h options.h openfile.c keyid.c packet.h \
+	parse-packet.c cpr.c plaintext.c sig-check.c keylist.c \
+	pkglue.c pkglue.h objcache.c objcache.h ecdh.c
+am_t_keyid_OBJECTS = t-keyid.$(OBJEXT) test-stubs.$(OBJEXT) \
+	$(am__objects_2)
+t_keyid_OBJECTS = $(am_t_keyid_OBJECTS)
+t_keyid_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 am_t_rmd160_OBJECTS = t-rmd160.$(OBJEXT) rmd160.$(OBJEXT)
 t_rmd160_OBJECTS = $(am_t_rmd160_OBJECTS)
 t_rmd160_DEPENDENCIES = $(am__DEPENDENCIES_1)
 am__t_stutter_SOURCES_DIST = t-stutter.c test-stubs.c gpg.h dek.h \
 	build-packet.c compress.c compress-bz2.c filter.h \
-	free-packet.c getkey.c keydb.c keydb.h keyring.c keyring.h \
-	seskey.c kbnode.c main.h mainproc.c armor.c mdfilter.c \
-	textfilter.c progress.c misc.c rmd160.c rmd160.h options.h \
-	openfile.c keyid.c packet.h parse-packet.c cpr.c plaintext.c \
-	sig-check.c keylist.c pkglue.c pkglue.h ecdh.c
+	free-packet.c getkey.c expand-group.c keydb.h keydb-private.h \
+	call-keyboxd.c keydb.c keyring.c keyring.h seskey.c kbnode.c \
+	main.h mainproc.c armor.c mdfilter.c textfilter.c progress.c \
+	misc.c rmd160.c rmd160.h options.h openfile.c keyid.c packet.h \
+	parse-packet.c cpr.c plaintext.c sig-check.c keylist.c \
+	pkglue.c pkglue.h objcache.c objcache.h ecdh.c
 am_t_stutter_OBJECTS = t-stutter.$(OBJEXT) test-stubs.$(OBJEXT) \
 	$(am__objects_2)
 t_stutter_OBJECTS = $(am_t_stutter_OBJECTS)
 t_stutter_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
 AM_V_P = $(am__v_P_@AM_V@)
@@ -325,24 +322,25 @@ depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/armor.Po ./$(DEPDIR)/build-packet.Po \
 	./$(DEPDIR)/call-agent.Po ./$(DEPDIR)/call-dirmngr.Po \
-	./$(DEPDIR)/card-util.Po ./$(DEPDIR)/cipher.Po \
+	./$(DEPDIR)/call-keyboxd.Po ./$(DEPDIR)/card-util.Po \
+	./$(DEPDIR)/cipher-aead.Po ./$(DEPDIR)/cipher-cfb.Po \
 	./$(DEPDIR)/compress-bz2.Po ./$(DEPDIR)/compress.Po \
 	./$(DEPDIR)/cpr.Po ./$(DEPDIR)/dearmor.Po \
 	./$(DEPDIR)/decrypt-data.Po ./$(DEPDIR)/decrypt.Po \
 	./$(DEPDIR)/delkey.Po ./$(DEPDIR)/ecdh.Po \
 	./$(DEPDIR)/encrypt.Po ./$(DEPDIR)/exec.Po \
-	./$(DEPDIR)/export.Po ./$(DEPDIR)/free-packet.Po \
-	./$(DEPDIR)/getkey.Po ./$(DEPDIR)/gpg.Po \
-	./$(DEPDIR)/gpgcompose.Po ./$(DEPDIR)/gpgsql.Po \
-	./$(DEPDIR)/gpgv.Po ./$(DEPDIR)/helptext.Po \
-	./$(DEPDIR)/import.Po ./$(DEPDIR)/kbnode.Po \
-	./$(DEPDIR)/key-check.Po ./$(DEPDIR)/key-clean.Po \
-	./$(DEPDIR)/keydb.Po ./$(DEPDIR)/keyedit.Po \
-	./$(DEPDIR)/keygen.Po ./$(DEPDIR)/keyid.Po \
-	./$(DEPDIR)/keylist.Po ./$(DEPDIR)/keyring.Po \
-	./$(DEPDIR)/keyserver.Po ./$(DEPDIR)/mainproc.Po \
-	./$(DEPDIR)/mdfilter.Po ./$(DEPDIR)/migrate.Po \
-	./$(DEPDIR)/misc.Po ./$(DEPDIR)/openfile.Po \
+	./$(DEPDIR)/expand-group.Po ./$(DEPDIR)/export.Po \
+	./$(DEPDIR)/free-packet.Po ./$(DEPDIR)/getkey.Po \
+	./$(DEPDIR)/gpg.Po ./$(DEPDIR)/gpgsql.Po ./$(DEPDIR)/gpgv.Po \
+	./$(DEPDIR)/helptext.Po ./$(DEPDIR)/import.Po \
+	./$(DEPDIR)/kbnode.Po ./$(DEPDIR)/key-check.Po \
+	./$(DEPDIR)/key-clean.Po ./$(DEPDIR)/keydb.Po \
+	./$(DEPDIR)/keyedit.Po ./$(DEPDIR)/keygen.Po \
+	./$(DEPDIR)/keyid.Po ./$(DEPDIR)/keylist.Po \
+	./$(DEPDIR)/keyring.Po ./$(DEPDIR)/keyserver.Po \
+	./$(DEPDIR)/mainproc.Po ./$(DEPDIR)/mdfilter.Po \
+	./$(DEPDIR)/migrate.Po ./$(DEPDIR)/misc.Po \
+	./$(DEPDIR)/objcache.Po ./$(DEPDIR)/openfile.Po \
 	./$(DEPDIR)/parse-packet.Po ./$(DEPDIR)/passphrase.Po \
 	./$(DEPDIR)/photoid.Po ./$(DEPDIR)/pkclist.Po \
 	./$(DEPDIR)/pkglue.Po ./$(DEPDIR)/plaintext.Po \
@@ -351,12 +349,12 @@ am__depfiles_remade = ./$(DEPDIR)/armor.Po ./$(DEPDIR)/build-packet.Po \
 	./$(DEPDIR)/server.Po ./$(DEPDIR)/seskey.Po \
 	./$(DEPDIR)/sig-check.Po ./$(DEPDIR)/sign.Po \
 	./$(DEPDIR)/skclist.Po ./$(DEPDIR)/t-keydb-get-keyblock.Po \
-	./$(DEPDIR)/t-keydb.Po ./$(DEPDIR)/t-rmd160.Po \
-	./$(DEPDIR)/t-stutter.Po ./$(DEPDIR)/tdbdump.Po \
-	./$(DEPDIR)/tdbio.Po ./$(DEPDIR)/test-stubs.Po \
-	./$(DEPDIR)/textfilter.Po ./$(DEPDIR)/tofu.Po \
-	./$(DEPDIR)/trust.Po ./$(DEPDIR)/trustdb.Po \
-	./$(DEPDIR)/verify.Po
+	./$(DEPDIR)/t-keydb.Po ./$(DEPDIR)/t-keyid.Po \
+	./$(DEPDIR)/t-rmd160.Po ./$(DEPDIR)/t-stutter.Po \
+	./$(DEPDIR)/tdbdump.Po ./$(DEPDIR)/tdbio.Po \
+	./$(DEPDIR)/test-stubs.Po ./$(DEPDIR)/textfilter.Po \
+	./$(DEPDIR)/tofu.Po ./$(DEPDIR)/trust.Po \
+	./$(DEPDIR)/trustdb.Po ./$(DEPDIR)/verify.Po
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -370,12 +368,13 @@ AM_V_CCLD = $(am__v_CCLD_@AM_V@)
 am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
-SOURCES = $(gpg_SOURCES) $(gpgcompose_SOURCES) $(gpgv_SOURCES) \
-	$(t_keydb_SOURCES) $(t_keydb_get_keyblock_SOURCES) \
+SOURCES = $(gpg_SOURCES) $(gpgv_SOURCES) $(t_keydb_SOURCES) \
+	$(t_keydb_get_keyblock_SOURCES) $(t_keyid_SOURCES) \
 	$(t_rmd160_SOURCES) $(t_stutter_SOURCES)
-DIST_SOURCES = $(am__gpg_SOURCES_DIST) $(am__gpgcompose_SOURCES_DIST) \
-	$(am__gpgv_SOURCES_DIST) $(am__t_keydb_SOURCES_DIST) \
-	$(am__t_keydb_get_keyblock_SOURCES_DIST) $(t_rmd160_SOURCES) \
+DIST_SOURCES = $(am__gpg_SOURCES_DIST) $(am__gpgv_SOURCES_DIST) \
+	$(am__t_keydb_SOURCES_DIST) \
+	$(am__t_keydb_get_keyblock_SOURCES_DIST) \
+	$(am__t_keyid_SOURCES_DIST) $(t_rmd160_SOURCES) \
 	$(am__t_stutter_SOURCES_DIST)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
@@ -467,9 +466,11 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
+GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
+GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -478,6 +479,7 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
+HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -505,9 +507,10 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
+LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
+LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
-LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -544,13 +547,14 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
-SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
+SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-SYS_SOCKET_H = @SYS_SOCKET_H@
-TAR = @TAR@
+TPMSERVER = @TPMSERVER@
+TSSSTARTUP = @TSSSTARTUP@
+TSS_INCLUDE = @TSS_INCLUDE@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -625,17 +629,8 @@ EXTRA_DIST = distsigkey.gpg \
 # platform to create source files.
 AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_1) \
 	$(am__append_2) $(am__append_3) $(am__append_4) \
-	$(am__append_5) $(am__append_6) $(am__append_7)
-@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
-
-# Under Windows we use LockFileEx.  WindowsCE provides this only on
-# the WindowsMobile 6 platform and thus we need to use the coredll6
-# import library.  We also want to use a stacksize of 256k instead of
-# the 2MB which is the default with cegcc.  256k is the largest stack
-# we use with pth.
-@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
-@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
-@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
+	$(am__append_5) $(am__append_6) $(am__append_7) \
+	$(am__append_8)
 resource_objs = 
 
 # Convenience macros
@@ -643,10 +638,10 @@ libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
-AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(SQLITE3_CFLAGS) \
-            $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS)
+AM_CFLAGS = $(SQLITE3_CFLAGS) $(LIBGCRYPT_CFLAGS) \
+            $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) $(GPG_ERROR_CFLAGS)
 
-needed_libs = ../kbx/libkeybox.a $(libcommon) ../regexp/libregexp.a
+needed_libs = ../kbx/libkeybox.a $(libcommonpth) ../regexp/libregexp.a
 
 # Because there are no program specific transform macros we need to
 # work around that to allow installing gpg as gpg2.
@@ -677,7 +672,11 @@ common_source = \
 	      filter.h		\
 	      free-packet.c	\
 	      getkey.c		\
-	      keydb.c keydb.h    \
+	      expand-group.c	\
+	      keydb.h           \
+	      keydb-private.h   \
+              call-keyboxd.c    \
+	      keydb.c           \
 	      keyring.c keyring.h \
 	      seskey.c		\
 	      kbnode.c		\
@@ -699,6 +698,7 @@ common_source = \
 	      sig-check.c	\
 	      keylist.c 	\
 	      pkglue.c pkglue.h \
+	      objcache.c objcache.h \
 	      ecdh.c
 
 gpg_sources = server.c          \
@@ -709,7 +709,8 @@ gpg_sources = server.c          \
 	      passphrase.c	\
 	      decrypt.c 	\
 	      decrypt-data.c	\
-	      cipher.c		\
+	      cipher-cfb.c	\
+	      cipher-aead.c     \
 	      encrypt.c		\
 	      sign.c		\
 	      verify.c		\
@@ -736,54 +737,49 @@ gpg_SOURCES = gpg.c \
 	keyedit.c keyedit.h	\
 	$(gpg_sources)
 
-gpgcompose_SOURCES = gpgcompose.c  $(gpg_sources)
 gpgv_SOURCES = gpgv.c           \
 	      $(common_source)  \
 	      verify.c
 
-
-#gpgd_SOURCES = gpgd.c \
-#	       ks-proto.h \
-#	       ks-proto.c \
-#	       ks-db.c \
-#	       ks-db.h \
-#	       $(common_source)
 LDADD = $(needed_libs) ../common/libgpgrl.a \
          $(ZLIBS) $(LIBINTL) $(CAPLIBS)
 
-gpg_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(SQLITE3_LIBS) $(LIBREADLINE) \
-             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
-	     $(LIBICONV) $(gpg_rc_objs) $(extra_sys_libs)
+gpg_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
+             $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	     $(LIBICONV) $(gpg_rc_objs)
 
-gpg_LDFLAGS = $(extra_bin_ldflags)
+gpg_LDFLAGS = 
 gpgv_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-              $(GPG_ERROR_LIBS) $(NETLIBS) \
-	      $(LIBICONV) $(gpgv_rc_objs) $(extra_sys_libs)
+	      $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	      $(LIBICONV) $(gpgv_rc_objs)
 
-gpgv_LDFLAGS = $(extra_bin_ldflags)
-gpgcompose_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
-             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
-	     $(LIBICONV) $(extra_sys_libs)
-
-gpgcompose_LDFLAGS = $(extra_bin_ldflags)
+gpgv_LDFLAGS = 
 t_common_ldadd = 
-module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter
+module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter t-keyid
 t_rmd160_SOURCES = t-rmd160.c rmd160.c
 t_rmd160_LDADD = $(t_common_ldadd)
 t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source)
-t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
+              $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 
 t_keydb_get_keyblock_SOURCES = t-keydb-get-keyblock.c test-stubs.c \
 	      $(common_source)
 
-t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
-	      $(NETLIBS) $(LIBICONV) $(t_common_ldadd)
+t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
+              $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	      $(LIBICONV) $(t_common_ldadd)
 
 t_stutter_SOURCES = t-stutter.c test-stubs.c \
 	      $(common_source)
 
-t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
+	      $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	      $(LIBICONV) $(t_common_ldadd)
+
+t_keyid_SOURCES = t-keyid.c test-stubs.c $(common_source)
+t_keyid_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
+              $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 
 all: all-am
@@ -832,10 +828,6 @@ gpg$(EXEEXT): $(gpg_OBJECTS) $(gpg_DEPENDENCIES) $(EXTRA_gpg_DEPENDENCIES)
 	@rm -f gpg$(EXEEXT)
 	$(AM_V_CCLD)$(gpg_LINK) $(gpg_OBJECTS) $(gpg_LDADD) $(LIBS)
 
-gpgcompose$(EXEEXT): $(gpgcompose_OBJECTS) $(gpgcompose_DEPENDENCIES) $(EXTRA_gpgcompose_DEPENDENCIES) 
-	@rm -f gpgcompose$(EXEEXT)
-	$(AM_V_CCLD)$(gpgcompose_LINK) $(gpgcompose_OBJECTS) $(gpgcompose_LDADD) $(LIBS)
-
 gpgv$(EXEEXT): $(gpgv_OBJECTS) $(gpgv_DEPENDENCIES) $(EXTRA_gpgv_DEPENDENCIES) 
 	@rm -f gpgv$(EXEEXT)
 	$(AM_V_CCLD)$(gpgv_LINK) $(gpgv_OBJECTS) $(gpgv_LDADD) $(LIBS)
@@ -847,6 +839,10 @@ t-keydb$(EXEEXT): $(t_keydb_OBJECTS) $(t_keydb_DEPENDENCIES) $(EXTRA_t_keydb_DEP
 t-keydb-get-keyblock$(EXEEXT): $(t_keydb_get_keyblock_OBJECTS) $(t_keydb_get_keyblock_DEPENDENCIES) $(EXTRA_t_keydb_get_keyblock_DEPENDENCIES) 
 	@rm -f t-keydb-get-keyblock$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(t_keydb_get_keyblock_OBJECTS) $(t_keydb_get_keyblock_LDADD) $(LIBS)
+
+t-keyid$(EXEEXT): $(t_keyid_OBJECTS) $(t_keyid_DEPENDENCIES) $(EXTRA_t_keyid_DEPENDENCIES) 
+	@rm -f t-keyid$(EXEEXT)
+	$(AM_V_CCLD)$(LINK) $(t_keyid_OBJECTS) $(t_keyid_LDADD) $(LIBS)
 
 t-rmd160$(EXEEXT): $(t_rmd160_OBJECTS) $(t_rmd160_DEPENDENCIES) $(EXTRA_t_rmd160_DEPENDENCIES) 
 	@rm -f t-rmd160$(EXEEXT)
@@ -866,8 +862,10 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/build-packet.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/call-agent.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/call-dirmngr.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/call-keyboxd.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/card-util.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cipher.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cipher-aead.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cipher-cfb.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/compress-bz2.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/compress.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/cpr.Po@am__quote@ # am--include-marker
@@ -878,11 +876,11 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/ecdh.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/encrypt.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/exec.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/expand-group.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/export.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/free-packet.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/getkey.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgcompose.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgsql.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpgv.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/helptext.Po@am__quote@ # am--include-marker
@@ -901,6 +899,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/mdfilter.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/migrate.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/misc.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/objcache.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/openfile.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/parse-packet.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/passphrase.Po@am__quote@ # am--include-marker
@@ -919,6 +918,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/skclist.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-keydb-get-keyblock.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-keydb.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-keyid.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-rmd160.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-stutter.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/tdbdump.Po@am__quote@ # am--include-marker
@@ -1172,8 +1172,10 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/build-packet.Po
 	-rm -f ./$(DEPDIR)/call-agent.Po
 	-rm -f ./$(DEPDIR)/call-dirmngr.Po
+	-rm -f ./$(DEPDIR)/call-keyboxd.Po
 	-rm -f ./$(DEPDIR)/card-util.Po
-	-rm -f ./$(DEPDIR)/cipher.Po
+	-rm -f ./$(DEPDIR)/cipher-aead.Po
+	-rm -f ./$(DEPDIR)/cipher-cfb.Po
 	-rm -f ./$(DEPDIR)/compress-bz2.Po
 	-rm -f ./$(DEPDIR)/compress.Po
 	-rm -f ./$(DEPDIR)/cpr.Po
@@ -1184,11 +1186,11 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/ecdh.Po
 	-rm -f ./$(DEPDIR)/encrypt.Po
 	-rm -f ./$(DEPDIR)/exec.Po
+	-rm -f ./$(DEPDIR)/expand-group.Po
 	-rm -f ./$(DEPDIR)/export.Po
 	-rm -f ./$(DEPDIR)/free-packet.Po
 	-rm -f ./$(DEPDIR)/getkey.Po
 	-rm -f ./$(DEPDIR)/gpg.Po
-	-rm -f ./$(DEPDIR)/gpgcompose.Po
 	-rm -f ./$(DEPDIR)/gpgsql.Po
 	-rm -f ./$(DEPDIR)/gpgv.Po
 	-rm -f ./$(DEPDIR)/helptext.Po
@@ -1207,6 +1209,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/mdfilter.Po
 	-rm -f ./$(DEPDIR)/migrate.Po
 	-rm -f ./$(DEPDIR)/misc.Po
+	-rm -f ./$(DEPDIR)/objcache.Po
 	-rm -f ./$(DEPDIR)/openfile.Po
 	-rm -f ./$(DEPDIR)/parse-packet.Po
 	-rm -f ./$(DEPDIR)/passphrase.Po
@@ -1225,6 +1228,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/skclist.Po
 	-rm -f ./$(DEPDIR)/t-keydb-get-keyblock.Po
 	-rm -f ./$(DEPDIR)/t-keydb.Po
+	-rm -f ./$(DEPDIR)/t-keyid.Po
 	-rm -f ./$(DEPDIR)/t-rmd160.Po
 	-rm -f ./$(DEPDIR)/t-stutter.Po
 	-rm -f ./$(DEPDIR)/tdbdump.Po
@@ -1285,8 +1289,10 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/build-packet.Po
 	-rm -f ./$(DEPDIR)/call-agent.Po
 	-rm -f ./$(DEPDIR)/call-dirmngr.Po
+	-rm -f ./$(DEPDIR)/call-keyboxd.Po
 	-rm -f ./$(DEPDIR)/card-util.Po
-	-rm -f ./$(DEPDIR)/cipher.Po
+	-rm -f ./$(DEPDIR)/cipher-aead.Po
+	-rm -f ./$(DEPDIR)/cipher-cfb.Po
 	-rm -f ./$(DEPDIR)/compress-bz2.Po
 	-rm -f ./$(DEPDIR)/compress.Po
 	-rm -f ./$(DEPDIR)/cpr.Po
@@ -1297,11 +1303,11 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/ecdh.Po
 	-rm -f ./$(DEPDIR)/encrypt.Po
 	-rm -f ./$(DEPDIR)/exec.Po
+	-rm -f ./$(DEPDIR)/expand-group.Po
 	-rm -f ./$(DEPDIR)/export.Po
 	-rm -f ./$(DEPDIR)/free-packet.Po
 	-rm -f ./$(DEPDIR)/getkey.Po
 	-rm -f ./$(DEPDIR)/gpg.Po
-	-rm -f ./$(DEPDIR)/gpgcompose.Po
 	-rm -f ./$(DEPDIR)/gpgsql.Po
 	-rm -f ./$(DEPDIR)/gpgv.Po
 	-rm -f ./$(DEPDIR)/helptext.Po
@@ -1320,6 +1326,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/mdfilter.Po
 	-rm -f ./$(DEPDIR)/migrate.Po
 	-rm -f ./$(DEPDIR)/misc.Po
+	-rm -f ./$(DEPDIR)/objcache.Po
 	-rm -f ./$(DEPDIR)/openfile.Po
 	-rm -f ./$(DEPDIR)/parse-packet.Po
 	-rm -f ./$(DEPDIR)/passphrase.Po
@@ -1338,6 +1345,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/skclist.Po
 	-rm -f ./$(DEPDIR)/t-keydb-get-keyblock.Po
 	-rm -f ./$(DEPDIR)/t-keydb.Po
+	-rm -f ./$(DEPDIR)/t-keyid.Po
 	-rm -f ./$(DEPDIR)/t-rmd160.Po
 	-rm -f ./$(DEPDIR)/t-stutter.Po
 	-rm -f ./$(DEPDIR)/tdbdump.Po

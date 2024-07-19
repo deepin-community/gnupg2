@@ -30,6 +30,8 @@
 #ifndef GNUPG_COMMON_STATUS_H
 #define GNUPG_COMMON_STATUS_H
 
+#include "../common/fwddecl.h"
+
 enum
   {
     STATUS_ENTER,
@@ -51,6 +53,8 @@ enum
 
     STATUS_NEED_PASSPHRASE,
     STATUS_VALIDSIG,
+    STATUS_ASSERT_SIGNER,
+    STATUS_ASSERT_PUBKEY_ALGO,
     STATUS_SIG_ID,
     STATUS_ENC_TO,
     STATUS_NODATA,
@@ -149,6 +153,7 @@ enum
     STATUS_TRUNCATED,
     STATUS_MOUNTPOINT,
     STATUS_BLOCKDEV,
+    STATUS_PLAINDEV,           /* The decrypted virtual device.  */
 
     STATUS_PINENTRY_LAUNCHED,
 
@@ -164,6 +169,12 @@ enum
 
 
 const char *get_status_string (int code);
+void gnupg_set_status_fd (int fd);
+void gnupg_status_printf (int no, const char *format,
+                          ...) GPGRT_ATTR_PRINTF(2,3);
+gpg_error_t gnupg_status_strings (ctrl_t dummy, int no,
+                                  ...) GPGRT_ATTR_SENTINEL(0);
+
 const char *get_inv_recpsgnr_code (gpg_error_t err);
 
 

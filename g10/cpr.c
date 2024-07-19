@@ -128,7 +128,7 @@ set_status_fd (int fd)
 
 
 int
-is_status_enabled ()
+is_status_enabled (void)
 {
   return !!statusfp;
 }
@@ -178,6 +178,50 @@ write_status_strings (int no, const char *text, ...)
   es_putc ('\n', statusfp);
   if (es_fflush (statusfp) && opt.exit_on_status_write_error)
     g10_exit (0);
+}
+
+
+/* Write a status line with code NO followed by the remaining
+ * arguments which must be a list of strings terminated by a NULL.
+ * Embedded CR and LFs in the strings are C-style escaped.  All
+ * strings are printed with a space as delimiter.  */
+gpg_error_t
+write_status_strings2 (ctrl_t dummy, int no, ...)
+{
+  va_list arg_ptr;
+  const char *s;
+
+  (void)dummy;
+
+  if (!statusfp || !status_currently_allowed (no) )
+    return 0;  /* Not enabled or allowed. */
+
+  va_start (arg_ptr, no);
+
+  es_fputs ("[GNUPG:] ", statusfp);
+  es_fputs (get_status_string (no), statusfp);
+  while ((s = va_arg (arg_ptr, const char*)))
+    {
+      if (*s)
+        es_putc (' ', statusfp);
+      for (; *s; s++)
+        {
+          if (*s == '\n')
+            es_fputs ("\\n", statusfp);
+          else if (*s == '\r')
+            es_fputs ("\\r", statusfp);
+          else
+            es_fputc (*(const byte *)s, statusfp);
+        }
+    }
+  es_putc ('\n', statusfp);
+
+  va_end (arg_ptr);
+
+  if (es_fflush (statusfp) && opt.exit_on_status_write_error)
+    g10_exit (0);
+
+  return 0;
 }
 
 
@@ -416,9 +460,7 @@ myread(int fd, void *buf, size_t count)
       else /* Ctrl-D not caught - do something reasonable */
         {
 #ifdef HAVE_DOSISH_SYSTEM
-#ifndef HAVE_W32CE_SYSTEM
           raise (SIGINT); /* Nothing to hangup under DOS.  */
-#endif
 #else
           raise (SIGHUP); /* No more input data.  */
 #endif
@@ -478,7 +520,11 @@ do_get_from_fd ( const char *keyword, int hidden, int getbool )
   write_status (STATUS_GOT_IT);
 
   if (getbool)	 /* Fixme: is this correct??? */
-    return (string[0] == 'Y' || string[0] == 'y') ? "" : NULL;
+    {
+      char *rv = (string[0] == 'Y' || string[0] == 'y') ? "" : NULL;
+      xfree (string);
+      return rv;
+    }
 
   return string;
 }
@@ -486,7 +532,7 @@ do_get_from_fd ( const char *keyword, int hidden, int getbool )
 
 
 int
-cpr_enabled()
+cpr_enabled(void)
 {
     if( opt.command_fd != -1 )
 	return 1;

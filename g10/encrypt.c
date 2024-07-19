@@ -1,7 +1,7 @@
 /* encrypt.c - Main encryption driver
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005,
  *               2006, 2009 Free Software Foundation, Inc.
- * Copyright (C) 2016, 2022, 2023 g10 Code GmbH
+ * Copyright (C) 2016, 2023 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -48,12 +48,12 @@ static int write_pubkey_enc_from_list (ctrl_t ctrl,
 
 /****************
  * Encrypt FILENAME with only the symmetric cipher.  Take input from
- * stdin if FILENAME is NULL.
+ * stdin if FILENAME is NULL.  If --force-aead is used we use an SKESK.
  */
 int
 encrypt_symmetric (const char *filename)
 {
-  return encrypt_simple( filename, 1, opt.force_ocb);
+  return encrypt_simple( filename, 1, opt.force_aead);
 }
 
 
@@ -68,12 +68,11 @@ encrypt_store (const char *filename)
 }
 
 
-/* Create an setup DEK structure and print approriate warnings.  The
- * FALLBACK_TO_3DES flag is used to handle the two different ways we
- * use this code.  PK_LIST gives the list of public keys.  Always
- * returns a DEK.  The actual session needs to be added later.  */
+/* Create and setup a DEK structure and print approriate warnings.
+ * PK_LIST gives the list of public keys.  Always returns a DEK.  The
+ * actual session needs to be added later.  */
 static DEK *
-create_dek_with_warnings (int fallback_to_3des, pk_list_t pk_list)
+create_dek_with_warnings (pk_list_t pk_list)
 {
   DEK *dek;
 
@@ -82,22 +81,15 @@ create_dek_with_warnings (int fallback_to_3des, pk_list_t pk_list)
     {
       /* Try to get it from the prefs.  */
       dek->algo = select_algo_from_prefs (pk_list, PREFTYPE_SYM, -1, NULL);
-      if (dek->algo == -1 && fallback_to_3des)
+      if (dek->algo == -1)
         {
-          /* The only way select_algo_from_prefs can fail here is when
-           * mixing v3 and v4 keys, as v4 keys have an implicit
-           * preference entry for 3DES, and the pk_list cannot be
-           * empty.  In this case, use 3DES anyway as it's the safest
-           * choice - perhaps the v3 key is being used in an OpenPGP
-           * implementation and we know that the implementation behind
-           * any v4 key can handle 3DES. */
-          dek->algo = CIPHER_ALGO_3DES;
-        }
-      else if (dek->algo == -1)
-        {
-          /* Because 3DES is implicitly in the prefs, this can only
-           * happen if we do not have any public keys in the list.  */
-          dek->algo = DEFAULT_CIPHER_ALGO;
+          /* If does not make sense to fallback to the rfc4880
+           * required 3DES if we will reject that algo later.  Thus we
+           * fallback to AES anticipating RFC4880bis rules.  */
+          if (opt.flags.allow_old_cipher_algos)
+            dek->algo = CIPHER_ALGO_3DES;
+          else
+            dek->algo = CIPHER_ALGO_AES;
         }
 
       /* In case 3DES has been selected, print a warning if any key
@@ -124,6 +116,97 @@ create_dek_with_warnings (int fallback_to_3des, pk_list_t pk_list)
     }
 
   return dek;
+}
+
+
+/* Check whether all encryption keys are compliant with the current
+ * mode and issue respective status lines.  DEK has the info about the
+ * session key and PK_LIST the list of public keys.  */
+static gpg_error_t
+check_encryption_compliance (DEK *dek, pk_list_t pk_list)
+{
+  gpg_error_t err = 0;
+  pk_list_t pkr;
+  int compliant;
+
+  /* First check whether we should use the algo at all.  */
+  if (openpgp_cipher_blocklen (dek->algo) < 16
+      && !opt.flags.allow_old_cipher_algos)
+    {
+      log_error (_("cipher algorithm '%s' may not be used for encryption\n"),
+		 openpgp_cipher_algo_name (dek->algo));
+      if (!opt.quiet)
+        log_info (_("(use option \"%s\" to override)\n"),
+                  "--allow-old-cipher-algos");
+      err = gpg_error (GPG_ERR_CIPHER_ALGO);
+      goto leave;
+    }
+
+  /* Now check the compliance.  */
+  if (! gnupg_cipher_is_allowed (opt.compliance, 1, dek->algo,
+                                 GCRY_CIPHER_MODE_CFB))
+    {
+      log_error (_("cipher algorithm '%s' may not be used in %s mode\n"),
+		 openpgp_cipher_algo_name (dek->algo),
+		 gnupg_compliance_option_string (opt.compliance));
+      err = gpg_error (GPG_ERR_CIPHER_ALGO);
+      goto leave;
+    }
+
+  if (!gnupg_rng_is_compliant (opt.compliance))
+    {
+      err = gpg_error (GPG_ERR_FORBIDDEN);
+      log_error (_("%s is not compliant with %s mode\n"),
+                 "RNG",
+                 gnupg_compliance_option_string (opt.compliance));
+      write_status_error ("random-compliance", err);
+      goto leave;
+    }
+
+  /* From here on we only test for CO_DE_VS - if we ever want to
+   * return other compliance mode values we need to change this to
+   * loop over all those values.  */
+  compliant = gnupg_gcrypt_is_compliant (CO_DE_VS);
+
+  if (!gnupg_cipher_is_compliant (CO_DE_VS, dek->algo, GCRY_CIPHER_MODE_CFB))
+    compliant = 0;
+
+  for (pkr = pk_list; pkr; pkr = pkr->next)
+    {
+      PKT_public_key *pk = pkr->pk;
+      unsigned int nbits = nbits_from_pk (pk);
+
+      if (!gnupg_pk_is_compliant (opt.compliance, pk->pubkey_algo, 0,
+                                  pk->pkey, nbits, NULL))
+        log_info (_("WARNING: key %s is not suitable for encryption"
+                    " in %s mode\n"),
+                  keystr_from_pk (pk),
+                  gnupg_compliance_option_string (opt.compliance));
+
+      if (compliant
+          && !gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0, pk->pkey,
+                                     nbits, NULL))
+        compliant = 0; /* Not compliant - reset flag.  */
+    }
+
+  /* If we are compliant print the status for de-vs compliance.  */
+  if (compliant)
+    write_status_strings (STATUS_ENCRYPTION_COMPLIANCE_MODE,
+                          gnupg_status_compliance_flag (CO_DE_VS),
+                          NULL);
+
+  /* Check whether we should fail the operation.  */
+  if (opt.flags.require_compliance
+      && opt.compliance == CO_DE_VS
+      && !compliant)
+    {
+      compliance_failure ();
+      err = gpg_error (GPG_ERR_FORBIDDEN);
+      goto leave;
+    }
+
+ leave:
+  return err;
 }
 
 
@@ -226,7 +309,7 @@ encrypt_seskey (DEK *dek, aead_algo_t aead_algo,
           goto leave;
         }
       buf[0] = seskey->algo;
-      memcpy (buf + 1, seskey->key, seskey->keylen );
+      memcpy (buf + 1, seskey->key, seskey->keylen);
 
       err = openpgp_cipher_open (&hd, dek->algo, GCRY_CIPHER_MODE_CFB, 1);
       if (!err)
@@ -234,10 +317,10 @@ encrypt_seskey (DEK *dek, aead_algo_t aead_algo,
       if (!err)
         err = gcry_cipher_setiv (hd, NULL, 0);
       if (!err)
-        err = gcry_cipher_encrypt (hd, buf, 1 + seskey->keylen, NULL, 0);
+        err = gcry_cipher_encrypt (hd, buf, seskey->keylen + 1, NULL, 0);
       if (err)
         goto leave;
-      *r_enckeylen = 1 + seskey->keylen;
+      *r_enckeylen = seskey->keylen + 1;
       *r_enckey = buf;
       buf = NULL;
     }
@@ -262,14 +345,10 @@ use_aead (pk_list_t pk_list, int algo)
 {
   int can_use;
 
-  if (!(opt.compat_flags & COMPAT_VSD_ALLOW_OCB)
-      && opt.compliance == CO_DE_VS)
-    return 0;  /* Not yet allowed.  */
-
   can_use = openpgp_cipher_get_algo_blklen (algo) == 16;
 
   /* With --force-aead we want AEAD.  */
-  if (opt.force_ocb)
+  if (opt.force_aead)
     {
       if (!can_use)
         {
@@ -294,7 +373,7 @@ use_aead (pk_list_t pk_list, int algo)
 
 
 /* Shall we use the MDC?  Yes - unless rfc-2440 compatibility is
- * requested.  Must return 1 or 0. */
+ * requested. */
 int
 use_mdc (pk_list_t pk_list,int algo)
 {
@@ -331,8 +410,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
   text_filter_context_t tfx;
   progress_filter_context_t *pfx;
   int do_compress = !!default_compress_algo();
-  char peekbuf[32];
-  int  peekbuflen;
 
   if (!gnupg_rng_is_compliant (opt.compliance))
     {
@@ -369,14 +446,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
       return rc;
     }
 
-  peekbuflen = iobuf_ioctl (inp, IOBUF_IOCTL_PEEK, sizeof peekbuf, peekbuf);
-  if (peekbuflen < 0)
-    {
-      peekbuflen = 0;
-      if (DBG_FILTER)
-        log_debug ("peeking at input failed\n");
-    }
-
   handle_progress (pfx, inp, filename);
 
   if (opt.textmode)
@@ -405,7 +474,7 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
           log_info (_("can't use a SKESK packet due to the S2K mode\n"));
         }
 
-      /* See whether we want to use OCB.  */
+      /* See whether we want to use AEAD.  */
       aead_algo = use_aead (NULL, cfx.dek->algo);
 
       if ( use_seskey )
@@ -438,17 +507,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
                  /**/             : "CFB");
     }
 
-  if (do_compress
-      && cfx.dek
-      && (cfx.dek->use_mdc || cfx.dek->use_aead)
-      && !opt.explicit_compress_option
-      && is_file_compressed (peekbuf, peekbuflen))
-    {
-      if (opt.verbose)
-        log_info(_("'%s' already compressed\n"), filename? filename: "[stdin]");
-      do_compress = 0;
-    }
-
   if ( rc || (rc = open_outfile (-1, filename, opt.armor? 1:0, 0, &out )))
     {
       iobuf_cancel (inp);
@@ -466,6 +524,7 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
 
   if ( s2k )
     {
+      /* Fixme: This is quite similar to write_symkey_enc.  */
       PKT_symkey_enc *enc = xmalloc_clear (sizeof *enc + enckeylen);
       enc->version = cfx.dek->use_aead ? 5 : 4;
       enc->cipher_algo = cfx.dek->algo;
@@ -518,6 +577,24 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
   else
     filesize = opt.set_filesize ? opt.set_filesize : 0; /* stdin */
 
+  /* Register the cipher filter. */
+  if (mode)
+    iobuf_push_filter (out,
+                       cfx.dek->use_aead? cipher_filter_aead
+                       /**/             : cipher_filter_cfb,
+                       &cfx );
+
+  if (do_compress
+      && cfx.dek
+      && (cfx.dek->use_mdc || cfx.dek->use_aead)
+      && !opt.explicit_compress_option
+      && is_file_compressed (inp))
+    {
+      if (opt.verbose)
+        log_info(_("'%s' already compressed\n"), filename? filename: "[stdin]");
+      do_compress = 0;
+    }
+
   if (!opt.no_literal)
     {
       /* Note that PT has been initialized above in !no_literal mode.  */
@@ -537,13 +614,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
       pkt.pkt.generic = NULL;
     }
 
-  /* Register the cipher filter. */
-  if (mode)
-    iobuf_push_filter (out,
-                       cfx.dek->use_aead? cipher_filter_ocb
-                       /**/             : cipher_filter_cfb,
-                       &cfx );
-
   /* Register the compress filter. */
   if ( do_compress )
     {
@@ -562,15 +632,9 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
     {
       /* User requested not to create a literal packet, so we copy the
          plain data.  */
-      byte copy_buffer[4096];
-      int  bytes_copied;
-      while ((bytes_copied = iobuf_read(inp, copy_buffer, 4096)) != -1)
-        if ( (rc=iobuf_write(out, copy_buffer, bytes_copied)) ) {
-          log_error ("copying input to output failed: %s\n",
-                     gpg_strerror (rc) );
-          break;
-        }
-      wipememory (copy_buffer, 4096); /* burn buffer */
+      rc = iobuf_copy (out, inp);
+      if (rc)
+        log_error ("copying input to output failed: %s\n", gpg_strerror (rc));
     }
 
   /* Finish the stuff.  */
@@ -603,6 +667,17 @@ setup_symkey (STRING2KEY **symkey_s2k, DEK **symkey_dek)
   int s2kdigest;
 
   defcipher = default_cipher_algo ();
+  if (openpgp_cipher_blocklen (defcipher) < 16
+      && !opt.flags.allow_old_cipher_algos)
+    {
+      log_error (_("cipher algorithm '%s' may not be used for encryption\n"),
+		 openpgp_cipher_algo_name (defcipher));
+      if (!opt.quiet)
+        log_info (_("(use option \"%s\" to override)\n"),
+                  "--allow-old-cipher-algos");
+      return gpg_error (GPG_ERR_CIPHER_ALGO);
+    }
+
   if (!gnupg_cipher_is_allowed (opt.compliance, 1, defcipher,
                                 GCRY_CIPHER_MODE_CFB))
     {
@@ -678,83 +753,6 @@ write_symkey_enc (STRING2KEY *symkey_s2k, aead_algo_t aead_algo,
 }
 
 
-/* Check whether all encryption keys are compliant with the current
- * mode and issue respective status lines.  DEK has the info about the
- * session key and PK_LIST the list of public keys.  */
-static gpg_error_t
-check_encryption_compliance (DEK *dek, pk_list_t pk_list)
-{
-  gpg_error_t err = 0;
-  pk_list_t pkr;
-  int compliant;
-
-  if (! gnupg_cipher_is_allowed (opt.compliance, 1, dek->algo,
-                                 GCRY_CIPHER_MODE_CFB))
-    {
-      log_error (_("cipher algorithm '%s' may not be used in %s mode\n"),
-		 openpgp_cipher_algo_name (dek->algo),
-		 gnupg_compliance_option_string (opt.compliance));
-      err = gpg_error (GPG_ERR_CIPHER_ALGO);
-      goto leave;
-    }
-
-  if (!gnupg_rng_is_compliant (opt.compliance))
-    {
-      err = gpg_error (GPG_ERR_FORBIDDEN);
-      log_error (_("%s is not compliant with %s mode\n"),
-                 "RNG",
-                 gnupg_compliance_option_string (opt.compliance));
-      write_status_error ("random-compliance", err);
-      goto leave;
-    }
-
-  /* From here on we only test for CO_DE_VS - if we ever want to
-   * return other compliance mode values we need to change this to
-   * loop over all those values.  */
-  compliant = gnupg_gcrypt_is_compliant (CO_DE_VS);
-
-  if (!gnupg_cipher_is_compliant (CO_DE_VS, dek->algo, GCRY_CIPHER_MODE_CFB))
-    compliant = 0;
-
-  for (pkr = pk_list; pkr; pkr = pkr->next)
-    {
-      PKT_public_key *pk = pkr->pk;
-      unsigned int nbits = nbits_from_pk (pk);
-
-      if (!gnupg_pk_is_compliant (opt.compliance, pk->pubkey_algo, 0,
-                                  pk->pkey, nbits, NULL))
-        log_info (_("WARNING: key %s is not suitable for encryption"
-                    " in %s mode\n"),
-                  keystr_from_pk (pk),
-                  gnupg_compliance_option_string (opt.compliance));
-
-      if (compliant
-          && !gnupg_pk_is_compliant (CO_DE_VS, pk->pubkey_algo, 0, pk->pkey,
-                                     nbits, NULL))
-        compliant = 0; /* Not compliant - reset flag.  */
-    }
-
-  /* If we are compliant print the status for de-vs compliance.  */
-  if (compliant)
-    write_status_strings (STATUS_ENCRYPTION_COMPLIANCE_MODE,
-                          gnupg_status_compliance_flag (CO_DE_VS),
-                          NULL);
-
-  /* Check whether we should fail the operation.  */
-  if (opt.flags.require_compliance
-      && opt.compliance == CO_DE_VS
-      && !compliant)
-    {
-      compliance_failure ();
-      err = gpg_error (GPG_ERR_FORBIDDEN);
-      goto leave;
-    }
-
- leave:
-  return err;
-}
-
-
 /*
  * Encrypt the file with the given userids (or ask if none is
  * supplied).  Either FILENAME or FILEFD must be given, but not both.
@@ -775,7 +773,7 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
   PKT_plaintext *pt = NULL;
   DEK *symkey_dek = NULL;
   STRING2KEY *symkey_s2k = NULL;
-  int rc = 0, rc2 = 0;
+  int rc = 0;
   u32 filesize;
   cipher_filter_context_t cfx;
   armor_filter_context_t *afx = NULL;
@@ -784,8 +782,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
   progress_filter_context_t *pfx;
   PK_LIST pk_list;
   int do_compress;
-  char peekbuf[32];
-  int  peekbuflen;
 
   if (filefd != -1 && filename)
     return gpg_error (GPG_ERR_INV_ARG);  /* Both given.  */
@@ -826,10 +822,10 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
       gpg_err_set_errno (ENOSYS);
     }
 #else
-  if (filefd == GNUPG_INVALID_FD)
+  if (filefd == -1)
     inp = iobuf_open (filename);
   else
-    inp = iobuf_fdopen_nc (FD2INT(filefd), "rb");
+    inp = iobuf_fdopen_nc (filefd, "rb");
 #endif
   if (inp)
     iobuf_ioctl (inp, IOBUF_IOCTL_NO_CACHE, 1, NULL);
@@ -858,14 +854,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
   if (opt.verbose)
     log_info (_("reading from '%s'\n"), iobuf_get_fname_nonnull (inp));
 
-  peekbuflen = iobuf_ioctl (inp, IOBUF_IOCTL_PEEK, sizeof peekbuf, peekbuf);
-  if (peekbuflen < 0)
-    {
-      peekbuflen = 0;
-      if (DBG_FILTER)
-        log_debug ("peeking at input failed\n");
-    }
-
   handle_progress (pfx, inp, filename);
 
   if (opt.textmode)
@@ -881,10 +869,9 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
       push_armor_filter (afx, out);
     }
 
-  /* Create a session key (a DEK). */
-  cfx.dek = create_dek_with_warnings (1, pk_list);
+  /* Create a session key. */
+  cfx.dek = create_dek_with_warnings (pk_list);
 
-  /* Check compliance etc.  */
   rc = check_encryption_compliance (cfx.dek, pk_list);
   if (rc)
     goto leave;
@@ -892,26 +879,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
   cfx.dek->use_aead = use_aead (pk_list, cfx.dek->algo);
   if (!cfx.dek->use_aead)
     cfx.dek->use_mdc = !!use_mdc (pk_list, cfx.dek->algo);
-
-  /* Only do the is-file-already-compressed check if we are using a
-     MDC.  This forces compressed files to be re-compressed if we do
-     not have a MDC to give some protection against chosen ciphertext
-     attacks. */
-
-  if (do_compress
-      && (cfx.dek->use_mdc || cfx.dek->use_aead)
-      && !opt.explicit_compress_option
-      && is_file_compressed (peekbuf, peekbuflen))
-    {
-      if (opt.verbose)
-        log_info(_("'%s' already compressed\n"), filename? filename: "[stdin]");
-      do_compress = 0;
-    }
-  if (rc2)
-    {
-      rc = rc2;
-      goto leave;
-    }
 
   make_session_key (cfx.dek);
   if (DBG_CRYPTO)
@@ -922,11 +889,11 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
     goto leave;
 
   /* We put the passphrase (if any) after any public keys as this
-     seems to be the most useful on the recipient side - there is no
-     point in prompting a user for a passphrase if they have the
-     secret key needed to decrypt.  */
-  if(use_symkey && (rc = write_symkey_enc (symkey_s2k, cfx.dek->use_aead,
-                                           symkey_dek, cfx.dek, out)))
+   * seems to be the most useful on the recipient side - there is no
+   * point in prompting a user for a passphrase if they have the
+   * secret key needed to decrypt.  */
+  if (use_symkey && (rc = write_symkey_enc (symkey_s2k, cfx.dek->use_aead,
+                                            symkey_dek, cfx.dek, out)))
     goto leave;
 
   if (!opt.no_literal)
@@ -953,6 +920,26 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
   else
     filesize = opt.set_filesize ? opt.set_filesize : 0; /* stdin */
 
+  /* Register the cipher filter. */
+  iobuf_push_filter (out,
+                     cfx.dek->use_aead? cipher_filter_aead
+                     /**/             : cipher_filter_cfb,
+                     &cfx);
+
+  /* Only do the is-file-already-compressed check if we are using a
+   * MDC or AEAD.  This forces compressed files to be re-compressed if
+   * we do not have a MDC to give some protection against chosen
+   * ciphertext attacks. */
+  if (do_compress
+      && (cfx.dek->use_mdc || cfx.dek->use_aead)
+      && !opt.explicit_compress_option
+      && is_file_compressed (inp))
+    {
+      if (opt.verbose)
+        log_info(_("'%s' already compressed\n"), filename? filename: "[stdin]");
+      do_compress = 0;
+    }
+
   if (!opt.no_literal)
     {
       pt->timestamp = make_timestamp();
@@ -966,12 +953,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
     }
   else
     cfx.datalen = filesize && !do_compress ? filesize : 0;
-
-  /* Register the cipher filter. */
-  iobuf_push_filter (out,
-                     cfx.dek->use_aead? cipher_filter_ocb
-                     /**/             : cipher_filter_cfb,
-                     &cfx);
 
   /* Register the compress filter. */
   if (do_compress)
@@ -998,7 +979,7 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
       /* Algo 0 means no compression. */
       if (compr_algo)
         {
-          if (cfx.dek && cfx.dek->use_mdc)
+          if (cfx.dek && (cfx.dek->use_mdc || cfx.dek->use_aead))
             zfx.new_ctb = 1;
           push_compress_filter (out,&zfx,compr_algo);
         }
@@ -1074,7 +1055,7 @@ encrypt_filter (void *opaque, int control,
         {
           efx->header_okay = 1;
 
-          efx->cfx.dek = create_dek_with_warnings (0, efx->pk_list);
+          efx->cfx.dek = create_dek_with_warnings (efx->pk_list);
 
           rc = check_encryption_compliance (efx->cfx.dek, efx->pk_list);
           if (rc)
@@ -1097,14 +1078,15 @@ encrypt_filter (void *opaque, int control,
             {
               rc = write_symkey_enc (efx->symkey_s2k, efx->cfx.dek->use_aead,
                                      efx->symkey_dek, efx->cfx.dek, a);
-              if(rc)
+              if (rc)
                 return rc;
             }
 
           iobuf_push_filter (a,
-                             efx->cfx.dek->use_aead? cipher_filter_ocb
+                             efx->cfx.dek->use_aead? cipher_filter_aead
                              /**/                  : cipher_filter_cfb,
                              &efx->cfx);
+
         }
       rc = iobuf_write (a, buf, size);
 
@@ -1197,7 +1179,7 @@ write_pubkey_enc (ctrl_t ctrl,
 static int
 write_pubkey_enc_from_list (ctrl_t ctrl, PK_LIST pk_list, DEK *dek, iobuf_t out)
 {
-  if (opt.throw_keyids && (PGP6 || PGP7 || PGP8))
+  if (opt.throw_keyids && (PGP7 || PGP8))
     {
       log_info(_("option '%s' may not be used in %s mode\n"),
                "--throw-keyids",

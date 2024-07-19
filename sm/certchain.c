@@ -26,7 +26,6 @@
 #include <unistd.h>
 #include <time.h>
 #include <stdarg.h>
-#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -123,7 +122,9 @@ do_list (int is_error, int listmode, estream_t fp, const char *format, ...)
     }
   else
     {
-      log_logv (is_error? GPGRT_LOG_ERROR: GPGRT_LOG_INFO, format, arg_ptr);
+      es_fflush (es_stdout);
+      log_logv (is_error? GPGRT_LOGLVL_ERROR: GPGRT_LOGLVL_INFO,
+                format, arg_ptr);
       log_printf ("\n");
     }
   va_end (arg_ptr);
@@ -456,7 +457,7 @@ check_cert_policy (ksba_cert_t cert, int listmode, estream_t fplist)
 
 /* Helper function for find_up.  This resets the key handle and search
    for an issuer ISSUER with a subjectKeyIdentifier of KEYID.  Returns
-   0 on success or -1 when not found. */
+   0 on success or GPG_ERR_NOT_FOUND when not found. */
 static int
 find_up_search_by_keyid (ctrl_t ctrl, KEYDB_HANDLE kh,
                          const char *issuer, ksba_sexp_t keyid)
@@ -475,7 +476,8 @@ find_up_search_by_keyid (ctrl_t ctrl, KEYDB_HANDLE kh,
       rc = keydb_get_cert (kh, &cert);
       if (rc)
         {
-          log_error ("keydb_get_cert() failed: rc=%d\n", rc);
+          log_error ("keydb_get_cert failed in %s: %s <%s>\n",
+                     __func__, gpg_strerror (rc), gpg_strsource (rc));
           rc = gpg_error (GPG_ERR_NOT_FOUND);
           goto leave;
         }
@@ -577,7 +579,7 @@ find_up_search_by_keyid (ctrl_t ctrl, KEYDB_HANDLE kh,
           rc = gpg_error (GPG_ERR_NOT_FOUND);
           goto leave;
         }
-      /* Ready.  The NE_FOUND_CERT is availabale via keydb_get_cert.  */
+      /* Ready.  The NE_FOUND_CERT is available via keydb_get_cert.  */
     }
 
  leave:
@@ -831,7 +833,7 @@ find_up_dirmngr (ctrl_t ctrl, KEYDB_HANDLE kh,
   if (opt.verbose)
     log_info (_("number of matching certificates: %d\n"),
               find_up_store_certs_parm.count);
-  if (rc && !opt.quiet)
+  if (rc && opt.verbose)
     log_info (_("dirmngr cache-only key lookup failed: %s\n"),
               gpg_strerror (rc));
   return ((!rc && find_up_store_certs_parm.count)
@@ -974,22 +976,25 @@ find_up (ctrl_t ctrl, KEYDB_HANDLE kh,
         ;
       else if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
         {
-          log_info ("%sissuer certificate ", find_next?"next ":"");
-          if (keyid)
+          if (!opt.quiet)
             {
-              log_printf ("{");
-              gpgsm_dump_serial (keyid);
-              log_printf ("} ");
+              log_info ("%sissuer certificate ", find_next?"next ":"");
+              if (keyid)
+                {
+                  log_printf ("{");
+                  gpgsm_dump_serial (keyid);
+                  log_printf ("} ");
+                }
+              if (authidno)
+                {
+                  log_printf ("(#");
+                  gpgsm_dump_serial (authidno);
+                  log_printf ("/");
+                  gpgsm_dump_string (s);
+                  log_printf (") ");
+                }
+              log_printf ("not found using authorityKeyIdentifier\n");
             }
-          if (authidno)
-            {
-              log_printf ("(#");
-              gpgsm_dump_serial (authidno);
-              log_printf ("/");
-              gpgsm_dump_string (s);
-              log_printf (") ");
-            }
-          log_printf ("not found using authorityKeyIdentifier\n");
         }
       else if (err)
         log_error ("failed to find authorityKeyIdentifier: err=%d\n", err);
@@ -1044,14 +1049,14 @@ find_up (ctrl_t ctrl, KEYDB_HANDLE kh,
 
 
 /* Return the next certificate up in the chain starting at START.
-   Returns -1 when there are no more certificates. */
-int
+   Returns GPG_ERR_NOT_FOUND when there are no more certificates. */
+gpg_error_t
 gpgsm_walk_cert_chain (ctrl_t ctrl, ksba_cert_t start, ksba_cert_t *r_next)
 {
   gpg_error_t err = 0;
   char *issuer = NULL;
   char *subject = NULL;
-  KEYDB_HANDLE kh = keydb_new ();
+  KEYDB_HANDLE kh = keydb_new (ctrl);
 
   *r_next = NULL;
   if (!kh)
@@ -1097,8 +1102,8 @@ gpgsm_walk_cert_chain (ctrl_t ctrl, ksba_cert_t start, ksba_cert_t *r_next)
   err = keydb_get_cert (kh, r_next);
   if (err)
     {
-      log_error ("keydb_get_cert() failed: %s <%s>\n",
-                 gpg_strerror (err), gpg_strsource (err));
+      log_error ("keydb_get_cert failed in %s: %s <%s>\n",
+                 __func__, gpg_strerror (err), gpg_strsource (err));
       err = gpg_error (GPG_ERR_GENERAL);
     }
 
@@ -1199,11 +1204,13 @@ gpgsm_is_root_cert (ksba_cert_t cert)
 
 /* This is a helper for gpgsm_validate_chain. */
 static gpg_error_t
-is_cert_still_valid (ctrl_t ctrl, int force_ocsp, int lm, estream_t fp,
+is_cert_still_valid (ctrl_t ctrl, int chain_model, int lm, estream_t fp,
                      ksba_cert_t subject_cert, ksba_cert_t issuer_cert,
                      int *any_revoked, int *any_no_crl, int *any_crl_too_old)
 {
   gpg_error_t err;
+  gnupg_isotime_t revoked_at;
+  char *reason;
 
   if (ctrl->offline || (opt.no_crl_check && !ctrl->use_ocsp))
     {
@@ -1213,7 +1220,7 @@ is_cert_still_valid (ctrl_t ctrl, int force_ocsp, int lm, estream_t fp,
     }
 
 
-  if (!(force_ocsp || ctrl->use_ocsp)
+  if (!(chain_model || ctrl->use_ocsp)
       && !opt.enable_issuer_based_crl_check)
     {
       err = ksba_cert_get_crl_dist_point (subject_cert, 0, NULL, NULL, NULL);
@@ -1232,7 +1239,20 @@ is_cert_still_valid (ctrl_t ctrl, int force_ocsp, int lm, estream_t fp,
 
   err = gpgsm_dirmngr_isvalid (ctrl,
                                subject_cert, issuer_cert,
-                               force_ocsp? 2 : !!ctrl->use_ocsp);
+                               chain_model? 2 : !!ctrl->use_ocsp,
+                               revoked_at, &reason);
+  if (gpg_err_code (err) == GPG_ERR_CERT_REVOKED)
+    {
+      gnupg_copy_time (ctrl->revoked_at, revoked_at);
+      xfree (ctrl->revocation_reason);
+      ctrl->revocation_reason = reason;
+      reason = NULL;
+    }
+  else
+    {
+      xfree (reason);
+      reason = (NULL);
+    }
   audit_log_ok (ctrl->audit, AUDIT_CRL_CHECK, err);
 
   if (err)
@@ -1242,7 +1262,22 @@ is_cert_still_valid (ctrl_t ctrl, int force_ocsp, int lm, estream_t fp,
       switch (gpg_err_code (err))
         {
         case GPG_ERR_CERT_REVOKED:
-          do_list (1, lm, fp, _("certificate has been revoked"));
+          if (!check_isotime (ctrl->revoked_at))
+            {
+              char *tmpstr;
+              const unsigned char *t = ctrl->revoked_at;
+
+              tmpstr = xtryasprintf ("%.4s-%.2s-%.2s %.2s:%.2s:%s (%s)",
+                                     t, t+4, t+6, t+9, t+11, t+13,
+                                     ctrl->revocation_reason?
+                                     ctrl->revocation_reason : "");
+
+              do_list (1, lm, fp, "%s: %s",
+                       _("certificate has been revoked"), tmpstr);
+              xfree (tmpstr);
+            }
+          else
+            do_list (1, lm, fp, _("certificate has been revoked"));
           *any_revoked = 1;
           /* Store that in the keybox so that key listings are able to
              return the revoked flag.  We don't care about error,
@@ -1348,7 +1383,7 @@ check_validity_period (ksba_isotime_t current_time,
 }
 
 /* This is a variant of check_validity_period used with the chain
-   model.  The extra contraint here is that notBefore and notAfter
+   model.  The extra constraint here is that notBefore and notAfter
    must exists and if the additional argument CHECK_TIME is given this
    time is used to check the validity period of SUBJECT_CERT.  */
 static gpg_error_t
@@ -1461,6 +1496,7 @@ ask_marktrusted (ctrl_t ctrl, ksba_cert_t cert, int listmode)
   int success = 0;
 
   fpr = gpgsm_get_fingerprint_string (cert, GCRY_MD_SHA1);
+  es_fflush (es_stdout);
   log_info (_("fingerprint=%s\n"), fpr? fpr : "?");
   xfree (fpr);
 
@@ -1568,7 +1604,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
       return 0;
     }
 
-  kh = keydb_new ();
+  kh = keydb_new (ctrl);
   if (!kh)
     {
       log_error (_("failed to allocate keyDB handle\n"));
@@ -1735,7 +1771,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
                     err = gpgsm_is_in_qualified_list (ctrl, subject_cert, NULL);
                   if (!err)
                     is_qualified = 1;
-                  else if ( gpg_err_code (err) == GPG_ERR_NOT_FOUND )
+                  else if ( gpg_err_code (err) == GPG_ERR_NOT_FOUND)
                     is_qualified = 0;
                   else
                     log_error ("checking the list of qualified "
@@ -1823,7 +1859,7 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
           if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
             {
               do_list (0, listmode, listfp, _("issuer certificate not found"));
-              if (!listmode)
+              if (!listmode && !opt.quiet)
                 {
                   log_info ("issuer certificate: #/");
                   gpgsm_dump_string (issuer);
@@ -1841,7 +1877,8 @@ do_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime_arg,
       rc = keydb_get_cert (kh, &issuer_cert);
       if (rc)
         {
-          log_error ("keydb_get_cert() failed: rc=%d\n", rc);
+          log_error ("keydb_get_cert failed in %s: %s <%s>\n",
+                     __func__, gpg_strerror (rc), gpg_strsource (rc));
           rc = gpg_error (GPG_ERR_GENERAL);
           goto leave;
         }
@@ -2175,9 +2212,8 @@ gpgsm_validate_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t checktime,
     {
       *retflags |= VALIDATE_FLAG_STEED;
     }
-  else if (gpg_err_code (rc) == GPG_ERR_CERT_EXPIRED
-      && !(flags & VALIDATE_FLAG_CHAIN_MODEL)
-      && (rootca_flags.valid && rootca_flags.chain_model))
+  else if (!(flags & VALIDATE_FLAG_CHAIN_MODEL)
+           && (rootca_flags.valid && rootca_flags.chain_model))
     {
       /* The root CA indicated that the chain model is to be used but
        * we have not yet used it.  Thus do the validation again using
@@ -2223,7 +2259,7 @@ gpgsm_basic_cert_check (ctrl_t ctrl, ksba_cert_t cert)
       return 0;
     }
 
-  kh = keydb_new ();
+  kh = keydb_new (ctrl);
   if (!kh)
     {
       log_error (_("failed to allocate keyDB handle\n"));
@@ -2264,9 +2300,13 @@ gpgsm_basic_cert_check (ctrl_t ctrl, ksba_cert_t cert)
         {
           if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
             {
-              log_info ("issuer certificate (#/");
-              gpgsm_dump_string (issuer);
-              log_printf (") not found\n");
+              if (!opt.quiet)
+                {
+                  es_fflush (es_stdout);
+                  log_info ("issuer certificate (#/");
+                  gpgsm_dump_string (issuer);
+                  log_printf (") not found\n");
+                }
             }
           else
             log_error ("failed to find issuer's certificate: %s <%s>\n",
@@ -2279,7 +2319,8 @@ gpgsm_basic_cert_check (ctrl_t ctrl, ksba_cert_t cert)
       rc = keydb_get_cert (kh, &issuer_cert);
       if (rc)
         {
-          log_error ("keydb_get_cert() failed: rc=%d\n", rc);
+          log_error ("keydb_get_cert failed in %s: %s <%s>\n",
+                     __func__, gpg_strerror (rc), gpg_strsource (rc));
           rc = gpg_error (GPG_ERR_GENERAL);
           goto leave;
         }
@@ -2378,7 +2419,7 @@ get_regtp_ca_info (ctrl_t ctrl, ksba_cert_t cert, int *chainlen)
       cert = next;
     }
   ksba_cert_release (cert);
-  if (rc != -1 || !depth || depth == DIM(array) )
+  if (gpg_err_code (rc) != GPG_ERR_NOT_FOUND || !depth || depth == DIM(array) )
     {
       /* We did not reached the root. */
       goto leave;

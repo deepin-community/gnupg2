@@ -598,7 +598,7 @@ keyring_insert_keyblock (KEYRING_HANDLE hd, KBNODE kb)
 
     /* Close this one otherwise we will lose the position for
      * a next search.  Fixme: it would be better to adjust the position
-     * after the write opertions.
+     * after the write operations.
      */
     iobuf_close (hd->current.iobuf);
     hd->current.iobuf = NULL;
@@ -638,7 +638,7 @@ keyring_delete_keyblock (KEYRING_HANDLE hd)
 
     /* close this one otherwise we will lose the position for
      * a next search.  Fixme: it would be better to adjust the position
-     * after the write opertions.
+     * after the write operations.
      */
     iobuf_close (hd->current.iobuf);
     hd->current.iobuf = NULL;
@@ -968,7 +968,7 @@ keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
   int save_mode;
   off_t offset, main_offset;
   size_t n;
-  int need_uid, need_words, need_keyid, need_fpr, any_skip;
+  int need_uid, need_words, need_keyid, need_fpr, any_skip, need_grip;
   int pk_no, uid_no;
   int initial_skip;
   int scanned_from_start;
@@ -976,9 +976,10 @@ keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
   PKT_user_id *uid = NULL;
   PKT_public_key *pk = NULL;
   u32 aki[2];
+  unsigned char grip[KEYGRIP_LEN];
 
   /* figure out what information we need */
-  need_uid = need_words = need_keyid = need_fpr = any_skip = 0;
+  need_uid = need_words = need_keyid = need_fpr = any_skip = need_grip = 0;
   for (n=0; n < ndesc; n++)
     {
       switch (desc[n].mode)
@@ -998,8 +999,6 @@ keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
         case KEYDB_SEARCH_MODE_LONG_KID:
           need_keyid = 1;
           break;
-        case KEYDB_SEARCH_MODE_FPR16:
-        case KEYDB_SEARCH_MODE_FPR20:
         case KEYDB_SEARCH_MODE_FPR:
           need_fpr = 1;
           break;
@@ -1007,8 +1006,11 @@ keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
           /* always restart the search in this mode */
           keyring_search_reset (hd);
           break;
+        case KEYDB_SEARCH_MODE_KEYGRIP:
+          need_grip = 1;
+          break;
         default: break;
-	}
+        }
       if (desc[n].skipfnc)
         {
           any_skip = 1;
@@ -1137,13 +1139,16 @@ keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
           pk = pkt.pkt.public_key;
           ++pk_no;
 
-          if (need_fpr) {
-            fingerprint_from_pk (pk, afp, &an);
-            while (an < 20) /* fill up to 20 bytes */
-              afp[an++] = 0;
-          }
+          if (need_fpr)
+            {
+              fingerprint_from_pk (pk, afp, &an);
+              while (an < 32) /* fill up to 32 bytes */
+                afp[an++] = 0;
+            }
           if (need_keyid)
             keyid_from_pk (pk, aki);
+          if (need_grip)
+            keygrip_from_pk (pk, grip);
 
           if (use_key_present_hash
               && !key_present_hash_ready
@@ -1175,21 +1180,19 @@ keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
             break;
 
           case KEYDB_SEARCH_MODE_SHORT_KID:
-            if (pk && desc[n].u.kid[1] == aki[1])
-              goto found;
+            if (pk
+               && ((pk->fprlen == 32 && desc[n].u.kid[1] == aki[0])
+                   || (pk->fprlen != 32 && desc[n].u.kid[1] == aki[1])))
+                goto found;
             break;
           case KEYDB_SEARCH_MODE_LONG_KID:
             if (pk && desc[n].u.kid[0] == aki[0]
                 && desc[n].u.kid[1] == aki[1])
               goto found;
             break;
-          case KEYDB_SEARCH_MODE_FPR16:
-            if (pk && !memcmp (desc[n].u.fpr, afp, 16))
-              goto found;
-            break;
-          case KEYDB_SEARCH_MODE_FPR20:
           case KEYDB_SEARCH_MODE_FPR:
-            if (pk && !memcmp (desc[n].u.fpr, afp, 20))
+            if (pk && desc[n].fprlen >= 16 && desc[n].fprlen <= 32
+                && !memcmp (desc[n].u.fpr, afp, desc[n].fprlen))
               goto found;
             break;
           case KEYDB_SEARCH_MODE_FIRST:
@@ -1198,6 +1201,10 @@ keyring_search (KEYRING_HANDLE hd, KEYDB_SEARCH_DESC *desc,
             break;
           case KEYDB_SEARCH_MODE_NEXT:
             if (pk)
+              goto found;
+            break;
+          case KEYDB_SEARCH_MODE_KEYGRIP:
+            if (pk && !memcmp (desc[n].u.grip, grip, KEYGRIP_LEN))
               goto found;
             break;
           default:
@@ -1479,8 +1486,6 @@ keyring_rebuild_cache (ctrl_t ctrl, void *token, int noisy)
         {
           if (gpg_err_code (rc) == GPG_ERR_LEGACY_KEY)
             continue;  /* Skip legacy keys.  */
-          if (gpg_err_code (rc) == GPG_ERR_UNKNOWN_VERSION)
-            continue;  /* Skip keys with unknown version.  */
           log_error ("keyring_get_keyblock failed: %s\n", gpg_strerror (rc));
           goto leave;
         }

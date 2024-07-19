@@ -38,7 +38,7 @@
 #include "../common/compliance.h"
 
 
-static gpg_error_t get_it (ctrl_t ctrl, PKT_pubkey_enc *k,
+static gpg_error_t get_it (ctrl_t ctrl, struct pubkey_enc_list *k,
                            DEK *dek, PKT_public_key *sk, u32 *keyid);
 
 
@@ -72,105 +72,124 @@ is_algo_in_prefs (kbnode_t keyblock, preftype_t type, int algo)
  * which should have been allocated in secure memory by the caller.
  */
 gpg_error_t
-get_session_key (ctrl_t ctrl, PKT_pubkey_enc * k, DEK * dek)
+get_session_key (ctrl_t ctrl, struct pubkey_enc_list *list, DEK *dek)
 {
   PKT_public_key *sk = NULL;
-  int rc;
+  gpg_error_t err;
+  void *enum_context = NULL;
+  u32 keyid[2];
+  int search_for_secret_keys = 1;
+  struct pubkey_enc_list *k;
 
   if (DBG_CLOCK)
     log_clock ("get_session_key enter");
 
-  rc = openpgp_pk_test_algo2 (k->pubkey_algo, PUBKEY_USAGE_ENC);
-  if (rc)
-    goto leave;
-
-  if ((k->keyid[0] || k->keyid[1]) && !opt.try_all_secrets)
+  while (search_for_secret_keys)
     {
       sk = xmalloc_clear (sizeof *sk);
-      sk->pubkey_algo = k->pubkey_algo; /* We want a pubkey with this algo.  */
-      if (!(rc = get_seckey (ctrl, sk, k->keyid)))
-        {
-          /* Check compliance.  */
-          if (! gnupg_pk_is_allowed (opt.compliance, PK_USE_DECRYPTION,
-                                     sk->pubkey_algo, 0,
-                                     sk->pkey, nbits_from_pk (sk), NULL))
-            {
-              log_info (_("key %s is not suitable for decryption"
-                          " in %s mode\n"),
-                        keystr_from_pk (sk),
-                        gnupg_compliance_option_string (opt.compliance));
-              rc = gpg_error (GPG_ERR_PUBKEY_ALGO);
-            }
-          else
-            rc = get_it (ctrl, k, dek, sk, k->keyid);
-        }
-    }
-  else if (opt.skip_hidden_recipients)
-    rc = gpg_error (GPG_ERR_NO_SECKEY);
-  else  /* Anonymous receiver: Try all available secret keys.  */
-    {
-      void *enum_context = NULL;
-      u32 keyid[2];
+      err = enum_secret_keys (ctrl, &enum_context, sk);
+      if (err)
+        break;
 
-      for (;;)
+      /* Check compliance.  */
+      if (! gnupg_pk_is_allowed (opt.compliance, PK_USE_DECRYPTION,
+                                 sk->pubkey_algo, 0,
+                                 sk->pkey, nbits_from_pk (sk), NULL))
         {
-          sk = xmalloc_clear (sizeof *sk);
-          rc = enum_secret_keys (ctrl, &enum_context, sk);
-          if (rc)
-            {
-              sk = NULL;  /* enum_secret_keys turns SK into a shallow copy! */
-              rc = GPG_ERR_NO_SECKEY;
-              break;
-            }
+          log_info (_("key %s is not suitable for decryption"
+                      " in %s mode\n"),
+                    keystr_from_pk (sk),
+                    gnupg_compliance_option_string (opt.compliance));
+          continue;
+        }
+
+      /* FIXME: The list needs to be sorted so that we try the keys in
+       * an appropriate order.  For example:
+       * - On-disk keys w/o protection
+       * - On-disk keys with a cached passphrase
+       * - On-card keys of an active card
+       * - On-disk keys with protection
+       * - On-card keys from cards which are not plugged it.  Here a
+       *   cancel-all button should stop asking for other cards.
+       * Without any anonymous keys the sorting can be skipped.
+       */
+      for (k = list; k; k = k->next)
+        {
+          if (!(k->pubkey_algo == PUBKEY_ALGO_ELGAMAL_E
+                || k->pubkey_algo == PUBKEY_ALGO_ECDH
+                || k->pubkey_algo == PUBKEY_ALGO_RSA
+                || k->pubkey_algo == PUBKEY_ALGO_RSA_E
+                || k->pubkey_algo == PUBKEY_ALGO_ELGAMAL))
+            continue;
+
+          if (openpgp_pk_test_algo2 (k->pubkey_algo, PUBKEY_USAGE_ENC))
+            continue;
+
           if (sk->pubkey_algo != k->pubkey_algo)
             continue;
-          if (!(sk->pubkey_usage & PUBKEY_USAGE_ENC))
-            continue;
+
           keyid_from_pk (sk, keyid);
-          if (!opt.quiet)
-            log_info (_("anonymous recipient; trying secret key %s ...\n"),
-                      keystr (keyid));
 
-          /* Check compliance.  */
-          if (! gnupg_pk_is_allowed (opt.compliance, PK_USE_DECRYPTION,
-                                     sk->pubkey_algo, 0,
-                                     sk->pkey, nbits_from_pk (sk), NULL))
+          if (!k->keyid[0] && !k->keyid[1])
             {
-              log_info (_("key %s is not suitable for decryption"
-                          " in %s mode\n"),
-                          keystr_from_pk (sk),
-                          gnupg_compliance_option_string (opt.compliance));
-              continue;
-            }
+              if (opt.skip_hidden_recipients)
+                continue;
 
-          rc = get_it (ctrl, k, dek, sk, keyid);
-          if (!rc)
-            {
               if (!opt.quiet)
-                log_info (_("okay, we are the anonymous recipient.\n"));
-              sk = NULL;
+                log_info (_("anonymous recipient; trying secret key %s ...\n"),
+                          keystr (keyid));
+            }
+          else if (opt.try_all_secrets
+                   || (k->keyid[0] == keyid[0] && k->keyid[1] == keyid[1]))
+            {
+              if (!opt.quiet && !(sk->pubkey_usage & PUBKEY_USAGE_ENC))
+                log_info (_("used key is not marked for encryption use.\n"));
+            }
+          else
+            continue;
+
+          err = get_it (ctrl, k, dek, sk, keyid);
+          k->result = err;
+          if (!err)
+            {
+              if (!opt.quiet && !k->keyid[0] && !k->keyid[1])
+                {
+                  log_info (_("okay, we are the anonymous recipient.\n"));
+                  if (!(sk->pubkey_usage & PUBKEY_USAGE_ENC))
+                    log_info (_("used key is not marked for encryption use.\n")
+                              );
+                }
+              search_for_secret_keys = 0;
               break;
             }
-          else if (gpg_err_code (rc) == GPG_ERR_FULLY_CANCELED)
+          else if (gpg_err_code (err) == GPG_ERR_FULLY_CANCELED)
             {
-              sk = NULL;
+              search_for_secret_keys = 0;
               break; /* Don't try any more secret keys.  */
             }
         }
-      enum_secret_keys (ctrl, &enum_context, NULL);  /* free context */
+    }
+  enum_secret_keys (ctrl, &enum_context, NULL);  /* free context */
+
+  if (gpg_err_code (err) == GPG_ERR_EOF)
+    {
+      err = gpg_error (GPG_ERR_NO_SECKEY);
+
+      /* Return the last specific error, if any.  */
+      for (k = list; k; k = k->next)
+        if (k->result != -1)
+          err = k->result;
     }
 
- leave:
-  free_public_key (sk);
   if (DBG_CLOCK)
     log_clock ("get_session_key leave");
-  return rc;
+  return err;
 }
 
 
 static gpg_error_t
 get_it (ctrl_t ctrl,
-        PKT_pubkey_enc *enc, DEK *dek, PKT_public_key *sk, u32 *keyid)
+        struct pubkey_enc_list *enc, DEK *dek, PKT_public_key *sk, u32 *keyid)
 {
   gpg_error_t err;
   byte *frame = NULL;
@@ -182,7 +201,6 @@ get_it (ctrl_t ctrl,
   char *desc;
   char *keygrip;
   byte fp[MAX_FINGERPRINT_LEN];
-  size_t fpn;
 
   if (DBG_CLOCK)
     log_clock ("decryption start");
@@ -226,10 +244,7 @@ get_it (ctrl_t ctrl,
     goto leave;
 
   if (sk->pubkey_algo == PUBKEY_ALGO_ECDH)
-    {
-      fingerprint_from_pk (sk, fp, &fpn);
-      log_assert (fpn == 20);
-    }
+    fingerprint_from_pk (sk, fp, NULL);
 
   /* Decrypt. */
   desc = gpg_format_keydesc (ctrl, sk, FORMAT_KEYDESC_NORMAL, 1);
@@ -266,6 +281,7 @@ get_it (ctrl_t ctrl,
     {
       gcry_mpi_t decoded;
 
+      /* At the beginning the frame are the bytes of shared point MPI.  */
       err = pk_ecdh_decrypt (&decoded, fp, enc->data[1]/*encr data as an MPI*/,
                              frame, nframe, sk->pkey);
       if(err)

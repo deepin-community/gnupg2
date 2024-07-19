@@ -1,3 +1,171 @@
+gnupg2 (2.4.5-2) experimental; urgency=medium
+
+  [ Andreas Metzler ]
+  * Team upload.
+  * Demote gnupg metapackage dependency on gpg-wks-server to Suggests since it
+    pulls in an MTA. Closes: #1070879
+  * Build with --enable-maintainer-mode and re-add b-d on librsvg2-bin.
+  * Merge unstable changelog.
+  * Drop b-d on transfig, it is provided by fig2dev.
+  * Add patches to avoid setting AEAD: OCB key-preference on generated keys
+    and to avoid using OCB-mode even if AEAD: OCB key preference is set
+    on recipient key.
+  * Version imagemagick b-d to prevent installation of
+    graphicsmagick-imagemagick-compat instead.
+  * Fix blhc test with 'blhc: ignore-line-regexp'.
+  * Disable piuparts CI test, it is thrown by having to test upgrade/downgrade
+    (because some parts of gpg are installed by default) with additional
+    compilation that the package set has grown by keyboxd.
+
+  [ Daniel Kahn Gillmor ]
+  * Standards-Version: bump to 4.7.0 (no changes needed)
+  * d/copyright: Update dates, add Andreas Metzler for debian/*
+  * d/changelog: correct old misspelling of "ghostscript"
+  * Generate documentation artifacts from source, respecting nodoc
+  * Stop shipping upstream ChangeLog (/usr/share/doc/*/changelog.gz)
+  * Use debian standard UnicodeData.txt
+  * Rebuild generated header files in common/
+  * Strip Changelog-2011 files when building too
+  * Restore nl.po
+  * Enable Salsa-Ci (MR !16 by Otto Kekäläinen)
+  * Port scripts from bash to /bin/sh (MR !10 by
+    наб <nabijaczleweli@nabijaczleweli.xyz>).
+  * Move the gnupg package into the metapackages section.
+  * Move gpgv, gnupg-utils, and gpg-wks-client from Depends into Recommends
+    of gnupg.
+  * Stop pointing VCS-GIT at non-existent debian/main branch. (MR !12 by наб
+    <nabijaczleweli@nabijaczleweli.xyz>)
+
+ -- Andreas Metzler <ametzler@debian.org>  Mon, 20 May 2024 11:00:57 +0200
+
+gnupg2 (2.4.5-1) experimental; urgency=low
+
+  * Team upload.
+  * New upstream version.
+    + Drop spelling-fixes.diff, included upstream.
+  * [lintian] B-d on pkgconf instead of pkg-config.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sat, 16 Mar 2024 11:16:01 +0100
+
+gnupg2 (2.4.4-4) experimental; urgency=low
+
+  * Team upload.
+  * Turn debian/gnupg-l10n.install into an executable that parses
+    $DEB_BUILD_PROFILES. This seems to be the only working solution to avoid
+    bad interaction of dh_install/dh_missing with nodoc.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sat, 09 Mar 2024 14:40:53 +0100
+
+gnupg2 (2.4.4-3) experimental; urgency=low
+
+  * Team upload.
+  * gpgcompose cleanup, drop orphaned manpage and mention in package
+    description.
+  * Fix autopkgtests, mr!14. (Thanks, Julian Andres Klode)
+  * Add support for nodoc build-profile to ease bootstrapping.
+    Closes: #980768
+
+ -- Andreas Metzler <ametzler@debian.org>  Sat, 09 Mar 2024 09:13:09 +0100
+
+gnupg2 (2.4.4-2) experimental; urgency=low
+
+  * Fix binary-all FTBFS by running a regular build for arch-all builds.
+    Otherwise the test suite was run against /usr/bin/gpg for
+    binary-all builds and failed if it was missing.
+  * Drop now unused (gpgcompose was removed upstream) build with
+    --enable-maintainer-mode.
+  * Speed up indep build by only running needed dh_auto_configure instances.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 28 Jan 2024 09:02:36 +0100
+
+gnupg2 (2.4.4-1) experimental; urgency=low
+
+  * Team upload.
+  * Drop transitional gpgv2 package (requested in #873186) and update CI
+    test dependencies. Also remove Breaks/Replaces against ancient
+    (pre-buster) versions of gpgv2.
+  * Drop Breaks/Replaces against ancient versions of gnupg/gnupg2.
+  * Delete keyboxd's Breaks/Replaces against gnupg2 - They are not needed.
+  * Update CI test dependencies (gnupg2 --> gnupg).
+  * New upstream version.
+    + Drop from-master/keep-the-status-output.patch, unfuzz
+      Use-hkps-keys.openpgp.org-as-the-default-keyserver.patch.
+    + Update gnutls b-d version requirement.
+    + Update debian/copyright.
+    + spelling-fixes.diff: Fix errors found by lintian.
+  * Fixup recommends of architecture-any packages on architecture-all package
+    "gnupg" to use (= ${source:Version}) instead of binary:Version. (Thanks,
+    James McCoy) Closes: #1060366
+  * Set --with-mailprog=/usr/sbin/sendmail and add a dependency on
+    default-mta | mail-transport-agent to gpg-wks-server. Closes: #1025782
+  * Run wrap-and-sort -ast.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sat, 27 Jan 2024 13:44:25 +0100
+
+gnupg2 (2.4.3-2) experimental; urgency=low
+
+  * Duplicate lintian override for embedded-library in gpgv-static in old
+    lintian syntax to avoid auto-reject.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 24 Sep 2023 19:09:42 +0200
+
+gnupg2 (2.4.3-1) experimental; urgency=low
+
+  [ Andreas Metzler ]
+  * Team upload.
+  * New upstream version.
+    + Update patch-queue.
+    + Ship /usr/lib/gnupg/gpg-auth in scdaemon package.
+    + Tighten b-d as required.
+    + gpg-zip script dropped, bugreport therefore irrelevant. Closes: #913060
+    + Also drop unused debian/gpg-zip.1.
+    + systemd user unit examples dropped upstream (2.4.1).
+  * Merge changes from stable uploads after 2.2.27-2.
+  * Drop unused b-d on libcurl4-gnutls-dev. (See #980768, the other to be
+    removed b-ds could be necessary if at some point the respective doc
+    sources were patched in the Debian package.)
+  * Drop autopkgtests explicit dependency on essential package diffutils.
+    Closes: #953570
+  * Support the noudeb build profile. (Closes: #1024921) (Thanks, Helmut
+    Grohne)
+  * Drop dirmngr dependency on lsb-base. (Empty transitional package
+    depending on essential package)
+  * Drop unused lintian overrides for gpg-wks-client.1.
+  * Run wrap-and-sort -ast.
+
+  [ Bastien Roucariès ]
+  * Improve systemd integration for gpg-agent SSH emulation.
+
+  [ NIIBE Yutaka ]
+  * Fix debian/gpg-agent.install (not including keyboxd).
+  * Update debian/patches/series for gpg-agent-idling.
+  * Add gpg-agent-idling patch set from upstream (delete old implimatation).
+  * Update debian/patches/series for three patches of the following.
+  * Recover the behavior of BEGIN_ENCRYPTION status output.
+    - from-master/keep-the-status-output.patch: New.
+  * debian/control (keyboxd): New package.
+  * Add keybox systemd support.
+    - Add debian/keyboxd.user.service.
+    - Add debian/keyboxd.user.socket.
+    - debian-packaging/keyboxd-systemd-support.patch: New.
+    - debian/keyboxd.8: New.
+    - debian/keyboxd.README.Debian: New.
+    - debian/keyboxd.install: New.
+    - debian/keyboxd.manpages: New.
+  * Recover systemd-user support.
+    - Add debian/*.user.service.
+    - Add debian/*.user.socket.
+    - debian/rules (override_dh_installsystemduser): New.
+    - debian-packaging/keep-systemd-support.patch: New.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 24 Sep 2023 14:44:27 +0200
+
+gnupg2 (2.3.1-1) experimental; urgency=medium
+
+  * Upload to experimental
+  * New upstream version 2.3.1
+
+ -- Christoph Biedl <debian.axhn@manchmal.in-ulm.de>  Tue, 04 May 2021 21:44:48 +0200
 gnupg2 (2.2.43-6) unstable; urgency=medium
 
   * actually fix arch-independent (win32) builds

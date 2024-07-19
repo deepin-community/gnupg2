@@ -182,6 +182,7 @@ test_make_canon_sexp_from_rsa_pk (void)
 }
 
 
+
 /* Communiacation object for tcmp.  */
 struct tcmp_parm_s {
   int curve_seen;
@@ -494,6 +495,8 @@ test_ecc_uncompress (void)
       xfree (rbuf);
     }
 }
+
+
 
 
 int

@@ -1,6 +1,7 @@
 /* pkclist.c - create a list of public keys
- * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006, 2007,
- *               2008, 2009, 2010 Free Software Foundation, Inc.
+ * Copyright (C) 1998-2020 Free Software Foundation, Inc.
+ * Copyright (C) 1997-2019 Werner Koch
+ * Copyright (C) 2015-2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -16,6 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include <config.h>
@@ -36,6 +38,7 @@
 #include "../common/status.h"
 #include "photoid.h"
 #include "../common/i18n.h"
+#include "../common/mbox-util.h"
 #include "tofu.h"
 
 #define CONTROL_D ('D' - 'A' + 1)
@@ -63,8 +66,8 @@ do_show_revocation_reason( PKT_signature *sig )
     int seq = 0;
     const char *text;
 
-    while( (p = enum_sig_subpkt (sig->hashed, SIGSUBPKT_REVOC_REASON,
-				 &n, &seq, NULL )) ) {
+    while ((p = enum_sig_subpkt (sig, 1, SIGSUBPKT_REVOC_REASON,
+				 &n, &seq, NULL)) ) {
 	if( !n )
 	    continue; /* invalid - just skip it */
 
@@ -414,7 +417,11 @@ do_we_trust( PKT_public_key *pk, unsigned int trustlevel )
   if(trustlevel & TRUST_FLAG_REVOKED
      || trustlevel & TRUST_FLAG_SUB_REVOKED
      || (trustlevel & TRUST_MASK) == TRUST_EXPIRED)
-    BUG();
+    {
+      if (opt.ignore_expiration)
+        return 0;
+      BUG ();
+    }
 
   if( opt.trust_model==TM_ALWAYS )
     {
@@ -475,7 +482,7 @@ do_we_trust_pre (ctrl_t ctrl, PKT_public_key *pk, unsigned int trustlevel )
 
   if( !opt.batch && !rc )
     {
-      print_pubkey_info (ctrl, NULL,pk);
+      print_key_info (ctrl, NULL, 0, pk, 0);
       print_fingerprint (ctrl, NULL, pk, 2);
       tty_printf("\n");
 
@@ -517,9 +524,10 @@ do_we_trust_pre (ctrl_t ctrl, PKT_public_key *pk, unsigned int trustlevel )
 }
 
 
-/* Write a TRUST_foo status line inclduing the validation model.  */
+/* Write a TRUST_foo status line including the validation model and if
+ * MBOX is not NULL the targeted User ID's mbox.  */
 static void
-write_trust_status (int statuscode, int trustlevel)
+write_trust_status (int statuscode, int trustlevel, const char *mbox)
 {
 #ifdef NO_TRUST_MODELS
   write_status (statuscode);
@@ -532,49 +540,163 @@ write_trust_status (int statuscode, int trustlevel)
     tm = (trustlevel & TRUST_FLAG_TOFU_BASED)? TM_TOFU : TM_PGP;
   else
     tm = opt.trust_model;
-  write_status_strings (statuscode, "0 ", trust_model_string (tm), NULL);
+
+  if (mbox)
+    {
+      char *escmbox = percent_escape (mbox, NULL);
+
+      write_status_strings (statuscode, "0 ", trust_model_string (tm),
+                            " ", escmbox? escmbox : "?", NULL);
+      xfree (escmbox);
+    }
+  else
+    write_status_strings (statuscode, "0 ", trust_model_string (tm), NULL);
+
 #endif /* NO_TRUST_MODELS */
 }
 
 
-/****************
- * Check whether we can trust this signature.
- * Returns an error code if we should not trust this signature.
- */
-int
-check_signatures_trust (ctrl_t ctrl, PKT_signature *sig)
+/* Return true if MBOX matches one of the names in opt.sender_list.  */
+static int
+is_in_sender_list (const char *mbox)
 {
-  PKT_public_key *pk = xmalloc_clear( sizeof *pk );
+  strlist_t sl;
+
+  for (sl = opt.sender_list; sl; sl = sl->next)
+    if (!strcmp (mbox, sl->d))
+      return 1;
+  return 0;
+}
+
+
+/* Check whether we can trust this signature.  KEYBLOCK contains the
+ * key PK used to check the signature SIG.  We need PK here in
+ * addition to KEYBLOCK so that we know the subkey used for
+ * verification.  Returns an error code if we should not trust this
+ * signature (i.e. done by an not trusted key).  */
+gpg_error_t
+check_signatures_trust (ctrl_t ctrl, kbnode_t keyblock, PKT_public_key *pk,
+                        PKT_signature *sig)
+{
+  gpg_error_t err = 0;
+  int uidbased = 0;  /* 1 = signer's UID, 2 = use --sender option.  */
   unsigned int trustlevel = TRUST_UNKNOWN;
-  int rc=0;
+  PKT_public_key *mainpk;
+  PKT_user_id *targetuid;
+  const char *testedtarget = NULL;
+  const char *statusmbox = NULL;
+  kbnode_t n;
 
-  rc = get_pubkey_for_sig (ctrl, pk, sig, NULL);
-  if (rc)
-    { /* this should not happen */
-      log_error("Ooops; the key vanished  - can't check the trust\n");
-      rc = GPG_ERR_NO_PUBKEY;
-      goto leave;
-    }
-
-  if ( opt.trust_model==TM_ALWAYS )
+  if (opt.trust_model == TM_ALWAYS)
     {
-      if( !opt.quiet )
+      if (!opt.quiet)
         log_info(_("WARNING: Using untrusted key!\n"));
       if (opt.with_fingerprint)
         print_fingerprint (ctrl, NULL, pk, 1);
       goto leave;
     }
 
-  if(pk->flags.maybe_revoked && !pk->flags.revoked)
+  log_assert (keyblock->pkt->pkttype == PKT_PUBLIC_KEY);
+  mainpk = keyblock->pkt->pkt.public_key;
+
+  if ((pk->flags.maybe_revoked && !pk->flags.revoked)
+      || (mainpk->flags.maybe_revoked && !mainpk->flags.revoked))
     log_info(_("WARNING: this key might be revoked (revocation key"
 	       " not present)\n"));
 
-  trustlevel = get_validity (ctrl, NULL, pk, NULL, sig, 1);
+  /* Figure out the user ID which was used to create the signature.
+   * Note that the Signer's UID may be not a valid addr-spec but the
+   * plain value from the sub-packet; thus we need to check this
+   * before looking for the matching User ID (our parser makes sure
+   * that signers_uid has only the mbox if there is an mbox).  */
+  if (is_valid_mailbox (sig->signers_uid))
+    uidbased = 1; /* We got the signer's UID and it is an addr-spec.  */
+  else if (opt.sender_list)
+    uidbased = 2;
+  else
+    uidbased = 0;
+  targetuid = NULL;
+  if (uidbased)
+    {
+      u32 tmpcreated = 0; /* Helper to find the lates user ID.  */
+      PKT_user_id *tmpuid;
+
+      for (n=keyblock; n; n = n->next)
+        if (n->pkt->pkttype == PKT_USER_ID
+            && !(tmpuid = n->pkt->pkt.user_id)->attrib_data
+            && tmpuid->created  /* (is valid)  */
+            && !tmpuid->flags.revoked
+            && !tmpuid->flags.expired)
+          {
+            if (!tmpuid->mbox)
+              tmpuid->mbox = mailbox_from_userid (tmpuid->name, 0);
+            if (!tmpuid->mbox)
+              continue;
+
+            if (uidbased == 1)
+              {
+                if (!strcmp (tmpuid->mbox, sig->signers_uid)
+                    && tmpuid->created > tmpcreated)
+                  {
+                    tmpcreated = tmpuid->created;
+                    targetuid = tmpuid;
+                  }
+              }
+            else
+              {
+                if (is_in_sender_list (tmpuid->mbox)
+                    && tmpuid->created > tmpcreated)
+                  {
+                    tmpcreated = tmpuid->created;
+                    targetuid = tmpuid;
+                  }
+              }
+          }
+
+      /* In addition restrict based on --sender.  */
+      if (uidbased == 1 && opt.sender_list
+          && targetuid && !is_in_sender_list (targetuid->mbox))
+        {
+          testedtarget = targetuid->mbox;
+          targetuid = NULL;
+        }
+    }
+
+  if (uidbased && !targetuid)
+    statusmbox = testedtarget? testedtarget : sig->signers_uid;
+  else if (uidbased)
+    statusmbox = targetuid->mbox;
+  else
+    statusmbox = NULL;
+
+  if (opt.verbose && statusmbox)
+    log_info (_("checking User ID \"%s\"\n"), statusmbox);
+
+  trustlevel = get_validity (ctrl, NULL, pk, targetuid, sig, 1);
+  if (uidbased && !targetuid)
+    {
+      /* No user ID given but requested - force an undefined
+       * trustlevel but keep the trust flags.  */
+      trustlevel &= ~TRUST_MASK;
+      trustlevel |= TRUST_UNDEFINED;
+      if (!opt.quiet)
+        {
+          if (testedtarget)
+            log_info (_("option %s given but issuer \"%s\" does not match\n"),
+                      "--sender", testedtarget);
+          else if (uidbased == 1)
+            log_info (_("issuer \"%s\" does not match any User ID\n"),
+                      sig->signers_uid);
+          else if (opt.sender_list)
+            log_info (_("option %s given but no matching User ID found\n"),
+                      "--sender");
+        }
+    }
 
   if ( (trustlevel & TRUST_FLAG_REVOKED) )
     {
-      write_status( STATUS_KEYREVOKED );
-      if(pk->flags.revoked == 2)
+      write_status (STATUS_KEYREVOKED);
+      if (pk->flags.revoked == 2 || mainpk->flags.revoked == 2)
 	log_info(_("WARNING: This key has been revoked by its"
 		   " designated revoker!\n"));
       else
@@ -592,58 +714,6 @@ check_signatures_trust (ctrl_t ctrl, PKT_signature *sig)
   if ((trustlevel & TRUST_FLAG_DISABLED))
     log_info (_("Note: This key has been disabled.\n"));
 
-  /* If we have PKA information adjust the trustlevel. */
-  if (sig->pka_info && sig->pka_info->valid)
-    {
-      unsigned char fpr[MAX_FINGERPRINT_LEN];
-      PKT_public_key *primary_pk;
-      size_t fprlen;
-      int okay;
-
-
-      primary_pk = xmalloc_clear (sizeof *primary_pk);
-      get_pubkey (ctrl, primary_pk, pk->main_keyid);
-      fingerprint_from_pk (primary_pk, fpr, &fprlen);
-      free_public_key (primary_pk);
-
-      if ( fprlen == 20 && !memcmp (sig->pka_info->fpr, fpr, 20) )
-        {
-          okay = 1;
-          write_status_text (STATUS_PKA_TRUST_GOOD, sig->pka_info->email);
-          log_info (_("Note: Verified signer's address is '%s'\n"),
-                    sig->pka_info->email);
-        }
-      else
-        {
-          okay = 0;
-          write_status_text (STATUS_PKA_TRUST_BAD, sig->pka_info->email);
-          log_info (_("Note: Signer's address '%s' "
-                      "does not match DNS entry\n"), sig->pka_info->email);
-        }
-
-      switch ( (trustlevel & TRUST_MASK) )
-        {
-        case TRUST_UNKNOWN:
-        case TRUST_UNDEFINED:
-        case TRUST_MARGINAL:
-          if (okay && opt.verify_options&VERIFY_PKA_TRUST_INCREASE)
-            {
-              trustlevel = ((trustlevel & ~TRUST_MASK) | TRUST_FULLY);
-              log_info (_("trustlevel adjusted to FULL"
-                          " due to valid PKA info\n"));
-            }
-          /* fall through */
-        case TRUST_FULLY:
-          if (!okay)
-            {
-              trustlevel = ((trustlevel & ~TRUST_MASK) | TRUST_NEVER);
-              log_info (_("trustlevel adjusted to NEVER"
-                          " due to bad PKA info\n"));
-            }
-          break;
-        }
-    }
-
   /* Now let the user know what up with the trustlevel. */
   switch ( (trustlevel & TRUST_MASK) )
     {
@@ -658,9 +728,13 @@ check_signatures_trust (ctrl_t ctrl, PKT_signature *sig)
       /* fall through */
     case TRUST_UNKNOWN:
     case TRUST_UNDEFINED:
-      write_trust_status (STATUS_TRUST_UNDEFINED, trustlevel);
-      log_info(_("WARNING: This key is not certified with"
-                 " a trusted signature!\n"));
+      write_trust_status (STATUS_TRUST_UNDEFINED, trustlevel, statusmbox);
+      if (uidbased)
+        log_info(_("WARNING: The key's User ID is not certified with"
+                   " a trusted signature!\n"));
+      else
+        log_info(_("WARNING: This key is not certified with"
+                   " a trusted signature!\n"));
       log_info(_("         There is no indication that the "
                  "signature belongs to the owner.\n" ));
       print_fingerprint (ctrl, NULL, pk, 1);
@@ -669,17 +743,21 @@ check_signatures_trust (ctrl_t ctrl, PKT_signature *sig)
     case TRUST_NEVER:
       /* This level can be returned by TOFU, which supports negative
        * assertions.  */
-      write_trust_status (STATUS_TRUST_NEVER, trustlevel);
+      write_trust_status (STATUS_TRUST_NEVER, trustlevel, statusmbox);
       log_info(_("WARNING: We do NOT trust this key!\n"));
       log_info(_("         The signature is probably a FORGERY.\n"));
       if (opt.with_fingerprint)
         print_fingerprint (ctrl, NULL, pk, 1);
-      rc = gpg_error (GPG_ERR_BAD_SIGNATURE);
+      err = gpg_error (GPG_ERR_BAD_SIGNATURE);
       break;
 
     case TRUST_MARGINAL:
-      write_trust_status (STATUS_TRUST_MARGINAL, trustlevel);
-      log_info(_("WARNING: This key is not certified with"
+      write_trust_status (STATUS_TRUST_MARGINAL, trustlevel, statusmbox);
+      if (uidbased)
+        log_info(_("WARNING: The key's User ID is not certified with"
+                 " sufficiently trusted signatures!\n"));
+      else
+        log_info(_("WARNING: This key is not certified with"
                  " sufficiently trusted signatures!\n"));
       log_info(_("         It is not certain that the"
                  " signature belongs to the owner.\n" ));
@@ -687,21 +765,20 @@ check_signatures_trust (ctrl_t ctrl, PKT_signature *sig)
       break;
 
     case TRUST_FULLY:
-      write_trust_status (STATUS_TRUST_FULLY, trustlevel);
+      write_trust_status (STATUS_TRUST_FULLY, trustlevel, statusmbox);
       if (opt.with_fingerprint)
         print_fingerprint (ctrl, NULL, pk, 1);
       break;
 
     case TRUST_ULTIMATE:
-      write_trust_status (STATUS_TRUST_ULTIMATE, trustlevel);
+      write_trust_status (STATUS_TRUST_ULTIMATE, trustlevel, statusmbox);
       if (opt.with_fingerprint)
         print_fingerprint (ctrl, NULL, pk, 1);
       break;
     }
 
  leave:
-  free_public_key( pk );
-  return rc;
+  return err;
 }
 
 
@@ -756,55 +833,6 @@ default_recipient (ctrl_t ctrl)
   result = hexfingerprint (pk, NULL, 0);
   free_public_key (pk);
   return result;
-}
-
-
-static int
-expand_id(const char *id,strlist_t *into,unsigned int flags)
-{
-  struct groupitem *groups;
-  int count=0;
-
-  for(groups=opt.grouplist;groups;groups=groups->next)
-    {
-      /* need strcasecmp() here, as this should be localized */
-      if(strcasecmp(groups->name,id)==0)
-	{
-	  strlist_t each,sl;
-
-	  /* this maintains the current utf8-ness */
-	  for(each=groups->values;each;each=each->next)
-	    {
-	      sl=add_to_strlist(into,each->d);
-	      sl->flags=flags;
-	      count++;
-	    }
-
-	  break;
-	}
-    }
-
-  return count;
-}
-
-/* For simplicity, and to avoid potential loops, we only expand once -
- * you can't make an alias that points to an alias.  */
-static strlist_t
-expand_group (strlist_t input)
-{
-  strlist_t output = NULL;
-  strlist_t sl, rover;
-
-  for (rover = input; rover; rover = rover->next)
-    if (!(rover->flags & PK_LIST_FROM_FILE)
-        && !expand_id(rover->d,&output,rover->flags))
-      {
-	/* Didn't find any groups, so use the existing string */
-	sl=add_to_strlist(&output,rover->d);
-	sl->flags=rover->flags;
-      }
-
-  return output;
 }
 
 
@@ -969,7 +997,7 @@ build_pk_list (ctrl_t ctrl, strlist_t rcpts, PK_LIST *ret_pk_list)
 
   /* Try to expand groups if any have been defined. */
   if (opt.grouplist)
-    remusr = expand_group (rcpts);
+    remusr = expand_group (rcpts, 0);
   else
     remusr = rcpts;
 
@@ -1039,7 +1067,7 @@ build_pk_list (ctrl_t ctrl, strlist_t rcpts, PK_LIST *ret_pk_list)
 
           /* Hidden recipients are not allowed while in PGP mode,
              issue a warning and switch into GnuPG mode. */
-          if ((rov->flags & PK_LIST_HIDDEN) && (PGP6 || PGP7 || PGP8))
+          if ((rov->flags & PK_LIST_HIDDEN) && (PGP7 || PGP8))
             {
               log_info(_("option '%s' may not be used in %s mode\n"),
                        "--hidden-recipient",
@@ -1090,7 +1118,7 @@ build_pk_list (ctrl_t ctrl, strlist_t rcpts, PK_LIST *ret_pk_list)
                   /* Hidden encrypt-to recipients are not allowed while
                      in PGP mode, issue a warning and switch into
                      GnuPG mode. */
-                  if ((r->flags&PK_LIST_ENCRYPT_TO) && (PGP6 || PGP7 || PGP8))
+                  if ((r->flags&PK_LIST_ENCRYPT_TO) && (PGP7 || PGP8))
                     {
                       log_info(_("option '%s' may not be used in %s mode\n"),
                                "--hidden-encrypt-to",
@@ -1389,10 +1417,9 @@ algo_available( preftype_t preftype, int algo, const struct pref_hint *hint)
 {
   if( preftype == PREFTYPE_SYM )
     {
-      if(PGP6 && (algo != CIPHER_ALGO_IDEA
-		  && algo != CIPHER_ALGO_3DES
-		  && algo != CIPHER_ALGO_CAST5))
-	return 0;
+      if (!opt.flags.allow_old_cipher_algos
+          && openpgp_cipher_blocklen (algo) < 16)
+        return 0;  /* We don't want this one.  */
 
       if(PGP7 && (algo != CIPHER_ALGO_IDEA
 		  && algo != CIPHER_ALGO_3DES
@@ -1434,9 +1461,9 @@ algo_available( preftype_t preftype, int algo, const struct pref_hint *hint)
 	    return 0;
 	}
 
-      if((PGP6 || PGP7) && (algo != DIGEST_ALGO_MD5
-			    && algo != DIGEST_ALGO_SHA1
-			    && algo != DIGEST_ALGO_RMD160))
+      if (PGP7 && (algo != DIGEST_ALGO_MD5
+                   && algo != DIGEST_ALGO_SHA1
+                   && algo != DIGEST_ALGO_RMD160))
 	return 0;
 
 
@@ -1450,8 +1477,8 @@ algo_available( preftype_t preftype, int algo, const struct pref_hint *hint)
     }
   else if( preftype == PREFTYPE_ZIP )
     {
-      if((PGP6 || PGP7) && (algo != COMPRESS_ALGO_NONE
-			    && algo != COMPRESS_ALGO_ZIP))
+      if (PGP7 && (algo != COMPRESS_ALGO_NONE
+                   && algo != COMPRESS_ALGO_ZIP))
 	return 0;
 
       /* PGP8 supports all the compression algos we do */
@@ -1491,22 +1518,20 @@ select_algo_from_prefs(PK_LIST pk_list, int preftype,
       switch(preftype)
 	{
 	case PREFTYPE_SYM:
-	  /* IDEA is implicitly there for v3 keys with v3 selfsigs if
-	     --pgp2 mode is on.  This was a 2440 thing that was
-	     dropped from 4880 but is still relevant to GPG's 1991
-	     support.  All this doesn't mean IDEA is actually
-	     available, of course.
-
-             Because "de-vs" compliance will soon not anymore allow
-             3DES it does not make sense to assign 3DES as implicit
-             algorithm.  Instead it is better to use AES-128 as
-             implicit algorithm here.   */
-          if (opt.compliance == CO_DE_VS)
-            implicit = CIPHER_ALGO_AES;
+	  /* Historical note: IDEA is implicitly there for v3 keys
+	     with v3 selfsigs if --pgp2 mode is on.  This was a 2440
+	     thing that was dropped from 4880 but is still relevant to
+	     GPG's 1991 support.  All this doesn't mean IDEA is
+	     actually available, of course. */
+          if (opt.flags.allow_old_cipher_algos)
+            implicit = CIPHER_ALGO_3DES;
           else
-            implicit=CIPHER_ALGO_3DES;
-
+            implicit = CIPHER_ALGO_AES;
 	  break;
+
+	case PREFTYPE_AEAD:
+          /* No implicit algo.  */
+          break;
 
 	case PREFTYPE_HASH:
 	  /* While I am including this code for completeness, note
@@ -1662,6 +1687,32 @@ select_algo_from_prefs(PK_LIST pk_list, int preftype,
     }
 
   return result;
+}
+
+/*
+ * Select the MDC flag from the pk_list.  We can only use MDC if all
+ * recipients support this feature.
+ */
+int
+select_mdc_from_pklist (PK_LIST pk_list)
+{
+  PK_LIST pkr;
+
+  if ( !pk_list )
+    return 0;
+
+  for (pkr = pk_list; pkr; pkr = pkr->next)
+    {
+      int mdc;
+
+      if (pkr->pk->user_id) /* selected by user ID */
+        mdc = pkr->pk->user_id->flags.mdc;
+      else
+        mdc = pkr->pk->flags.mdc;
+      if (!mdc)
+        return 0;  /* At least one recipient does not support it. */
+    }
+  return 1; /* Can be used. */
 }
 
 

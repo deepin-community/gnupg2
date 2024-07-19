@@ -38,9 +38,6 @@
 # endif
 # include <windows.h>
 #endif
-#ifdef HAVE_W32CE_SYSTEM
-# include <assuan.h> /* For _assuan_w32ce_finish_pipe. */
-#endif
 
 #include <gcrypt.h>
 #include "util.h"
@@ -72,16 +69,6 @@ static mem_cleanup_item_t mem_cleanup_list;
 gpg_err_source_t default_errsource = 0;
 
 
-#ifdef HAVE_W32CE_SYSTEM
-static void parse_std_file_handles (int *argcp, char ***argvp);
-static void
-sleep_on_exit (void)
-{
-  /* The sshd on CE swallows some of the command output.  Sleeping a
-     while usually helps.  */
-  Sleep (400);
-}
-#endif /*HAVE_W32CE_SYSTEM*/
 
 #if HAVE_W32_SYSTEM
 static void prepare_w32_commandline (int *argcp, char ***argvp);
@@ -181,14 +168,6 @@ _init_common_subsystems (gpg_err_source_t errsource, int *argcp, char ***argvp)
   }
 #endif
 
-#ifdef HAVE_W32CE_SYSTEM
-  /* Register the sleep exit function before the estream init so that
-     the sleep will be called after the estream registered atexit
-     function which flushes the left open estream streams and in
-     particular es_stdout.  */
-  atexit (sleep_on_exit);
-#endif
-
   if (!gcry_check_version (NEED_LIBGCRYPT_VERSION))
     {
       log_fatal (_("%s is too old (need %s, have %s)\n"), "libgcrypt",
@@ -199,11 +178,6 @@ _init_common_subsystems (gpg_err_source_t errsource, int *argcp, char ***argvp)
   gpgrt_init ();
   gpgrt_set_alloc_func (gcry_realloc);
 
-#ifdef HAVE_W32CE_SYSTEM
-  /* Special hack for Windows CE: We extract some options from arg
-     to setup the standard handles.  */
-  parse_std_file_handles (argcp, argvp);
-#endif
 
 #ifdef HAVE_W32_SYSTEM
   /* We want gettext to always output UTF-8 and we put the console in
@@ -233,10 +207,10 @@ _init_common_subsystems (gpg_err_source_t errsource, int *argcp, char ***argvp)
   }
 
   /* --version et al shall use estream as well.  */
-  gnupg_set_usage_outfnc (writestring_via_estream);
+  gpgrt_set_usage_outfnc (writestring_via_estream);
 
   /* Register our string mapper with gpgrt.  */
-  gnupg_set_fixed_string_mapper (map_static_macro_string);
+  gpgrt_set_fixed_string_mapper (map_static_macro_string);
 
   /* Logging shall use the standard socket directory as fallback.  */
   log_set_socket_dir_cb (gnupg_socketdir);
@@ -268,77 +242,6 @@ _init_common_subsystems (gpg_err_source_t errsource, int *argcp, char ***argvp)
 
 
 
-/* WindowsCE uses a very strange way of handling the standard streams.
-   There is a function SetStdioPath to associate a standard stream
-   with a file or a device but what we really want is to use pipes as
-   standard streams.  Despite that we implement pipes using a device,
-   we would have some limitations on the number of open pipes due to
-   the 3 character limit of device file name.  Thus we don't take this
-   path.  Another option would be to install a file system driver with
-   support for pipes; this would allow us to get rid of the device
-   name length limitation.  However, with GnuPG we can get away be
-   redefining the standard streams and passing the handles to be used
-   on the command line.  This has also the advantage that it makes
-   creating a process much easier and does not require the
-   SetStdioPath set and restore game.  The caller needs to pass the
-   rendezvous ids using up to three options:
-
-     -&S0=<rvid> -&S1=<rvid> -&S2=<rvid>
-
-   They are all optional but they must be the first arguments on the
-   command line.  Parsing stops as soon as an invalid option is found.
-   These rendezvous ids are then used to finish the pipe creation.*/
-#ifdef HAVE_W32CE_SYSTEM
-static void
-parse_std_file_handles (int *argcp, char ***argvp)
-{
-  int argc = *argcp;
-  char **argv = *argvp;
-  const char *s;
-  assuan_fd_t fd;
-  int i;
-  int fixup = 0;
-
-  if (!argc)
-    return;
-
-  for (argc--, argv++; argc; argc--, argv++)
-    {
-      s = *argv;
-      if (*s == '-' && s[1] == '&' && s[2] == 'S'
-          && (s[3] == '0' || s[3] == '1' || s[3] == '2')
-          && s[4] == '='
-          && (strchr ("-01234567890", s[5]) || !strcmp (s+5, "null")))
-        {
-          if (s[5] == 'n')
-            fd = ASSUAN_INVALID_FD;
-          else
-            fd = _assuan_w32ce_finish_pipe (atoi (s+5), s[3] != '0');
-          _es_set_std_fd (s[3] - '0', (int)fd);
-          fixup++;
-        }
-      else
-        break;
-    }
-
-  if (fixup)
-    {
-      argc = *argcp;
-      argc -= fixup;
-      *argcp = argc;
-
-      argv = *argvp;
-      for (i=1; i < argc; i++)
-        argv[i] = argv[i + fixup];
-      for (; i < argc + fixup; i++)
-        argv[i] = NULL;
-    }
-
-
-}
-#endif /*HAVE_W32CE_SYSTEM*/
-
-
 /* For Windows we need to parse the command line so that we can
  * provide an UTF-8 encoded argv.  If there is any Unicode character
  * we return a new array but if there is no Unicode character we do
@@ -354,7 +257,7 @@ prepare_w32_commandline (int *r_argc, char ***r_argv)
   const char *s;
   int i, globing, itemsalloced;
 
-  s = strusage (95);
+  s = gpgrt_strusage (95);
   globing = (s && *s == '1');
 
   wcmdline = GetCommandLineW ();

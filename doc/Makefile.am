@@ -22,17 +22,9 @@ AM_CPPFLAGS =
 include $(top_srcdir)/am/cmacros.am
 
 examples = examples/README examples/scd-event examples/trustlist.txt	\
-	   examples/Automatic.prf                                       \
-           examples/debug.prf                                           \
+           examples/qualified.txt                                       \
+	   examples/common.conf                                         \
            examples/gpgconf.rnames examples/gpgconf.conf                \
-	   examples/systemd-user/README 				\
-	   examples/systemd-user/dirmngr.service 			\
-	   examples/systemd-user/dirmngr.socket				\
-	   examples/systemd-user/gpg-agent.service 			\
-	   examples/systemd-user/gpg-agent.socket 			\
-	   examples/systemd-user/gpg-agent-ssh.socket 			\
-	   examples/systemd-user/gpg-agent-browser.socket		\
-	   examples/systemd-user/gpg-agent-extra.socket 		\
 	   examples/pwpattern.list
 
 helpfiles = help.txt help.be.txt help.ca.txt help.cs.txt		\
@@ -43,10 +35,8 @@ helpfiles = help.txt help.be.txt help.ca.txt help.cs.txt		\
             help.pt_BR.txt help.ro.txt help.ru.txt help.sk.txt		\
             help.sv.txt help.tr.txt help.zh_CN.txt help.zh_TW.txt
 
-profiles =
-
-EXTRA_DIST = samplekeys.asc mksamplekeys com-certs.pem qualified.txt \
-	     gnupg-logo.eps gnupg-logo.pdf gnupg-logo.png gnupg-logo-tr.png \
+EXTRA_DIST = samplekeys.asc mksamplekeys com-certs.pem \
+	     gnupg-logo.pdf gnupg-logo.png gnupg-logo-tr.png \
 	     gnupg-module-overview.png gnupg-module-overview.pdf \
              gnupg-card-architecture.png gnupg-card-architecture.pdf \
              FAQ gnupg7.texi mkdefsinc.c defsincdate \
@@ -60,7 +50,7 @@ BUILT_SOURCES = gnupg-module-overview.png gnupg-module-overview.pdf \
 
 info_TEXINFOS = gnupg.texi
 
-dist_pkgdata_DATA =  $(helpfiles) $(profiles)
+dist_pkgdata_DATA =  $(helpfiles)
 
 nobase_dist_doc_DATA = FAQ DETAILS HACKING DCO TRANSLATE OpenPGP KEYSERVER \
                        $(examples)
@@ -71,16 +61,12 @@ nobase_dist_doc_DATA = FAQ DETAILS HACKING DCO TRANSLATE OpenPGP KEYSERVER \
 gnupg_TEXINFOS = \
 	gpg.texi gpgsm.texi gpg-agent.texi scdaemon.texi instguide.texi \
 	tools.texi debugging.texi glossary.texi contrib.texi gpl.texi \
-	sysnotes.texi dirmngr.texi wks.texi \
+	sysnotes.texi dirmngr.texi wks.texi gpg-card.texi \
         gnupg-module-overview.svg \
         gnupg-card-architecture.fig \
 	howtos.texi howto-create-a-server-cert.texi
 
 gnupg.texi : defs.inc
-
-# We need EPS files for "make distcheck" but we do not want to distribute
-# them due to their size.  Let's build them as needed.
-gnupg.dvi : gnupg-module-overview.eps gnupg-card-architecture.eps
 
 
 DVIPS = TEXINPUTS="$(srcdir)$(PATH_SEPARATOR)$$TEXINPUTS" dvips
@@ -88,16 +74,16 @@ DVIPS = TEXINPUTS="$(srcdir)$(PATH_SEPARATOR)$$TEXINPUTS" dvips
 AM_MAKEINFOFLAGS = -I $(srcdir) --css-ref=/share/site.css
 
 YAT2M_OPTIONS = -I $(srcdir) \
-        --release "GnuPG @PACKAGE_VERSION@" --source "GNU Privacy Guard 2.2"
+        --release "GnuPG @PACKAGE_VERSION@" --source "GNU Privacy Guard 2.4"
 
 myman_sources = gnupg7.texi gpg.texi gpgsm.texi gpg-agent.texi \
-	        dirmngr.texi scdaemon.texi tools.texi wks.texi
+	        dirmngr.texi scdaemon.texi tools.texi wks.texi \
+                gpg-card.texi
 myman_pages   = gpgsm.1 gpg-agent.1 dirmngr.8 scdaemon.1 \
                 watchgnupg.1 gpgconf.1 addgnupghome.8 gpg-preset-passphrase.1 \
 		gpg-connect-agent.1 gpgparsemail.1 gpgtar.1 \
-                gpg-check-pattern.1 \
 		applygnupgdefaults.8 gpg-wks-client.1 gpg-wks-server.1 \
-		dirmngr-client.1
+		dirmngr-client.1 gpg-card.1 gpg-check-pattern.1
 if USE_GPG2_HACK
 myman_pages += gpg2.1 gpgv2.1
 else
@@ -112,25 +98,16 @@ watchgnupg_SOURCE = gnupg.texi
 CLEANFILES = yat2m mkdefsinc defs.inc
 
 DISTCLEANFILES = gnupg.tmp gnupg.ops yat2m-stamp.tmp yat2m-stamp \
-                 gnupg-card-architecture.eps \
-                 gnupg-module-overview.eps \
 		 $(myman_pages) gnupg.7
-
-if HAVE_YAT2M
-YAT2M_CMD = $(YAT2M)
-YAT2M_DEP = $(YAT2M)
-else
-YAT2M_CMD = ./yat2m
-YAT2M_DEP = yat2m
 
 yat2m: yat2m.c
 	$(CC_FOR_BUILD) -o $@ $(srcdir)/yat2m.c
-endif
 
 mkdefsinc: mkdefsinc.c Makefile ../config.h
 	$(CC_FOR_BUILD) -I. -I.. -I$(srcdir) $(AM_CPPFLAGS) \
                         -o $@ $(srcdir)/mkdefsinc.c
 
+if MAINTAINER_MODE
 .svg.eps:
 	convert `test -f '$<' || echo '$(srcdir)/'`$< $@
 
@@ -151,6 +128,7 @@ mkdefsinc: mkdefsinc.c Makefile ../config.h
 
 .fig.pdf:
 	fig2dev -L pdf `test -f '$<' || echo '$(srcdir)/'`$< $@
+endif
 
 
 yat2m-stamp: $(myman_sources) defs.inc
@@ -158,12 +136,12 @@ yat2m-stamp: $(myman_sources) defs.inc
 	@touch yat2m-stamp.tmp
 	incd="`test -f defsincdate || echo '$(srcdir)/'`defsincdate"; \
 	for file in $(myman_sources) ; do \
-              $(YAT2M_CMD) $(YAT2M_OPTIONS) --store \
+              $(YAT2M) $(YAT2M_OPTIONS) --store \
                   --date "`cat $$incd 2>/dev/null`" \
 	          `test -f '$$file' || echo '$(srcdir)/'`$$file ; done
 	@mv -f yat2m-stamp.tmp $@
 
-yat2m-stamp: $(YAT2M_DEP)
+yat2m-stamp: $(YAT2M)
 
 $(myman_pages) gnupg.7 : yat2m-stamp defs.inc
 	@if test -f $@; then :; else \
@@ -206,8 +184,8 @@ online: gnupg.html gnupg.pdf gnupg-module-overview.png \
         if echo "@PACKAGE_VERSION@" | grep -- "-beta" >/dev/null; then \
 	  dashdevel="-devel" ; \
 	else \
-          rsync -v gnupg.pdf $${user}@$${webhost}:webspace/manuals/gnupg-2.2.pdf ; \
+          rsync -v gnupg.pdf $${user}@$${webhost}:webspace/manuals/ ; \
         fi ; \
 	cd gnupg.html ; \
         rsync -vr --exclude='.git' .  \
-	  $${user}@$${webhost}:webspace/manuals/gnupg-2.2$${dashdevel}/
+	  $${user}@$${webhost}:webspace/manuals/gnupg$${dashdevel}/

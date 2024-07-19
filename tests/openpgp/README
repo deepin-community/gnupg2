@@ -1,4 +1,5 @@
 #                                   Emacs, this is an -*- org -*- file.
+#+STARTUP: showall
 
 * How to run the test suite
 ** tldr: How to run all tests fast.
@@ -32,7 +33,7 @@ If you want to run gpg under valgrind add with_valgrind=1.
 
 To inspect the environment in which tests are running, or to quickly
 create keys for debugging or testing, you can start a shell.  There is
-one test that doese just that:
+one test that does just that:
 
   obj $ make -C tests/openpgp check TESTS=shell.scm
   PASS: tests/openpgp/setup.scm
@@ -94,14 +95,12 @@ data files.
 **** GPGSCM_PATH
 Used to locate the Scheme library as well as code used by the test
 suite.
-**** BIN_PREFIX
-The test suite does not hardcode any paths to tools.  If set it is
-used to locate the tools to test, otherwise the test suite assumes to
-be run from the build directory.
-**** GPG_PRESET_PASSPHRASE
-This tool is not installed by 'make install', hence we need to
-explicitly override its position.  In fact, the location of any tool
-used by the test suite can be overridden this way.  See defs.scm.
+**** GNUPG_BUILD_ROOT
+This envvar gives the root directory of the build tree.  See
+tests/gpgconf.ctl.in for the way we tell the GnuPG components this
+location.  Note that we can't use that envvar directly because this
+would allow user scripts and other software to accidentally mess up the
+used components.
 **** argv[0]
 run-tests.scm depends on being able to re-exec gpgscm.  It uses
 argv[0] for that.  Therefore you must use an absolute path to invoke
@@ -219,8 +218,8 @@ There is one source function, tr:open.  To describe a transformation
 using some process, use tr:spawn, tr:gpg, or tr:pipe-do.  There are
 several sinks, although sink is not quite the right term, because the
 data is not consumed, and hence one can use them at any position.  The
-"sinks" are tr:write-to, tr:call-with-content, tr:assert-identity, and
-tr:assert-weak-identity.
+"sinks" are tr:write-to, tr:call-with-content, tr:assert-identity,
+tr:assert-weak-identity, and tr:assert-same.
 
 A somewhat contrived example demonstrating many functions is:
 

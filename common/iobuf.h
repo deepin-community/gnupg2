@@ -204,6 +204,26 @@ struct iobuf_struct
     byte *buf;
   } d;
 
+  /* A external drain buffer for reading/writting data skipping internal
+     draint buffer D.BUF.  This allows zerocopy operation reducing
+     processing overhead across filter stack.
+
+     Used when by iobuf_read/iobuf_write when internal buffer has been
+     depleted and remaining external buffer length is large enough.
+   */
+  struct
+  {
+    /* The external buffer provided by iobuf_read/iobuf_write caller. */
+    byte *buf;
+    /* The number of bytes in the external buffer. */
+    size_t len;
+    /* The number of bytes that were consumed from the external buffer. */
+    size_t used;
+    /* Gives hint for processing that the external buffer is preferred and
+       that internal buffer should be consumed early. */
+    int preferred;
+  } e_d;
+
   /* When FILTER is called to read some data, it may read some data
      and then return EOF.  We can't return the EOF immediately.
      Instead, we note that we observed the EOF and when the buffer is
@@ -253,6 +273,12 @@ struct iobuf_struct
 
 extern int iobuf_debug_mode;
 
+
+/* Change the default size for all IOBUFs to KILOBYTE.  This needs to
+ * be called before any iobufs are used and can only be used once.
+ * Returns the current value.  Using 0 has no effect except for
+ * returning the current value.  */
+unsigned int iobuf_set_buffer_size (unsigned int kilobyte);
 
 /* Returns whether the specified filename corresponds to a pipe.  In
    particular, this function checks if FNAME is "-" and, if special
@@ -317,8 +343,10 @@ iobuf_t iobuf_fdopen_nc (int fd, const char *mode);
    letter 'w', creates an output filter.  Otherwise, creates an input
    filter.  If KEEP_OPEN is TRUE, then the stream is not closed when
    the filter is destroyed.  Otherwise, the stream is closed when the
-   filter is destroyed.  */
-iobuf_t iobuf_esopen (estream_t estream, const char *mode, int keep_open);
+   filter is destroyed.  If READLIMIT is not 0 this gives a limit on
+   the number of bytes to read from estream.  */
+iobuf_t iobuf_esopen (estream_t estream, const char *mode, int keep_open,
+                      size_t readlimit);
 
 /* Create a filter using an existing socket.  On Windows creates a
    special socket filter.  On non-Windows systems simply, this simply
@@ -596,6 +624,9 @@ void iobuf_set_partial_body_length_mode (iobuf_t a, size_t len);
    preceding filters are popped from the pipeline and the next read is
    from the following filter (which may or may not return EOF).  */
 void iobuf_skip_rest (iobuf_t a, unsigned long n, int partial);
+
+/* Check if the file is compressed, by peeking the iobuf.  */
+int is_file_compressed (iobuf_t inp);
 
 #define iobuf_where(a)	"[don't know]"
 

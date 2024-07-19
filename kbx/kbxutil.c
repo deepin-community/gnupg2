@@ -15,9 +15,11 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include <config.h>
+
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,13 +30,11 @@
 #include <limits.h>
 #include <assert.h>
 
-#include <gpg-error.h>
+#include "keybox-defs.h"
 #include "../common/logging.h"
-#include "../common/argparse.h"
 #include "../common/stringhelp.h"
 #include "../common/utf8conv.h"
 #include "../common/i18n.h"
-#include "keybox-defs.h"
 #include "../common/init.h"
 #include <gcrypt.h>
 
@@ -67,7 +67,7 @@ enum cmd_and_opt_values {
 };
 
 
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
   { 300, NULL, 0, N_("@Commands:\n ") },
 
 /*   { aFindByFpr,  "find-by-fpr", 0, "|FPR| find key using it's fingerprnt" }, */
@@ -104,27 +104,31 @@ int keybox_errors_seen = 0;
 static const char *
 my_strusage( int level )
 {
-    const char *p;
-    switch( level ) {
-      case 11: p = "kbxutil (@GNUPG@)";
-	break;
-      case 13: p = VERSION; break;
-      case 17: p = PRINTABLE_OS_NAME; break;
-      case 19: p = _("Please report bugs to <@EMAIL@>.\n"); break;
+  const char *p;
 
-      case 1:
-      case 40:	p =
-	    _("Usage: kbxutil [options] [files] (-h for help)");
-	break;
-      case 41:	p =
-	    _("Syntax: kbxutil [options] [files]\n"
-	      "List, export, import Keybox data\n");
-	break;
+  switch (level)
+    {
+    case  9: p = "GPL-3.0-or-later"; break;
+    case 11: p = "kbxutil (@GNUPG@)";
+      break;
+    case 13: p = VERSION; break;
+    case 14: p = GNUPG_DEF_COPYRIGHT_LINE; break;
+    case 17: p = PRINTABLE_OS_NAME; break;
+    case 19: p = _("Please report bugs to <@EMAIL@>.\n"); break;
+
+    case 1:
+    case 40:	p =
+        _("Usage: kbxutil [options] [files] (-h for help)");
+      break;
+    case 41:	p =
+        _("Syntax: kbxutil [options] [files]\n"
+          "List, export, import Keybox data\n");
+      break;
 
 
-      default:	p = NULL;
+    default:	p = NULL;
     }
-    return p;
+  return p;
 }
 
 
@@ -137,14 +141,14 @@ my_gcry_logger (void *dummy, int level, const char *fmt, va_list arg_ptr)
   /* Map the log levels.  */
   switch (level)
     {
-    case GCRY_LOG_CONT: level = GPGRT_LOG_CONT; break;
-    case GCRY_LOG_INFO: level = GPGRT_LOG_INFO; break;
-    case GCRY_LOG_WARN: level = GPGRT_LOG_WARN; break;
-    case GCRY_LOG_ERROR:level = GPGRT_LOG_ERROR; break;
-    case GCRY_LOG_FATAL:level = GPGRT_LOG_FATAL; break;
-    case GCRY_LOG_BUG:  level = GPGRT_LOG_BUG; break;
-    case GCRY_LOG_DEBUG:level = GPGRT_LOG_DEBUG; break;
-    default:            level = GPGRT_LOG_ERROR; break;
+    case GCRY_LOG_CONT: level = GPGRT_LOGLVL_CONT; break;
+    case GCRY_LOG_INFO: level = GPGRT_LOGLVL_INFO; break;
+    case GCRY_LOG_WARN: level = GPGRT_LOGLVL_WARN; break;
+    case GCRY_LOG_ERROR:level = GPGRT_LOGLVL_ERROR; break;
+    case GCRY_LOG_FATAL:level = GPGRT_LOGLVL_FATAL; break;
+    case GCRY_LOG_BUG:  level = GPGRT_LOGLVL_BUG; break;
+    case GCRY_LOG_DEBUG:level = GPGRT_LOGLVL_DEBUG; break;
+    default:            level = GPGRT_LOGLVL_ERROR; break;
     }
   log_logv (level, fmt, arg_ptr);
 }
@@ -233,7 +237,7 @@ format_keyid ( const char *s, u32 *kid )
 static char *
 read_file (const char *fname, size_t *r_length)
 {
-  FILE *fp;
+  estream_t fp;
   char *buf;
   size_t buflen;
 
@@ -241,7 +245,7 @@ read_file (const char *fname, size_t *r_length)
     {
       size_t nread, bufsize = 0;
 
-      fp = stdin;
+      fp = es_stdin;
       buf = NULL;
       buflen = 0;
 #define NCHUNK 8192
@@ -255,8 +259,8 @@ read_file (const char *fname, size_t *r_length)
           if (!buf)
             log_fatal ("can't allocate buffer: %s\n", strerror (errno));
 
-          nread = fread (buf+buflen, 1, NCHUNK, fp);
-          if (nread < NCHUNK && ferror (fp))
+          nread = es_fread (buf+buflen, 1, NCHUNK, fp);
+          if (nread < NCHUNK && es_ferror (fp))
             {
               log_error ("error reading '[stdin]': %s\n", strerror (errno));
               xfree (buf);
@@ -272,17 +276,17 @@ read_file (const char *fname, size_t *r_length)
     {
       struct stat st;
 
-      fp = gnupg_fopen (fname, "rb");
+      fp = es_fopen (fname, "rb");
       if (!fp)
         {
           log_error ("can't open '%s': %s\n", fname, strerror (errno));
           return NULL;
         }
 
-      if (fstat (fileno(fp), &st))
+      if (fstat (es_fileno(fp), &st))
         {
           log_error ("can't stat '%s': %s\n", fname, strerror (errno));
-          fclose (fp);
+          es_fclose (fp);
           return NULL;
         }
 
@@ -290,14 +294,14 @@ read_file (const char *fname, size_t *r_length)
       buf = xtrymalloc (buflen+1);
       if (!buf)
         log_fatal ("can't allocate buffer: %s\n", strerror (errno));
-      if (fread (buf, buflen, 1, fp) != 1)
+      if (es_fread (buf, buflen, 1, fp) != 1)
         {
           log_error ("error reading '%s': %s\n", fname, strerror (errno));
-          fclose (fp);
+          es_fclose (fp);
           xfree (buf);
           return NULL;
         }
-      fclose (fp);
+      es_fclose (fp);
     }
 
   *r_length = buflen;
@@ -461,16 +465,15 @@ import_openpgp (const char *filename, int dryrun)
 
 
 int
-main( int argc, char **argv )
+main (int argc, char **argv)
 {
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   enum cmd_and_opt_values cmd = 0;
-  unsigned long from = 0;
-  unsigned long to = ULONG_MAX;
+  unsigned long from = 0, to = ULONG_MAX;
   int dry_run = 0;
 
   early_system_init ();
-  set_strusage( my_strusage );
+  gpgrt_set_strusage( my_strusage );
   gcry_control (GCRYCTL_DISABLE_SECMEM);
   log_set_prefix ("kbxutil", GPGRT_LOG_WITH_PREFIX);
 
@@ -489,7 +492,7 @@ main( int argc, char **argv )
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gnupg_argparse (NULL, &pargs, opts))
+  while (gpgrt_argparse (NULL,&pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -524,8 +527,7 @@ main( int argc, char **argv )
           break;
 	}
     }
-
-  gnupg_argparse (NULL, &pargs, NULL);
+  gpgrt_argparse (NULL, &pargs, NULL);
 
   if (to < from)
     log_error ("record number of \"--to\" is lower than \"--from\" one\n");

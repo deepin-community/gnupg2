@@ -1,0 +1,29 @@
+From: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
+Date: Sun, 25 Dec 2022 13:11:58 +0100
+Subject: dirmngr: Only use SKS pool CA for SKS pool
+
+* dirmngr/http.c (http_session_new): when checking whether the
+keyserver is the HKPS pool, check specifically against the pool name,
+as ./configure might have been used to select a different default
+keyserver.  It makes no sense to apply Kristian's certificate
+authority to anything other than the literal host
+hkps.pool.sks-keyservers.net.
+
+Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
+---
+ dirmngr/http.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/dirmngr/http.c b/dirmngr/http.c
+index 20f71f6..6b1496e 100644
+--- a/dirmngr/http.c
++++ b/dirmngr/http.c
+@@ -798,7 +798,7 @@ http_session_new (http_session_t *r_session,
+     /* Disabled for 2.3.2 to due problems with the standard hkps pool.  */
+     /* is_hkps_pool = (intended_hostname */
+     /*                 && !ascii_strcasecmp (intended_hostname, */
+-    /*                                       get_default_keyserver (1))); */
++    /*                                       "hkps.pool.sks-keyservers.net")); */
+     is_hkps_pool = 0;
+ 
+     /* If we are looking for the hkps pool from sks-keyservers.net,

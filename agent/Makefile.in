@@ -125,11 +125,10 @@ POST_UNINSTALL = :
 build_triplet = @build@
 host_triplet = @host@
 bin_PROGRAMS = gpg-agent$(EXEEXT)
-libexec_PROGRAMS = gpg-protect-tool$(EXEEXT) $(am__EXEEXT_1)
-# fixme: Do no use simple-pwquery for preset-passphrase.
-@HAVE_W32CE_SYSTEM_FALSE@am__append_1 = gpg-preset-passphrase
+libexec_PROGRAMS = gpg-protect-tool$(EXEEXT) \
+	gpg-preset-passphrase$(EXEEXT)
 noinst_PROGRAMS = $(am__EXEEXT_2)
-@HAVE_DOSISH_SYSTEM_FALSE@am__append_2 = -DGNUPG_BINDIR="\"$(bindir)\""            \
+@HAVE_DOSISH_SYSTEM_FALSE@am__append_1 = -DGNUPG_BINDIR="\"$(bindir)\""            \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBEXECDIR="\"$(libexecdir)\""    \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_LIBDIR="\"$(libdir)/@PACKAGE@\""  \
 @HAVE_DOSISH_SYSTEM_FALSE@               -DGNUPG_DATADIR="\"$(datadir)/@PACKAGE@\"" \
@@ -140,13 +139,15 @@ noinst_PROGRAMS = $(am__EXEEXT_2)
 # If a specific protect tool program has been defined, pass its name
 # to cc.  Note that these macros should not be used directly but via
 # the gnupg_module_name function.
-@GNUPG_AGENT_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
-@GNUPG_PINENTRY_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
-@GNUPG_SCDAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
+@GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
+@GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
+@GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
+@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
 @GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
 @GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
 @GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-@DISABLE_TESTS_FALSE@TESTS = t-protect$(EXEEXT)
+@HAVE_W32_SYSTEM_TRUE@am__append_9 = gpg-agent-w32info.o
+@DISABLE_TESTS_FALSE@TESTS = $(am__EXEEXT_1)
 subdir = agent
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -160,7 +161,6 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
-	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -170,34 +170,42 @@ CONFIG_HEADER = $(top_builddir)/config.h
 CONFIG_CLEAN_FILES = gpg-agent.w32-manifest
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)"
-@HAVE_W32CE_SYSTEM_FALSE@am__EXEEXT_1 =  \
-@HAVE_W32CE_SYSTEM_FALSE@	gpg-preset-passphrase$(EXEEXT)
-@DISABLE_TESTS_FALSE@am__EXEEXT_2 = t-protect$(EXEEXT)
+am__EXEEXT_1 = t-protect$(EXEEXT)
+@DISABLE_TESTS_FALSE@am__EXEEXT_2 = $(am__EXEEXT_1)
 PROGRAMS = $(bin_PROGRAMS) $(libexec_PROGRAMS) $(noinst_PROGRAMS)
+am__gpg_agent_SOURCES_DIST = gpg-agent.c agent.h command.c \
+	command-ssh.c call-pinentry.c cache.c trans.c findkey.c \
+	sexp-secret.c pksign.c pkdecrypt.c genkey.c protect.c \
+	trustlist.c divert-scd.c cvt-openpgp.c cvt-openpgp.h \
+	call-scd.c call-daemon.c divert-tpm2.c call-tpm2d.c \
+	learncard.c
+@HAVE_LIBTSS_TRUE@am__objects_1 = gpg_agent-divert-tpm2.$(OBJEXT) \
+@HAVE_LIBTSS_TRUE@	gpg_agent-call-tpm2d.$(OBJEXT)
 am_gpg_agent_OBJECTS = gpg_agent-gpg-agent.$(OBJEXT) \
 	gpg_agent-command.$(OBJEXT) gpg_agent-command-ssh.$(OBJEXT) \
 	gpg_agent-call-pinentry.$(OBJEXT) gpg_agent-cache.$(OBJEXT) \
 	gpg_agent-trans.$(OBJEXT) gpg_agent-findkey.$(OBJEXT) \
-	gpg_agent-pksign.$(OBJEXT) gpg_agent-pkdecrypt.$(OBJEXT) \
-	gpg_agent-genkey.$(OBJEXT) gpg_agent-protect.$(OBJEXT) \
-	gpg_agent-trustlist.$(OBJEXT) gpg_agent-divert-scd.$(OBJEXT) \
-	gpg_agent-cvt-openpgp.$(OBJEXT) gpg_agent-call-scd.$(OBJEXT) \
-	gpg_agent-learncard.$(OBJEXT)
+	gpg_agent-sexp-secret.$(OBJEXT) gpg_agent-pksign.$(OBJEXT) \
+	gpg_agent-pkdecrypt.$(OBJEXT) gpg_agent-genkey.$(OBJEXT) \
+	gpg_agent-protect.$(OBJEXT) gpg_agent-trustlist.$(OBJEXT) \
+	gpg_agent-divert-scd.$(OBJEXT) gpg_agent-cvt-openpgp.$(OBJEXT) \
+	gpg_agent-call-scd.$(OBJEXT) gpg_agent-call-daemon.$(OBJEXT) \
+	$(am__objects_1) gpg_agent-learncard.$(OBJEXT)
 gpg_agent_OBJECTS = $(am_gpg_agent_OBJECTS)
 am__DEPENDENCIES_1 =
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpg-agent-w32info.o
 gpg_agent_LINK = $(CCLD) $(gpg_agent_CFLAGS) $(CFLAGS) \
 	$(gpg_agent_LDFLAGS) $(LDFLAGS) -o $@
-am_gpg_preset_passphrase_OBJECTS = preset-passphrase.$(OBJEXT)
+am_gpg_preset_passphrase_OBJECTS =  \
+	gpg_preset_passphrase-preset-passphrase.$(OBJEXT)
 gpg_preset_passphrase_OBJECTS = $(am_gpg_preset_passphrase_OBJECTS)
-@HAVE_W32CE_SYSTEM_FALSE@am__DEPENDENCIES_3 =  \
-@HAVE_W32CE_SYSTEM_FALSE@	../common/libsimple-pwquery.a
-gpg_preset_passphrase_DEPENDENCIES = $(am__DEPENDENCIES_3) \
-	$(common_libs) $(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+gpg_preset_passphrase_DEPENDENCIES = $(pwquery_libs) $(common_libs) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+gpg_preset_passphrase_LINK = $(CCLD) $(gpg_preset_passphrase_CFLAGS) \
+	$(CFLAGS) $(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_gpg_protect_tool_OBJECTS = gpg_protect_tool-protect-tool.$(OBJEXT) \
+	gpg_protect_tool-sexp-secret.$(OBJEXT) \
 	gpg_protect_tool-protect.$(OBJEXT) \
 	gpg_protect_tool-cvt-openpgp.$(OBJEXT)
 gpg_protect_tool_OBJECTS = $(am_gpg_protect_tool_OBJECTS)
@@ -207,12 +215,15 @@ gpg_protect_tool_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1)
 gpg_protect_tool_LINK = $(CCLD) $(gpg_protect_tool_CFLAGS) $(CFLAGS) \
 	$(AM_LDFLAGS) $(LDFLAGS) -o $@
-am_t_protect_OBJECTS = t-protect.$(OBJEXT) protect.$(OBJEXT)
+am_t_protect_OBJECTS = t_protect-t-protect.$(OBJEXT) \
+	t_protect-protect.$(OBJEXT)
 t_protect_OBJECTS = $(am_t_protect_OBJECTS)
-am__DEPENDENCIES_4 = $(common_libs) $(am__DEPENDENCIES_1) \
+am__DEPENDENCIES_2 = $(common_libs) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
-t_protect_DEPENDENCIES = $(am__DEPENDENCIES_4)
+t_protect_DEPENDENCIES = $(am__DEPENDENCIES_2)
+t_protect_LINK = $(CCLD) $(t_protect_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
+	$(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -229,12 +240,15 @@ DEFAULT_INCLUDES = -I.@am__isrc@ -I$(top_builddir)
 depcomp = $(SHELL) $(top_srcdir)/build-aux/depcomp
 am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/gpg_agent-cache.Po \
+	./$(DEPDIR)/gpg_agent-call-daemon.Po \
 	./$(DEPDIR)/gpg_agent-call-pinentry.Po \
 	./$(DEPDIR)/gpg_agent-call-scd.Po \
+	./$(DEPDIR)/gpg_agent-call-tpm2d.Po \
 	./$(DEPDIR)/gpg_agent-command-ssh.Po \
 	./$(DEPDIR)/gpg_agent-command.Po \
 	./$(DEPDIR)/gpg_agent-cvt-openpgp.Po \
 	./$(DEPDIR)/gpg_agent-divert-scd.Po \
+	./$(DEPDIR)/gpg_agent-divert-tpm2.Po \
 	./$(DEPDIR)/gpg_agent-findkey.Po \
 	./$(DEPDIR)/gpg_agent-genkey.Po \
 	./$(DEPDIR)/gpg_agent-gpg-agent.Po \
@@ -242,13 +256,16 @@ am__depfiles_remade = ./$(DEPDIR)/gpg_agent-cache.Po \
 	./$(DEPDIR)/gpg_agent-pkdecrypt.Po \
 	./$(DEPDIR)/gpg_agent-pksign.Po \
 	./$(DEPDIR)/gpg_agent-protect.Po \
+	./$(DEPDIR)/gpg_agent-sexp-secret.Po \
 	./$(DEPDIR)/gpg_agent-trans.Po \
 	./$(DEPDIR)/gpg_agent-trustlist.Po \
+	./$(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Po \
 	./$(DEPDIR)/gpg_protect_tool-cvt-openpgp.Po \
 	./$(DEPDIR)/gpg_protect_tool-protect-tool.Po \
 	./$(DEPDIR)/gpg_protect_tool-protect.Po \
-	./$(DEPDIR)/preset-passphrase.Po ./$(DEPDIR)/protect.Po \
-	./$(DEPDIR)/t-protect.Po
+	./$(DEPDIR)/gpg_protect_tool-sexp-secret.Po \
+	./$(DEPDIR)/t_protect-protect.Po \
+	./$(DEPDIR)/t_protect-t-protect.Po
 am__mv = mv -f
 AM_V_lt = $(am__v_lt_@AM_V@)
 am__v_lt_ = $(am__v_lt_@AM_DEFAULT_V@)
@@ -268,8 +285,9 @@ am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(gpg_agent_SOURCES) $(gpg_preset_passphrase_SOURCES) \
 	$(gpg_protect_tool_SOURCES) $(t_protect_SOURCES)
-DIST_SOURCES = $(gpg_agent_SOURCES) $(gpg_preset_passphrase_SOURCES) \
-	$(gpg_protect_tool_SOURCES) $(t_protect_SOURCES)
+DIST_SOURCES = $(am__gpg_agent_SOURCES_DIST) \
+	$(gpg_preset_passphrase_SOURCES) $(gpg_protect_tool_SOURCES) \
+	$(t_protect_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -360,9 +378,11 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
+GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
+GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -371,6 +391,7 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
+HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -398,9 +419,10 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
+LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
+LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
-LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -437,13 +459,14 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
-SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
+SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-SYS_SOCKET_H = @SYS_SOCKET_H@
-TAR = @TAR@
+TPMSERVER = @TPMSERVER@
+TSSSTARTUP = @TSSSTARTUP@
+TSS_INCLUDE = @TSS_INCLUDE@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -506,36 +529,26 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = ChangeLog-2011 \
-             gpg-agent-w32info.rc gpg-agent.w32-manifest.in \
-             all-tests.scm
+EXTRA_DIST = ChangeLog-2011 all-tests.scm \
+             gpg-agent-w32info.rc gpg-agent.w32-manifest.in
 
 
 # NB: AM_CFLAGS may also be used by tools running on the build
 # platform to create source files.
-AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_2) \
-	$(am__append_3) $(am__append_4) $(am__append_5) \
-	$(am__append_6) $(am__append_7) $(am__append_8)
-@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
-
-# Under Windows we use LockFileEx.  WindowsCE provides this only on
-# the WindowsMobile 6 platform and thus we need to use the coredll6
-# import library.  We also want to use a stacksize of 256k instead of
-# the 2MB which is the default with cegcc.  256k is the largest stack
-# we use with pth.
-@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
-@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
-@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
-resource_objs = 
+AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_1) \
+	$(am__append_2) $(am__append_3) $(am__append_4) \
+	$(am__append_5) $(am__append_6) $(am__append_7) \
+	$(am__append_8)
+resource_objs = $(am__append_9)
 
 # Convenience macros
 libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
-@HAVE_W32_SYSTEM_FALSE@gpg_agent_rc_objs = 
-@HAVE_W32_SYSTEM_TRUE@gpg_agent_rc_objs = $(resource_objs) gpg-agent-w32info.o
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
+@HAVE_LIBTSS_FALSE@tpm2_sources = 
+@HAVE_LIBTSS_TRUE@tpm2_sources = divert-tpm2.c call-tpm2d.c
 gpg_agent_SOURCES = \
 	gpg-agent.c agent.h \
 	command.c command-ssh.c \
@@ -543,6 +556,7 @@ gpg_agent_SOURCES = \
 	cache.c \
 	trans.c \
 	findkey.c \
+	sexp-secret.c \
 	pksign.c \
 	pkdecrypt.c \
 	genkey.c \
@@ -551,24 +565,26 @@ gpg_agent_SOURCES = \
 	divert-scd.c \
 	cvt-openpgp.c cvt-openpgp.h \
 	call-scd.c \
+	call-daemon.c \
+	$(tpm2_sources) \
 	learncard.c
 
 common_libs = $(libcommon)
 commonpth_libs = $(libcommonpth)
-@HAVE_W32CE_SYSTEM_FALSE@pwquery_libs = ../common/libsimple-pwquery.a
-@HAVE_W32CE_SYSTEM_TRUE@pwquery_libs = 
+pwquery_libs = ../common/libsimple-pwquery.a
 gpg_agent_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) \
 		$(INCICONV)
 
 gpg_agent_LDADD = $(commonpth_libs) \
                 $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
 	        $(GPG_ERROR_LIBS) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
-		$(gpg_agent_rc_objs)
+		$(resource_objs)
 
-gpg_agent_LDFLAGS = $(extra_bin_ldflags)
-gpg_agent_DEPENDENCIES = $(gpg_agent_rc_objs)
+gpg_agent_LDFLAGS = 
+gpg_agent_DEPENDENCIES = $(resource_objs)
 gpg_protect_tool_SOURCES = \
 	protect-tool.c \
+	sexp-secret.c \
 	protect.c cvt-openpgp.c
 
 gpg_protect_tool_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) \
@@ -580,17 +596,24 @@ gpg_protect_tool_LDADD = $(common_libs) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) \
 gpg_preset_passphrase_SOURCES = \
 	preset-passphrase.c
 
+gpg_preset_passphrase_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
 
 # Needs $(NETLIBS) for libsimple-pwquery.la.
 gpg_preset_passphrase_LDADD = \
          $(pwquery_libs) $(common_libs) $(LIBASSUAN_LIBS) \
 	 $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) $(NETLIBS) $(LIBICONV)
 
+
+#
+# Module tests
+#
+module_tests = t-protect
 t_common_ldadd = $(common_libs)  $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
 	          $(LIBINTL) $(LIBICONV) $(NETLIBS)
 
 t_protect_SOURCES = t-protect.c protect.c
 t_protect_LDADD = $(t_common_ldadd)
+t_protect_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
 all: all-am
 
 .SUFFIXES:
@@ -721,7 +744,7 @@ gpg-agent$(EXEEXT): $(gpg_agent_OBJECTS) $(gpg_agent_DEPENDENCIES) $(EXTRA_gpg_a
 
 gpg-preset-passphrase$(EXEEXT): $(gpg_preset_passphrase_OBJECTS) $(gpg_preset_passphrase_DEPENDENCIES) $(EXTRA_gpg_preset_passphrase_DEPENDENCIES) 
 	@rm -f gpg-preset-passphrase$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(gpg_preset_passphrase_OBJECTS) $(gpg_preset_passphrase_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(gpg_preset_passphrase_LINK) $(gpg_preset_passphrase_OBJECTS) $(gpg_preset_passphrase_LDADD) $(LIBS)
 
 gpg-protect-tool$(EXEEXT): $(gpg_protect_tool_OBJECTS) $(gpg_protect_tool_DEPENDENCIES) $(EXTRA_gpg_protect_tool_DEPENDENCIES) 
 	@rm -f gpg-protect-tool$(EXEEXT)
@@ -729,7 +752,7 @@ gpg-protect-tool$(EXEEXT): $(gpg_protect_tool_OBJECTS) $(gpg_protect_tool_DEPEND
 
 t-protect$(EXEEXT): $(t_protect_OBJECTS) $(t_protect_DEPENDENCIES) $(EXTRA_t_protect_DEPENDENCIES) 
 	@rm -f t-protect$(EXEEXT)
-	$(AM_V_CCLD)$(LINK) $(t_protect_OBJECTS) $(t_protect_LDADD) $(LIBS)
+	$(AM_V_CCLD)$(t_protect_LINK) $(t_protect_OBJECTS) $(t_protect_LDADD) $(LIBS)
 
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
@@ -738,12 +761,15 @@ distclean-compile:
 	-rm -f *.tab.c
 
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-cache.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-call-daemon.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-call-pinentry.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-call-scd.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-call-tpm2d.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-command-ssh.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-command.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-cvt-openpgp.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-divert-scd.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-divert-tpm2.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-findkey.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-genkey.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-gpg-agent.Po@am__quote@ # am--include-marker
@@ -751,14 +777,16 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-pkdecrypt.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-pksign.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-protect.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-sexp-secret.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-trans.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_agent-trustlist.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_protect_tool-cvt-openpgp.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_protect_tool-protect-tool.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_protect_tool-protect.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/preset-passphrase.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/protect.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t-protect.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_protect_tool-sexp-secret.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t_protect-protect.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/t_protect-t-protect.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -878,6 +906,20 @@ gpg_agent-findkey.obj: findkey.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-findkey.obj `if test -f 'findkey.c'; then $(CYGPATH_W) 'findkey.c'; else $(CYGPATH_W) '$(srcdir)/findkey.c'; fi`
 
+gpg_agent-sexp-secret.o: sexp-secret.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-sexp-secret.o -MD -MP -MF $(DEPDIR)/gpg_agent-sexp-secret.Tpo -c -o gpg_agent-sexp-secret.o `test -f 'sexp-secret.c' || echo '$(srcdir)/'`sexp-secret.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-sexp-secret.Tpo $(DEPDIR)/gpg_agent-sexp-secret.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='sexp-secret.c' object='gpg_agent-sexp-secret.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-sexp-secret.o `test -f 'sexp-secret.c' || echo '$(srcdir)/'`sexp-secret.c
+
+gpg_agent-sexp-secret.obj: sexp-secret.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-sexp-secret.obj -MD -MP -MF $(DEPDIR)/gpg_agent-sexp-secret.Tpo -c -o gpg_agent-sexp-secret.obj `if test -f 'sexp-secret.c'; then $(CYGPATH_W) 'sexp-secret.c'; else $(CYGPATH_W) '$(srcdir)/sexp-secret.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-sexp-secret.Tpo $(DEPDIR)/gpg_agent-sexp-secret.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='sexp-secret.c' object='gpg_agent-sexp-secret.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-sexp-secret.obj `if test -f 'sexp-secret.c'; then $(CYGPATH_W) 'sexp-secret.c'; else $(CYGPATH_W) '$(srcdir)/sexp-secret.c'; fi`
+
 gpg_agent-pksign.o: pksign.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-pksign.o -MD -MP -MF $(DEPDIR)/gpg_agent-pksign.Tpo -c -o gpg_agent-pksign.o `test -f 'pksign.c' || echo '$(srcdir)/'`pksign.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-pksign.Tpo $(DEPDIR)/gpg_agent-pksign.Po
@@ -990,6 +1032,48 @@ gpg_agent-call-scd.obj: call-scd.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-call-scd.obj `if test -f 'call-scd.c'; then $(CYGPATH_W) 'call-scd.c'; else $(CYGPATH_W) '$(srcdir)/call-scd.c'; fi`
 
+gpg_agent-call-daemon.o: call-daemon.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-call-daemon.o -MD -MP -MF $(DEPDIR)/gpg_agent-call-daemon.Tpo -c -o gpg_agent-call-daemon.o `test -f 'call-daemon.c' || echo '$(srcdir)/'`call-daemon.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-call-daemon.Tpo $(DEPDIR)/gpg_agent-call-daemon.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-daemon.c' object='gpg_agent-call-daemon.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-call-daemon.o `test -f 'call-daemon.c' || echo '$(srcdir)/'`call-daemon.c
+
+gpg_agent-call-daemon.obj: call-daemon.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-call-daemon.obj -MD -MP -MF $(DEPDIR)/gpg_agent-call-daemon.Tpo -c -o gpg_agent-call-daemon.obj `if test -f 'call-daemon.c'; then $(CYGPATH_W) 'call-daemon.c'; else $(CYGPATH_W) '$(srcdir)/call-daemon.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-call-daemon.Tpo $(DEPDIR)/gpg_agent-call-daemon.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-daemon.c' object='gpg_agent-call-daemon.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-call-daemon.obj `if test -f 'call-daemon.c'; then $(CYGPATH_W) 'call-daemon.c'; else $(CYGPATH_W) '$(srcdir)/call-daemon.c'; fi`
+
+gpg_agent-divert-tpm2.o: divert-tpm2.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-divert-tpm2.o -MD -MP -MF $(DEPDIR)/gpg_agent-divert-tpm2.Tpo -c -o gpg_agent-divert-tpm2.o `test -f 'divert-tpm2.c' || echo '$(srcdir)/'`divert-tpm2.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-divert-tpm2.Tpo $(DEPDIR)/gpg_agent-divert-tpm2.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='divert-tpm2.c' object='gpg_agent-divert-tpm2.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-divert-tpm2.o `test -f 'divert-tpm2.c' || echo '$(srcdir)/'`divert-tpm2.c
+
+gpg_agent-divert-tpm2.obj: divert-tpm2.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-divert-tpm2.obj -MD -MP -MF $(DEPDIR)/gpg_agent-divert-tpm2.Tpo -c -o gpg_agent-divert-tpm2.obj `if test -f 'divert-tpm2.c'; then $(CYGPATH_W) 'divert-tpm2.c'; else $(CYGPATH_W) '$(srcdir)/divert-tpm2.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-divert-tpm2.Tpo $(DEPDIR)/gpg_agent-divert-tpm2.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='divert-tpm2.c' object='gpg_agent-divert-tpm2.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-divert-tpm2.obj `if test -f 'divert-tpm2.c'; then $(CYGPATH_W) 'divert-tpm2.c'; else $(CYGPATH_W) '$(srcdir)/divert-tpm2.c'; fi`
+
+gpg_agent-call-tpm2d.o: call-tpm2d.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-call-tpm2d.o -MD -MP -MF $(DEPDIR)/gpg_agent-call-tpm2d.Tpo -c -o gpg_agent-call-tpm2d.o `test -f 'call-tpm2d.c' || echo '$(srcdir)/'`call-tpm2d.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-call-tpm2d.Tpo $(DEPDIR)/gpg_agent-call-tpm2d.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-tpm2d.c' object='gpg_agent-call-tpm2d.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-call-tpm2d.o `test -f 'call-tpm2d.c' || echo '$(srcdir)/'`call-tpm2d.c
+
+gpg_agent-call-tpm2d.obj: call-tpm2d.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-call-tpm2d.obj -MD -MP -MF $(DEPDIR)/gpg_agent-call-tpm2d.Tpo -c -o gpg_agent-call-tpm2d.obj `if test -f 'call-tpm2d.c'; then $(CYGPATH_W) 'call-tpm2d.c'; else $(CYGPATH_W) '$(srcdir)/call-tpm2d.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-call-tpm2d.Tpo $(DEPDIR)/gpg_agent-call-tpm2d.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='call-tpm2d.c' object='gpg_agent-call-tpm2d.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-call-tpm2d.obj `if test -f 'call-tpm2d.c'; then $(CYGPATH_W) 'call-tpm2d.c'; else $(CYGPATH_W) '$(srcdir)/call-tpm2d.c'; fi`
+
 gpg_agent-learncard.o: learncard.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -MT gpg_agent-learncard.o -MD -MP -MF $(DEPDIR)/gpg_agent-learncard.Tpo -c -o gpg_agent-learncard.o `test -f 'learncard.c' || echo '$(srcdir)/'`learncard.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_agent-learncard.Tpo $(DEPDIR)/gpg_agent-learncard.Po
@@ -1004,6 +1088,20 @@ gpg_agent-learncard.obj: learncard.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_agent_CFLAGS) $(CFLAGS) -c -o gpg_agent-learncard.obj `if test -f 'learncard.c'; then $(CYGPATH_W) 'learncard.c'; else $(CYGPATH_W) '$(srcdir)/learncard.c'; fi`
 
+gpg_preset_passphrase-preset-passphrase.o: preset-passphrase.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_preset_passphrase_CFLAGS) $(CFLAGS) -MT gpg_preset_passphrase-preset-passphrase.o -MD -MP -MF $(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Tpo -c -o gpg_preset_passphrase-preset-passphrase.o `test -f 'preset-passphrase.c' || echo '$(srcdir)/'`preset-passphrase.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Tpo $(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='preset-passphrase.c' object='gpg_preset_passphrase-preset-passphrase.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_preset_passphrase_CFLAGS) $(CFLAGS) -c -o gpg_preset_passphrase-preset-passphrase.o `test -f 'preset-passphrase.c' || echo '$(srcdir)/'`preset-passphrase.c
+
+gpg_preset_passphrase-preset-passphrase.obj: preset-passphrase.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_preset_passphrase_CFLAGS) $(CFLAGS) -MT gpg_preset_passphrase-preset-passphrase.obj -MD -MP -MF $(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Tpo -c -o gpg_preset_passphrase-preset-passphrase.obj `if test -f 'preset-passphrase.c'; then $(CYGPATH_W) 'preset-passphrase.c'; else $(CYGPATH_W) '$(srcdir)/preset-passphrase.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Tpo $(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='preset-passphrase.c' object='gpg_preset_passphrase-preset-passphrase.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_preset_passphrase_CFLAGS) $(CFLAGS) -c -o gpg_preset_passphrase-preset-passphrase.obj `if test -f 'preset-passphrase.c'; then $(CYGPATH_W) 'preset-passphrase.c'; else $(CYGPATH_W) '$(srcdir)/preset-passphrase.c'; fi`
+
 gpg_protect_tool-protect-tool.o: protect-tool.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -MT gpg_protect_tool-protect-tool.o -MD -MP -MF $(DEPDIR)/gpg_protect_tool-protect-tool.Tpo -c -o gpg_protect_tool-protect-tool.o `test -f 'protect-tool.c' || echo '$(srcdir)/'`protect-tool.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_protect_tool-protect-tool.Tpo $(DEPDIR)/gpg_protect_tool-protect-tool.Po
@@ -1017,6 +1115,20 @@ gpg_protect_tool-protect-tool.obj: protect-tool.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='protect-tool.c' object='gpg_protect_tool-protect-tool.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -c -o gpg_protect_tool-protect-tool.obj `if test -f 'protect-tool.c'; then $(CYGPATH_W) 'protect-tool.c'; else $(CYGPATH_W) '$(srcdir)/protect-tool.c'; fi`
+
+gpg_protect_tool-sexp-secret.o: sexp-secret.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -MT gpg_protect_tool-sexp-secret.o -MD -MP -MF $(DEPDIR)/gpg_protect_tool-sexp-secret.Tpo -c -o gpg_protect_tool-sexp-secret.o `test -f 'sexp-secret.c' || echo '$(srcdir)/'`sexp-secret.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_protect_tool-sexp-secret.Tpo $(DEPDIR)/gpg_protect_tool-sexp-secret.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='sexp-secret.c' object='gpg_protect_tool-sexp-secret.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -c -o gpg_protect_tool-sexp-secret.o `test -f 'sexp-secret.c' || echo '$(srcdir)/'`sexp-secret.c
+
+gpg_protect_tool-sexp-secret.obj: sexp-secret.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -MT gpg_protect_tool-sexp-secret.obj -MD -MP -MF $(DEPDIR)/gpg_protect_tool-sexp-secret.Tpo -c -o gpg_protect_tool-sexp-secret.obj `if test -f 'sexp-secret.c'; then $(CYGPATH_W) 'sexp-secret.c'; else $(CYGPATH_W) '$(srcdir)/sexp-secret.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_protect_tool-sexp-secret.Tpo $(DEPDIR)/gpg_protect_tool-sexp-secret.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='sexp-secret.c' object='gpg_protect_tool-sexp-secret.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -c -o gpg_protect_tool-sexp-secret.obj `if test -f 'sexp-secret.c'; then $(CYGPATH_W) 'sexp-secret.c'; else $(CYGPATH_W) '$(srcdir)/sexp-secret.c'; fi`
 
 gpg_protect_tool-protect.o: protect.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -MT gpg_protect_tool-protect.o -MD -MP -MF $(DEPDIR)/gpg_protect_tool-protect.Tpo -c -o gpg_protect_tool-protect.o `test -f 'protect.c' || echo '$(srcdir)/'`protect.c
@@ -1045,6 +1157,34 @@ gpg_protect_tool-cvt-openpgp.obj: cvt-openpgp.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='cvt-openpgp.c' object='gpg_protect_tool-cvt-openpgp.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_protect_tool_CFLAGS) $(CFLAGS) -c -o gpg_protect_tool-cvt-openpgp.obj `if test -f 'cvt-openpgp.c'; then $(CYGPATH_W) 'cvt-openpgp.c'; else $(CYGPATH_W) '$(srcdir)/cvt-openpgp.c'; fi`
+
+t_protect-t-protect.o: t-protect.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -MT t_protect-t-protect.o -MD -MP -MF $(DEPDIR)/t_protect-t-protect.Tpo -c -o t_protect-t-protect.o `test -f 't-protect.c' || echo '$(srcdir)/'`t-protect.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_protect-t-protect.Tpo $(DEPDIR)/t_protect-t-protect.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='t-protect.c' object='t_protect-t-protect.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -c -o t_protect-t-protect.o `test -f 't-protect.c' || echo '$(srcdir)/'`t-protect.c
+
+t_protect-t-protect.obj: t-protect.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -MT t_protect-t-protect.obj -MD -MP -MF $(DEPDIR)/t_protect-t-protect.Tpo -c -o t_protect-t-protect.obj `if test -f 't-protect.c'; then $(CYGPATH_W) 't-protect.c'; else $(CYGPATH_W) '$(srcdir)/t-protect.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_protect-t-protect.Tpo $(DEPDIR)/t_protect-t-protect.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='t-protect.c' object='t_protect-t-protect.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -c -o t_protect-t-protect.obj `if test -f 't-protect.c'; then $(CYGPATH_W) 't-protect.c'; else $(CYGPATH_W) '$(srcdir)/t-protect.c'; fi`
+
+t_protect-protect.o: protect.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -MT t_protect-protect.o -MD -MP -MF $(DEPDIR)/t_protect-protect.Tpo -c -o t_protect-protect.o `test -f 'protect.c' || echo '$(srcdir)/'`protect.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_protect-protect.Tpo $(DEPDIR)/t_protect-protect.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='protect.c' object='t_protect-protect.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -c -o t_protect-protect.o `test -f 'protect.c' || echo '$(srcdir)/'`protect.c
+
+t_protect-protect.obj: protect.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -MT t_protect-protect.obj -MD -MP -MF $(DEPDIR)/t_protect-protect.Tpo -c -o t_protect-protect.obj `if test -f 'protect.c'; then $(CYGPATH_W) 'protect.c'; else $(CYGPATH_W) '$(srcdir)/protect.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/t_protect-protect.Tpo $(DEPDIR)/t_protect-protect.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='protect.c' object='t_protect-protect.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(t_protect_CFLAGS) $(CFLAGS) -c -o t_protect-protect.obj `if test -f 'protect.c'; then $(CYGPATH_W) 'protect.c'; else $(CYGPATH_W) '$(srcdir)/protect.c'; fi`
 
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
@@ -1269,12 +1409,15 @@ clean-am: clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
 
 distclean: distclean-am
 		-rm -f ./$(DEPDIR)/gpg_agent-cache.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-call-daemon.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-call-pinentry.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-call-scd.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-call-tpm2d.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-command-ssh.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-command.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-cvt-openpgp.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-divert-scd.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-divert-tpm2.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-findkey.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-genkey.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-gpg-agent.Po
@@ -1282,14 +1425,16 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/gpg_agent-pkdecrypt.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-pksign.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-protect.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-sexp-secret.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-trans.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-trustlist.Po
+	-rm -f ./$(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Po
 	-rm -f ./$(DEPDIR)/gpg_protect_tool-cvt-openpgp.Po
 	-rm -f ./$(DEPDIR)/gpg_protect_tool-protect-tool.Po
 	-rm -f ./$(DEPDIR)/gpg_protect_tool-protect.Po
-	-rm -f ./$(DEPDIR)/preset-passphrase.Po
-	-rm -f ./$(DEPDIR)/protect.Po
-	-rm -f ./$(DEPDIR)/t-protect.Po
+	-rm -f ./$(DEPDIR)/gpg_protect_tool-sexp-secret.Po
+	-rm -f ./$(DEPDIR)/t_protect-protect.Po
+	-rm -f ./$(DEPDIR)/t_protect-t-protect.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -1336,12 +1481,15 @@ installcheck-am:
 
 maintainer-clean: maintainer-clean-am
 		-rm -f ./$(DEPDIR)/gpg_agent-cache.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-call-daemon.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-call-pinentry.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-call-scd.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-call-tpm2d.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-command-ssh.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-command.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-cvt-openpgp.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-divert-scd.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-divert-tpm2.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-findkey.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-genkey.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-gpg-agent.Po
@@ -1349,14 +1497,16 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/gpg_agent-pkdecrypt.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-pksign.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-protect.Po
+	-rm -f ./$(DEPDIR)/gpg_agent-sexp-secret.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-trans.Po
 	-rm -f ./$(DEPDIR)/gpg_agent-trustlist.Po
+	-rm -f ./$(DEPDIR)/gpg_preset_passphrase-preset-passphrase.Po
 	-rm -f ./$(DEPDIR)/gpg_protect_tool-cvt-openpgp.Po
 	-rm -f ./$(DEPDIR)/gpg_protect_tool-protect-tool.Po
 	-rm -f ./$(DEPDIR)/gpg_protect_tool-protect.Po
-	-rm -f ./$(DEPDIR)/preset-passphrase.Po
-	-rm -f ./$(DEPDIR)/protect.Po
-	-rm -f ./$(DEPDIR)/t-protect.Po
+	-rm -f ./$(DEPDIR)/gpg_protect_tool-sexp-secret.Po
+	-rm -f ./$(DEPDIR)/t_protect-protect.Po
+	-rm -f ./$(DEPDIR)/t_protect-t-protect.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 
@@ -1397,6 +1547,7 @@ uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS
 
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
+
 @HAVE_W32_SYSTEM_TRUE@gpg-agent-w32info.o : gpg-agent.w32-manifest ../common/w32info-rc.h
 
 # Make sure that all libs are build before we use them.  This is

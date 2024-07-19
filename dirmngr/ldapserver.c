@@ -48,7 +48,7 @@ ldapserver_list_free (ldap_server_t servers)
 
 /* Parse a single LDAP server configuration line.  Returns the server
  * or NULL in case of errors.  The configuration line is assumed to be
- * colon seprated with these fields:
+ * colon separated with these fields:
  *
  * 1. field: Hostname
  * 2. field: Portnumber
@@ -73,9 +73,11 @@ ldapserver_parse_one (const char *line,
 		      const char *filename, unsigned int lineno)
 {
   char *p;
+  const char *s;
   ldap_server_t server;
   int fieldno;
   int fail = 0;
+  int i;
   char **fields = NULL;
 
   server = xtrycalloc (1, sizeof *server);
@@ -143,8 +145,6 @@ ldapserver_parse_one (const char *line,
         case 5:
           {
             char **flags = NULL;
-            int i;
-            const char *s;
 
             flags = strtokenize (p, ",");
             if (!flags)

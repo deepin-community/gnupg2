@@ -41,12 +41,9 @@ static int initialized;
 static int module;
 
 /* This value is used by DSA and RSA checks in addition to the hard
- * coded length checks.  It allows to increase the required key length
+ * coded length checks.  It allows one to increase the required key length
  * using a confue file.  */
 static unsigned int min_compliant_rsa_length;
-
-/* Temporary hack to allow OCB mode in de-vs mode.  */
-static unsigned int vsd_allow_ocb;
 
 /* Return the address of a compliance cache variable for COMPLIANCE.
  * If no such variable exists NULL is returned.  FOR_RNG returns the
@@ -57,7 +54,6 @@ get_compliance_cache (enum gnupg_compliance_mode compliance, int for_rng)
   static int r_gnupg   = -1, s_gnupg   = -1;
   static int r_rfc4880 = -1, s_rfc4880 = -1;
   static int r_rfc2440 = -1, s_rfc2440 = -1;
-  static int r_pgp6    = -1, s_pgp6    = -1;
   static int r_pgp7    = -1, s_pgp7    = -1;
   static int r_pgp8    = -1, s_pgp8    = -1;
   static int r_de_vs   = -1, s_de_vs   = -1;
@@ -69,7 +65,6 @@ get_compliance_cache (enum gnupg_compliance_mode compliance, int for_rng)
     case CO_GNUPG:   ptr = for_rng? &r_gnupg   : &s_gnupg  ; break;
     case CO_RFC4880: ptr = for_rng? &r_rfc4880 : &s_rfc4880; break;
     case CO_RFC2440: ptr = for_rng? &r_rfc2440 : &s_rfc2440; break;
-    case CO_PGP6:    ptr = for_rng? &r_pgp6    : &s_pgp6   ; break;
     case CO_PGP7:    ptr = for_rng? &r_pgp7    : &s_pgp7   ; break;
     case CO_PGP8:    ptr = for_rng? &r_pgp8    : &s_pgp8   ; break;
     case CO_DE_VS:   ptr = for_rng? &r_de_vs   : &s_de_vs  ; break;
@@ -405,8 +400,7 @@ gnupg_cipher_is_compliant (enum gnupg_compliance_mode compliance,
 	  switch (module)
 	    {
 	    case GNUPG_MODULE_NAME_GPG:
-	      return (mode == GCRY_CIPHER_MODE_CFB
-                      || (vsd_allow_ocb && mode == GCRY_CIPHER_MODE_OCB));
+	      return mode == GCRY_CIPHER_MODE_CFB;
 	    case GNUPG_MODULE_NAME_GPGSM:
 	      return mode == GCRY_CIPHER_MODE_CBC;
 	    }
@@ -450,8 +444,7 @@ gnupg_cipher_is_allowed (enum gnupg_compliance_mode compliance, int producer,
 	    {
 	    case GNUPG_MODULE_NAME_GPG:
 	      return (mode == GCRY_CIPHER_MODE_NONE
-                      || mode == GCRY_CIPHER_MODE_CFB
-                      || (vsd_allow_ocb && mode == GCRY_CIPHER_MODE_OCB));
+                      || mode == GCRY_CIPHER_MODE_CFB);
 	    case GNUPG_MODULE_NAME_GPGSM:
 	      return (mode == GCRY_CIPHER_MODE_NONE
                       || mode == GCRY_CIPHER_MODE_CBC
@@ -468,8 +461,7 @@ gnupg_cipher_is_allowed (enum gnupg_compliance_mode compliance, int producer,
 	case CIPHER_ALGO_TWOFISH:
 	  return (module == GNUPG_MODULE_NAME_GPG
 		  && (mode == GCRY_CIPHER_MODE_NONE
-                      || mode == GCRY_CIPHER_MODE_CFB
-                      || (vsd_allow_ocb && mode == GCRY_CIPHER_MODE_OCB))
+                      || mode == GCRY_CIPHER_MODE_CFB)
 		  && ! producer);
 	default:
 	  return 0;
@@ -581,7 +573,7 @@ gnupg_rng_is_compliant (enum gnupg_compliance_mode compliance)
       if (res == 1)
         {
           char *buf;
-          char *fields[5];
+          const char *fields[5];
 
           buf = gcry_get_config (0, "rng-type");
           if (buf
@@ -630,7 +622,7 @@ gnupg_gcrypt_is_compliant (enum gnupg_compliance_mode compliance)
           /* Libgcrypt might be nice enough to tell us whether it is
            * compliant.  */
           char *buf;
-          char *fields[3];
+          const char *fields[3];
 
           buf = gcry_get_config (0, "compliance");
           if (buf
@@ -663,7 +655,6 @@ gnupg_status_compliance_flag (enum gnupg_compliance_mode compliance)
       return "8";
     case CO_RFC4880:
     case CO_RFC2440:
-    case CO_PGP6:
     case CO_PGP7:
     case CO_PGP8:
       log_assert (!"no status code assigned for this compliance mode");
@@ -715,7 +706,6 @@ gnupg_compliance_option_string (enum gnupg_compliance_mode compliance)
     case CO_GNUPG:   return "--compliance=gnupg";
     case CO_RFC4880: return "--compliance=openpgp";
     case CO_RFC2440: return "--compliance=rfc2440";
-    case CO_PGP6:    return "--compliance=pgp6";
     case CO_PGP7:    return "--compliance=pgp7";
     case CO_PGP8:    return "--compliance=pgp8";
     case CO_DE_VS:   return "--compliance=de-vs";
@@ -727,15 +717,7 @@ gnupg_compliance_option_string (enum gnupg_compliance_mode compliance)
 
 /* Set additional infos for example taken from config files at startup.  */
 void
-gnupg_set_compliance_extra_info (enum gnupg_co_extra_infos what,
-                                 unsigned int value)
+gnupg_set_compliance_extra_info (unsigned int min_rsa)
 {
-  switch (what)
-    {
-    case CO_EXTRA_INFO_MIN_RSA:
-      min_compliant_rsa_length = value;
-      break;
-    case CO_EXTRA_INFO_VSD_ALLOW_OCB:
-      vsd_allow_ocb = value;
-    }
+  min_compliant_rsa_length = min_rsa;
 }

@@ -1,6 +1,5 @@
 /* gpgtar.c - A simple TAR implementation mainly useful for Windows.
  * Copyright (C) 2010 Free Software Foundation, Inc.
- * Copyright (C) 2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -29,6 +28,7 @@
    gpg.  So here we go.  */
 
 #include <config.h>
+
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
@@ -42,6 +42,7 @@
 #include "../common/openpgpdefs.h"
 #include "../common/init.h"
 #include "../common/strlist.h"
+#include "../common/comopt.h"
 
 #include "gpgtar.h"
 
@@ -87,14 +88,16 @@ enum cmd_and_opt_values
     /* Compatibility with gpg-zip.  */
     oGpgArgs,
     oTarArgs,
+    oTarProgram,
 
     /* Debugging.  */
+    oDebug,
     oDryRun
   };
 
 
 /* The list of commands and options. */
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
   ARGPARSE_group (300, N_("@Commands:\n ")),
 
   ARGPARSE_c (aCreate,    "create",  N_("create an archive")),
@@ -144,13 +147,16 @@ static ARGPARSE_OPTS opts[] = {
 
   ARGPARSE_s_s (oGpgArgs, "gpg-args", "@"),
   ARGPARSE_s_s (oTarArgs, "tar-args", "@"),
+  ARGPARSE_s_s (oTarProgram, "tar", "@"),
+
+  ARGPARSE_s_s (oDebug, "debug", "@"),
 
   ARGPARSE_end ()
 };
 
 
 /* The list of commands and options for tar that we understand. */
-static ARGPARSE_OPTS tar_opts[] = {
+static gpgrt_opt_t tar_opts[] = {
   ARGPARSE_s_s (oDirectory, "directory",
                 N_("|DIRECTORY|extract files into DIRECTORY")),
   ARGPARSE_s_s (oFilesFrom, "files-from",
@@ -166,7 +172,7 @@ static enum cmd_and_opt_values cmd = 0;
 static int skip_crypto = 0;
 static const char *files_from = NULL;
 static int null_names = 0;
-
+static int any_debug;
 
 
 
@@ -329,11 +335,11 @@ shell_parse_argv (const char *s, int *r_argc, char ***r_argv)
 
 /* Command line parsing.  */
 static void
-parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
+parse_arguments (gpgrt_argparse_t *pargs, gpgrt_opt_t *popts)
 {
   int no_more_options = 0;
 
-  while (!no_more_options && gnupg_argparse (NULL, pargs, popts))
+  while (!no_more_options && gpgrt_argparse (NULL, pargs, popts))
     {
       switch (pargs->r_opt)
         {
@@ -412,6 +418,9 @@ parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
           }
           break;
 
+        case oTarProgram:  /* Dummy option.  */
+          break;
+
         case oTarArgs:
           {
             int tar_argc;
@@ -422,18 +431,22 @@ parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
                          pargs->r.ret_str);
             else
               {
-                ARGPARSE_ARGS tar_args;
+                gpgrt_argparse_t tar_args;
                 tar_args.argc = &tar_argc;
                 tar_args.argv = &tar_argv;
                 tar_args.flags = ARGPARSE_FLAG_ARG0;
                 parse_arguments (&tar_args, tar_opts);
-                gnupg_argparse (NULL, &tar_args, NULL);
+                gpgrt_argparse (NULL, &tar_args, NULL);
                 if (tar_args.err)
                   log_error ("unsupported tar arguments '%s'\n",
                              pargs->r.ret_str);
                 pargs->err = tar_args.err;
               }
           }
+          break;
+
+        case oDebug:
+          any_debug = 1;
           break;
 
         case oDryRun:
@@ -445,6 +458,7 @@ parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
     }
 }
 
+
 
 /* gpgtar main. */
 int
@@ -452,10 +466,10 @@ main (int argc, char **argv)
 {
   gpg_error_t err;
   const char *fname;
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
 
   gnupg_reopen_std (GPGTAR_NAME);
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   log_set_prefix (GPGTAR_NAME, GPGRT_LOG_WITH_PREFIX|GPGRT_LOG_NO_REGISTRY);
 
   /* Make sure that our subsystems are ready.  */
@@ -468,15 +482,23 @@ main (int argc, char **argv)
   /* Set default options */
   opt.status_fd = -1;
 
+  /* The configuraton directories for use by gpgrt_argparser.  */
+  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
+
   /* Parse the command line. */
   pargs.argc  = &argc;
   pargs.argv  = &argv;
   pargs.flags = ARGPARSE_FLAG_KEEP;
   parse_arguments (&pargs, opts);
-  gnupg_argparse (NULL, &pargs, NULL);
+  gpgrt_argparse (NULL, &pargs, NULL);
 
   if (log_get_errorcount (0))
     exit (2);
+
+  /* Get a log file from common.conf.  */
+  if (!parse_comopt (GNUPG_MODULE_NAME_GPGTAR, any_debug) && comopt.logfile)
+    log_set_file (comopt.logfile);
 
   /* Print a warning if an argument looks like an option.  */
   if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
@@ -529,7 +551,7 @@ main (int argc, char **argv)
     case aDecrypt:
     case aList:
       if (argc > 1)
-        usage (1);
+        gpgrt_usage (1);
       fname = (argc && strcmp (*argv, "-"))? *argv : NULL;
       if (opt.filename)
         log_info ("note: ignoring option --set-filename\n");
@@ -554,7 +576,7 @@ main (int argc, char **argv)
     case aSignEncrypt:
       if ((!argc && !files_from)
           || (argc && files_from))
-        usage (1);
+        gpgrt_usage (1);
       if (opt.filename)
         log_info ("note: ignoring option --set-filename\n");
       err = gpgtar_create (files_from? NULL : argv,

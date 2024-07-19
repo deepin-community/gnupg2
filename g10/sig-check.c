@@ -37,11 +37,14 @@
 
 static int check_signature_end (PKT_public_key *pk, PKT_signature *sig,
 				gcry_md_hd_t digest,
+                                const void *extrahash, size_t extrahashlen,
 				int *r_expired, int *r_revoked,
 				PKT_public_key *ret_pk);
 
 static int check_signature_end_simple (PKT_public_key *pk, PKT_signature *sig,
-                                       gcry_md_hd_t digest);
+                                       gcry_md_hd_t digest,
+                                       const void *extrahash,
+                                       size_t extrahashlen);
 
 
 /* Statistics for signature verification.  */
@@ -91,7 +94,8 @@ check_key_verify_compliance (PKT_public_key *pk)
 int
 check_signature (ctrl_t ctrl, PKT_signature *sig, gcry_md_hd_t digest)
 {
-  return check_signature2 (ctrl, sig, digest, NULL, NULL, NULL, NULL, NULL);
+  return check_signature2 (ctrl, sig, digest, NULL, 0, NULL,
+                           NULL, NULL, NULL, NULL);
 }
 
 
@@ -117,8 +121,12 @@ check_signature (ctrl_t ctrl, PKT_signature *sig, gcry_md_hd_t digest)
  * signature data from the version number through the hashed subpacket
  * data (inclusive) is hashed.")
  *
+ * EXTRAHASH and EXTRAHASHLEN is additional data which is hashed with
+ * v5 signatures.  They may be NULL to use the default.
+ *
  * If FORCED_PK is not NULL this public key is used to verify the
- * signature and no other public key is looked up.
+ * signature and no other public key is looked up.  This is used to
+ * verify against a key included in the signature.
  *
  * If R_EXPIREDATE is not NULL, R_EXPIREDATE is set to the key's
  * expiry.
@@ -138,6 +146,7 @@ check_signature (ctrl_t ctrl, PKT_signature *sig, gcry_md_hd_t digest)
 gpg_error_t
 check_signature2 (ctrl_t ctrl,
                   PKT_signature *sig, gcry_md_hd_t digest,
+                  const void *extrahash, size_t extrahashlen,
                   PKT_public_key *forced_pk,
                   u32 *r_expiredate,
 		  int *r_expired, int *r_revoked, PKT_public_key **r_pk)
@@ -197,7 +206,8 @@ check_signature2 (ctrl_t ctrl,
       if (r_expiredate)
         *r_expiredate = pk->expiredate;
 
-      rc = check_signature_end (pk, sig, digest, r_expired, r_revoked, NULL);
+      rc = check_signature_end (pk, sig, digest, extrahash, extrahashlen,
+                                r_expired, r_revoked, NULL);
 
       /* Check the backsig.  This is a back signature (0x19) from
        * the subkey on the primary key.  The idea here is that it
@@ -228,38 +238,44 @@ check_signature2 (ctrl_t ctrl,
 
     }
 
-  if (!rc && sig->sig_class < 2 && is_status_enabled ())
-    {
-      /* This signature id works best with DLP algorithms because
-       * they use a random parameter for every signature.  Instead of
-       * this sig-id we could have also used the hash of the document
-       * and the timestamp, but the drawback of this is, that it is
-       * not possible to sign more than one identical document within
-       * one second.	Some remote batch processing applications might
-       * like this feature here.
-       *
-       * Note that before 2.0.10, we used RIPE-MD160 for the hash
-       * and accidentally didn't include the timestamp and algorithm
-       * information in the hash.  Given that this feature is not
-       * commonly used and that a replay attacks detection should
-       * not solely be based on this feature (because it does not
-       * work with RSA), we take the freedom and switch to SHA-1
-       * with 2.0.10 to take advantage of hardware supported SHA-1
-       * implementations.  We also include the missing information
-       * in the hash.  Note also the SIG_ID as computed by gpg 1.x
-       * and gpg 2.x didn't matched either because 2.x used to print
-       * MPIs not in PGP format.  */
-      u32 a = sig->timestamp;
-      int nsig = pubkey_get_nsig (sig->pubkey_algo);
-      unsigned char *p, *buffer;
-      size_t n, nbytes;
-      int i;
-      char hashbuf[20];
+    if( !rc && sig->sig_class < 2 && is_status_enabled() ) {
+	/* This signature id works best with DLP algorithms because
+	 * they use a random parameter for every signature.  Instead of
+	 * this sig-id we could have also used the hash of the document
+	 * and the timestamp, but the drawback of this is, that it is
+	 * not possible to sign more than one identical document within
+	 * one second.	Some remote batch processing applications might
+	 * like this feature here.
+         *
+         * Note that before 2.0.10, we used RIPE-MD160 for the hash
+         * and accidentally didn't include the timestamp and algorithm
+         * information in the hash.  Given that this feature is not
+         * commonly used and that a replay attacks detection should
+         * not solely be based on this feature (because it does not
+         * work with RSA), we take the freedom and switch to SHA-1
+         * with 2.0.10 to take advantage of hardware supported SHA-1
+         * implementations.  We also include the missing information
+         * in the hash.  Note also the SIG_ID as computed by gpg 1.x
+         * and gpg 2.x didn't matched either because 2.x used to print
+         * MPIs not in PGP format.  */
+	u32 a = sig->timestamp;
+	int nsig = pubkey_get_nsig( sig->pubkey_algo );
+	unsigned char *p, *buffer;
+        size_t n, nbytes;
+        int i;
+        char hashbuf[20];  /* We use SHA-1 here.  */
 
       nbytes = 6;
       for (i=0; i < nsig; i++ )
         {
-          if (gcry_mpi_print (GCRYMPI_FMT_USG, NULL, 0, &n, sig->data[i]))
+          if (gcry_mpi_get_flag (sig->data[i], GCRYMPI_FLAG_OPAQUE))
+            {
+              unsigned int nbits;
+
+              gcry_mpi_get_opaque (sig->data[i], &nbits);
+              n = (nbits+7)/8 + 2;
+            }
+          else if (gcry_mpi_print (GCRYMPI_FMT_PGP, NULL, 0, &n, sig->data[i]))
             BUG();
           nbytes += n;
         }
@@ -280,7 +296,19 @@ check_signature2 (ctrl_t ctrl,
       nbytes -= 6;
       for (i=0; i < nsig; i++ )
         {
-          if (gcry_mpi_print (GCRYMPI_FMT_PGP, p, nbytes, &n, sig->data[i]))
+          if (gcry_mpi_get_flag (sig->data[i], GCRYMPI_FLAG_OPAQUE))
+            {
+              const byte *sigdata;
+              unsigned int nbits;
+
+              sigdata = gcry_mpi_get_opaque (sig->data[i], &nbits);
+              n = (nbits+7)/8;
+              p[0] = nbits >> 8;
+              p[1] = (nbits & 0xff);
+              memcpy (p+2, sigdata, n);
+              n += 2;
+            }
+          else if (gcry_mpi_print (GCRYMPI_FMT_PGP, p, nbytes, &n, sig->data[i]))
             BUG();
           p += n;
           nbytes -= n;
@@ -392,7 +420,7 @@ check_signature_metadata_validity (PKT_public_key *pk, PKT_signature *sig,
       char buf[11];
       if (opt.verbose)
         log_info (_("Note: signature key %s expired %s\n"),
-                  keystr_from_pk(pk), asctimestamp( pk->expiredate ) );
+                  keystr_from_pk(pk), isotimestamp( pk->expiredate ) );
       snprintf (buf, sizeof buf, "%lu",(ulong)pk->expiredate);
       write_status_text (STATUS_KEYEXPIRED, buf);
       if (r_expired)
@@ -444,6 +472,7 @@ check_signature_metadata_validity (PKT_public_key *pk, PKT_signature *sig,
 static int
 check_signature_end (PKT_public_key *pk, PKT_signature *sig,
 		     gcry_md_hd_t digest,
+                     const void *extrahash, size_t extrahashlen,
 		     int *r_expired, int *r_revoked, PKT_public_key *ret_pk)
 {
   int rc = 0;
@@ -452,7 +481,8 @@ check_signature_end (PKT_public_key *pk, PKT_signature *sig,
                                                r_expired, r_revoked)))
     return rc;
 
-  if ((rc = check_signature_end_simple (pk, sig, digest)))
+  if ((rc = check_signature_end_simple (pk, sig, digest,
+                                        extrahash, extrahashlen)))
     return rc;
 
   if (!rc && ret_pk)
@@ -467,7 +497,8 @@ check_signature_end (PKT_public_key *pk, PKT_signature *sig,
  * expiration, revocation, etc.  */
 static int
 check_signature_end_simple (PKT_public_key *pk, PKT_signature *sig,
-                            gcry_md_hd_t digest)
+                            gcry_md_hd_t digest,
+                            const void *extrahash, size_t extrahashlen)
 {
   gcry_mpi_t result = NULL;
   int rc = 0;
@@ -528,8 +559,10 @@ check_signature_end_simple (PKT_public_key *pk, PKT_signature *sig,
     }
   else
     {
-      byte buf[6];
+      byte buf[10];
+      int i;
       size_t n;
+
       gcry_md_putc (digest, sig->pubkey_algo);
       gcry_md_putc (digest, sig->digest_algo);
       if (sig->hashed)
@@ -548,25 +581,59 @@ check_signature_end_simple (PKT_public_key *pk, PKT_signature *sig,
 	  gcry_md_putc (digest, 0);
 	  n = 6;
 	}
+      /* Hash data from the literal data packet.  */
+      if (sig->version >= 5
+          && (sig->sig_class == 0x00 || sig->sig_class == 0x01))
+        {
+          /* - One octet content format
+           * - File name (one octet length followed by the name)
+           * - Four octet timestamp */
+          if (extrahash && extrahashlen)
+            gcry_md_write (digest, extrahash, extrahashlen);
+          else /* Detached signature. */
+            {
+              memset (buf, 0, 6);
+              gcry_md_write (digest, buf, 6);
+            }
+        }
       /* Add some magic per Section 5.2.4 of RFC 4880.  */
-      buf[0] = sig->version;
-      buf[1] = 0xff;
-      buf[2] = n >> 24;
-      buf[3] = n >> 16;
-      buf[4] = n >>  8;
-      buf[5] = n;
-      gcry_md_write( digest, buf, 6 );
+      i = 0;
+      buf[i++] = sig->version;
+      buf[i++] = 0xff;
+      if (sig->version >= 5)
+        {
+#if SIZEOF_SIZE_T > 4
+          buf[i++] = n >> 56;
+          buf[i++] = n >> 48;
+          buf[i++] = n >> 40;
+          buf[i++] = n >> 32;
+#else
+          buf[i++] = 0;
+          buf[i++] = 0;
+          buf[i++] = 0;
+          buf[i++] = 0;
+#endif
+        }
+      buf[i++] = n >> 24;
+      buf[i++] = n >> 16;
+      buf[i++] = n >>  8;
+      buf[i++] = n;
+      gcry_md_write (digest, buf, i);
     }
-  gcry_md_final( digest );
+    gcry_md_final( digest );
 
-  /* Convert the digest to an MPI.  */
-  result = encode_md_value (pk, digest, sig->digest_algo );
-  if (!result)
-    return GPG_ERR_GENERAL;
+    /* Convert the digest to an MPI.  */
+    result = encode_md_value (pk, digest, sig->digest_algo );
+    if (!result)
+        return GPG_ERR_GENERAL;
 
-  /* Verify the signature.  */
-  rc = pk_verify (pk->pubkey_algo, result, sig->data, pk->pkey);
-  gcry_mpi_release (result);
+    /* Verify the signature.  */
+    if (DBG_CLOCK && sig->sig_class <= 0x01)
+      log_clock ("enter pk_verify");
+    rc = pk_verify( pk->pubkey_algo, result, sig->data, pk->pkey );
+    if (DBG_CLOCK && sig->sig_class <= 0x01)
+      log_clock ("leave pk_verify");
+    gcry_mpi_release (result);
 
   if (!rc && sig->flags.unknown_critical)
     {
@@ -586,7 +653,7 @@ hash_uid_packet (PKT_user_id *uid, gcry_md_hd_t md, PKT_signature *sig )
 {
   if (uid->attrib_data)
     {
-      if (sig->version >=4)
+      if (sig->version >= 4)
         {
           byte buf[5];
           buf[0] = 0xd1;		   /* packet of type 17 */
@@ -600,7 +667,7 @@ hash_uid_packet (PKT_user_id *uid, gcry_md_hd_t md, PKT_signature *sig )
     }
   else
     {
-      if (sig->version >=4)
+      if (sig->version >= 4)
         {
           byte buf[5];
           buf[0] = 0xb4;	      /* indicates a userid packet */
@@ -721,8 +788,8 @@ check_revocation_keys (ctrl_t ctrl, PKT_public_key *pk, PKT_signature *sig)
 	  /* The revoker's keyid.  */
           u32 keyid[2];
 
-          keyid_from_fingerprint (ctrl, pk->revkey[i].fpr,
-                                  MAX_FINGERPRINT_LEN, keyid);
+          keyid_from_fingerprint (ctrl, pk->revkey[i].fpr, pk->revkey[i].fprlen,
+                                  keyid);
 
           if(keyid[0]==sig->keyid[0] && keyid[1]==sig->keyid[1])
 	    /* The signature was generated by a designated revoker.
@@ -777,7 +844,7 @@ check_backsig (PKT_public_key *main_pk,PKT_public_key *sub_pk,
     {
       hash_public_key(md,main_pk);
       hash_public_key(md,sub_pk);
-      rc = check_signature_end (sub_pk, backsig, md, NULL, NULL, NULL);
+      rc = check_signature_end (sub_pk, backsig, md, NULL, 0, NULL, NULL, NULL);
       cache_sig_result(backsig,rc);
       gcry_md_close(md);
     }
@@ -963,34 +1030,32 @@ check_signature_over_key_or_uid (ctrl_t ctrl, PKT_public_key *signer,
     {
       log_assert (packet->pkttype == PKT_PUBLIC_KEY);
       hash_public_key (md, packet->pkt.public_key);
-      rc = check_signature_end_simple (signer, sig, md);
+      rc = check_signature_end_simple (signer, sig, md, NULL, 0);
     }
   else if (IS_BACK_SIG (sig))
     {
       log_assert (packet->pkttype == PKT_PUBLIC_KEY);
       hash_public_key (md, packet->pkt.public_key);
       hash_public_key (md, signer);
-      rc = check_signature_end_simple (signer, sig, md);
+      rc = check_signature_end_simple (signer, sig, md, NULL, 0);
     }
   else if (IS_SUBKEY_SIG (sig) || IS_SUBKEY_REV (sig))
     {
       log_assert (packet->pkttype == PKT_PUBLIC_SUBKEY);
       hash_public_key (md, pripk);
       hash_public_key (md, packet->pkt.public_key);
-      rc = check_signature_end_simple (signer, sig, md);
+      rc = check_signature_end_simple (signer, sig, md, NULL, 0);
     }
   else if (IS_UID_SIG (sig) || IS_UID_REV (sig))
     {
       log_assert (packet->pkttype == PKT_USER_ID);
       if (sig->digest_algo == DIGEST_ALGO_SHA1 && !*is_selfsig
-          && sig->timestamp > 1547856000
           && !opt.flags.allow_weak_key_signatures)
         {
           /* If the signature was created using SHA-1 we consider this
            * signature invalid because it makes it possible to mount a
            * chosen-prefix collision.  We don't do this for
-           * self-signatures or for signatures created before the
-           * somewhat arbitrary cut-off date 2019-01-19.  */
+           * self-signatures, though.  */
           print_sha1_keysig_rejected_note ();
           rc = gpg_error (GPG_ERR_DIGEST_ALGO);
         }
@@ -998,7 +1063,7 @@ check_signature_over_key_or_uid (ctrl_t ctrl, PKT_public_key *signer,
         {
           hash_public_key (md, pripk);
           hash_uid_packet (packet->pkt.user_id, md, sig);
-          rc = check_signature_end_simple (signer, sig, md);
+          rc = check_signature_end_simple (signer, sig, md, NULL, 0);
         }
     }
   else
@@ -1060,7 +1125,7 @@ check_signature_over_key_or_uid (ctrl_t ctrl, PKT_public_key *signer,
  * signature packet's data structure.
  *
  * TODO: add r_revoked here as well.  It has the same problems as
- * r_expiredate and r_expired and the cache.  */
+ * r_expiredate and r_expired and the cache [nw].  Which problems [wk]? */
 int
 check_key_signature2 (ctrl_t ctrl,
                       kbnode_t root, kbnode_t node, PKT_public_key *check_pk,

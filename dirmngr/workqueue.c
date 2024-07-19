@@ -38,7 +38,7 @@ struct wqitem_s
    * task is not associated with a specific session.  */
   unsigned int session_id;
 
-  /* The function to perform the backgrount task.  */
+  /* The function to perform the background task.  */
   wqtask_t func;
 
   /* A string with the string argument for that task.  */
@@ -59,7 +59,7 @@ workqueue_dump_queue (ctrl_t ctrl)
   wqitem_t item;
   unsigned int count;
 
-  /* Temporay detach the entiere workqueue so that other threads don't
+  /* Temporarily detach the entire workqueue so that other threads don't
    * get into our way.  */
   saved_workqueue = workqueue;
   workqueue = NULL;
@@ -74,8 +74,8 @@ workqueue_dump_queue (ctrl_t ctrl)
                           item->func? item->func (NULL, NULL): "nop",
                           item->args, strlen (item->args) > 100? "[...]":"");
 
-  /* Restore then workqueue.  Actually we append the saved queue do a
-   * possibly updated workqueue.  */
+  /* Restore the workqueue.  Actually we append the saved queue to
+   * handle a possibly updated workqueue.  */
   if (!(item=workqueue))
     workqueue = saved_workqueue;
   else
@@ -116,7 +116,7 @@ workqueue_add_task (wqtask_t func, const char *args, unsigned int session_id,
 
 
 /* Run the task described by ITEM.  ITEM must have been detached from
- * the workqueue; its ownership is transferred to this fucntion.  */
+ * the workqueue; its ownership is transferred to this function.  */
 static void
 run_a_task (ctrl_t ctrl, wqitem_t item)
 {

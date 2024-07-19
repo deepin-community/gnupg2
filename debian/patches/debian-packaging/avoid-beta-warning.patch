@@ -19,10 +19,10 @@ See discussion at:
  1 file changed, 3 insertions(+), 3 deletions(-)
 
 diff --git a/autogen.sh b/autogen.sh
-index b238550..9b86d3f 100755
+index 0abf103..0832b84 100755
 --- a/autogen.sh
 +++ b/autogen.sh
-@@ -229,7 +229,7 @@ if [ "$myhost" = "find-version" ]; then
+@@ -221,7 +221,7 @@ if [ "$myhost" = "find-version" ]; then
      esac
  
      beta=no
@@ -31,7 +31,7 @@ index b238550..9b86d3f 100755
        ingit=yes
        tmp=$(git describe --match "${matchstr1}" --long 2>/dev/null)
        tmp=$(echo "$tmp" | sed s/^"$package"//)
-@@ -245,8 +245,8 @@ if [ "$myhost" = "find-version" ]; then
+@@ -237,8 +237,8 @@ if [ "$myhost" = "find-version" ]; then
        rvd=$((0x$(echo ${rev} | dd bs=1 count=4 2>/dev/null)))
      else
        ingit=no
