@@ -111,8 +111,7 @@ int tdbio_end_transaction(void);
 int tdbio_cancel_transaction(void);
 int tdbio_delete_record (ctrl_t ctrl, ulong recnum);
 ulong tdbio_new_recnum (ctrl_t ctrl);
-gpg_error_t tdbio_search_trust_byfpr (ctrl_t ctrl,
-                                      const byte *fpr, unsigned int fprlen,
+gpg_error_t tdbio_search_trust_byfpr (ctrl_t ctrl, const byte *fingerprint,
                                       TRUSTREC *rec);
 gpg_error_t tdbio_search_trust_bypk (ctrl_t ctrl, PKT_public_key *pk,
                                      TRUSTREC *rec);

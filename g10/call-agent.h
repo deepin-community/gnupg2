@@ -32,7 +32,6 @@ struct agent_card_info_s
   int error;         /* private. */
   char *reader;      /* Reader information.  */
   char *apptype;     /* Malloced application type string.  */
-  unsigned int appversion; /* Version of the application.  */
   unsigned int manufacturer_id;
   char *manufacturer_name; /* malloced.  */
   char *serialno;    /* malloced hex string. */
@@ -42,15 +41,15 @@ struct agent_card_info_s
   char *pubkey_url;  /* malloced. */
   char *login_data;  /* malloced. */
   char *private_do[4]; /* malloced. */
-  char cafpr1len;     /* Length of the CA-fingerprint or 0 if invalid.  */
-  char cafpr2len;
-  char cafpr3len;
+  char cafpr1valid;
+  char cafpr2valid;
+  char cafpr3valid;
   char cafpr1[20];
   char cafpr2[20];
   char cafpr3[20];
-  unsigned char fpr1len; /* Length of the fingerprint or 0 if invalid.  */
-  unsigned char fpr2len;
-  unsigned char fpr3len;
+  char fpr1valid;
+  char fpr2valid;
+  char fpr3valid;
   char fpr1[20];
   char fpr2[20];
   char fpr3[20];
@@ -72,28 +71,12 @@ struct agent_card_info_s
     unsigned int ki:1;     /* Key import available.  */
     unsigned int aac:1;    /* Algorithm attributes are changeable.  */
     unsigned int kdf:1;    /* KDF object to support PIN hashing available.  */
-    unsigned int bt:1;     /* Button for confirmation available.  */
   } extcap;
   unsigned int status_indicator;
   int kdf_do_enabled;      /* Non-zero if card has a KDF object, 0 if not.  */
-  int uif[3];              /* True if User Interaction Flag is on.  */
-  strlist_t supported_keyalgo[3];
 };
 
 
-/* Object to store information from the KEYPAIRINFO or the KEYINFO
- * status lines.  */
-struct keypair_info_s
-{
-  struct keypair_info_s *next;
-  char keygrip[2 * KEYGRIP_LEN + 1];  /* Stored in hex.  */
-  char *serialno;      /* NULL or the malloced serialno.  */
-  char *idstr;         /* Malloced keyref (e.g. "OPENPGP.1") */
-  unsigned int usage;  /* Key usage flags.  */
-  u32 keytime;         /* Key creation time from the card's DO.  */
-  int algo;            /* Helper to store the pubkey algo.       */
-};
-typedef struct keypair_info_s *keypair_info_t;
 
 /* Release the card info structure. */
 void agent_release_card_info (struct agent_card_info_s *info);
@@ -102,21 +85,10 @@ void agent_release_card_info (struct agent_card_info_s *info);
 int agent_scd_learn (struct agent_card_info_s *info, int force);
 
 /* Get the keypariinfo directly from scdaemon.  */
-gpg_error_t agent_scd_keypairinfo (ctrl_t ctrl, const char *keyref,
-                                   keypair_info_t *r_list);
+gpg_error_t agent_scd_keypairinfo (ctrl_t ctrl, strlist_t *r_list);
 
 /* Return list of cards.  */
 int agent_scd_cardlist (strlist_t *result);
-
-/* Switch/assure a certain application. */
-gpg_error_t agent_scd_switchapp (const char *appname);
-
-/* Free a keypair info list.  */
-void free_keypair_info (keypair_info_t l);
-
-/* Return card key information.  */
-gpg_error_t agent_scd_keyinfo (const char *keygrip, int cap,
-                               keypair_info_t *result);
 
 /* Return the serial number, possibly select by DEMAND.  */
 int agent_scd_serialno (char **r_serialno, const char *demand);
@@ -129,9 +101,6 @@ gpg_error_t agent_scd_getattr_one (const char *name, char **r_value);
 
 /* Update INFO with the attribute NAME. */
 int agent_scd_getattr (const char *name, struct agent_card_info_s *info);
-
-/* send the KEYTOTPM command */
-int agent_keytotpm (ctrl_t ctrl, const char *hexgrip);
 
 /* Send the KEYTOCARD command. */
 int agent_keytocard (const char *hexgrip, int keyno, int force,
@@ -154,8 +123,10 @@ int agent_scd_readcert (const char *certidstr,
                         void **r_buf, size_t *r_buflen);
 
 /* Send a READKEY command to the SCdaemon.  */
-gpg_error_t agent_scd_readkey (ctrl_t ctrl, const char *keyrefstr,
-                               gcry_sexp_t *r_result, u32 *r_keytime);
+gpg_error_t agent_scd_readkey (const char *keyrefstr, gcry_sexp_t *r_result);
+
+/* Update common shadow key stubs.  */
+gpg_error_t agent_update_shadow_keys (void);
 
 /* Change the PIN of an OpenPGP card or reset the retry counter. */
 int agent_scd_change_pin (int chvno, const char *serialno);
@@ -180,13 +151,13 @@ gpg_error_t agent_clear_passphrase (const char *cache_id);
 gpg_error_t gpg_agent_get_confirmation (const char *desc);
 
 /* Return the S2K iteration count as computed by gpg-agent.  */
-unsigned long agent_get_s2k_count (void);
+gpg_error_t agent_get_s2k_count (unsigned long *r_count);
 
 /* Check whether a secret key for public key PK is available.  Returns
    0 if not available, positive value if the secret key is available. */
 int agent_probe_secret_key (ctrl_t ctrl, PKT_public_key *pk);
 
-/* Ask the agent whether a secret key is available for any of the
+/* Ask the agent whether a secret key is availabale for any of the
    keys (primary or sub) in KEYBLOCK.  Returns 0 if available.  */
 gpg_error_t agent_probe_any_secret_key (ctrl_t ctrl, kbnode_t keyblock);
 
@@ -202,7 +173,7 @@ gpg_error_t agent_genkey (ctrl_t ctrl,
                           const char *passphrase, time_t timestamp,
                           gcry_sexp_t *r_pubkey);
 
-/* Read a public key.  FROMCARD may be 0, 1, or 2. */
+/* Read a public key.  */
 gpg_error_t agent_readkey (ctrl_t ctrl, int fromcard, const char *hexkeygrip,
                            unsigned char **r_pubkey);
 
@@ -235,7 +206,7 @@ gpg_error_t agent_import_key (ctrl_t ctrl, const char *desc,
 /* Receive a key from the agent.  */
 gpg_error_t agent_export_key (ctrl_t ctrl, const char *keygrip,
                               const char *desc, int openpgp_protected,
-                              int mode1003, char **cache_nonce_addr,
+                              char **cache_nonce_addr,
                               unsigned char **r_result, size_t *r_resultlen,
                               u32 *keyid, u32 *mainkeyid, int pubkey_algo);
 
@@ -247,10 +218,6 @@ gpg_error_t agent_delete_key (ctrl_t ctrl, const char *hexkeygrip,
 gpg_error_t agent_passwd (ctrl_t ctrl, const char *hexkeygrip, const char *desc,
                           int verify,
                           char **cache_nonce_addr, char **passwd_nonce_addr);
-
-/* Set or get the ephemeral mode.  */
-gpg_error_t agent_set_ephemeral_mode (ctrl_t ctrl, int enable, int *r_previous);
-
 /* Get the version reported by gpg-agent.  */
 gpg_error_t agent_get_version (ctrl_t ctrl, char **r_version);
 

@@ -13,15 +13,14 @@ Build-Depends:
  fig2dev <!nodoc>,
  file,
  gettext,
- ghostscript <!nodoc>,
  gpgrt-tools,
- imagemagick (>= 0.1) <!nodoc>,
+ imagemagick <!nodoc>,
  libassuan-dev (>= 2.5.0),
  libbz2-dev,
- libgcrypt20-dev (>= 1.9.1),
+ libgcrypt20-dev (>= 1.8.0),
  libgnutls28-dev (>= 3.2),
- libgpg-error-dev (>= 1.46),
- libksba-dev (>= 1.6.3),
+ libgpg-error-dev (>= 1.38),
+ libksba-dev (>= 1.4.0),
  libldap2-dev,
  libnpth0-dev (>= 1.2),
  libreadline-dev,
@@ -36,9 +35,9 @@ Build-Depends:
 Build-Depends-Indep:
  binutils-multiarch [!amd64 !i386],
  libassuan-mingw-w64-dev (>= 2.5.0),
- libgcrypt-mingw-w64-dev (>= 1.9.1),
- libgpg-error-mingw-w64-dev (>= 1.46),
- libksba-mingw-w64-dev (>= 1.6.3),
+ libgcrypt-mingw-w64-dev (>= 1.8.0),
+ libgpg-error-mingw-w64-dev (>= 1.45),
+ libksba-mingw-w64-dev (>= 1.3.5),
  libnpth-mingw-w64-dev (>= 1.2),
  libz-mingw-w64-dev,
  mingw-w64,
@@ -249,8 +248,6 @@ Depends:
  gpg-agent (>= ${source:Version}),
  gpgsm (<< ${source:Version}.1~),
  gpgsm (>= ${source:Version}),
- keyboxd (<< ${source:Version}.1~),
- keyboxd (>= ${source:Version}),
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
@@ -355,31 +352,8 @@ Description: GNU privacy guard - network certificate management service
  among other tools.  Unless this package is installed, the parts of
  the GnuPG suite that try to interact with the network will fail.
 
-Package: keyboxd
-Architecture: any
-Multi-Arch: foreign
-Depends:
- gpgconf (= ${binary:Version}),
- ${misc:Depends},
- ${shlibs:Depends},
-Recommends:
- gnupg (= ${source:Version}),
- ${shlibs:Recommends},
-Suggests:
- dbus-user-session,
- libpam-systemd,
-Description: GNU privacy guard - public key material service
- GnuPG is GNU's tool for secure communication and data storage.
- It can be used to encrypt data and to create digital signatures.
- It includes an advanced key management facility and is compliant
- with the proposed OpenPGP Internet standard as described in RFC4880.
- .
- keyboxd is a server for managing public key material of OpenPGP and
- S/MIME.
-
 Package: gpgv-udeb
 Package-Type: udeb
-Build-Profiles: <!noudeb>
 Section: debian-installer
 Architecture: any
 Depends:
@@ -480,6 +454,8 @@ Description: GNU privacy guard - utility programs
  .
   * addgnupghome -- create .gnupg home directories
   * applygnupgdefaults -- run gpgconf --apply-defaults for all users
+  * gpgcompose -- an experimental tool for constructing arbitrary
+                  sequences of OpenPGP packets (e.g. for testing)
   * gpgparsemail -- parse an e-mail message into annotated format
   * gpgsplit -- split a sequence of OpenPGP packets into files
   * gpgtar -- encrypt or sign files in an archive

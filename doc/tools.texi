@@ -49,30 +49,19 @@ listener for such a socket.  It ameliorates the output with a time stamp
 and makes sure that long lines are not interspersed with log output from
 other utilities.  This tool is not available for Windows.
 
+
 @noindent
 @command{watchgnupg} is commonly invoked as
 
 @example
-watchgnupg
-@end example
-
-which is a shorthand for
-
-@example
 watchgnupg --force $(gpgconf --list-dirs socketdir)/S.log
-@end example
-
-To watch GnuPG running with a different home directory, use
-
-@example
-watchgnupg --homedir DIR
 @end example
 @manpause
 
 @noindent
 This starts it on the current terminal for listening on the standard
-logging socket (this is commonly @file{/var/run/user/UID/gnupg/S.log}
-or if no such user directory hierarchy exists @file{~/.gnupg/S.log}).
+logging socket (which is either @file{~/.gnupg/S.log} or
+@file{/var/run/user/UID/gnupg/S.log}).
 
 @mansect options
 @noindent
@@ -82,20 +71,12 @@ or if no such user directory hierarchy exists @file{~/.gnupg/S.log}).
 
 @item --force
 @opindex force
-Delete an already existing socket file.  This option is implicitly used
-if no socket name has been given on the command line.
-
-@item --homedir @var{DIR}
-If no socket name is given on the command line, pass @var{DIR} to
-gpgconf so that the socket for a GnuPG running with DIR has its home
-directory is used.  Note that the environment variable @var{GNUPGHOME}
-is ignored by watchgnupg.
+Delete an already existing socket file.
 
 @anchor{option watchgnupg --tcp}
 @item --tcp @var{n}
-Instead of reading from a local socket, listen for connects on TCP
-port @var{n}.  A Unix domain socket can optionally also be given as a
-second source.  This option does not use a default socket name.
+Instead of reading from a local socket, listen for connects on TCP port
+@var{n}.
 
 @item --time-only
 @opindex time-only
@@ -120,14 +101,14 @@ Display a brief help page and exit.
 @chapheading Examples
 
 @example
-$ watchgnupg --time-only
+$ watchgnupg --force --time-only $(gpgconf --list-dirs socketdir)/S.log
 @end example
 
 This waits for connections on the local socket
-(e.g. @file{/var/run/user/1234/gnupg/S.log}) and shows all log
-entries.  To make this work the option @option{log-file} needs to be
-used with all modules which logs are to be shown.  The suggested entry
-for the configuration files is:
+(e.g. @file{/home/foo/.gnupg/S.log}) and shows all log entries.  To
+make this work the option @option{log-file} needs to be used with all
+modules which logs are to be shown.  The suggested entry for the
+configuration files is:
 
 @example
 log-file socket://
@@ -317,7 +298,7 @@ shall go into the respective configuration file.
 @item --apply-defaults
 Update all configuration files with values taken from the global
 configuration file (usually @file{/etc/gnupg/gpgconf.conf}).
-Note: This is a legacy mechanism.  Please use global configuration
+Note: This is a legacy mechanism.  Please use global configuraion
 files instead.
 
 @item --list-dirs [@var{names}]
@@ -387,22 +368,11 @@ daemons.  Note that as of now reload and kill have the same effect for
 Create a directory for sockets below /run/user or /var/run/user.  This
 is command is only required if a non default home directory is used
 and the /run based sockets shall be used.  For the default home
-directory GnuPG creates a directory on the fly.
+directory GnUPG creates a directory on the fly.
 
 @item --remove-socketdir
 @opindex remove-socketdir
 Remove a directory created with command @option{--create-socketdir}.
-
-@item --unlock @var{name}
-@itemx --lock @var{name}
-Remove a stale lock file hold for @file{file}.  The file is
-expected in the current GnuPG home directory.  This command is usually
-not required because GnuPG is able to detect and remove stale lock
-files.  Before using the command make sure that the file protected by
-the lock file is actually not in use.  The lock command may be used to
-lock an accidentally removed lock file.  Note that the commands have no
-effect on Windows because the mere existence of a lock file does not
-mean that the lock is active.
 
 @end table
 
@@ -428,16 +398,6 @@ extends numerical field values by human-readable descriptions.
 Try to be as quiet as possible.
 
 @include opt-homedir.texi
-
-@item --chuid @var{uid}
-@opindex chuid
-Change the current user to @var{uid} which may either be a number or a
-name.  This can be used from the root account to get information on
-the GnuPG environment of the specified user or to start or kill
-daemons.  If @var{uid} is not the current UID a standard PATH is set
-and the envvar GNUPGHOME is unset.  To override the latter the option
-@option{--homedir} can be used.  This option has currently no effect
-on Windows.
 
 @item -n
 @itemx --dry-run
@@ -735,6 +695,10 @@ all options (and the groups they belong to) in the component
 @var{component}, one per line.  @var{component} must be the string in
 the field @var{name} in the output of the @code{--list-components}
 command.
+
+Take care if system-wide options are used: gpgconf may not be able to
+properly show the options and the listed options may have no actual
+effect in case the system-wide options enforced their own settings.
 
 There is one line for each option and each group.  First come all
 options that are not in any group.  Then comes a line describing a
@@ -1133,36 +1097,10 @@ More fields may be added in future to the output.
 
 @table @file
 
-@item gpgconf.ctl
-@cindex gpgconf.ctl
-  Under Unix @file{gpgconf.ctl} may be used to change some of the
-  compiled in directories where the GnuPG components are expected.  This
-  file is expected in the same directory as @file{gpgconf}.  The
-  physical installation directories are evaluated and no symlinks.
-  Blank lines and lines starting with pound sign are ignored in the
-  file.  The keywords must be followed by optional white space, an equal
-  sign, optional white space, and the value.  Environment variables are
-  substituted in standard shell manner, the final value must start with
-  a slash, trailing slashes are stripped.  Valid keywords are
-  @code{rootdir}, @code{sysconfdir}, @code{socketdir}, and
-  @code{.enable}.  No errors are printed for unknown keywords.  The
-  @code{.enable} keyword is special: if the keyword is used and its
-  value evaluates to true the entire file is ignored.
-
-  Under Windows this file is used to install GnuPG as a portable
-  application.  An empty file named @file{gpgconf.ctl} is expected in
-  the same directory as the tool @file{gpgconf.exe}.  The root of the
-  installation is then that directory; or, if @file{gpgconf.exe} has
-  been installed directly below a directory named @file{bin}, its parent
-  directory.  You also need to make sure that the following directories
-  exist and are writable: @file{ROOT/home} for the GnuPG home and
-  @file{ROOT@value{LOCALCACHEDIR}} for internal cache files.
-
-
 @item /etc/gnupg/gpgconf.conf
 @cindex gpgconf.conf
   If this file exists, it is processed as a global configuration file.
-  This is a legacy mechanism which should not be used together with
+  This is a legacy mechanism which should not be used tigether with
   the modern global per component configuration files.  A commented
   example can be found in the @file{examples} directory of the
   distribution.
@@ -1379,15 +1317,37 @@ gpg-connect-agent [options] [commands]
 The following options may be used:
 
 @table @gnupgtabopt
+@item -v
+@itemx --verbose
+@opindex verbose
+Output additional information while running.
+
+@item -q
+@item --quiet
+@opindex q
+@opindex quiet
+Try to be as quiet as possible.
+
+@include opt-homedir.texi
+
+@item --agent-program @var{file}
+@opindex agent-program
+Specify the agent program to be started if none is running.  The
+default value is determined by running @command{gpgconf} with the
+option @option{--list-dirs}.  Note that the pipe symbol (@code{|}) is
+used for a regression test suite hack and may thus not be used in the
+file name.
+
+@item --dirmngr-program @var{file}
+@opindex dirmngr-program
+Specify the directory manager (keyserver client) program to be started
+if none is running.  This has only an effect if used together with the
+option @option{--dirmngr}.
+
 @item --dirmngr
 @opindex dirmngr
 Connect to a running directory manager (keyserver client) instead of
 to the gpg-agent.  If a dirmngr is not running, start it.
-
-@item --keyboxd
-@opindex keyboxd
-Connect to a running keybox daemon instead of
-to the gpg-agent.  If a keyboxd is not running, start it.
 
 @item -S
 @itemx --raw-socket @var{name}
@@ -1406,29 +1366,6 @@ execute it as an Assuan server. Here is how you would run @command{gpgsm}:
 @end smallexample
 Note that you may not use options on the command line in this case.
 
-@item -v
-@itemx --verbose
-@opindex verbose
-Output additional information while running.
-
-@item -q
-@item --quiet
-@opindex q
-@opindex quiet
-Try to be as quiet as possible.
-
-@include opt-homedir.texi
-
-@item --chuid @var{uid}
-@opindex chuid
-Change the current user to @var{uid} which may either be a number or a
-name.  This can be used from the root account to run gpg-connect-agent
-for another user.  If @var{uid} is not the current UID a standard PATH
-is set and the envvar GNUPGHOME is unset.  To override the latter the
-option @option{--homedir} can be used.  This option has only an effect
-when used on the command line.  This option has currently no effect at
-all on Windows.
-
 @item --no-ext-connect
 @opindex no-ext-connect
 When using @option{-S} or @option{--exec}, @command{gpg-connect-agent}
@@ -1439,32 +1376,6 @@ passing.  This option makes it use the old mode.
 @opindex no-autostart
 Do not start the gpg-agent or the dirmngr if it has not yet been
 started.
-
-@item --no-history
-@opindex --no-history
-In interactive mode the command line history is usually saved and
-restored to and from a file below the GnuPG home directory.  This
-option inhibits the use of that file.
-
-@item --agent-program @var{file}
-@opindex agent-program
-Specify the agent program to be started if none is running.  The
-default value is determined by running @command{gpgconf} with the
-option @option{--list-dirs}.  Note that the pipe symbol (@code{|}) is
-used for a regression test suite hack and may thus not be used in the
-file name.
-
-@item --dirmngr-program @var{file}
-@opindex dirmngr-program
-Specify the directory manager (keyserver client) program to be started
-if none is running.  This has only an effect if used together with the
-option @option{--dirmngr}.
-
-@item --keyboxd-program @var{file}
-@opindex keyboxd-program
-Specify the keybox daemon program to be started if none is running.
-This has only an effect if used together with the option
-@option{--keyboxd}.
 
 @item -r @var{file}
 @itemx --run @var{file}
@@ -1487,13 +1398,6 @@ non-control characters.
 @opindex decode
 Decode data lines.  That is to remove percent escapes but make sure that
 a new line always starts with a D and a space.
-
-@item -u
-@itemx --unbuffered
-@opindex unbuffered
-Set stdin and stdout into unbuffered I/O mode.  This this sometimes
-useful for scripting.
-
 
 @end table
 
@@ -1692,9 +1596,6 @@ string @code{true} or @code{yes}.  The evaluation is done by passing
 
 @item /run @var{file}
 Run commands from @var{file}.
-
-@item /history --clear
-Clear the command history.
 
 @item /bye
 Terminate the connection and the program.
@@ -1896,6 +1797,7 @@ Squid's @option{external_acl_type} option.
 @mansect description
 The @command{gpgparsemail} is a utility currently only useful for
 debugging.  Run it with @code{--help} for usage information.
+
 
 
 @c
@@ -2106,11 +2008,6 @@ Assume @var{args} are standard options of the command @command{tar}
 and parse them.  The only supported tar options are "--directory",
 "--files-from", and "--null" This is an obsolete options because those
 supported tar options can also be given directly.
-
-@item --tar @var{command}
-@opindex tar
-This is a dummy option for backward compatibility.
-@c ... to the gpg-zip script we provided in the past
 
 @item --version
 @opindex version

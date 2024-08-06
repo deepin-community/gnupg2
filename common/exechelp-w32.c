@@ -1,6 +1,6 @@
 /* exechelp-w32.c - Fork and exec helpers for W32.
- * Copyright (C) 2004, 2007-2009, 2010 Free Software Foundation, Inc.
- * Copyright (C) 2004, 2006-2012, 2014-2017 g10 Code GmbH
+ * Copyright (C) 2004, 2007, 2008, 2009,
+ *               2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -26,12 +26,11 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
- * SPDX-License-Identifier: (LGPL-3.0+ OR GPL-2.0+)
  */
 
 #include <config.h>
 
-#if !defined(HAVE_W32_SYSTEM)
+#if !defined(HAVE_W32_SYSTEM) || defined (HAVE_W32CE_SYSTEM)
 #error This code is only used on W32.
 #endif
 
@@ -65,8 +64,6 @@
 #include "sysutils.h"
 #include "exechelp.h"
 
-#include <windows.h>
-
 /* Define to 1 do enable debugging.  */
 #define DEBUG_W32_SPAWN 0
 
@@ -77,11 +74,12 @@
 #undef X_OK
 #define X_OK F_OK
 
-/* We assume that a HANDLE can be represented by an intptr_t which
-   should be true for all systems (HANDLE is defined as void *).
-   Further we assume that -1 denotes an invalid handle.  */
+/* We assume that a HANDLE can be represented by an int which should
+   be true for all i386 systems (HANDLE is defined as void *) and
+   these are the only systems for which Windows is available.  Further
+   we assume that -1 denotes an invalid handle.  */
 # define fd_to_handle(a)  ((HANDLE)(a))
-# define handle_to_fd(a)  ((intptr_t)(a))
+# define handle_to_fd(a)  ((int)(a))
 # define pid_to_handle(a) ((HANDLE)(a))
 # define handle_to_pid(a) ((int)(a))
 
@@ -398,19 +396,10 @@ gnupg_create_pipe (int filedes[2])
 }
 
 
-/* Close the end of a pipe.  */
-void
-gnupg_close_pipe (int fd)
-{
-  if (fd != -1)
-    close (fd);
-}
-
-
 /* Fork and exec the PGMNAME, see exechelp.h for details.  */
 gpg_error_t
 gnupg_spawn_process (const char *pgmname, const char *argv[],
-                     int *except, unsigned int flags,
+                     int *except, void (*preexec)(void), unsigned int flags,
                      estream_t *r_infp,
                      estream_t *r_outfp,
                      estream_t *r_errfp,
@@ -563,6 +552,10 @@ gnupg_spawn_process (const char *pgmname, const char *argv[],
   if (errpipe[1] == INVALID_HANDLE_VALUE)
     nullhd[2] = ((flags & GNUPG_SPAWN_KEEP_STDERR)?
                  GetStdHandle (STD_ERROR_HANDLE) : w32_open_null (1));
+
+  /* Start the process.  Note that we can't run the PREEXEC function
+     because this might change our own environment. */
+  (void)preexec;
 
   memset (&si, 0, sizeof si);
   si.cb = sizeof (si);
@@ -803,7 +796,7 @@ gnupg_wait_processes (const char **pgmnames, pid_t *pids, size_t count,
       if (pids[i] == (pid_t)(-1))
         return my_error (GPG_ERR_INV_VALUE);
 
-      procs[i] = pid_to_handle (pids[i]);
+      procs[i] = fd_to_handle (pids[i]);
     }
 
   /* FIXME: We should do a pth_waitpid here.  However this has not yet

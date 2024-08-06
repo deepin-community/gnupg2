@@ -35,14 +35,8 @@
 /* Defined if GPGSM is to be build */
 #undef BUILD_WITH_GPGSM
 
-/* Defined if KEYBOXD is to be build */
-#undef BUILD_WITH_KEYBOXD
-
 /* Defined if SCDAEMON is to be build */
 #undef BUILD_WITH_SCDAEMON
-
-/* Defined if TPM2D to be build */
-#undef BUILD_WITH_TPM2D
 
 /* Use as default system trust store file */
 #undef DEFAULT_TRUST_STORE_FILE
@@ -70,9 +64,6 @@
 
 /* This is only used with "make distcheck" */
 #undef ENABLE_GNUPG_BUILDDIR_ENVVAR
-
-/* Defined to use log_clock timestamps */
-#undef ENABLE_LOG_CLOCK
 
 /* Define to 1 if translation of program messages to the user's native
    language is requested. */
@@ -337,9 +328,6 @@
 /* Define to 1 if you have the `inotify_init' function. */
 #undef HAVE_INOTIFY_INIT
 
-/* Defined if we have the Intel TSS */
-#undef HAVE_INTEL_TSS
-
 /* Define to 1 if you have the <inttypes.h> header file. */
 #undef HAVE_INTTYPES_H
 
@@ -376,14 +364,11 @@
 /* Define to 1 if you have a fully functional readline library. */
 #undef HAVE_LIBREADLINE
 
-/* Defined if we have TPM2 support library */
-#undef HAVE_LIBTSS
-
-/* Define to 1 if you have the `tss2-esys' library (-ltss2-esys). */
-#undef HAVE_LIBTSS2_ESYS
-
 /* defined if libusb is available */
 #undef HAVE_LIBUSB
+
+/* defined if libutil is available */
+#undef HAVE_LIBUTIL
 
 /* Define to 1 if you have the <locale.h> header file. */
 #undef HAVE_LOCALE_H
@@ -600,6 +585,9 @@
 /* Define to 1 if you have the `vprintf' function. */
 #undef HAVE_VPRINTF
 
+/* Defined if we run on WindowsCE */
+#undef HAVE_W32CE_SYSTEM
+
 /* Defined if we run on a W32 API based system */
 #undef HAVE_W32_SYSTEM
 
@@ -635,15 +623,6 @@
 
 /* Defined if this is not a regular release */
 #undef IS_DEVELOPMENT_VERSION
-
-/* The displayed name of keyboxd */
-#undef KEYBOXD_DISP_NAME
-
-/* The name of the keyboxd */
-#undef KEYBOXD_NAME
-
-/* The name of the keyboxd socket */
-#undef KEYBOXD_SOCK_NAME
 
 /* Requested API version for libassuan */
 #undef LIBASSUAN_API_REQUESTED
@@ -723,8 +702,8 @@
 /* Size of secure memory buffer */
 #undef SECMEM_BUFFER_SIZE
 
-/* The size of `size_t', as computed by sizeof. */
-#undef SIZEOF_SIZE_T
+/* defines the filename of the shred program */
+#undef SHRED
 
 /* The size of `time_t', as computed by sizeof. */
 #undef SIZEOF_TIME_T
@@ -743,18 +722,6 @@
 
 /* Define to 1 if you have the ANSI C header files. */
 #undef STDC_HEADERS
-
-/* The displayed name of TPM2 daemon */
-#undef TPM2DAEMON_DISP_NAME
-
-/* The name of the TPM2 daemon */
-#undef TPM2DAEMON_NAME
-
-/* The name of the TPM2 daemon socket */
-#undef TPM2DAEMON_SOCK_NAME
-
-/* ibmtss include location */
-#undef TSS_INCLUDE
 
 /* Define to enable auto starting of the dirmngr */
 #undef USE_DIRMNGR_AUTO_START
@@ -891,6 +858,14 @@
 #define EXEEXT_S ""
 #endif
 
+/* This is the same as VERSION, but should be overridden if the
+   platform cannot handle things like dots '.' in filenames. Set
+   SAFE_VERSION_DOT and SAFE_VERSION_DASH to whatever SAFE_VERSION
+   uses for dots and dashes. */
+#define SAFE_VERSION VERSION
+#define SAFE_VERSION_DOT  '.'
+#define SAFE_VERSION_DASH '-'
+
 /* Some global constants.
  * Note that the homedir must not end in a slash.  */
 #ifdef HAVE_DOSISH_SYSTEM
@@ -905,11 +880,10 @@
 #define GNUPG_DEFAULT_HOMEDIR "~/.gnupg"
 #endif
 #define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
-#define GNUPG_PUBLIC_KEYS_DIR   "public-keys.d"
 #define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
-#define GNUPG_CACHE_DIR         "cache.d"
 
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2024 g10 Code GmbH"
+#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2023 g10 Code GmbH"
+
 
 /* For some systems (DOS currently), we hardcode the path here.  For
    POSIX systems the values are constructed by the Makefiles, so that
@@ -961,11 +935,8 @@
 # endif
 #endif
 
-/* Enable the es_ macros from gpgrt.  */
+/* Provide the es_ macro for estream.  */
 #define GPGRT_ENABLE_ES_MACROS 1
-
-/* Enable the log_ macros from gpgrt.  */
-#define GPGRT_ENABLE_LOG_MACROS 1
 
 /* We want the argparse macros from gpgrt.  */
 #define GPGRT_ENABLE_ARGPARSE_MACROS 1

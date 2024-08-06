@@ -673,7 +673,7 @@ static const char hlp_dns_cert[] =
 static gpg_error_t
 cmd_dns_cert (assuan_context_t ctx, char *line)
 {
-  ctrl_t ctrl = assuan_get_pointer (ctx);
+  /* ctrl_t ctrl = assuan_get_pointer (ctx); */
   gpg_error_t err = 0;
   int pka_mode, dane_mode;
   char *mbox = NULL;
@@ -738,7 +738,7 @@ cmd_dns_cert (assuan_context_t ctx, char *line)
       /* We lowercase ascii characters but the DANE I-D does not allow
          this.  FIXME: Check after the release of the RFC whether to
          change this.  */
-      mbox = mailbox_from_userid (line, 0);
+      mbox = mailbox_from_userid (line);
       if (!mbox || !(domain = strchr (mbox, '@')))
         {
           err = set_error (GPG_ERR_INV_USER_ID, "no mailbox in user id");
@@ -789,7 +789,7 @@ cmd_dns_cert (assuan_context_t ctx, char *line)
   else
     name = line;
 
-  err = get_dns_cert (ctrl, name, certtype, &key, &keylen, &fpr, &fprlen, &url);
+  err = get_dns_cert (name, certtype, &key, &keylen, &fpr, &fprlen, &url);
   if (err)
     goto leave;
 
@@ -866,7 +866,7 @@ proc_wkd_get (ctrl_t ctrl, assuan_context_t ctx, char *line)
   line = skip_options (line);
   is_wkd_query = !(opt_policy_flags || opt_submission_addr);
 
-  mbox = mailbox_from_userid (line, 0);
+  mbox = mailbox_from_userid (line);
   if (!mbox || !(domain = strchr (mbox, '@')))
     {
       err = set_error (GPG_ERR_INV_USER_ID, "no mailbox in user id");
@@ -906,7 +906,7 @@ proc_wkd_get (ctrl_t ctrl, assuan_context_t ctx, char *line)
       /* FIXME: We should put a cache into dns-stuff because the same
        * query (with a different port and socket type, though) will be
        * done later by http function.  */
-      err = resolve_dns_name (ctrl, domainbuf, 0, 0, 0, &aibuf, NULL);
+      err = resolve_dns_name (domainbuf, 0, 0, 0, &aibuf, NULL);
       if (err)
         {
           err = 0;
@@ -929,7 +929,7 @@ proc_wkd_get (ctrl_t ctrl, assuan_context_t ctx, char *line)
       size_t domainlen, targetlen;
       int i;
 
-      err = get_dns_srv (ctrl, domain, "openpgpkey", NULL, &srvs, &srvscount);
+      err = get_dns_srv (domain, "openpgpkey", NULL, &srvs, &srvscount);
       if (err)
         {
           /* Ignore server failed becuase there are too many resolvers
@@ -1317,9 +1317,6 @@ cmd_isvalid (assuan_context_t ctx, char *line)
  again:
   if (ocsp_mode)
     {
-      gnupg_isotime_t revoked_at;
-      const char *reason;
-
       /* Note, that we currently ignore the supplied fingerprint FPR;
        * instead ocsp_isvalid does an inquire to ask for the cert.
        * The fingerprint may eventually be used to lookup the
@@ -1327,12 +1324,7 @@ cmd_isvalid (assuan_context_t ctx, char *line)
       if (!opt.allow_ocsp)
         err = gpg_error (GPG_ERR_NOT_SUPPORTED);
       else
-        err = ocsp_isvalid (ctrl, NULL, NULL, force_default_responder,
-                            revoked_at, &reason);
-
-      if (gpg_err_code (err) == GPG_ERR_CERT_REVOKED)
-        dirmngr_status_printf (ctrl, "REVOCATIONINFO", "%s %s",
-                               revoked_at, reason);
+        err = ocsp_isvalid (ctrl, NULL, NULL, force_default_responder);
 
       if (gpg_err_code (err) == GPG_ERR_CONFIGURATION
           && gpg_err_source (err) == GPG_ERR_SOURCE_DIRMNGR)
@@ -1346,10 +1338,6 @@ cmd_isvalid (assuan_context_t ctx, char *line)
     }
   else if (only_ocsp)
     err = gpg_error (GPG_ERR_NO_CRL_KNOWN);
-  else if (opt.fake_crl && (err = fakecrl_isvalid (ctrl, issuerhash, serialno)))
-    {
-      /* We already got the error code.  */
-    }
   else
     {
       switch (crl_cache_isvalid (ctrl,
@@ -1371,11 +1359,8 @@ cmd_isvalid (assuan_context_t ctx, char *line)
               goto again;
             }
           break;
-        case CRL_CACHE_NOTTRUSTED:
-          err = gpg_error (GPG_ERR_NOT_TRUSTED);
-          break;
         case CRL_CACHE_CANTUSE:
-          err = gpg_error (GPG_ERR_INV_CRL_OBJ);
+          err = gpg_error (GPG_ERR_NO_CRL_KNOWN);
           break;
         default:
           log_fatal ("crl_cache_isvalid returned invalid code\n");
@@ -1388,7 +1373,7 @@ cmd_isvalid (assuan_context_t ctx, char *line)
 
 
 /* If the line contains a SHA-1 fingerprint as the first argument,
-   return the FPR buffer on success.  The function checks that the
+   return the FPR vuffer on success.  The function checks that the
    fingerprint consists of valid characters and prints and error
    message if it does not and returns NULL.  Fingerprints are
    considered optional and thus no explicit error is returned. NULL is
@@ -1483,7 +1468,7 @@ cmd_checkcrl (assuan_context_t ctx, char *line)
         goto leave;
     }
 
-  log_assert (cert);
+  assert (cert);
 
   err = crl_cache_cert_isvalid (ctrl, cert, ctrl->force_crl_refresh);
   if (gpg_err_code (err) == GPG_ERR_NO_CRL_KNOWN)
@@ -1534,8 +1519,6 @@ cmd_checkocsp (assuan_context_t ctx, char *line)
   unsigned char fprbuffer[20], *fpr;
   ksba_cert_t cert;
   int force_default_responder;
-  gnupg_isotime_t revoked_at;
-  const char *reason;
 
   force_default_responder = has_option (line, "--force-default-responder");
   line = skip_options (line);
@@ -1571,18 +1554,12 @@ cmd_checkocsp (assuan_context_t ctx, char *line)
         goto leave;
     }
 
-  log_assert (cert);
+  assert (cert);
 
   if (!opt.allow_ocsp)
     err = gpg_error (GPG_ERR_NOT_SUPPORTED);
   else
-    err = ocsp_isvalid (ctrl, cert, NULL, force_default_responder,
-                        revoked_at, &reason);
-
-  if (gpg_err_code (err) == GPG_ERR_CERT_REVOKED)
-    dirmngr_status_printf (ctrl, "REVOCATIONINFO", "%s %s",
-                           revoked_at, reason);
-
+    err = ocsp_isvalid (ctrl, cert, NULL, force_default_responder);
 
  leave:
   ksba_cert_release (cert);
@@ -2172,18 +2149,18 @@ make_keyserver_item (const char *uri, uri_item_t *r_item)
   else if (!strcmp (uri, "https://keys.gnupg.net"))
     uri = "hkps://keyserver.ubuntu.com";
   else if (!strcmp (uri, "hkp://keys.gnupg.net"))
-    uri = "hkp://keyserver.ubuntu.com";
+    uri = "hkp://pgp.surf.nl";
   else if (!strcmp (uri, "http://keys.gnupg.net"))
-    uri = "hkp://keyserver.ubuntu.com:80";
+    uri = "hkp://pgp.surf.nl:80";
   else if (!strcmp (uri, "hkps://http-keys.gnupg.net")
            || !strcmp (uri, "http-keys.gnupg.net"))
     uri = "hkps://keyserver.ubuntu.com";
   else if (!strcmp (uri, "https://http-keys.gnupg.net"))
     uri = "hkps://keyserver.ubuntu.com";
   else if (!strcmp (uri, "hkp://http-keys.gnupg.net"))
-    uri = "hkp://keyserver.ubuntu.com";
+    uri = "hkp://pgp.surf.nl";
   else if (!strcmp (uri, "http://http-keys.gnupg.net"))
-    uri = "hkp://keyserver.ubuntu.com:80";
+    uri = "hkp://pgp.surf.nl:80";
 
   return ks_action_parse_uri (uri, r_item);
 }
@@ -2859,14 +2836,13 @@ static const char hlp_getinfo[] =
   "Multi purpose command to return certain information.  \n"
   "Supported values of WHAT are:\n"
   "\n"
-  "version     - Return the version of the program\n"
-  "pid         - Return the process id of the server\n"
+  "version     - Return the version of the program.\n"
+  "pid         - Return the process id of the server.\n"
   "tor         - Return OK if running in Tor mode\n"
   "dnsinfo     - Return info about the DNS resolver\n"
-  "socket_name - Return the name of the socket\n"
-  "session_id  - Return the current session_id\n"
+  "socket_name - Return the name of the socket.\n"
+  "session_id  - Return the current session_id.\n"
   "workqueue   - Inspect the work queue\n"
-  "stats       - Print stats\n"
   "getenv NAME - Return value of envvar NAME\n";
 static gpg_error_t
 cmd_getinfo (assuan_context_t ctx, char *line)
@@ -2933,12 +2909,6 @@ cmd_getinfo (assuan_context_t ctx, char *line)
   else if (!strcmp (line, "workqueue"))
     {
       workqueue_dump_queue (ctrl);
-      err = 0;
-    }
-  else if (!strcmp (line, "stats"))
-    {
-      cert_cache_print_stats (ctrl);
-      domaininfo_print_stats (ctrl);
       err = 0;
     }
   else if (!strncmp (line, "getenv", 6)
@@ -3325,8 +3295,7 @@ dirmngr_status_help (ctrl_t ctrl, const char *text)
 
 
 /* Print a help status line using a printf like format.  The function
- * splits text at LFs.  With CTRL being NULL, the function behaves
- * like log_info.  */
+ * splits text at LFs.  */
 gpg_error_t
 dirmngr_status_helpf (ctrl_t ctrl, const char *format, ...)
 {
@@ -3335,20 +3304,12 @@ dirmngr_status_helpf (ctrl_t ctrl, const char *format, ...)
   char *buf;
 
   va_start (arg_ptr, format);
-  if (ctrl)
-    {
-      buf = es_vbsprintf (format, arg_ptr);
-      err = buf? 0 : gpg_error_from_syserror ();
-      if (!err)
-        err = dirmngr_status_help (ctrl, buf);
-      es_free (buf);
-    }
-  else
-    {
-      log_logv (GPGRT_LOGLVL_INFO, format, arg_ptr);
-      err = 0;
-    }
+  buf = es_vbsprintf (format, arg_ptr);
+  err = buf? 0 : gpg_error_from_syserror ();
   va_end (arg_ptr);
+  if (!err)
+    err = dirmngr_status_help (ctrl, buf);
+  es_free (buf);
   return err;
 }
 
@@ -3363,7 +3324,7 @@ dirmngr_status_printf (ctrl_t ctrl, const char *keyword,
   va_list arg_ptr;
   assuan_context_t ctx;
 
-  if (!ctrl || !ctrl->server_local || !(ctx = ctrl->server_local->assuan_ctx))
+  if (!ctrl->server_local || !(ctx = ctrl->server_local->assuan_ctx))
     return 0;
 
   va_start (arg_ptr, format);

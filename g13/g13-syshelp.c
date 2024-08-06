@@ -19,7 +19,6 @@
  */
 
 #include <config.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -91,7 +90,7 @@ enum cmd_and_opt_values {
  };
 
 
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
 
   ARGPARSE_s_n (oDryRun, "dry-run", N_("do not make any changes")),
 
@@ -221,9 +220,9 @@ set_debug (void)
 
 
 int
-main (int argc, char **argv)
+main ( int argc, char **argv)
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   int orig_argc;
   char **orig_argv;
   gpg_error_t err = 0;
@@ -244,7 +243,7 @@ main (int argc, char **argv)
 
   early_system_init ();
   gnupg_reopen_std (G13_NAME "-syshelp");
-  gpgrt_set_strusage (my_strusage);
+  set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
 
   log_set_prefix (G13_NAME "-syshelp", GPGRT_LOG_WITH_PREFIX);
@@ -273,7 +272,7 @@ main (int argc, char **argv)
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= (ARGPARSE_FLAG_KEEP | ARGPARSE_FLAG_NOVERSION);
-  while (gpgrt_argparse (NULL, &pargs, opts))
+  while (gnupg_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -291,7 +290,7 @@ main (int argc, char **argv)
   maybe_setuid = 0;
 
   /*
-   *  Now we are working under our real uid
+   * Now we are now working under our real uid
    */
 
   /* Setup malloc hooks. */
@@ -316,8 +315,8 @@ main (int argc, char **argv)
   ctrl.status_fd = -1; /* No status output. */
 
   /* The configuraton directories for use by gpgrt_argparser.  */
-  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
-  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
+  gnupg_set_confdir (GNUPG_CONFDIR_SYS, gnupg_sysconfdir ());
+  gnupg_set_confdir (GNUPG_CONFDIR_USER, gnupg_homedir ());
 
   argc        = orig_argc;
   argv        = orig_argv;
@@ -329,7 +328,7 @@ main (int argc, char **argv)
                    | ARGPARSE_FLAG_USER);
 
   while (!no_more_options
-         && gpgrt_argparser (&pargs, opts, G13_NAME"-syshelp" EXTSEP_S "conf"))
+         && gnupg_argparser (&pargs, opts, G13_NAME"-syshelp" EXTSEP_S "conf"))
     {
       switch (pargs.r_opt)
         {
@@ -405,18 +404,17 @@ main (int argc, char **argv)
           break;
 	}
     }
-  gpgrt_argparse (NULL, &pargs, NULL);
-
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (!last_configname)
-    opt.config_filename = gpgrt_fnameconcat (gnupg_homedir (),
-                                             G13_NAME"-syshelp" EXTSEP_S "conf",
-                                             NULL);
+    opt.config_filename = make_filename (gnupg_homedir (),
+                                         G13_NAME"-syshelp" EXTSEP_S "conf",
+                                         NULL);
   else
     {
       opt.config_filename = last_configname;
       last_configname = NULL;
-    }
+     }
 
   if (log_get_errorcount(0))
     g13_exit(2);
@@ -584,7 +582,7 @@ g13_syshelp_i_know_what_i_am_doing (void)
   if (gnupg_access (fname, F_OK))
     {
       log_info ("*******************************************************\n");
-      log_info ("* The G13 support for DM-Crypt is not yet widely used.\n");
+      log_info ("* The G13 support for DM-Crypt is new and not matured.\n");
       log_info ("* Bugs or improper use may delete all your disks!\n");
       log_info ("* To confirm that you are ware of this risk, create\n");
       log_info ("* the file '%s'.\n", fname);

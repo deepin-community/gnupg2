@@ -23,6 +23,7 @@
 #include <string.h>
 #include <errno.h>
 #include <time.h>
+#include <assert.h>
 #include <unistd.h>
 
 #include "gpgsm.h"
@@ -408,7 +409,7 @@ reimport_one (ctrl_t ctrl, struct stats_s *stats, int in_fd)
   ksba_cert_t cert = NULL;
   unsigned int flags;
 
-  kh = keydb_new (ctrl);
+  kh = keydb_new ();
   if (!kh)
     {
       err = gpg_error (GPG_ERR_ENOMEM);;
@@ -460,8 +461,7 @@ reimport_one (ctrl_t ctrl, struct stats_s *stats, int in_fd)
       err = keydb_get_cert (kh, &cert);
       if (err)
         {
-          log_error ("keydb_get_cert failed in %s: %s <%s>\n",
-                     __func__, gpg_strerror (err), gpg_strsource (err));
+          log_error ("keydb_get_cert() failed: %s\n", gpg_strerror (err));
           print_import_problem (ctrl, NULL, 1);
           stats->not_imported++;
           continue;
@@ -552,7 +552,7 @@ gpgsm_import_files (ctrl_t ctrl, int nfiles, char **files,
           int fd = of (*files);
           rc = import_one (ctrl, &stats, fd);
           close (fd);
-          if (rc == -1/* legacy*/ || gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
+          if (rc == -1/*legacy*/ || gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
             rc = 0;
         }
     }
@@ -692,85 +692,6 @@ store_cert_cb (void *opaque,
 }
 
 
-/* Helper for parse_p12.  */
-static gpg_error_t
-p12_to_skey (gcry_mpi_t *kparms, const char *curve, gcry_sexp_t *r_skey)
-{
-  gpg_error_t err = 0;
-  struct rsa_secret_key_s sk;
-  gcry_ctx_t ecctx = NULL;
-
-  if (curve)
-    {
-      /* log_debug ("curve: %s\n", curve); */
-      /* gcry_log_debugmpi ("MPI[0]", kparms[0]); */
-
-      /* We need to get the public key.  */
-      err = gcry_mpi_ec_new (&ecctx, NULL, curve);
-      if (err)
-        {
-          log_error ("error creating context for curve '%s': %s\n",
-                     curve, gpg_strerror (err));
-          goto leave;
-        }
-      err = gcry_mpi_ec_set_mpi ("d", kparms[0], ecctx);
-      if (err)
-        {
-          log_error ("error setting 'd' into context of curve '%s': %s\n",
-                     curve, gpg_strerror (err));
-          goto leave;
-        }
-
-      kparms[1] = gcry_mpi_ec_get_mpi ("q", ecctx, 1);
-      if (!kparms[1])
-        {
-          log_error ("error computing 'q' from 'd' for curve '%s'\n", curve);
-          goto leave;
-        }
-
-      err = gcry_sexp_build (r_skey, NULL,
-                             "(private-key(ecc(curve %s)(q%m)(d%m)))",
-                             curve, kparms[1], kparms[0], NULL);
-    }
-  else /* RSA */
-    {
-      /*    print_mpi ("   n", kparms[0]); */
-      /*    print_mpi ("   e", kparms[1]); */
-      /*    print_mpi ("   d", kparms[2]); */
-      /*    print_mpi ("   p", kparms[3]); */
-      /*    print_mpi ("   q", kparms[4]); */
-      /*    print_mpi ("dmp1", kparms[5]); */
-      /*    print_mpi ("dmq1", kparms[6]); */
-      /*    print_mpi ("   u", kparms[7]); */
-
-      sk.n = kparms[0];
-      sk.e = kparms[1];
-      sk.d = kparms[2];
-      sk.q = kparms[3];
-      sk.p = kparms[4];
-      sk.u = kparms[7];
-      err = rsa_key_check (&sk);
-      if (err)
-        goto leave;
-      /*    print_mpi ("   n", sk.n); */
-      /*    print_mpi ("   e", sk.e); */
-      /*    print_mpi ("   d", sk.d); */
-      /*    print_mpi ("   p", sk.p); */
-      /*    print_mpi ("   q", sk.q); */
-      /*    print_mpi ("   u", sk.u); */
-
-      /* Create an S-expression from the parameters. */
-      err = gcry_sexp_build (r_skey, NULL,
-                             "(private-key(rsa(n%m)(e%m)(d%m)(p%m)(q%m)(u%m)))",
-                             sk.n, sk.e, sk.d, sk.p, sk.q, sk.u, NULL);
-    }
-
- leave:
-  gcry_ctx_release (ecctx);
-  return err;
-}
-
-
 /* Assume that the reader is at a pkcs#12 message and try to import
    certificates from that stupid format.  We will transfer secret
    keys to the agent.  */
@@ -785,6 +706,7 @@ parse_p12 (ctrl_t ctrl, ksba_reader_t reader, struct stats_s *stats)
   size_t p12buflen;
   size_t p12bufoff;
   gcry_mpi_t *kparms = NULL;
+  struct rsa_secret_key_s sk;
   char *passphrase = NULL;
   unsigned char *key = NULL;
   size_t keylen;
@@ -857,9 +779,8 @@ parse_p12 (ctrl_t ctrl, ksba_reader_t reader, struct stats_s *stats)
     goto leave;
 
   kparms = p12_parse (p12buffer + p12bufoff, p12buflen - p12bufoff,
-                      passphrase, store_cert_cb,
-                      &store_cert_parm, &bad_pass, &curve);
-
+                      passphrase, store_cert_cb, &store_cert_parm,
+                      &bad_pass, &curve);
   xfree (passphrase);
   passphrase = NULL;
 
@@ -870,9 +791,82 @@ parse_p12 (ctrl_t ctrl, ksba_reader_t reader, struct stats_s *stats)
       goto leave;
     }
 
+  if (curve)
+    {
+      gcry_ctx_t ecctx = NULL;
 
-  err = p12_to_skey (kparms, curve, &s_key);
-  p12_parse_free_kparms (kparms);
+      /* log_debug ("curve: %s\n", curve); */
+      /* gcry_log_debugmpi ("MPI[0]", kparms[0]); */
+
+      /* We need to get the public key.  */
+      err = gcry_mpi_ec_new (&ecctx, NULL, curve);
+      if (err)
+        {
+          log_error ("error creating context for curve '%s': %s\n",
+                     curve, gpg_strerror (err));
+          goto leave;
+        }
+      err = gcry_mpi_ec_set_mpi ("d", kparms[0], ecctx);
+      if (err)
+        {
+          log_error ("error setting 'd' into context of curve '%s': %s\n",
+                     curve, gpg_strerror (err));
+          gcry_ctx_release (ecctx);
+          goto leave;
+        }
+
+      kparms[1] = gcry_mpi_ec_get_mpi ("q", ecctx, 1);
+      if (!kparms[1])
+        {
+          log_error ("error computing 'q' from 'd' for curve '%s'\n", curve);
+          gcry_ctx_release (ecctx);
+          goto leave;
+        }
+
+      gcry_ctx_release (ecctx);
+
+      err = gcry_sexp_build (&s_key, NULL,
+                             "(private-key(ecc(curve %s)(q%m)(d%m)))",
+                             curve, kparms[1], kparms[0], NULL);
+    }
+  else /* RSA */
+    {
+      /*    print_mpi ("   n", kparms[0]); */
+      /*    print_mpi ("   e", kparms[1]); */
+      /*    print_mpi ("   d", kparms[2]); */
+      /*    print_mpi ("   p", kparms[3]); */
+      /*    print_mpi ("   q", kparms[4]); */
+      /*    print_mpi ("dmp1", kparms[5]); */
+      /*    print_mpi ("dmq1", kparms[6]); */
+      /*    print_mpi ("   u", kparms[7]); */
+
+      sk.n = kparms[0];
+      sk.e = kparms[1];
+      sk.d = kparms[2];
+      sk.q = kparms[3];
+      sk.p = kparms[4];
+      sk.u = kparms[7];
+      err = rsa_key_check (&sk);
+      if (err)
+        goto leave;
+      /*    print_mpi ("   n", sk.n); */
+      /*    print_mpi ("   e", sk.e); */
+      /*    print_mpi ("   d", sk.d); */
+      /*    print_mpi ("   p", sk.p); */
+      /*    print_mpi ("   q", sk.q); */
+      /*    print_mpi ("   u", sk.u); */
+
+      /* Create an S-expression from the parameters. */
+      err = gcry_sexp_build (&s_key, NULL,
+                             "(private-key(rsa(n%m)(e%m)(d%m)(p%m)(q%m)(u%m)))",
+                             sk.n, sk.e, sk.d, sk.p, sk.q, sk.u, NULL);
+    }
+
+  /* The next is very ugly - we really should not rely on our
+   * knowledge of p12_parse internals.  */
+  for (i=0; i < 8; i++)
+    gcry_mpi_release (kparms[i]);
+  gcry_free (kparms);
   kparms = NULL;
   if (err)
     {
@@ -889,7 +883,7 @@ parse_p12 (ctrl_t ctrl, ksba_reader_t reader, struct stats_s *stats)
       goto leave;
     }
   if (DBG_X509)
-    log_printhex (grip, 20, "keygrip:");
+    log_printhex (grip, 20, "keygrip=");
 
   /* Convert to canonical encoding using a function which pads it to a
      multiple of 64 bits.  We need this padding for AESWRAP.  */

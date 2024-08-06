@@ -42,9 +42,9 @@ dearmor_file( const char *fname )
     armor_filter_context_t *afx;
     IOBUF inp = NULL, out = NULL;
     int rc = 0;
+    int c;
 
     afx = new_armor_context ();
-    afx->dearmor_mode = 1;
 
     /* prepare iobufs */
     inp = iobuf_open(fname);
@@ -66,7 +66,8 @@ dearmor_file( const char *fname )
     if( (rc = open_outfile (-1, fname, 0, 0, &out)) )
 	goto leave;
 
-    iobuf_copy (out, inp);
+    while( (c = iobuf_get(inp)) != -1 )
+	iobuf_put( out, c );
 
   leave:
     if( rc )
@@ -88,6 +89,7 @@ enarmor_file( const char *fname )
     armor_filter_context_t *afx;
     IOBUF inp = NULL, out = NULL;
     int rc = 0;
+    int c;
 
     afx = new_armor_context ();
 
@@ -114,7 +116,9 @@ enarmor_file( const char *fname )
     afx->hdrlines = "Comment: Use \"gpg --dearmor\" for unpacking\n";
     push_armor_filter ( afx, out );
 
-    iobuf_copy (out, inp);
+    while( (c = iobuf_get(inp)) != -1 )
+	iobuf_put( out, c );
+
 
   leave:
     if( rc )

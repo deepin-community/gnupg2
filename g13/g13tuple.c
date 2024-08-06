@@ -144,7 +144,7 @@ ref_tupledesc (tupledesc_t tupledesc)
 
 
 /* Return a pointer to the memory used to store the tuples.  This is
- * the data originally provided to create_tupledesc.  It is highly
+ * the data originally provided to create_tupledesc.  It is higly
  * recommended that the callers uses ref_tupledesc before calling this
  * function and unref_tupledesc when the return data will not anymore
  * be used.  */

@@ -62,14 +62,7 @@ write_sc_op_status (gpg_error_t err)
       write_status_text (STATUS_SC_OP_FAILURE, "1");
       break;
     case GPG_ERR_BAD_PIN:
-    case GPG_ERR_BAD_RESET_CODE:
       write_status_text (STATUS_SC_OP_FAILURE, "2");
-      break;
-    case GPG_ERR_PIN_BLOCKED:
-      write_status_text (STATUS_SC_OP_FAILURE, "3");
-      break;
-    case GPG_ERR_NO_RESET_CODE:
-      write_status_text (STATUS_SC_OP_FAILURE, "4");
       break;
     default:
       write_status (STATUS_SC_OP_FAILURE);
@@ -147,10 +140,7 @@ change_pin (int unblock_v2, int allow_admin)
 	answer = cpr_get("cardutil.change_pin.menu",_("Your selection? "));
 	cpr_kill_prompt();
 	if (strlen (answer) != 1)
-          {
-            xfree (answer);
-            continue;
-          }
+	  continue;
 
 	if (*answer == '1')
 	  {
@@ -195,10 +185,8 @@ change_pin (int unblock_v2, int allow_admin)
 	  }
 	else if (*answer == 'q' || *answer == 'Q')
 	  {
-            xfree (answer);
 	    break;
 	  }
-        xfree (answer);
       }
 
   agent_release_card_info (&info);
@@ -206,14 +194,13 @@ change_pin (int unblock_v2, int allow_admin)
 
 
 static void
-print_shax_fpr (estream_t fp, const unsigned char *fpr, unsigned int fprlen)
+print_sha1_fpr (estream_t fp, const unsigned char *fpr)
 {
   int i;
 
   if (fpr)
     {
-      /* FIXME: Fix formatting for FPRLEN != 20 */
-      for (i=0; i < fprlen ; i+=2, fpr += 2 )
+      for (i=0; i < 20 ; i+=2, fpr += 2 )
         {
           if (i == 10 )
             tty_fprintf (fp, " ");
@@ -227,14 +214,13 @@ print_shax_fpr (estream_t fp, const unsigned char *fpr, unsigned int fprlen)
 
 
 static void
-print_shax_fpr_colon (estream_t fp,
-                      const unsigned char *fpr, unsigned int fprlen)
+print_sha1_fpr_colon (estream_t fp, const unsigned char *fpr)
 {
   int i;
 
   if (fpr)
     {
-      for (i=0; i < fprlen ; i++, fpr++)
+      for (i=0; i < 20 ; i++, fpr++)
         es_fprintf (fp, "%02X", *fpr);
     }
   es_putc (':', fp);
@@ -333,45 +319,25 @@ print_isoname (estream_t fp, const char *text,
 
 /* Return true if the SHA1 fingerprint FPR consists only of zeroes. */
 static int
-fpr_is_zero (const char *fpr, unsigned int fprlen)
+fpr_is_zero (const char *fpr)
 {
   int i;
 
-  for (i=0; i < fprlen && !fpr[i]; i++)
+  for (i=0; i < 20 && !fpr[i]; i++)
     ;
-  return (i == fprlen);
+  return (i == 20);
 }
 
 
-/* Return true if the fingerprint FPR consists only of 0xFF. */
+/* Return true if the SHA1 fingerprint FPR consists only of 0xFF. */
 static int
-fpr_is_ff (const char *fpr, unsigned int fprlen)
+fpr_is_ff (const char *fpr)
 {
   int i;
 
-  for (i=0; i < fprlen && fpr[i] == '\xff'; i++)
+  for (i=0; i < 20 && fpr[i] == '\xff'; i++)
     ;
-  return (i == fprlen);
-}
-
-
-static void
-print_a_version (estream_t fp, const char *prefix, unsigned int value)
-{
-  unsigned int a, b, c, d;
-  a = ((value >> 24) & 0xff);
-  b = ((value >> 16) & 0xff);
-  c = ((value >>  8) & 0xff);
-  d = ((value      ) & 0xff);
-
-  if (a)
-    tty_fprintf (fp, "%s %u.%u.%u.%u\n", prefix, a, b, c, d);
-  else if (b)
-    tty_fprintf (fp, "%s %u.%u.%u\n", prefix, b, c, d);
-  else if (c)
-    tty_fprintf (fp, "%s %u.%u\n", prefix, c, d);
-  else
-    tty_fprintf (fp, "%s %u\n", prefix, d);
+  return (i == 20);
 }
 
 
@@ -386,7 +352,6 @@ current_card_status (ctrl_t ctrl, estream_t fp,
   int rc;
   unsigned int uval;
   const unsigned char *thefpr;
-  unsigned int thefprlen;
   int i;
   char *pesc;
 
@@ -413,6 +378,7 @@ current_card_status (ctrl_t ctrl, estream_t fp,
   else
     tty_fprintf (fp, "Application ID ...: %s\n",
                  info.serialno? info.serialno : "[none]");
+
   if (!info.serialno || strncmp (info.serialno, "D27600012401", 12)
       || strlen (info.serialno) != 32 )
     {
@@ -455,10 +421,14 @@ current_card_status (ctrl_t ctrl, estream_t fp,
       else
         tty_fprintf (fp, "Application type .: %s\n", name2);
 
+      /* Try to update/create the shadow key here for non-OpenPGP cards. */
+      agent_update_shadow_keys ();
+
       agent_release_card_info (&info);
       xfree (pk);
       return;
     }
+
  openpgp:
   if (!serialno)
     ;
@@ -472,15 +442,12 @@ current_card_status (ctrl_t ctrl, estream_t fp,
   else
     tty_fprintf (fp, "Application type .: %s\n", "OpenPGP");
 
+  /* Try to update/create the shadow key here for OpenPGP cards. */
+  agent_update_shadow_keys ();
 
   if (opt.with_colons)
     {
-      if (info.appversion)
-        es_fprintf (fp, "version:%02u%02u:\n",
-                    (info.appversion >> 8) & 0xff,
-                    info.appversion & 0xff);
-      else
-        es_fprintf (fp, "version:%.4s:\n", info.serialno+12);
+      es_fprintf (fp, "version:%.4s:\n", info.serialno+12);
       uval = xtoi_2(info.serialno+16)*256 + xtoi_2 (info.serialno+18);
       pesc = (info.manufacturer_name
               ? percent_escape (info.manufacturer_name, NULL) : NULL);
@@ -539,11 +506,6 @@ current_card_status (ctrl_t ctrl, estream_t fp,
 
           es_fprintf (fp, "kdf:%s:\n", setup);
         }
-      if (info.extcap.bt)
-        {
-          es_fprintf (fp, "uif:%d:%d:%d:\n",
-                      info.uif[0], info.uif[1], info.uif[2]);
-        }
 
       for (i=0; i < 4; i++)
         {
@@ -557,33 +519,27 @@ current_card_status (ctrl_t ctrl, estream_t fp,
         }
 
       es_fputs ("cafpr:", fp);
-      print_shax_fpr_colon (fp, info.cafpr1len? info.cafpr1:NULL,
-                            info.cafpr2len);
-      print_shax_fpr_colon (fp, info.cafpr2len? info.cafpr2:NULL,
-                            info.cafpr2len);
-      print_shax_fpr_colon (fp, info.cafpr3len? info.cafpr3:NULL,
-                            info.cafpr3len);
+      print_sha1_fpr_colon (fp, info.cafpr1valid? info.cafpr1:NULL);
+      print_sha1_fpr_colon (fp, info.cafpr2valid? info.cafpr2:NULL);
+      print_sha1_fpr_colon (fp, info.cafpr3valid? info.cafpr3:NULL);
       es_putc ('\n', fp);
       es_fputs ("fpr:", fp);
-      print_shax_fpr_colon (fp, info.fpr1len? info.fpr1:NULL, info.fpr1len);
-      print_shax_fpr_colon (fp, info.fpr2len? info.fpr2:NULL, info.fpr2len);
-      print_shax_fpr_colon (fp, info.fpr3len? info.fpr3:NULL, info.fpr3len);
+      print_sha1_fpr_colon (fp, info.fpr1valid? info.fpr1:NULL);
+      print_sha1_fpr_colon (fp, info.fpr2valid? info.fpr2:NULL);
+      print_sha1_fpr_colon (fp, info.fpr3valid? info.fpr3:NULL);
       es_putc ('\n', fp);
       es_fprintf (fp, "fprtime:%lu:%lu:%lu:\n",
                (unsigned long)info.fpr1time, (unsigned long)info.fpr2time,
                (unsigned long)info.fpr3time);
       es_fputs ("grp:", fp);
-      print_shax_fpr_colon (fp, info.grp1, sizeof info.grp1);
-      print_shax_fpr_colon (fp, info.grp2, sizeof info.grp2);
-      print_shax_fpr_colon (fp, info.grp3, sizeof info.grp3);
+      print_sha1_fpr_colon (fp, info.grp1);
+      print_sha1_fpr_colon (fp, info.grp2);
+      print_sha1_fpr_colon (fp, info.grp3);
       es_putc ('\n', fp);
     }
   else
     {
-      if (info.appversion)
-        print_a_version (fp, "Version ..........:", info.appversion);
-      else
-        tty_fprintf (fp, "Version ..........: %.1s%c.%.1s%c\n",
+      tty_fprintf (fp, "Version ..........: %.1s%c.%.1s%c\n",
                    info.serialno[12] == '0'?"":info.serialno+12,
                    info.serialno[13],
                    info.serialno[14] == '0'?"":info.serialno+14,
@@ -607,20 +563,20 @@ current_card_status (ctrl_t ctrl, estream_t fp,
         print_name (fp, "Private DO 3 .....: ", info.private_do[2]);
       if (info.private_do[3])
         print_name (fp, "Private DO 4 .....: ", info.private_do[3]);
-      if (info.cafpr1len)
+      if (info.cafpr1valid)
         {
           tty_fprintf (fp, "CA fingerprint %d .:", 1);
-          print_shax_fpr (fp, info.cafpr1, info.cafpr1len);
+          print_sha1_fpr (fp, info.cafpr1);
         }
-      if (info.cafpr2len)
+      if (info.cafpr2valid)
         {
           tty_fprintf (fp, "CA fingerprint %d .:", 2);
-          print_shax_fpr (fp, info.cafpr2, info.cafpr2len);
+          print_sha1_fpr (fp, info.cafpr2);
         }
-      if (info.cafpr3len)
+      if (info.cafpr3valid)
         {
           tty_fprintf (fp, "CA fingerprint %d .:", 3);
-          print_shax_fpr (fp, info.cafpr3, info.cafpr3len);
+          print_sha1_fpr (fp, info.cafpr3);
         }
       tty_fprintf (fp,    "Signature PIN ....: %s\n",
                    info.chv1_cached? _("not forced"): _("forced"));
@@ -666,31 +622,25 @@ current_card_status (ctrl_t ctrl, estream_t fp,
 
           tty_fprintf (fp, "KDF setting ......: %s\n", setup);
         }
-      if (info.extcap.bt)
-        {
-          tty_fprintf (fp, "UIF setting ......: Sign=%s Decrypt=%s Auth=%s\n",
-                       info.uif[0] ? "on" : "off", info.uif[1] ? "on" : "off",
-                       info.uif[2] ? "on" : "off");
-        }
       tty_fprintf (fp, "Signature key ....:");
-      print_shax_fpr (fp, info.fpr1len? info.fpr1:NULL, info.fpr1len);
-      if (info.fpr1len && info.fpr1time)
+      print_sha1_fpr (fp, info.fpr1valid? info.fpr1:NULL);
+      if (info.fpr1valid && info.fpr1time)
         {
           tty_fprintf (fp, "      created ....: %s\n",
                        isotimestamp (info.fpr1time));
           print_keygrip (fp, info.grp1);
         }
       tty_fprintf (fp, "Encryption key....:");
-      print_shax_fpr (fp, info.fpr2len? info.fpr2:NULL, info.fpr2len);
-      if (info.fpr2len && info.fpr2time)
+      print_sha1_fpr (fp, info.fpr2valid? info.fpr2:NULL);
+      if (info.fpr2valid && info.fpr2time)
         {
           tty_fprintf (fp, "      created ....: %s\n",
                        isotimestamp (info.fpr2time));
           print_keygrip (fp, info.grp2);
         }
       tty_fprintf (fp, "Authentication key:");
-      print_shax_fpr (fp, info.fpr3len? info.fpr3:NULL, info.fpr3len);
-      if (info.fpr3len && info.fpr3time)
+      print_sha1_fpr (fp, info.fpr3valid? info.fpr3:NULL);
+      if (info.fpr3valid && info.fpr3time)
         {
           tty_fprintf (fp, "      created ....: %s\n",
                        isotimestamp (info.fpr3time));
@@ -698,28 +648,19 @@ current_card_status (ctrl_t ctrl, estream_t fp,
         }
       tty_fprintf (fp, "General key info..: ");
 
-      thefpr = (info.fpr1len? info.fpr1 : info.fpr2len? info.fpr2 :
-                info.fpr3len? info.fpr3 : NULL);
-      thefprlen = (info.fpr1len? info.fpr1len : info.fpr2len? info.fpr2len :
-                   info.fpr3len? info.fpr3len : 0);
-      /* If the fingerprint is all 0xff, the key has no associated
+      thefpr = (info.fpr1valid? info.fpr1 : info.fpr2valid? info.fpr2 :
+                info.fpr3valid? info.fpr3 : NULL);
+      /* If the fingerprint is all 0xff, the key has no asssociated
          OpenPGP certificate.  */
-      if ( thefpr && !fpr_is_ff (thefpr, thefprlen)
-           && !get_pubkey_byfprint (ctrl, pk, &keyblock, thefpr, thefprlen))
+      if ( thefpr && !fpr_is_ff (thefpr)
+           && !get_pubkey_byfprint (ctrl, pk, &keyblock, thefpr, 20))
         {
-          print_key_info (ctrl, fp, 0, pk, 0);
-          print_card_key_info (fp, keyblock);
+          print_pubkey_info (ctrl, fp, pk);
+          if (keyblock)
+            print_card_key_info (fp, keyblock);
         }
       else
         tty_fprintf (fp, "[none]\n");
-
-      if (!info.manufacturer_name)
-        {
-          tty_fprintf (fp, "\n");
-          tty_fprintf (fp, _("Please try command \"%s\""
-                             " if the listing does not look correct\n"),
-                       "openpgp");
-        }
     }
 
   release_kbnode (keyblock);
@@ -736,7 +677,7 @@ card_status (ctrl_t ctrl, estream_t fp, const char *serialno)
 {
   int err;
   strlist_t card_list, sl;
-  char *serialno0 = NULL;
+  char *serialno0, *serialno1;
   int all_cards = 0;
   int any_card = 0;
 
@@ -770,7 +711,7 @@ card_status (ctrl_t ctrl, estream_t fp, const char *serialno)
         tty_fprintf (fp, "\n");
       any_card = 1;
 
-      err = agent_scd_serialno (NULL, sl->d);
+      err = agent_scd_serialno (&serialno1, sl->d);
       if (err)
         {
           if (opt.verbose)
@@ -780,13 +721,15 @@ card_status (ctrl_t ctrl, estream_t fp, const char *serialno)
         }
 
       current_card_status (ctrl, fp, NULL, 0);
+      xfree (serialno1);
 
       if (!all_cards)
         goto leave;
     }
 
   /* Select the original card again.  */
-  err = agent_scd_serialno (NULL, serialno0);
+  err = agent_scd_serialno (&serialno1, serialno0);
+  xfree (serialno1);
 
  leave:
   xfree (serialno0);
@@ -921,14 +864,12 @@ fetch_url (ctrl_t ctrl)
           rc = keyserver_fetch (ctrl, sl, KEYORG_URL);
           free_strlist (sl);
         }
-      else if (info.fpr1len)
+      else if (info.fpr1valid)
 	{
-          rc = keyserver_import_fprint (ctrl, info.fpr1, info.fpr1len,
-                                        opt.keyserver, 0);
+          rc = keyserver_import_fprint (ctrl, info.fpr1, 20, opt.keyserver, 0);
 	}
     }
 
-  agent_release_card_info (&info);
   return rc;
 }
 
@@ -1231,8 +1172,7 @@ change_cafpr (int fprno)
   char *data;
   const char *s;
   int i, c, rc;
-  unsigned char fpr[MAX_FINGERPRINT_LEN];
-  int fprlen;
+  unsigned char fpr[20];
 
   data = cpr_get ("cardedit.change_cafpr", _("CA fingerprint: "));
   if (!data)
@@ -1240,7 +1180,7 @@ change_cafpr (int fprno)
   trim_spaces (data);
   cpr_kill_prompt ();
 
-  for (i=0, s=data; i < MAX_FINGERPRINT_LEN && *s; )
+  for (i=0, s=data; i < 20 && *s; )
     {
       while (spacep(s))
         s++;
@@ -1254,9 +1194,8 @@ change_cafpr (int fprno)
       fpr[i++] = c;
       s += 2;
     }
-  fprlen = i;
   xfree (data);
-  if ((fprlen != 20 && fprlen != 32) || *s)
+  if (i != 20 || *s)
     {
       tty_printf (_("Error: invalid formatted fingerprint.\n"));
       return -1;
@@ -1264,7 +1203,7 @@ change_cafpr (int fprno)
 
   rc = agent_scd_setattr (fprno==1?"CA-FPR-1":
                           fprno==2?"CA-FPR-2":
-                          fprno==3?"CA-FPR-3":"x", fpr, fprlen);
+                          fprno==3?"CA-FPR-3":"x", fpr, 20);
   if (rc)
     log_error ("error setting cafpr: %s\n", gpg_strerror (rc));
   write_sc_op_status (rc);
@@ -1304,10 +1243,10 @@ get_info_for_key_operation (struct agent_card_info_s *info)
   int rc;
 
   memset (info, 0, sizeof *info);
-  agent_scd_switchapp ("openpgp");
   rc = agent_scd_getattr ("SERIALNO", info);
-  if (rc || !info->serialno || strncmp (info->serialno, "D27600012401", 12)
-      || strlen (info->serialno) != 32 )
+  if (!rc)
+    rc = agent_scd_getattr ("APPTYPE", info);
+  if (rc || !info->apptype || ascii_strcasecmp (info->apptype, "openpgp"))
     {
       log_error (_("key operation not possible: %s\n"),
                  rc ? gpg_strerror (rc) : _("not an OpenPGP card"));
@@ -1385,11 +1324,11 @@ static void
 show_card_key_info (struct agent_card_info_s *info)
 {
   tty_fprintf (NULL, "Signature key ....:");
-  print_shax_fpr (NULL, info->fpr1len? info->fpr1:NULL, info->fpr1len);
+  print_sha1_fpr (NULL, info->fpr1valid? info->fpr1:NULL);
   tty_fprintf (NULL, "Encryption key....:");
-  print_shax_fpr (NULL, info->fpr2len? info->fpr2:NULL, info->fpr2len);
+  print_sha1_fpr (NULL, info->fpr2valid? info->fpr2:NULL);
   tty_fprintf (NULL, "Authentication key:");
-  print_shax_fpr (NULL, info->fpr3len? info->fpr3:NULL, info->fpr3len);
+  print_sha1_fpr (NULL, info->fpr3valid? info->fpr3:NULL);
   tty_printf ("\n");
 }
 
@@ -1400,9 +1339,9 @@ replace_existing_key_p (struct agent_card_info_s *info, int keyno)
 {
   log_assert (keyno >= 0 && keyno <= 3);
 
-  if ((keyno == 1 && info->fpr1len)
-      || (keyno == 2 && info->fpr2len)
-      || (keyno == 3 && info->fpr3len))
+  if ((keyno == 1 && info->fpr1valid)
+      || (keyno == 2 && info->fpr2valid)
+      || (keyno == 3 && info->fpr3valid))
     {
       tty_printf ("\n");
       log_info ("WARNING: such a key has already been stored on the card!\n");
@@ -1425,11 +1364,12 @@ show_keysize_warning (void)
     return;
   shown = 1;
   tty_printf
-    (_("Note: There is no guarantee that the card supports the requested\n"
-       "      key type or size.  If the key generation does not succeed,\n"
-       "      please check the documentation of your card to see which\n"
-       "      key types and sizes are supported.\n")
-     );
+    (_("Note: There is no guarantee that the card "
+       "supports the requested size.\n"
+       "      If the key generation does not succeed, "
+       "please check the\n"
+       "      documentation of your card to see what "
+       "sizes are allowed.\n"));
 }
 
 
@@ -1503,10 +1443,7 @@ ask_card_keyattr (int keyno, const struct key_attr *current)
       algo = *answer? atoi (answer) : 0;
 
       if (!*answer || algo == 1 || algo == 2)
-        {
-          xfree (answer);
-          break;
-        }
+        break;
       else
         tty_printf (_("Invalid selection.\n"));
     }
@@ -1699,9 +1636,9 @@ generate_card_keys (ctrl_t ctrl)
   else
     want_backup = 0;
 
-  if ( (info.fpr1len && !fpr_is_zero (info.fpr1, info.fpr1len))
-       || (info.fpr2len && !fpr_is_zero (info.fpr2, info.fpr2len))
-       || (info.fpr3len && !fpr_is_zero (info.fpr3, info.fpr3len)))
+  if ( (info.fpr1valid && !fpr_is_zero (info.fpr1))
+       || (info.fpr2valid && !fpr_is_zero (info.fpr2))
+       || (info.fpr3valid && !fpr_is_zero (info.fpr3)))
     {
       tty_printf ("\n");
       log_info (_("Note: keys are already stored on the card!\n"));
@@ -1888,7 +1825,6 @@ card_store_subkey (KBNODE node, int use, strlist_t *processed_keys)
     goto leave;
 
   epoch2isotime (timebuf, (time_t)pk->timestamp);
-
   if (pk->pubkey_algo == PUBKEY_ALGO_ECDH)
     {
       ecdh_param_str = ecdh_param_str_from_pk (pk);
@@ -1898,7 +1834,6 @@ card_store_subkey (KBNODE node, int use, strlist_t *processed_keys)
           goto leave;
         }
     }
-
   rc = agent_keytocard (hexgrip, keyno, rc, info.serialno,
                         timebuf, ecdh_param_str);
   if (rc)
@@ -2080,7 +2015,13 @@ factory_reset (void)
 
   /* Then, connect the card again.  */
   if (!err)
-    err = agent_scd_serialno (NULL, NULL);
+    {
+      char *serialno0;
+
+      err = agent_scd_serialno (&serialno0, NULL);
+      if (!err)
+        xfree (serialno0);
+    }
 
  leave:
   if (locked)
@@ -2115,7 +2056,7 @@ gen_kdf_data (unsigned char *data, int single_salt)
 
   p = data;
 
-  s2k_char = encode_s2k_iterations (agent_get_s2k_count ());
+  s2k_char = encode_s2k_iterations (0);
   iterations = S2K_DECODE_COUNT (s2k_char);
   count_4byte[0] = (iterations >> 24) & 0xff;
   count_4byte[1] = (iterations >> 16) & 0xff;
@@ -2170,7 +2111,7 @@ kdf_setup (const char *args)
   struct agent_card_info_s info;
   gpg_error_t err;
   unsigned char kdf_data[KDF_DATA_LENGTH_MAX];
-  size_t len;
+  int single = (*args != 0);
 
   memset (&info, 0, sizeof info);
 
@@ -2187,25 +2128,12 @@ kdf_setup (const char *args)
       goto leave;
     }
 
-  if (!strcmp (args, "off"))
-    {
-      len = 3;
-      memcpy (kdf_data, "\x81\x01\x00", len);
-    }
-  else
-    {
-      int single = 0;
+  err = gen_kdf_data (kdf_data, single);
+  if (err)
+    goto leave_error;
 
-      if (*args != 0)
-        single = 1;
-
-      len = single ? KDF_DATA_LENGTH_MIN: KDF_DATA_LENGTH_MAX;
-      err = gen_kdf_data (kdf_data, single);
-      if (err)
-        goto leave_error;
-    }
-
-  err = agent_scd_setattr ("KDF", kdf_data, len);
+  err = agent_scd_setattr ("KDF", kdf_data,
+                           single ? KDF_DATA_LENGTH_MIN : KDF_DATA_LENGTH_MAX);
   if (err)
     goto leave_error;
 
@@ -2219,48 +2147,7 @@ kdf_setup (const char *args)
   agent_release_card_info (&info);
 }
 
-static void
-uif (int arg_number, const char *arg_rest)
-{
-  struct agent_card_info_s info;
-  int feature_available;
-  gpg_error_t err;
-  char name[100];
-  unsigned char data[2];
 
-  memset (&info, 0, sizeof info);
-
-  err = agent_scd_getattr ("EXTCAP", &info);
-  if (err)
-    {
-      log_error (_("error getting card info: %s\n"), gpg_strerror (err));
-      return;
-    }
-
-  feature_available = info.extcap.bt;
-  agent_release_card_info (&info);
-
-  if (!feature_available)
-    {
-      log_error (_("This command is not supported by this card\n"));
-      tty_printf ("\n");
-      return;
-    }
-
-  snprintf (name, sizeof name, "UIF-%d", arg_number);
-  if ( !strcmp (arg_rest, "off") )
-    data[0] = 0x00;
-  else if ( !strcmp (arg_rest, "on") )
-    data[0] = 0x01;
-  else if ( !strcmp (arg_rest, "permanent") )
-    data[0] = 0x02;
-
-  data[1] = 0x20;
-
-  err = agent_scd_setattr (name, data, 2);
-  if (err)
-    log_error (_("error for setup UIF: %s\n"), gpg_strerror (err));
-}
 
 /* Data used by the command parser.  This needs to be outside of the
    function scope to allow readline based command completion.  */
@@ -2271,7 +2158,7 @@ enum cmdids
     cmdNAME, cmdURL, cmdFETCH, cmdLOGIN, cmdLANG, cmdSEX, cmdCAFPR,
     cmdFORCESIG, cmdGENERATE, cmdPASSWD, cmdPRIVATEDO, cmdWRITECERT,
     cmdREADCERT, cmdUNBLOCK, cmdFACTORYRESET, cmdKDFSETUP,
-    cmdKEYATTR, cmdUIF, cmdOPENPGP,
+    cmdKEYATTR,
     cmdINVCMD
   };
 
@@ -2303,13 +2190,10 @@ static struct
     { "generate", cmdGENERATE, 1, N_("generate new keys")},
     { "passwd"  , cmdPASSWD, 0, N_("menu to change or unblock the PIN")},
     { "verify"  , cmdVERIFY, 0, N_("verify the PIN and list all data")},
-    { "unblock" , cmdUNBLOCK,0, N_("unblock the PIN using a Reset Code")},
+    { "unblock" , cmdUNBLOCK,0, N_("unblock the PIN using a Reset Code") },
     { "factory-reset", cmdFACTORYRESET, 1, N_("destroy all keys and data")},
-    { "kdf-setup", cmdKDFSETUP, 1,
-      N_("setup KDF for PIN authentication (on/single/off)")},
+    { "kdf-setup", cmdKDFSETUP, 1, N_("setup KDF for PIN authentication")},
     { "key-attr", cmdKEYATTR, 1, N_("change the key attribute")},
-    { "uif", cmdUIF, 1, N_("change the User Interaction Flag")},
-    { "openpgp", cmdOPENPGP, 0, N_("switch to the OpenPGP app")},
     /* Note, that we do not announce these command yet. */
     { "privatedo", cmdPRIVATEDO, 0, NULL },
     { "readcert", cmdREADCERT, 0, NULL },
@@ -2599,19 +2483,6 @@ card_edit (ctrl_t ctrl, strlist_t commands)
 
         case cmdKEYATTR:
           key_attr ();
-          break;
-
-        case cmdUIF:
-          if ( arg_number < 1 || arg_number > 3 )
-            tty_printf ("usage: uif N [on|off|permanent]\n"
-                        "       1 <= N <= 3\n");
-          else
-            uif (arg_number, arg_rest);
-          break;
-
-        case cmdOPENPGP:
-          agent_scd_switchapp ("openpgp");
-          redisplay = 1;
           break;
 
         case cmdQUIT:

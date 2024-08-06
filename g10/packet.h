@@ -60,12 +60,6 @@
 #define PUBKEY_USAGE_RENC    1024                /* Restricted encryption.  */
 #define PUBKEY_USAGE_TIME    2048                /* Timestamp use.  */
 
-/* Bitflags to convey hints on what kind of signature is created.  */
-#define SIGNHINT_KEYSIG  1
-#define SIGNHINT_SELFSIG 2
-#define SIGNHINT_ADSK    4
-
-
 /* Helper macros.  */
 #define is_RSA(a)     ((a)==PUBKEY_ALGO_RSA || (a)==PUBKEY_ALGO_RSA_E \
 		       || (a)==PUBKEY_ALGO_RSA_S )
@@ -108,11 +102,11 @@ typedef struct
 /* A symmetric-key encrypted session key packet as defined in RFC
    4880, Section 5.3.  All fields are serialized.  */
 typedef struct {
-  /* We support version 4 (rfc4880) and 5 (rfc4880bis).  */
+  /* RFC 4880: this must be 4.  */
   byte version;
-  /* The cipher algorithm used to encrypt the session key.  Note that
-   * this may be different from the algorithm that is used to encrypt
-   * bulk data.  */
+  /* The cipher algorithm used to encrypt the session key.  (This may
+     be different from the algorithm that is used to encrypt the SED
+     packet.)  */
   byte cipher_algo;
   /* The AEAD algorithm or 0 for CFB encryption.  */
   byte aead_algo;
@@ -143,17 +137,6 @@ typedef struct {
   /* The session key.  */
   gcry_mpi_t     data[PUBKEY_MAX_NENC];
 } PKT_pubkey_enc;
-
-
-/* An object to build a list of public-key encrypted session key.  */
-struct pubkey_enc_list
-{
-  struct pubkey_enc_list *next;
-  u32 keyid[2];
-  int pubkey_algo;
-  int result;
-  gcry_mpi_t data[PUBKEY_MAX_NENC];
-};
 
 
 /* A one-pass signature packet as defined in RFC 4880, Section
@@ -195,11 +178,22 @@ struct revocation_key {
   byte class;
   /* The public-key algorithm ID.  */
   byte algid;
-  /* The length of the fingerprint.  */
-  byte fprlen;
   /* The fingerprint of the authorized key.  */
   byte fpr[MAX_FINGERPRINT_LEN];
 };
+
+
+/* Object to keep information about a PKA DNS record. */
+typedef struct
+{
+  int valid;    /* An actual PKA record exists for EMAIL. */
+  int checked;  /* Set to true if the FPR has been checked against the
+                   actual key. */
+  char *uri;    /* Malloced string with the URI. NULL if the URI is
+                   not available.*/
+  unsigned char fpr[20]; /* The fingerprint as stored in the PKA RR. */
+  char email[1];/* The email address from the notation data. */
+} pka_info_t;
 
 
 /* A signature packet (RFC 4880, Section 5.2).  Only a subset of these
@@ -222,6 +216,7 @@ typedef struct
     unsigned pref_ks:1;     /* At least one preferred keyserver is present */
     unsigned key_block:1;   /* A key block subpacket is present.  */
     unsigned expired:1;
+    unsigned pka_tried:1;   /* Set if we tried to retrieve the PKA record. */
   } flags;
   /* The key that allegedly generated this signature.  (Directly
      serialized in v3 sigs; for v4 sigs, this must be explicitly added
@@ -248,7 +243,9 @@ typedef struct
   const byte *trust_regexp;
   struct revocation_key *revkey;
   int numrevkeys;
-  int help_counter;          /* Used internally bu some functions.  */
+  int help_counter;          /* Used internally bu some fucntions.  */
+  pka_info_t *pka_info;      /* Malloced PKA data or NULL if not
+                                available.  See also flags.pka_tried. */
   char *signers_uid;         /* Malloced value of the SIGNERS_UID
                               * subpacket or NULL.  This string has
                               * already been sanitized.  */
@@ -311,9 +308,6 @@ typedef struct
     unsigned int ks_modify:1;
     unsigned int compacted:1;
     unsigned int primary:2; /* 2 if set via the primary flag, 1 if calculated */
-                            /* Note that this flag is set in a
-                             * keyblock at max for one User ID and for
-                             * one User Attribute per keyblock.  */
     unsigned int revoked:1;
     unsigned int expired:1;
   } flags;
@@ -396,7 +390,6 @@ typedef struct
   byte    pubkey_algo;
   u16     pubkey_usage;   /* carries the usage info.            */
   byte    req_usage;      /* hack to pass a request to getkey() */
-  byte    fprlen;         /* 0 or length of FPR.  */
   u32     has_expired;    /* set to the expiration date if expired */
   /* keyid of the primary key.  Never access this value directly.
      Instead, use pk_main_keyid().  */
@@ -404,8 +397,6 @@ typedef struct
   /* keyid of this key.  Never access this value directly!  Instead,
      use pk_keyid().  */
   u32     keyid[2];
-  /* Fingerprint of the key.  Only valid if FPRLEN is not 0.  */
-  byte    fpr[MAX_FINGERPRINT_LEN];
   prefitem_t *prefs;      /* list of preferences (may be NULL) */
   struct
   {
@@ -497,7 +488,7 @@ typedef struct {
      Note: this is ignored when encrypting.  */
   byte is_partial;
   /* If 0, MDC is disabled.  Otherwise, the MDC method that was used
-     (only DIGEST_ALGO_SHA1 has ever been defined).  */
+     (currently, only DIGEST_ALGO_SHA1 is supported).  */
   byte mdc_method;
   /* If 0, AEAD is not used.  Otherwise, the used AEAD algorithm.
    * MDC_METHOD (above) shall be zero if AEAD is used.  */
@@ -772,61 +763,58 @@ int skip_some_packets (iobuf_t inp, unsigned int n);
 int parse_signature( iobuf_t inp, int pkttype, unsigned long pktlen,
 		     PKT_signature *sig );
 
-/* Given a signature packet, either:
- *
- *   - test whether there are any subpackets with the critical bit set
- *     that we don't understand,
- *
- *   - list the subpackets, or,
- *
- *   - find a subpacket with a specific type.
- *
- * The WANT_HASHED flag indicates that the hashed area shall be
- * considered.
- *
- * REQTYPE indicates the type of operation.
- *
- * If REQTYPE is SIGSUBPKT_TEST_CRITICAL, then this function checks
- * whether there are any subpackets that have the critical bit and
- * which GnuPG cannot handle.  If GnuPG understands all subpackets
- * whose critical bit is set, then this function returns simply
- * returns SUBPKTS.  If there is a subpacket whose critical bit is set
- * and which GnuPG does not understand, then this function returns
- * NULL and, if START is not NULL, sets *START to the 1-based index of
- * the subpacket that violates the constraint.
- *
- * If REQTYPE is SIGSUBPKT_LIST_HASHED or SIGSUBPKT_LIST_UNHASHED, the
- * packets are dumped.  Note: if REQTYPE is SIGSUBPKT_LIST_HASHED,
- * this function does not check whether the hash is correct; this is
- * merely an indication of the section that the subpackets came from.
- *
- * If REQTYPE is anything else, then this function interprets the
- * values as a subpacket type and looks for the first subpacket with
- * that type.  If such a packet is found, *CRITICAL (if not NULL) is
- * set if the critical bit was set, *RET_N is set to the offset of the
- * subpacket's content within the SUBPKTS buffer, *START is set to the
- * 1-based index of the subpacket within the buffer, and returns
- * &SUBPKTS[*RET_N].
- *
- * *START is the number of initial subpackets to not consider.  Thus,
- * if *START is 2, then the first 2 subpackets are ignored.
- */
-const byte *enum_sig_subpkt (PKT_signature *sig, int want_hashed,
-                             sigsubpkttype_t reqtype,
-                             size_t *ret_n, int *start, int *critical );
+/* Given a subpacket area (typically either PKT_signature.hashed or
+   PKT_signature.unhashed), either:
+
+     - test whether there are any subpackets with the critical bit set
+       that we don't understand,
+
+     - list the subpackets, or,
+
+     - find a subpacket with a specific type.
+
+   REQTYPE indicates the type of operation.
+
+   If REQTYPE is SIGSUBPKT_TEST_CRITICAL, then this function checks
+   whether there are any subpackets that have the critical bit and
+   which GnuPG cannot handle.  If GnuPG understands all subpackets
+   whose critical bit is set, then this function returns simply
+   returns SUBPKTS.  If there is a subpacket whose critical bit is set
+   and which GnuPG does not understand, then this function returns
+   NULL and, if START is not NULL, sets *START to the 1-based index of
+   the subpacket that violates the constraint.
+
+   If REQTYPE is SIGSUBPKT_LIST_HASHED or SIGSUBPKT_LIST_UNHASHED, the
+   packets are dumped.  Note: if REQTYPE is SIGSUBPKT_LIST_HASHED,
+   this function does not check whether the hash is correct; this is
+   merely an indication of the section that the subpackets came from.
+
+   If REQTYPE is anything else, then this function interprets the
+   values as a subpacket type and looks for the first subpacket with
+   that type.  If such a packet is found, *CRITICAL (if not NULL) is
+   set if the critical bit was set, *RET_N is set to the offset of the
+   subpacket's content within the SUBPKTS buffer, *START is set to the
+   1-based index of the subpacket within the buffer, and returns
+   &SUBPKTS[*RET_N].
+
+   *START is the number of initial subpackets to not consider.  Thus,
+   if *START is 2, then the first 2 subpackets are ignored.  */
+const byte *enum_sig_subpkt ( const subpktarea_t *subpkts,
+                              sigsubpkttype_t reqtype,
+                              size_t *ret_n, int *start, int *critical );
 
 /* Shorthand for:
- *
- *    enum_sig_subpkt (sig, want_hashed, reqtype, ret_n, NULL, NULL);
- */
-const byte *parse_sig_subpkt (PKT_signature *sig, int want_hashed,
-                              sigsubpkttype_t reqtype,
-                              size_t *ret_n );
+
+     enum_sig_subpkt (buffer, reqtype, ret_n, NULL, NULL); */
+const byte *parse_sig_subpkt ( const subpktarea_t *buffer,
+                               sigsubpkttype_t reqtype,
+                               size_t *ret_n );
 
 /* This calls parse_sig_subpkt first on the hashed signature area in
- * SIG and then, if that returns NULL, calls parse_sig_subpkt on the
- * unhashed subpacket area in SIG.  */
-const byte *parse_sig_subpkt2 (PKT_signature *sig, sigsubpkttype_t reqtype);
+   SIG and then, if that returns NULL, calls parse_sig_subpkt on the
+   unhashed subpacket area in SIG.  */
+const byte *parse_sig_subpkt2 ( PKT_signature *sig,
+                                sigsubpkttype_t reqtype);
 
 /* Returns whether the N byte large buffer BUFFER is sufficient to
    hold a subpacket of type TYPE.  Note: the buffer refers to the
@@ -859,16 +847,14 @@ PACKET *create_gpg_control ( ctrlpkttype_t type,
                              size_t datalen );
 
 /*-- build-packet.c --*/
-gpg_error_t build_keyblock_image (kbnode_t keyblock, iobuf_t *r_iobuf);
 int build_packet (iobuf_t out, PACKET *pkt);
 gpg_error_t build_packet_and_meta (iobuf_t out, PACKET *pkt);
-gpg_error_t gpg_mpi_write (iobuf_t out, gcry_mpi_t a, unsigned int *t_nwritten);
+gpg_error_t gpg_mpi_write (iobuf_t out, gcry_mpi_t a);
 gpg_error_t gpg_mpi_write_nohdr (iobuf_t out, gcry_mpi_t a);
 u32 calc_packet_length( PACKET *pkt );
 void build_sig_subpkt( PKT_signature *sig, sigsubpkttype_t type,
 			const byte *buffer, size_t buflen );
-void build_sig_subpkt_from_sig (PKT_signature *sig, PKT_public_key *pksk,
-                                unsigned int signhints);
+void build_sig_subpkt_from_sig (PKT_signature *sig, PKT_public_key *pksk);
 int  delete_sig_subpkt(subpktarea_t *buffer, sigsubpkttype_t type );
 void build_attribute_subpkt(PKT_user_id *uid,byte type,
 			    const void *buf,u32 buflen,
@@ -890,7 +876,6 @@ void free_user_id( PKT_user_id *uid );
 void free_comment( PKT_comment *rem );
 void free_packet (PACKET *pkt, parse_packet_ctx_t parsectx);
 prefitem_t *copy_prefs (const prefitem_t *prefs);
-PKT_public_key *copy_public_key_basics (PKT_public_key *d, PKT_public_key *s);
 PKT_public_key *copy_public_key( PKT_public_key *d, PKT_public_key *s );
 PKT_signature *copy_signature( PKT_signature *d, PKT_signature *s );
 PKT_user_id *scopy_user_id (PKT_user_id *sd );
@@ -911,14 +896,13 @@ int check_signature (ctrl_t ctrl, PKT_signature *sig, gcry_md_hd_t digest);
  * it and verifying the signature.  FOCRED_PK is usually NULL. */
 gpg_error_t check_signature2 (ctrl_t ctrl,
                               PKT_signature *sig, gcry_md_hd_t digest,
-                              const void *extrahash, size_t extrahashlen,
                               PKT_public_key *forced_pk,
                               u32 *r_expiredate, int *r_expired, int *r_revoked,
                               PKT_public_key **r_pk);
 
 
 /*-- pubkey-enc.c --*/
-gpg_error_t get_session_key (ctrl_t ctrl, struct pubkey_enc_list *k, DEK *dek);
+gpg_error_t get_session_key (ctrl_t ctrl, PKT_pubkey_enc *k, DEK *dek);
 gpg_error_t get_override_session_key (DEK *dek, const char *string);
 
 /*-- compress.c --*/
@@ -941,7 +925,7 @@ int ask_for_detached_datafile( gcry_md_hd_t md, gcry_md_hd_t md2,
 int make_keysig_packet (ctrl_t ctrl,
                         PKT_signature **ret_sig, PKT_public_key *pk,
 			PKT_user_id *uid, PKT_public_key *subpk,
-			PKT_public_key *pksk, int sigclass,
+			PKT_public_key *pksk, int sigclass, int digest_algo,
 			u32 timestamp, u32 duration,
 			int (*mksubpkt)(PKT_signature *, void *),
 			void *opaque,

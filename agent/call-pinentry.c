@@ -174,7 +174,6 @@ unlock_pinentry (ctrl_t ctrl, gpg_error_t rc)
         case GPG_ERR_NO_PASSPHRASE:
         case GPG_ERR_BAD_PASSPHRASE:
         case GPG_ERR_BAD_PIN:
-        case GPG_ERR_BAD_RESET_CODE:
           break;
 
         case GPG_ERR_CORRUPTED_PROTECTION:
@@ -397,7 +396,11 @@ start_pinentry (ctrl_t ctrl)
 
   i=0;
   if (!opt.running_detached)
-    no_close_list[i++] = assuan_fd_from_posix_fd (fileno (stderr));
+    {
+      if (log_get_fd () != -1)
+        no_close_list[i++] = assuan_fd_from_posix_fd (log_get_fd ());
+      no_close_list[i++] = assuan_fd_from_posix_fd (fileno (stderr));
+    }
   no_close_list[i] = ASSUAN_INVALID_FD;
 
   rc = assuan_new (&ctx);
@@ -454,17 +457,7 @@ start_pinentry (ctrl_t ctrl)
                         opt.no_grab? "OPTION no-grab":"OPTION grab",
                         NULL, NULL, NULL, NULL, NULL, NULL);
   if (rc)
-    {
-      if (gpg_err_code (rc) == GPG_ERR_NOT_SUPPORTED
-          || gpg_err_code (rc) == GPG_ERR_UNKNOWN_OPTION)
-        {
-          if (opt.verbose)
-            log_info ("Option no-grab/grab is ignored by pinentry.\n");
-          /* Keep going even if the feature is not supported.  */
-        }
-      else
-        return unlock_pinentry (ctrl, rc);
-    }
+    return unlock_pinentry (ctrl, rc);
 
   value = session_env_getenv (ctrl->session_env, "GPG_TTY");
   if (value)
@@ -542,16 +535,14 @@ start_pinentry (ctrl_t ctrl)
 
   {
     /* Provide a few default strings for use by the pinentries.  This
-     * may help a pinentry to avoid implementing localization code.
-     * Note that gpg-agent has been set to utf-8 so that the strings
-     * are in the expected encoding.  */
+       may help a pinentry to avoid implementing localization code.  */
     static const struct { const char *key, *value; int what; } tbl[] = {
-      /* TRANSLATORS: These are labels for buttons etc as used in
-       * Pinentries.  In your translation copy the text before the
-       * second vertical bar verbatim; translate only the following
-       * text.  An underscore indicates that the next letter should be
-       * used as an accelerator.  Double the underscore to have
-       * pinentry display a literal underscore.   */
+      /* TRANSLATORS: These are labels for buttons etc used in
+         Pinentries.  An underscore indicates that the next letter
+         should be used as an accelerator.  Double the underscore for
+         a literal one.  The actual to be translated text starts after
+         the second vertical bar.  Note that gpg-agent has been set to
+         utf-8 so that the strings are in the expected encoding.  */
       { "ok",     N_("|pinentry-label|_OK") },
       { "cancel", N_("|pinentry-label|_Cancel") },
       { "yes",    N_("|pinentry-label|_Yes") },
@@ -646,9 +637,8 @@ start_pinentry (ctrl_t ctrl)
         nodename = utsbuf.nodename;
 #endif /*!HAVE_W32_SYSTEM*/
 
-      if ((optstr = xtryasprintf ("OPTION owner=%lu/%d %s",
-                                  ctrl->client_pid, ctrl->client_uid,
-                                  nodename)))
+      if ((optstr = xtryasprintf ("OPTION owner=%lu %s",
+                                  ctrl->client_pid, nodename)))
         {
           assuan_transact (entry_ctx, optstr, NULL, NULL, NULL, NULL, NULL,
                            NULL);
@@ -698,7 +688,7 @@ start_pinentry (ctrl_t ctrl)
       log_info ("You may want to update to a newer pinentry\n");
       rc = 0;
     }
-  else if (!rc && pinentry_pid == (unsigned long)(-1L))
+  else if (!rc && (pid_t)pinentry_pid == (pid_t)(-1))
     log_error ("pinentry did not return a PID\n");
   else
     {
@@ -911,12 +901,11 @@ inq_cb (void *opaque, const char *line)
   gpg_error_t err;
   const char *s;
   char *pin;
+  int percent;
+  char numbuf[20];
 
   if ((s = has_leading_keyword (line, "QUALITY")))
     {
-      char numbuf[20];
-      int percent;
-
       pin = unescape_passphrase_string (s);
       if (!pin)
         err = gpg_error_from_syserror ();
@@ -1063,10 +1052,10 @@ static gpg_error_t
 setup_formatted_passphrase (ctrl_t ctrl)
 {
   static const struct { const char *key, *help_id, *value; } tbl[] = {
+    /* TRANSLATORS: This is a text shown by pinentry if the option
+        for formatted passphrase is enabled.  The length is
+        limited to about 900 characters.  */
     { "hint",  "pinentry.formatted_passphrase.hint",
-      /* TRANSLATORS: This is a text shown by pinentry if the option
-         for formatted passphrase is enabled.  The length is
-         limited to about 900 characters.  */
       N_("Note: The blanks are not part of the passphrase.") },
     { NULL, NULL }
   };
@@ -1280,111 +1269,16 @@ build_cmd_setdesc (char *line, size_t linelen, const char *desc)
 }
 
 
-
-/* Watch the socket's EOF condition, while checking finish of
-   foreground thread.  When EOF condition is detected, terminate
-   the pinentry process behind the assuan pipe.
- */
-static void *
-watch_sock (void *arg)
-{
-  pid_t pid = assuan_get_pid (entry_ctx);
-
-  while (1)
-    {
-      int err;
-      fd_set fdset;
-      struct timeval timeout = { 0, 500000 };
-      gnupg_fd_t sock = *(gnupg_fd_t *)arg;
-
-      if (sock == GNUPG_INVALID_FD)
-        return NULL;
-
-      FD_ZERO (&fdset);
-      FD_SET (FD2INT (sock), &fdset);
-      err = npth_select (FD2INT (sock)+1, &fdset, NULL, NULL, &timeout);
-
-      if (err < 0)
-        {
-          if (errno == EINTR)
-            continue;
-          else
-            return NULL;
-        }
-
-      /* Possibly, it's EOF.  */
-      if (err > 0)
-        break;
-    }
-
-  if (pid == (pid_t)(-1))
-    ; /* No pid available can't send a kill. */
-#ifdef HAVE_W32_SYSTEM
-  /* Older versions of assuan set PID to 0 on Windows to indicate an
-     invalid value.  */
-  else if (pid != (pid_t) INVALID_HANDLE_VALUE && pid != 0)
-    TerminateProcess ((HANDLE)pid, 1);
-#else
-  else if (pid > 0)
-    kill (pid, SIGINT);
-#endif
-
-  return NULL;
-}
-
-
-static gpg_error_t
-watch_sock_start (gnupg_fd_t *sock_p, npth_t *thread_p)
-{
-  npth_attr_t tattr;
-  int err;
-
-  err = npth_attr_init (&tattr);
-  if (err)
-    {
-      log_error ("do_getpin: error npth_attr_init: %s\n", strerror (err));
-      return gpg_error_from_errno (err);
-    }
-  npth_attr_setdetachstate (&tattr, NPTH_CREATE_JOINABLE);
-
-  err = npth_create (thread_p, &tattr, watch_sock, sock_p);
-  npth_attr_destroy (&tattr);
-  if (err)
-    {
-      log_error ("do_getpin: error spawning thread: %s\n", strerror (err));
-      return gpg_error_from_errno (err);
-    }
-
-  return 0;
-}
-
-static void
-watch_sock_end (gnupg_fd_t *sock_p, npth_t *thread_p)
-{
-  int err;
-
-  *sock_p = GNUPG_INVALID_FD;
-  err = npth_join (*thread_p, NULL);
-  if (err)
-    log_error ("watch_sock_end: error joining thread: %s\n", strerror (err));
-}
-
-
 /* Ask pinentry to get a pin by "GETPIN" command, spawning a thread
-   detecting the socket's EOF.
- */
+ * detecting the socket's EOF.   */
 static gpg_error_t
 do_getpin (ctrl_t ctrl, struct entry_parm_s *parm)
 {
   gpg_error_t rc;
-  gnupg_fd_t sock_watched = ctrl->thread_startup.fd;
-  npth_t thread;
   int wasconf;
   struct inq_cb_parm_s inq_cb_parm;
 
-  rc = watch_sock_start (&sock_watched, &thread);
-  if (rc)
-    return rc;
+  (void)ctrl;
 
   inq_cb_parm.ctx = entry_ctx;
   inq_cb_parm.flags = parm->constraints_flags;
@@ -1414,10 +1308,10 @@ do_getpin (ctrl_t ctrl, struct entry_parm_s *parm)
       && gpg_err_code (rc) == GPG_ERR_CANCELED)
     rc = gpg_err_make (gpg_err_source (rc), GPG_ERR_FULLY_CANCELED);
 
-  watch_sock_end (&sock_watched, &thread);
-
   return rc;
 }
+
+
 
 /* Call the Entry and ask for the PIN.  We do check for a valid PIN
    number here and repeat it as long as we have invalid formed
@@ -1544,17 +1438,6 @@ agent_askpin (ctrl_t ctrl,
                             NULL, NULL, NULL, NULL, NULL, NULL);
       if (rc)
         pininfo->with_repeat = 0; /* Pinentry does not support it.  */
-
-      if (pininfo->with_repeat)
-        {
-          snprintf (line, DIM(line), "SETREPEATOK %s",
-                    L_("Passphrases match."));
-          rc = assuan_transact (entry_ctx, line,
-                                NULL, NULL, NULL, NULL, NULL, NULL);
-          if (rc)
-            rc = 0; /* Pinentry does not support it. */
-        }
-
     }
   pininfo->repeat_okay = 0;
   pininfo->status = 0;
@@ -1571,7 +1454,8 @@ agent_askpin (ctrl_t ctrl,
         {
           /* TRANSLATORS: The string is appended to an error message in
              the pinentry.  The %s is the actual error message, the
-             two %d give the current and maximum number of tries. */
+             two %d give the current and maximum number of tries.
+             Do not translate the "SETERROR" keyword. */
           snprintf (line, DIM(line), L_("SETERROR %s (try %d of %d)"),
                     errtext, pininfo->failed_tries+1, pininfo->max_tries);
           rc = assuan_transact (entry_ctx, line,
@@ -1622,13 +1506,12 @@ agent_askpin (ctrl_t ctrl,
               && (pininfo->status & PINENTRY_STATUS_PASSWORD_FROM_CACHE))
             return unlock_pinentry (ctrl, rc);
 
-          if (gpg_err_code (rc) == GPG_ERR_BAD_PASSPHRASE
-              || gpg_err_code (rc) == GPG_ERR_BAD_PIN
-              || gpg_err_code (rc) == GPG_ERR_BAD_RESET_CODE)
+          if (gpg_err_code (rc) == GPG_ERR_BAD_PASSPHRASE)
             {
               if (pininfo->cb_errtext)
                 errtext = pininfo->cb_errtext;
-              else
+              else if (gpg_err_code (rc) == GPG_ERR_BAD_PASSPHRASE
+                       || gpg_err_code (rc) == GPG_ERR_BAD_PIN)
                 errtext = (is_pin? L_("Bad PIN") : L_("Bad Passphrase"));
             }
           else if (rc)
@@ -1659,9 +1542,9 @@ agent_askpin (ctrl_t ctrl,
 
 /* Ask for the passphrase using the supplied arguments.  The returned
    passphrase needs to be freed by the caller.  PININFO is optional
-   and can be used to have constraints checking while the pinentry
+   and can be used to have constraints checinkg while the pinentry
    dialog is open (like what we do in agent_askpin).  This is very
-   similar to agent_askpin and we should eventually merge the two
+   similar to agent_akpin and we should eventually merge the two
    functions. */
 int
 agent_get_passphrase (ctrl_t ctrl,
@@ -1815,16 +1698,6 @@ agent_get_passphrase (ctrl_t ctrl,
       if (rc)
         pininfo->with_repeat = 0; /* Pinentry does not support it.  */
 
-      if (pininfo->with_repeat)
-        {
-          snprintf (line, DIM(line), "SETREPEATOK %s",
-                    L_("Passphrases match."));
-          rc = assuan_transact (entry_ctx, line,
-                                NULL, NULL, NULL, NULL, NULL, NULL);
-          if (rc)
-            rc = 0; /* Pinentry does not support it. */
-        }
-
       (void)setup_genpin (ctrl);
 
       rc = setup_enforced_constraints (ctrl);
@@ -1896,13 +1769,12 @@ agent_get_passphrase (ctrl_t ctrl,
           if (rc && (pininfo->status & PINENTRY_STATUS_PASSWORD_FROM_CACHE))
             return unlock_pinentry (ctrl, rc);
 
-          if (gpg_err_code (rc) == GPG_ERR_BAD_PASSPHRASE
-              || gpg_err_code (rc) == GPG_ERR_BAD_PIN
-              || gpg_err_code (rc) == GPG_ERR_BAD_RESET_CODE)
+          if (gpg_err_code (rc) == GPG_ERR_BAD_PASSPHRASE)
             {
               if (pininfo->cb_errtext)
                 errtext = pininfo->cb_errtext;
-              else
+              else if (gpg_err_code (rc) == GPG_ERR_BAD_PASSPHRASE
+                       || gpg_err_code (rc) == GPG_ERR_BAD_PIN)
                 errtext = (is_pin? L_("Bad PIN") : L_("Bad Passphrase"));
             }
           else if (rc)
@@ -1950,9 +1822,6 @@ agent_get_confirmation (ctrl_t ctrl,
     {
       if (ctrl->pinentry_mode == PINENTRY_MODE_CANCEL)
         return gpg_error (GPG_ERR_CANCELED);
-
-      if (ctrl->pinentry_mode == PINENTRY_MODE_LOOPBACK)
-        return pinentry_loopback_confirm (ctrl, desc, 1, ok, notok);
 
       return gpg_error (GPG_ERR_NO_PIN_ENTRY);
     }
@@ -2007,39 +1876,70 @@ agent_get_confirmation (ctrl_t ctrl,
         return unlock_pinentry (ctrl, rc);
     }
 
-  {
-    gnupg_fd_t sock_watched = ctrl->thread_startup.fd;
-    npth_t thread;
+  rc = assuan_transact (entry_ctx, "CONFIRM",
+                        NULL, NULL, NULL, NULL, NULL, NULL);
+  if (rc && gpg_err_source (rc) && gpg_err_code (rc) == GPG_ERR_ASS_CANCELED)
+    rc = gpg_err_make (gpg_err_source (rc), GPG_ERR_CANCELED);
 
-    rc = watch_sock_start (&sock_watched, &thread);
-    if (!rc)
-      {
-        rc = assuan_transact (entry_ctx, "CONFIRM",
-                              NULL, NULL, NULL, NULL, NULL, NULL);
-        if (rc && gpg_err_source (rc)
-            && gpg_err_code (rc) == GPG_ERR_ASS_CANCELED)
-          rc = gpg_err_make (gpg_err_source (rc), GPG_ERR_CANCELED);
-
-        watch_sock_end (&sock_watched, &thread);
-      }
-
-    return unlock_pinentry (ctrl, rc);
-  }
+  return unlock_pinentry (ctrl, rc);
 }
 
 
 
+/* Pop up the PINentry, display the text DESC and a button with the
+   text OK_BTN (which may be NULL to use the default of "OK") and wait
+   for the user to hit this button.  The return value is not
+   relevant.  */
+int
+agent_show_message (ctrl_t ctrl, const char *desc, const char *ok_btn)
+{
+  int rc;
+  char line[ASSUAN_LINELENGTH];
+
+  if (ctrl->pinentry_mode != PINENTRY_MODE_ASK)
+    return gpg_error (GPG_ERR_CANCELED);
+
+  rc = start_pinentry (ctrl);
+  if (rc)
+    return rc;
+
+  if (desc)
+    build_cmd_setdesc (line, DIM(line), desc);
+  else
+    snprintf (line, DIM(line), "RESET");
+  rc = assuan_transact (entry_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
+  /* Most pinentries out in the wild return the old Assuan error code
+     for canceled which gets translated to an assuan Cancel error and
+     not to the code for a user cancel.  Fix this here. */
+  if (rc && gpg_err_source (rc) && gpg_err_code (rc) == GPG_ERR_ASS_CANCELED)
+    rc = gpg_err_make (gpg_err_source (rc), GPG_ERR_CANCELED);
+
+  if (rc)
+    return unlock_pinentry (ctrl, rc);
+
+  if (ok_btn)
+    {
+      snprintf (line, DIM(line), "SETOK %s", ok_btn);
+      rc = assuan_transact (entry_ctx, line, NULL, NULL, NULL,
+                            NULL, NULL, NULL);
+      if (rc)
+        return unlock_pinentry (ctrl, rc);
+    }
+
+  rc = assuan_transact (entry_ctx, "CONFIRM --one-button", NULL, NULL, NULL,
+                        NULL, NULL, NULL);
+  if (rc && gpg_err_source (rc) && gpg_err_code (rc) == GPG_ERR_ASS_CANCELED)
+    rc = gpg_err_make (gpg_err_source (rc), GPG_ERR_CANCELED);
+
+  return unlock_pinentry (ctrl, rc);
+}
+
+
 /* The thread running the popup message. */
 static void *
 popup_message_thread (void *arg)
 {
-  gpg_error_t rc;
-  gnupg_fd_t sock_watched = *(gnupg_fd_t *)arg;
-  npth_t thread;
-
-  rc = watch_sock_start (&sock_watched, &thread);
-  if (rc)
-    return NULL;
+  (void)arg;
 
   /* We use the --one-button hack instead of the MESSAGE command to
      allow the use of old Pinentries.  Those old Pinentries will then
@@ -2047,7 +1947,6 @@ popup_message_thread (void *arg)
      annoyance. */
   assuan_transact (entry_ctx, "CONFIRM --one-button",
                    NULL, NULL, NULL, NULL, NULL, NULL);
-  watch_sock_end (&sock_watched, &thread);
   popup_finished = 1;
   return NULL;
 }
@@ -2068,15 +1967,7 @@ agent_popup_message_start (ctrl_t ctrl, const char *desc, const char *ok_btn)
   int err;
 
   if (ctrl->pinentry_mode != PINENTRY_MODE_ASK)
-    {
-      if (ctrl->pinentry_mode == PINENTRY_MODE_CANCEL)
-        return gpg_error (GPG_ERR_CANCELED);
-
-      if (ctrl->pinentry_mode == PINENTRY_MODE_LOOPBACK)
-        return pinentry_loopback_confirm (ctrl, desc, 0, ok_btn, NULL);
-
-      return gpg_error (GPG_ERR_NO_PIN_ENTRY);
-    }
+    return gpg_error (GPG_ERR_CANCELED);
 
   rc = start_pinentry (ctrl);
   if (rc)
@@ -2104,8 +1995,7 @@ agent_popup_message_start (ctrl_t ctrl, const char *desc, const char *ok_btn)
   npth_attr_setdetachstate (&tattr, NPTH_CREATE_JOINABLE);
 
   popup_finished = 0;
-  err = npth_create (&popup_tid, &tattr, popup_message_thread,
-                     &ctrl->thread_startup.fd);
+  err = npth_create (&popup_tid, &tattr, popup_message_thread, NULL);
   npth_attr_destroy (&tattr);
   if (err)
     {
@@ -2127,9 +2017,6 @@ agent_popup_message_stop (ctrl_t ctrl)
   pid_t pid;
 
   (void)ctrl;
-
-  if (ctrl->pinentry_mode == PINENTRY_MODE_LOOPBACK)
-    return;
 
   if (!popup_tid || !entry_ctx)
     {
@@ -2154,6 +2041,14 @@ agent_popup_message_stop (ctrl_t ctrl)
       TerminateProcess (process, 1);
     }
 #else
+  else if (pid && ((rc=waitpid (pid, NULL, WNOHANG))==-1 || (rc == pid)) )
+    { /* The daemon already died.  No need to send a kill.  However
+         because we already waited for the process, we need to tell
+         assuan that it should not wait again (done by
+         unlock_pinentry). */
+      if (rc == pid)
+        assuan_set_flag (entry_ctx, ASSUAN_NO_WAITPID, 1);
+    }
   else if (pid > 0)
     kill (pid, SIGINT);
 #endif

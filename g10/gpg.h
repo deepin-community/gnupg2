@@ -42,15 +42,14 @@
 #define MAX_EXTERN_MPI_BITS 16384
 
 /* The maximum length of a binary fingerprints.  This is used to
- * provide a static buffer and will be increased if we need to support
- * longer fingerprints.  Warning: At some places we have some
- * assumption on a 20 byte fingerprint.
- * Watch out for FIXME(fingerprint) */
-#define MAX_FINGERPRINT_LEN 32
+   provide a static buffer and will be increased if we need to support
+   longer fingerprints.
+   Warning: At some places we still use 20 instead of this macro. */
+#define MAX_FINGERPRINT_LEN 20
 
 /* The maximum length of a formatted fingerprint as returned by
- * format_hexfingerprint().  */
-#define MAX_FORMATTED_FINGERPRINT_LEN 60
+   format_hexfingerprint().  */
+#define MAX_FORMATTED_FINGERPRINT_LEN 50
 
 
 /*
@@ -60,19 +59,16 @@
 /* Object used to keep state locally to server.c . */
 struct server_local_s;
 
-/* Object used to keep state locally to call-keyboxd.c .  */
-struct keyboxd_local_s;
-typedef struct keyboxd_local_s *keyboxd_local_t;
-
 /* Object used to keep state locally to call-dirmngr.c .  */
 struct dirmngr_local_s;
 typedef struct dirmngr_local_s *dirmngr_local_t;
 
 /* Object used to describe a keyblock node.  */
-typedef struct kbnode_struct *KBNODE;   /* Deprecated use kbnode_t. */typedef struct kbnode_struct *kbnode_t;
+typedef struct kbnode_struct *KBNODE;   /* Deprecated use kbnode_t. */
+typedef struct kbnode_struct *kbnode_t;
 
 /* The handle for keydb operations.  */
-typedef struct keydb_handle_s *KEYDB_HANDLE;
+typedef struct keydb_handle *KEYDB_HANDLE;
 
 /* TOFU database meta object.  */
 struct tofu_dbs_s;
@@ -99,9 +95,6 @@ struct server_control_s
   /* Local data for call-dirmngr.c  */
   dirmngr_local_t dirmngr_local;
 
-  /* Local data for call-keyboxd.c  */
-  keyboxd_local_t keyboxd_local;
-
   /* Local data for tofu.c  */
   struct {
     tofu_dbs_t dbs;
@@ -110,14 +103,6 @@ struct server_control_s
 
   /* This is used to cache a key data base handle.  */
   KEYDB_HANDLE cached_getkey_kdb;
-
-  /* Cached results from HAVEKEY --list.  They are used if the pointer
-   * is not NULL.  The length gives the length in bytes and is a
-   * multiple of 20.  If the no_more flag is set the list shall not
-   * anymore be refreshed even if it has been freed and NULLed. */
-  unsigned char *secret_keygrips;
-  size_t secret_keygrips_len;
-  int no_more_secret_keygrips;
 };
 
 

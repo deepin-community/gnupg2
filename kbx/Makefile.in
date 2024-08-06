@@ -139,13 +139,10 @@ host_triplet = @host@
 @GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
 @GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-@HAVE_W32_SYSTEM_TRUE@am__append_9 = keyboxd-w32info.o
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
 bin_PROGRAMS = kbxutil$(EXEEXT)
-@BUILD_KEYBOXD_TRUE@libexec_PROGRAMS = keyboxd$(EXEEXT)
 subdir = kbx
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -159,16 +156,17 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
 DIST_COMMON = $(srcdir)/Makefile.am $(am__DIST_COMMON)
 mkinstalldirs = $(SHELL) $(top_srcdir)/build-aux/mkinstalldirs
 CONFIG_HEADER = $(top_builddir)/config.h
-CONFIG_CLEAN_FILES = keyboxd.w32-manifest
+CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
-am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)"
-PROGRAMS = $(bin_PROGRAMS) $(libexec_PROGRAMS)
+am__installdirs = "$(DESTDIR)$(bindir)"
+PROGRAMS = $(bin_PROGRAMS)
 LIBRARIES = $(noinst_LIBRARIES)
 ARFLAGS = cru
 AM_V_AR = $(am__v_AR_@AM_V@)
@@ -185,12 +183,11 @@ am__objects_1 = libkeybox_a-keybox-util.$(OBJEXT) \
 	libkeybox_a-keybox-update.$(OBJEXT) \
 	libkeybox_a-keybox-openpgp.$(OBJEXT) \
 	libkeybox_a-keybox-dump.$(OBJEXT)
-am__objects_2 = libkeybox_a-kbx-client-util.$(OBJEXT)
-am_libkeybox_a_OBJECTS = $(am__objects_1) $(am__objects_2)
+am_libkeybox_a_OBJECTS = $(am__objects_1)
 libkeybox_a_OBJECTS = $(am_libkeybox_a_OBJECTS)
 libkeybox509_a_AR = $(AR) $(ARFLAGS)
 libkeybox509_a_LIBADD =
-am__objects_3 = libkeybox509_a-keybox-util.$(OBJEXT) \
+am__objects_2 = libkeybox509_a-keybox-util.$(OBJEXT) \
 	libkeybox509_a-keybox-init.$(OBJEXT) \
 	libkeybox509_a-keybox-blob.$(OBJEXT) \
 	libkeybox509_a-keybox-file.$(OBJEXT) \
@@ -198,35 +195,23 @@ am__objects_3 = libkeybox509_a-keybox-util.$(OBJEXT) \
 	libkeybox509_a-keybox-update.$(OBJEXT) \
 	libkeybox509_a-keybox-openpgp.$(OBJEXT) \
 	libkeybox509_a-keybox-dump.$(OBJEXT)
-am__objects_4 = libkeybox509_a-kbx-client-util.$(OBJEXT)
-am_libkeybox509_a_OBJECTS = $(am__objects_3) $(am__objects_4)
+am_libkeybox509_a_OBJECTS = $(am__objects_2)
 libkeybox509_a_OBJECTS = $(am_libkeybox509_a_OBJECTS)
-am__objects_5 = kbxutil-keybox-util.$(OBJEXT) \
+am__objects_3 = kbxutil-keybox-util.$(OBJEXT) \
 	kbxutil-keybox-init.$(OBJEXT) kbxutil-keybox-blob.$(OBJEXT) \
 	kbxutil-keybox-file.$(OBJEXT) kbxutil-keybox-search.$(OBJEXT) \
 	kbxutil-keybox-update.$(OBJEXT) \
 	kbxutil-keybox-openpgp.$(OBJEXT) kbxutil-keybox-dump.$(OBJEXT)
-am_kbxutil_OBJECTS = kbxutil-kbxutil.$(OBJEXT) $(am__objects_5)
+am_kbxutil_OBJECTS = kbxutil-kbxutil.$(OBJEXT) $(am__objects_3)
 kbxutil_OBJECTS = $(am_kbxutil_OBJECTS)
 am__DEPENDENCIES_1 =
-kbxutil_DEPENDENCIES = $(common_libs) $(am__DEPENDENCIES_1) \
+@HAVE_W32CE_SYSTEM_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1)
+kbxutil_DEPENDENCIES = ../common/libcommon.a $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_2) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
-	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
+	$(am__DEPENDENCIES_1)
 kbxutil_LINK = $(CCLD) $(kbxutil_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
-	$(LDFLAGS) -o $@
-am__objects_6 = keyboxd-keybox-util.$(OBJEXT) \
-	keyboxd-keybox-init.$(OBJEXT) keyboxd-keybox-blob.$(OBJEXT) \
-	keyboxd-keybox-file.$(OBJEXT) keyboxd-keybox-search.$(OBJEXT) \
-	keyboxd-keybox-update.$(OBJEXT) \
-	keyboxd-keybox-openpgp.$(OBJEXT) keyboxd-keybox-dump.$(OBJEXT)
-am_keyboxd_OBJECTS = keyboxd-keyboxd.$(OBJEXT) \
-	keyboxd-kbxserver.$(OBJEXT) keyboxd-frontend.$(OBJEXT) \
-	keyboxd-backend-support.$(OBJEXT) \
-	keyboxd-backend-cache.$(OBJEXT) keyboxd-backend-kbx.$(OBJEXT) \
-	keyboxd-backend-sqlite.$(OBJEXT) $(am__objects_6)
-keyboxd_OBJECTS = $(am_keyboxd_OBJECTS)
-keyboxd_LINK = $(CCLD) $(keyboxd_CFLAGS) $(CFLAGS) $(keyboxd_LDFLAGS) \
 	$(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
@@ -252,22 +237,6 @@ am__depfiles_remade = ./$(DEPDIR)/kbxutil-kbxutil.Po \
 	./$(DEPDIR)/kbxutil-keybox-search.Po \
 	./$(DEPDIR)/kbxutil-keybox-update.Po \
 	./$(DEPDIR)/kbxutil-keybox-util.Po \
-	./$(DEPDIR)/keyboxd-backend-cache.Po \
-	./$(DEPDIR)/keyboxd-backend-kbx.Po \
-	./$(DEPDIR)/keyboxd-backend-sqlite.Po \
-	./$(DEPDIR)/keyboxd-backend-support.Po \
-	./$(DEPDIR)/keyboxd-frontend.Po \
-	./$(DEPDIR)/keyboxd-kbxserver.Po \
-	./$(DEPDIR)/keyboxd-keybox-blob.Po \
-	./$(DEPDIR)/keyboxd-keybox-dump.Po \
-	./$(DEPDIR)/keyboxd-keybox-file.Po \
-	./$(DEPDIR)/keyboxd-keybox-init.Po \
-	./$(DEPDIR)/keyboxd-keybox-openpgp.Po \
-	./$(DEPDIR)/keyboxd-keybox-search.Po \
-	./$(DEPDIR)/keyboxd-keybox-update.Po \
-	./$(DEPDIR)/keyboxd-keybox-util.Po \
-	./$(DEPDIR)/keyboxd-keyboxd.Po \
-	./$(DEPDIR)/libkeybox509_a-kbx-client-util.Po \
 	./$(DEPDIR)/libkeybox509_a-keybox-blob.Po \
 	./$(DEPDIR)/libkeybox509_a-keybox-dump.Po \
 	./$(DEPDIR)/libkeybox509_a-keybox-file.Po \
@@ -276,7 +245,6 @@ am__depfiles_remade = ./$(DEPDIR)/kbxutil-kbxutil.Po \
 	./$(DEPDIR)/libkeybox509_a-keybox-search.Po \
 	./$(DEPDIR)/libkeybox509_a-keybox-update.Po \
 	./$(DEPDIR)/libkeybox509_a-keybox-util.Po \
-	./$(DEPDIR)/libkeybox_a-kbx-client-util.Po \
 	./$(DEPDIR)/libkeybox_a-keybox-blob.Po \
 	./$(DEPDIR)/libkeybox_a-keybox-dump.Po \
 	./$(DEPDIR)/libkeybox_a-keybox-file.Po \
@@ -303,9 +271,9 @@ am__v_CCLD_ = $(am__v_CCLD_@AM_DEFAULT_V@)
 am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = $(libkeybox_a_SOURCES) $(libkeybox509_a_SOURCES) \
-	$(kbxutil_SOURCES) $(keyboxd_SOURCES)
+	$(kbxutil_SOURCES)
 DIST_SOURCES = $(libkeybox_a_SOURCES) $(libkeybox509_a_SOURCES) \
-	$(kbxutil_SOURCES) $(keyboxd_SOURCES)
+	$(kbxutil_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -330,8 +298,7 @@ am__define_uniq_tagged_files = \
   done | $(am__uniquify_input)`
 ETAGS = etags
 CTAGS = ctags
-am__DIST_COMMON = $(srcdir)/Makefile.in \
-	$(srcdir)/keyboxd.w32-manifest.in $(top_srcdir)/am/cmacros.am \
+am__DIST_COMMON = $(srcdir)/Makefile.in $(top_srcdir)/am/cmacros.am \
 	$(top_srcdir)/build-aux/depcomp \
 	$(top_srcdir)/build-aux/mkinstalldirs
 DISTFILES = $(DIST_COMMON) $(DIST_SOURCES) $(TEXINFOS) $(EXTRA_DIST)
@@ -374,11 +341,9 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
-GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -387,7 +352,6 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -415,10 +379,9 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
-LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
-LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
+LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -455,14 +418,13 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
+SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
-SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-TPMSERVER = @TPMSERVER@
-TSSSTARTUP = @TSSSTARTUP@
-TSS_INCLUDE = @TSS_INCLUDE@
+SYS_SOCKET_H = @SYS_SOCKET_H@
+TAR = @TAR@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -525,15 +487,24 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = mkerrors keyboxd-w32info.rc keyboxd.w32-manifest.in
+EXTRA_DIST = mkerrors
 
 # NB: AM_CFLAGS may also be used by tools running on the build
 # platform to create source files.
 AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_1) \
 	$(am__append_2) $(am__append_3) $(am__append_4) \
-	$(am__append_5) $(am__append_6) $(am__append_7) \
-	$(am__append_8)
-resource_objs = $(am__append_9)
+	$(am__append_5) $(am__append_6) $(am__append_7)
+@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
+
+# Under Windows we use LockFileEx.  WindowsCE provides this only on
+# the WindowsMobile 6 platform and thus we need to use the coredll6
+# import library.  We also want to use a stacksize of 256k instead of
+# the 2MB which is the default with cegcc.  256k is the largest stack
+# we use with pth.
+@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
+@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
+resource_objs = 
 
 # Convenience macros
 libcommon = ../common/libcommon.a
@@ -542,8 +513,8 @@ libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS)
 noinst_LIBRARIES = libkeybox.a libkeybox509.a
-common_libs = $(libcommon)
-commonpth_libs = $(libcommonpth)
+@HAVE_W32CE_SYSTEM_FALSE@extra_libs = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_libs = $(LIBASSUAN_LIBS)
 common_sources = \
 	keybox.h keybox-defs.h keybox-search-desc.h \
 	keybox-util.c \
@@ -555,47 +526,23 @@ common_sources = \
 	keybox-openpgp.c \
 	keybox-dump.c
 
-client_sources = \
-        kbx-client-util.h \
-        kbx-client-util.c
-
-libkeybox_a_SOURCES = $(common_sources) $(client_sources)
-libkeybox509_a_SOURCES = $(common_sources) $(client_sources)
+libkeybox_a_SOURCES = $(common_sources)
+libkeybox509_a_SOURCES = $(common_sources)
 libkeybox_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
-libkeybox509_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) -DKEYBOX_WITH_X509=1
+libkeybox509_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) \
+                          -DKEYBOX_WITH_X509=1
+
 
 # We need W32SOCKLIBS because the init subsystem code in libcommon
 # requires it - although we don't actually need it.  It is easier
 # to do it this way.
 kbxutil_SOURCES = kbxutil.c $(common_sources)
 kbxutil_CFLAGS = $(AM_CFLAGS) -DKEYBOX_WITH_X509=1
-kbxutil_LDADD = $(common_libs) \
-                  $(KSBA_LIBS) $(LIBGCRYPT_LIBS) \
+kbxutil_LDADD = ../common/libcommon.a \
+                  $(KSBA_LIBS) $(LIBGCRYPT_LIBS) $(extra_libs) \
                   $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV) $(W32SOCKLIBS) \
 		  $(NETLIBS)
 
-keyboxd_SOURCES = \
-	keyboxd.c keyboxd.h   \
-	kbxserver.c           \
-	frontend.c frontend.h \
-	backend.h backend-support.c \
-	backend-cache.c \
-	backend-kbx.c \
-	backend-sqlite.c \
-	$(common_sources)
-
-keyboxd_CFLAGS = $(AM_CFLAGS) -DKEYBOX_WITH_X509=1 \
-                 $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) $(SQLITE3_CFLAGS) \
-                 $(INCICONV)
-
-keyboxd_LDADD = $(commonpth_libs) \
-                $(KSBA_LIBS) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
-	        $(SQLITE3_LIBS) $(GPG_ERROR_LIBS) \
-                $(LIBINTL) $(NETLIBS) $(LIBICONV) \
-		$(resource_objs)
-
-keyboxd_LDFLAGS = 
-keyboxd_DEPENDENCIES = $(resource_objs)
 all: all-am
 
 .SUFFIXES:
@@ -630,8 +577,6 @@ $(top_srcdir)/configure: @MAINTAINER_MODE_TRUE@ $(am__configure_deps)
 $(ACLOCAL_M4): @MAINTAINER_MODE_TRUE@ $(am__aclocal_m4_deps)
 	cd $(top_builddir) && $(MAKE) $(AM_MAKEFLAGS) am--refresh
 $(am__aclocal_m4_deps):
-keyboxd.w32-manifest: $(top_builddir)/config.status $(srcdir)/keyboxd.w32-manifest.in
-	cd $(top_builddir) && $(SHELL) ./config.status $(subdir)/$@
 install-binPROGRAMS: $(bin_PROGRAMS)
 	@$(NORMAL_INSTALL)
 	@list='$(bin_PROGRAMS)'; test -n "$(bindir)" || list=; \
@@ -674,48 +619,6 @@ uninstall-binPROGRAMS:
 
 clean-binPROGRAMS:
 	-test -z "$(bin_PROGRAMS)" || rm -f $(bin_PROGRAMS)
-install-libexecPROGRAMS: $(libexec_PROGRAMS)
-	@$(NORMAL_INSTALL)
-	@list='$(libexec_PROGRAMS)'; test -n "$(libexecdir)" || list=; \
-	if test -n "$$list"; then \
-	  echo " $(MKDIR_P) '$(DESTDIR)$(libexecdir)'"; \
-	  $(MKDIR_P) "$(DESTDIR)$(libexecdir)" || exit 1; \
-	fi; \
-	for p in $$list; do echo "$$p $$p"; done | \
-	sed 's/$(EXEEXT)$$//' | \
-	while read p p1; do if test -f $$p \
-	  ; then echo "$$p"; echo "$$p"; else :; fi; \
-	done | \
-	sed -e 'p;s,.*/,,;n;h' \
-	    -e 's|.*|.|' \
-	    -e 'p;x;s,.*/,,;s/$(EXEEXT)$$//;$(transform);s/$$/$(EXEEXT)/' | \
-	sed 'N;N;N;s,\n, ,g' | \
-	$(AWK) 'BEGIN { files["."] = ""; dirs["."] = 1 } \
-	  { d=$$3; if (dirs[d] != 1) { print "d", d; dirs[d] = 1 } \
-	    if ($$2 == $$4) files[d] = files[d] " " $$1; \
-	    else { print "f", $$3 "/" $$4, $$1; } } \
-	  END { for (d in files) print "f", d, files[d] }' | \
-	while read type dir files; do \
-	    if test "$$dir" = .; then dir=; else dir=/$$dir; fi; \
-	    test -z "$$files" || { \
-	      echo " $(INSTALL_PROGRAM_ENV) $(INSTALL_PROGRAM) $$files '$(DESTDIR)$(libexecdir)$$dir'"; \
-	      $(INSTALL_PROGRAM_ENV) $(INSTALL_PROGRAM) $$files "$(DESTDIR)$(libexecdir)$$dir" || exit $$?; \
-	    } \
-	; done
-
-uninstall-libexecPROGRAMS:
-	@$(NORMAL_UNINSTALL)
-	@list='$(libexec_PROGRAMS)'; test -n "$(libexecdir)" || list=; \
-	files=`for p in $$list; do echo "$$p"; done | \
-	  sed -e 'h;s,^.*/,,;s/$(EXEEXT)$$//;$(transform)' \
-	      -e 's/$$/$(EXEEXT)/' \
-	`; \
-	test -n "$$list" || exit 0; \
-	echo " ( cd '$(DESTDIR)$(libexecdir)' && rm -f" $$files ")"; \
-	cd "$(DESTDIR)$(libexecdir)" && rm -f $$files
-
-clean-libexecPROGRAMS:
-	-test -z "$(libexec_PROGRAMS)" || rm -f $(libexec_PROGRAMS)
 
 clean-noinstLIBRARIES:
 	-test -z "$(noinst_LIBRARIES)" || rm -f $(noinst_LIBRARIES)
@@ -734,10 +637,6 @@ kbxutil$(EXEEXT): $(kbxutil_OBJECTS) $(kbxutil_DEPENDENCIES) $(EXTRA_kbxutil_DEP
 	@rm -f kbxutil$(EXEEXT)
 	$(AM_V_CCLD)$(kbxutil_LINK) $(kbxutil_OBJECTS) $(kbxutil_LDADD) $(LIBS)
 
-keyboxd$(EXEEXT): $(keyboxd_OBJECTS) $(keyboxd_DEPENDENCIES) $(EXTRA_keyboxd_DEPENDENCIES) 
-	@rm -f keyboxd$(EXEEXT)
-	$(AM_V_CCLD)$(keyboxd_LINK) $(keyboxd_OBJECTS) $(keyboxd_LDADD) $(LIBS)
-
 mostlyclean-compile:
 	-rm -f *.$(OBJEXT)
 
@@ -753,22 +652,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kbxutil-keybox-search.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kbxutil-keybox-update.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/kbxutil-keybox-util.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-backend-cache.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-backend-kbx.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-backend-sqlite.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-backend-support.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-frontend.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-kbxserver.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-blob.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-dump.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-file.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-init.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-openpgp.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-search.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-update.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keybox-util.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/keyboxd-keyboxd.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox509_a-kbx-client-util.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox509_a-keybox-blob.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox509_a-keybox-dump.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox509_a-keybox-file.Po@am__quote@ # am--include-marker
@@ -777,7 +660,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox509_a-keybox-search.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox509_a-keybox-update.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox509_a-keybox-util.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox_a-kbx-client-util.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox_a-keybox-blob.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox_a-keybox-dump.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libkeybox_a-keybox-file.Po@am__quote@ # am--include-marker
@@ -919,20 +801,6 @@ libkeybox_a-keybox-dump.obj: keybox-dump.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox_a_CFLAGS) $(CFLAGS) -c -o libkeybox_a-keybox-dump.obj `if test -f 'keybox-dump.c'; then $(CYGPATH_W) 'keybox-dump.c'; else $(CYGPATH_W) '$(srcdir)/keybox-dump.c'; fi`
 
-libkeybox_a-kbx-client-util.o: kbx-client-util.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox_a_CFLAGS) $(CFLAGS) -MT libkeybox_a-kbx-client-util.o -MD -MP -MF $(DEPDIR)/libkeybox_a-kbx-client-util.Tpo -c -o libkeybox_a-kbx-client-util.o `test -f 'kbx-client-util.c' || echo '$(srcdir)/'`kbx-client-util.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libkeybox_a-kbx-client-util.Tpo $(DEPDIR)/libkeybox_a-kbx-client-util.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kbx-client-util.c' object='libkeybox_a-kbx-client-util.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox_a_CFLAGS) $(CFLAGS) -c -o libkeybox_a-kbx-client-util.o `test -f 'kbx-client-util.c' || echo '$(srcdir)/'`kbx-client-util.c
-
-libkeybox_a-kbx-client-util.obj: kbx-client-util.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox_a_CFLAGS) $(CFLAGS) -MT libkeybox_a-kbx-client-util.obj -MD -MP -MF $(DEPDIR)/libkeybox_a-kbx-client-util.Tpo -c -o libkeybox_a-kbx-client-util.obj `if test -f 'kbx-client-util.c'; then $(CYGPATH_W) 'kbx-client-util.c'; else $(CYGPATH_W) '$(srcdir)/kbx-client-util.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libkeybox_a-kbx-client-util.Tpo $(DEPDIR)/libkeybox_a-kbx-client-util.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kbx-client-util.c' object='libkeybox_a-kbx-client-util.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox_a_CFLAGS) $(CFLAGS) -c -o libkeybox_a-kbx-client-util.obj `if test -f 'kbx-client-util.c'; then $(CYGPATH_W) 'kbx-client-util.c'; else $(CYGPATH_W) '$(srcdir)/kbx-client-util.c'; fi`
-
 libkeybox509_a-keybox-util.o: keybox-util.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox509_a_CFLAGS) $(CFLAGS) -MT libkeybox509_a-keybox-util.o -MD -MP -MF $(DEPDIR)/libkeybox509_a-keybox-util.Tpo -c -o libkeybox509_a-keybox-util.o `test -f 'keybox-util.c' || echo '$(srcdir)/'`keybox-util.c
 @am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libkeybox509_a-keybox-util.Tpo $(DEPDIR)/libkeybox509_a-keybox-util.Po
@@ -1044,20 +912,6 @@ libkeybox509_a-keybox-dump.obj: keybox-dump.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-dump.c' object='libkeybox509_a-keybox-dump.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox509_a_CFLAGS) $(CFLAGS) -c -o libkeybox509_a-keybox-dump.obj `if test -f 'keybox-dump.c'; then $(CYGPATH_W) 'keybox-dump.c'; else $(CYGPATH_W) '$(srcdir)/keybox-dump.c'; fi`
-
-libkeybox509_a-kbx-client-util.o: kbx-client-util.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox509_a_CFLAGS) $(CFLAGS) -MT libkeybox509_a-kbx-client-util.o -MD -MP -MF $(DEPDIR)/libkeybox509_a-kbx-client-util.Tpo -c -o libkeybox509_a-kbx-client-util.o `test -f 'kbx-client-util.c' || echo '$(srcdir)/'`kbx-client-util.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libkeybox509_a-kbx-client-util.Tpo $(DEPDIR)/libkeybox509_a-kbx-client-util.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kbx-client-util.c' object='libkeybox509_a-kbx-client-util.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox509_a_CFLAGS) $(CFLAGS) -c -o libkeybox509_a-kbx-client-util.o `test -f 'kbx-client-util.c' || echo '$(srcdir)/'`kbx-client-util.c
-
-libkeybox509_a-kbx-client-util.obj: kbx-client-util.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox509_a_CFLAGS) $(CFLAGS) -MT libkeybox509_a-kbx-client-util.obj -MD -MP -MF $(DEPDIR)/libkeybox509_a-kbx-client-util.Tpo -c -o libkeybox509_a-kbx-client-util.obj `if test -f 'kbx-client-util.c'; then $(CYGPATH_W) 'kbx-client-util.c'; else $(CYGPATH_W) '$(srcdir)/kbx-client-util.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libkeybox509_a-kbx-client-util.Tpo $(DEPDIR)/libkeybox509_a-kbx-client-util.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kbx-client-util.c' object='libkeybox509_a-kbx-client-util.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libkeybox509_a_CFLAGS) $(CFLAGS) -c -o libkeybox509_a-kbx-client-util.obj `if test -f 'kbx-client-util.c'; then $(CYGPATH_W) 'kbx-client-util.c'; else $(CYGPATH_W) '$(srcdir)/kbx-client-util.c'; fi`
 
 kbxutil-kbxutil.o: kbxutil.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kbxutil_CFLAGS) $(CFLAGS) -MT kbxutil-kbxutil.o -MD -MP -MF $(DEPDIR)/kbxutil-kbxutil.Tpo -c -o kbxutil-kbxutil.o `test -f 'kbxutil.c' || echo '$(srcdir)/'`kbxutil.c
@@ -1185,216 +1039,6 @@ kbxutil-keybox-dump.obj: keybox-dump.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(kbxutil_CFLAGS) $(CFLAGS) -c -o kbxutil-keybox-dump.obj `if test -f 'keybox-dump.c'; then $(CYGPATH_W) 'keybox-dump.c'; else $(CYGPATH_W) '$(srcdir)/keybox-dump.c'; fi`
 
-keyboxd-keyboxd.o: keyboxd.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keyboxd.o -MD -MP -MF $(DEPDIR)/keyboxd-keyboxd.Tpo -c -o keyboxd-keyboxd.o `test -f 'keyboxd.c' || echo '$(srcdir)/'`keyboxd.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keyboxd.Tpo $(DEPDIR)/keyboxd-keyboxd.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keyboxd.c' object='keyboxd-keyboxd.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keyboxd.o `test -f 'keyboxd.c' || echo '$(srcdir)/'`keyboxd.c
-
-keyboxd-keyboxd.obj: keyboxd.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keyboxd.obj -MD -MP -MF $(DEPDIR)/keyboxd-keyboxd.Tpo -c -o keyboxd-keyboxd.obj `if test -f 'keyboxd.c'; then $(CYGPATH_W) 'keyboxd.c'; else $(CYGPATH_W) '$(srcdir)/keyboxd.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keyboxd.Tpo $(DEPDIR)/keyboxd-keyboxd.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keyboxd.c' object='keyboxd-keyboxd.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keyboxd.obj `if test -f 'keyboxd.c'; then $(CYGPATH_W) 'keyboxd.c'; else $(CYGPATH_W) '$(srcdir)/keyboxd.c'; fi`
-
-keyboxd-kbxserver.o: kbxserver.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-kbxserver.o -MD -MP -MF $(DEPDIR)/keyboxd-kbxserver.Tpo -c -o keyboxd-kbxserver.o `test -f 'kbxserver.c' || echo '$(srcdir)/'`kbxserver.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-kbxserver.Tpo $(DEPDIR)/keyboxd-kbxserver.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kbxserver.c' object='keyboxd-kbxserver.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-kbxserver.o `test -f 'kbxserver.c' || echo '$(srcdir)/'`kbxserver.c
-
-keyboxd-kbxserver.obj: kbxserver.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-kbxserver.obj -MD -MP -MF $(DEPDIR)/keyboxd-kbxserver.Tpo -c -o keyboxd-kbxserver.obj `if test -f 'kbxserver.c'; then $(CYGPATH_W) 'kbxserver.c'; else $(CYGPATH_W) '$(srcdir)/kbxserver.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-kbxserver.Tpo $(DEPDIR)/keyboxd-kbxserver.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='kbxserver.c' object='keyboxd-kbxserver.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-kbxserver.obj `if test -f 'kbxserver.c'; then $(CYGPATH_W) 'kbxserver.c'; else $(CYGPATH_W) '$(srcdir)/kbxserver.c'; fi`
-
-keyboxd-frontend.o: frontend.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-frontend.o -MD -MP -MF $(DEPDIR)/keyboxd-frontend.Tpo -c -o keyboxd-frontend.o `test -f 'frontend.c' || echo '$(srcdir)/'`frontend.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-frontend.Tpo $(DEPDIR)/keyboxd-frontend.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='frontend.c' object='keyboxd-frontend.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-frontend.o `test -f 'frontend.c' || echo '$(srcdir)/'`frontend.c
-
-keyboxd-frontend.obj: frontend.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-frontend.obj -MD -MP -MF $(DEPDIR)/keyboxd-frontend.Tpo -c -o keyboxd-frontend.obj `if test -f 'frontend.c'; then $(CYGPATH_W) 'frontend.c'; else $(CYGPATH_W) '$(srcdir)/frontend.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-frontend.Tpo $(DEPDIR)/keyboxd-frontend.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='frontend.c' object='keyboxd-frontend.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-frontend.obj `if test -f 'frontend.c'; then $(CYGPATH_W) 'frontend.c'; else $(CYGPATH_W) '$(srcdir)/frontend.c'; fi`
-
-keyboxd-backend-support.o: backend-support.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-support.o -MD -MP -MF $(DEPDIR)/keyboxd-backend-support.Tpo -c -o keyboxd-backend-support.o `test -f 'backend-support.c' || echo '$(srcdir)/'`backend-support.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-support.Tpo $(DEPDIR)/keyboxd-backend-support.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-support.c' object='keyboxd-backend-support.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-support.o `test -f 'backend-support.c' || echo '$(srcdir)/'`backend-support.c
-
-keyboxd-backend-support.obj: backend-support.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-support.obj -MD -MP -MF $(DEPDIR)/keyboxd-backend-support.Tpo -c -o keyboxd-backend-support.obj `if test -f 'backend-support.c'; then $(CYGPATH_W) 'backend-support.c'; else $(CYGPATH_W) '$(srcdir)/backend-support.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-support.Tpo $(DEPDIR)/keyboxd-backend-support.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-support.c' object='keyboxd-backend-support.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-support.obj `if test -f 'backend-support.c'; then $(CYGPATH_W) 'backend-support.c'; else $(CYGPATH_W) '$(srcdir)/backend-support.c'; fi`
-
-keyboxd-backend-cache.o: backend-cache.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-cache.o -MD -MP -MF $(DEPDIR)/keyboxd-backend-cache.Tpo -c -o keyboxd-backend-cache.o `test -f 'backend-cache.c' || echo '$(srcdir)/'`backend-cache.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-cache.Tpo $(DEPDIR)/keyboxd-backend-cache.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-cache.c' object='keyboxd-backend-cache.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-cache.o `test -f 'backend-cache.c' || echo '$(srcdir)/'`backend-cache.c
-
-keyboxd-backend-cache.obj: backend-cache.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-cache.obj -MD -MP -MF $(DEPDIR)/keyboxd-backend-cache.Tpo -c -o keyboxd-backend-cache.obj `if test -f 'backend-cache.c'; then $(CYGPATH_W) 'backend-cache.c'; else $(CYGPATH_W) '$(srcdir)/backend-cache.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-cache.Tpo $(DEPDIR)/keyboxd-backend-cache.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-cache.c' object='keyboxd-backend-cache.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-cache.obj `if test -f 'backend-cache.c'; then $(CYGPATH_W) 'backend-cache.c'; else $(CYGPATH_W) '$(srcdir)/backend-cache.c'; fi`
-
-keyboxd-backend-kbx.o: backend-kbx.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-kbx.o -MD -MP -MF $(DEPDIR)/keyboxd-backend-kbx.Tpo -c -o keyboxd-backend-kbx.o `test -f 'backend-kbx.c' || echo '$(srcdir)/'`backend-kbx.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-kbx.Tpo $(DEPDIR)/keyboxd-backend-kbx.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-kbx.c' object='keyboxd-backend-kbx.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-kbx.o `test -f 'backend-kbx.c' || echo '$(srcdir)/'`backend-kbx.c
-
-keyboxd-backend-kbx.obj: backend-kbx.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-kbx.obj -MD -MP -MF $(DEPDIR)/keyboxd-backend-kbx.Tpo -c -o keyboxd-backend-kbx.obj `if test -f 'backend-kbx.c'; then $(CYGPATH_W) 'backend-kbx.c'; else $(CYGPATH_W) '$(srcdir)/backend-kbx.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-kbx.Tpo $(DEPDIR)/keyboxd-backend-kbx.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-kbx.c' object='keyboxd-backend-kbx.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-kbx.obj `if test -f 'backend-kbx.c'; then $(CYGPATH_W) 'backend-kbx.c'; else $(CYGPATH_W) '$(srcdir)/backend-kbx.c'; fi`
-
-keyboxd-backend-sqlite.o: backend-sqlite.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-sqlite.o -MD -MP -MF $(DEPDIR)/keyboxd-backend-sqlite.Tpo -c -o keyboxd-backend-sqlite.o `test -f 'backend-sqlite.c' || echo '$(srcdir)/'`backend-sqlite.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-sqlite.Tpo $(DEPDIR)/keyboxd-backend-sqlite.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-sqlite.c' object='keyboxd-backend-sqlite.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-sqlite.o `test -f 'backend-sqlite.c' || echo '$(srcdir)/'`backend-sqlite.c
-
-keyboxd-backend-sqlite.obj: backend-sqlite.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-backend-sqlite.obj -MD -MP -MF $(DEPDIR)/keyboxd-backend-sqlite.Tpo -c -o keyboxd-backend-sqlite.obj `if test -f 'backend-sqlite.c'; then $(CYGPATH_W) 'backend-sqlite.c'; else $(CYGPATH_W) '$(srcdir)/backend-sqlite.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-backend-sqlite.Tpo $(DEPDIR)/keyboxd-backend-sqlite.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='backend-sqlite.c' object='keyboxd-backend-sqlite.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-backend-sqlite.obj `if test -f 'backend-sqlite.c'; then $(CYGPATH_W) 'backend-sqlite.c'; else $(CYGPATH_W) '$(srcdir)/backend-sqlite.c'; fi`
-
-keyboxd-keybox-util.o: keybox-util.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-util.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-util.Tpo -c -o keyboxd-keybox-util.o `test -f 'keybox-util.c' || echo '$(srcdir)/'`keybox-util.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-util.Tpo $(DEPDIR)/keyboxd-keybox-util.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-util.c' object='keyboxd-keybox-util.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-util.o `test -f 'keybox-util.c' || echo '$(srcdir)/'`keybox-util.c
-
-keyboxd-keybox-util.obj: keybox-util.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-util.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-util.Tpo -c -o keyboxd-keybox-util.obj `if test -f 'keybox-util.c'; then $(CYGPATH_W) 'keybox-util.c'; else $(CYGPATH_W) '$(srcdir)/keybox-util.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-util.Tpo $(DEPDIR)/keyboxd-keybox-util.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-util.c' object='keyboxd-keybox-util.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-util.obj `if test -f 'keybox-util.c'; then $(CYGPATH_W) 'keybox-util.c'; else $(CYGPATH_W) '$(srcdir)/keybox-util.c'; fi`
-
-keyboxd-keybox-init.o: keybox-init.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-init.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-init.Tpo -c -o keyboxd-keybox-init.o `test -f 'keybox-init.c' || echo '$(srcdir)/'`keybox-init.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-init.Tpo $(DEPDIR)/keyboxd-keybox-init.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-init.c' object='keyboxd-keybox-init.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-init.o `test -f 'keybox-init.c' || echo '$(srcdir)/'`keybox-init.c
-
-keyboxd-keybox-init.obj: keybox-init.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-init.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-init.Tpo -c -o keyboxd-keybox-init.obj `if test -f 'keybox-init.c'; then $(CYGPATH_W) 'keybox-init.c'; else $(CYGPATH_W) '$(srcdir)/keybox-init.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-init.Tpo $(DEPDIR)/keyboxd-keybox-init.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-init.c' object='keyboxd-keybox-init.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-init.obj `if test -f 'keybox-init.c'; then $(CYGPATH_W) 'keybox-init.c'; else $(CYGPATH_W) '$(srcdir)/keybox-init.c'; fi`
-
-keyboxd-keybox-blob.o: keybox-blob.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-blob.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-blob.Tpo -c -o keyboxd-keybox-blob.o `test -f 'keybox-blob.c' || echo '$(srcdir)/'`keybox-blob.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-blob.Tpo $(DEPDIR)/keyboxd-keybox-blob.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-blob.c' object='keyboxd-keybox-blob.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-blob.o `test -f 'keybox-blob.c' || echo '$(srcdir)/'`keybox-blob.c
-
-keyboxd-keybox-blob.obj: keybox-blob.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-blob.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-blob.Tpo -c -o keyboxd-keybox-blob.obj `if test -f 'keybox-blob.c'; then $(CYGPATH_W) 'keybox-blob.c'; else $(CYGPATH_W) '$(srcdir)/keybox-blob.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-blob.Tpo $(DEPDIR)/keyboxd-keybox-blob.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-blob.c' object='keyboxd-keybox-blob.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-blob.obj `if test -f 'keybox-blob.c'; then $(CYGPATH_W) 'keybox-blob.c'; else $(CYGPATH_W) '$(srcdir)/keybox-blob.c'; fi`
-
-keyboxd-keybox-file.o: keybox-file.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-file.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-file.Tpo -c -o keyboxd-keybox-file.o `test -f 'keybox-file.c' || echo '$(srcdir)/'`keybox-file.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-file.Tpo $(DEPDIR)/keyboxd-keybox-file.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-file.c' object='keyboxd-keybox-file.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-file.o `test -f 'keybox-file.c' || echo '$(srcdir)/'`keybox-file.c
-
-keyboxd-keybox-file.obj: keybox-file.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-file.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-file.Tpo -c -o keyboxd-keybox-file.obj `if test -f 'keybox-file.c'; then $(CYGPATH_W) 'keybox-file.c'; else $(CYGPATH_W) '$(srcdir)/keybox-file.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-file.Tpo $(DEPDIR)/keyboxd-keybox-file.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-file.c' object='keyboxd-keybox-file.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-file.obj `if test -f 'keybox-file.c'; then $(CYGPATH_W) 'keybox-file.c'; else $(CYGPATH_W) '$(srcdir)/keybox-file.c'; fi`
-
-keyboxd-keybox-search.o: keybox-search.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-search.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-search.Tpo -c -o keyboxd-keybox-search.o `test -f 'keybox-search.c' || echo '$(srcdir)/'`keybox-search.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-search.Tpo $(DEPDIR)/keyboxd-keybox-search.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-search.c' object='keyboxd-keybox-search.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-search.o `test -f 'keybox-search.c' || echo '$(srcdir)/'`keybox-search.c
-
-keyboxd-keybox-search.obj: keybox-search.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-search.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-search.Tpo -c -o keyboxd-keybox-search.obj `if test -f 'keybox-search.c'; then $(CYGPATH_W) 'keybox-search.c'; else $(CYGPATH_W) '$(srcdir)/keybox-search.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-search.Tpo $(DEPDIR)/keyboxd-keybox-search.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-search.c' object='keyboxd-keybox-search.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-search.obj `if test -f 'keybox-search.c'; then $(CYGPATH_W) 'keybox-search.c'; else $(CYGPATH_W) '$(srcdir)/keybox-search.c'; fi`
-
-keyboxd-keybox-update.o: keybox-update.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-update.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-update.Tpo -c -o keyboxd-keybox-update.o `test -f 'keybox-update.c' || echo '$(srcdir)/'`keybox-update.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-update.Tpo $(DEPDIR)/keyboxd-keybox-update.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-update.c' object='keyboxd-keybox-update.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-update.o `test -f 'keybox-update.c' || echo '$(srcdir)/'`keybox-update.c
-
-keyboxd-keybox-update.obj: keybox-update.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-update.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-update.Tpo -c -o keyboxd-keybox-update.obj `if test -f 'keybox-update.c'; then $(CYGPATH_W) 'keybox-update.c'; else $(CYGPATH_W) '$(srcdir)/keybox-update.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-update.Tpo $(DEPDIR)/keyboxd-keybox-update.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-update.c' object='keyboxd-keybox-update.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-update.obj `if test -f 'keybox-update.c'; then $(CYGPATH_W) 'keybox-update.c'; else $(CYGPATH_W) '$(srcdir)/keybox-update.c'; fi`
-
-keyboxd-keybox-openpgp.o: keybox-openpgp.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-openpgp.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-openpgp.Tpo -c -o keyboxd-keybox-openpgp.o `test -f 'keybox-openpgp.c' || echo '$(srcdir)/'`keybox-openpgp.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-openpgp.Tpo $(DEPDIR)/keyboxd-keybox-openpgp.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-openpgp.c' object='keyboxd-keybox-openpgp.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-openpgp.o `test -f 'keybox-openpgp.c' || echo '$(srcdir)/'`keybox-openpgp.c
-
-keyboxd-keybox-openpgp.obj: keybox-openpgp.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-openpgp.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-openpgp.Tpo -c -o keyboxd-keybox-openpgp.obj `if test -f 'keybox-openpgp.c'; then $(CYGPATH_W) 'keybox-openpgp.c'; else $(CYGPATH_W) '$(srcdir)/keybox-openpgp.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-openpgp.Tpo $(DEPDIR)/keyboxd-keybox-openpgp.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-openpgp.c' object='keyboxd-keybox-openpgp.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-openpgp.obj `if test -f 'keybox-openpgp.c'; then $(CYGPATH_W) 'keybox-openpgp.c'; else $(CYGPATH_W) '$(srcdir)/keybox-openpgp.c'; fi`
-
-keyboxd-keybox-dump.o: keybox-dump.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-dump.o -MD -MP -MF $(DEPDIR)/keyboxd-keybox-dump.Tpo -c -o keyboxd-keybox-dump.o `test -f 'keybox-dump.c' || echo '$(srcdir)/'`keybox-dump.c
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-dump.Tpo $(DEPDIR)/keyboxd-keybox-dump.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-dump.c' object='keyboxd-keybox-dump.o' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-dump.o `test -f 'keybox-dump.c' || echo '$(srcdir)/'`keybox-dump.c
-
-keyboxd-keybox-dump.obj: keybox-dump.c
-@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -MT keyboxd-keybox-dump.obj -MD -MP -MF $(DEPDIR)/keyboxd-keybox-dump.Tpo -c -o keyboxd-keybox-dump.obj `if test -f 'keybox-dump.c'; then $(CYGPATH_W) 'keybox-dump.c'; else $(CYGPATH_W) '$(srcdir)/keybox-dump.c'; fi`
-@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/keyboxd-keybox-dump.Tpo $(DEPDIR)/keyboxd-keybox-dump.Po
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='keybox-dump.c' object='keyboxd-keybox-dump.obj' libtool=no @AMDEPBACKSLASH@
-@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
-@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(keyboxd_CFLAGS) $(CFLAGS) -c -o keyboxd-keybox-dump.obj `if test -f 'keybox-dump.c'; then $(CYGPATH_W) 'keybox-dump.c'; else $(CYGPATH_W) '$(srcdir)/keybox-dump.c'; fi`
-
 ID: $(am__tagged_files)
 	$(am__define_uniq_tagged_files); mkid -fID $$unique
 tags: tags-am
@@ -1484,7 +1128,7 @@ check-am: all-am
 check: check-am
 all-am: Makefile $(PROGRAMS) $(LIBRARIES)
 installdirs:
-	for dir in "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)"; do \
+	for dir in "$(DESTDIR)$(bindir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: install-am
@@ -1519,8 +1163,8 @@ maintainer-clean-generic:
 	@echo "it deletes files that may require special tools to rebuild."
 clean: clean-am
 
-clean-am: clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
-	clean-noinstLIBRARIES mostlyclean-am
+clean-am: clean-binPROGRAMS clean-generic clean-noinstLIBRARIES \
+	mostlyclean-am
 
 distclean: distclean-am
 		-rm -f ./$(DEPDIR)/kbxutil-kbxutil.Po
@@ -1532,22 +1176,6 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/kbxutil-keybox-search.Po
 	-rm -f ./$(DEPDIR)/kbxutil-keybox-update.Po
 	-rm -f ./$(DEPDIR)/kbxutil-keybox-util.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-cache.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-kbx.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-sqlite.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-support.Po
-	-rm -f ./$(DEPDIR)/keyboxd-frontend.Po
-	-rm -f ./$(DEPDIR)/keyboxd-kbxserver.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-blob.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-dump.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-file.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-init.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-openpgp.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-search.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-update.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-util.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keyboxd.Po
-	-rm -f ./$(DEPDIR)/libkeybox509_a-kbx-client-util.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-blob.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-dump.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-file.Po
@@ -1556,7 +1184,6 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-search.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-update.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-util.Po
-	-rm -f ./$(DEPDIR)/libkeybox_a-kbx-client-util.Po
 	-rm -f ./$(DEPDIR)/libkeybox_a-keybox-blob.Po
 	-rm -f ./$(DEPDIR)/libkeybox_a-keybox-dump.Po
 	-rm -f ./$(DEPDIR)/libkeybox_a-keybox-file.Po
@@ -1587,7 +1214,7 @@ install-dvi: install-dvi-am
 
 install-dvi-am:
 
-install-exec-am: install-binPROGRAMS install-libexecPROGRAMS
+install-exec-am: install-binPROGRAMS
 
 install-html: install-html-am
 
@@ -1619,22 +1246,6 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/kbxutil-keybox-search.Po
 	-rm -f ./$(DEPDIR)/kbxutil-keybox-update.Po
 	-rm -f ./$(DEPDIR)/kbxutil-keybox-util.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-cache.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-kbx.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-sqlite.Po
-	-rm -f ./$(DEPDIR)/keyboxd-backend-support.Po
-	-rm -f ./$(DEPDIR)/keyboxd-frontend.Po
-	-rm -f ./$(DEPDIR)/keyboxd-kbxserver.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-blob.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-dump.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-file.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-init.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-openpgp.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-search.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-update.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keybox-util.Po
-	-rm -f ./$(DEPDIR)/keyboxd-keyboxd.Po
-	-rm -f ./$(DEPDIR)/libkeybox509_a-kbx-client-util.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-blob.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-dump.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-file.Po
@@ -1643,7 +1254,6 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-search.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-update.Po
 	-rm -f ./$(DEPDIR)/libkeybox509_a-keybox-util.Po
-	-rm -f ./$(DEPDIR)/libkeybox_a-kbx-client-util.Po
 	-rm -f ./$(DEPDIR)/libkeybox_a-keybox-blob.Po
 	-rm -f ./$(DEPDIR)/libkeybox_a-keybox-dump.Po
 	-rm -f ./$(DEPDIR)/libkeybox_a-keybox-file.Po
@@ -1667,24 +1277,23 @@ ps: ps-am
 
 ps-am:
 
-uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS
+uninstall-am: uninstall-binPROGRAMS
 
 .MAKE: install-am install-strip
 
 .PHONY: CTAGS GTAGS TAGS all all-am am--depfiles check check-am clean \
-	clean-binPROGRAMS clean-generic clean-libexecPROGRAMS \
-	clean-noinstLIBRARIES cscopelist-am ctags ctags-am distclean \
-	distclean-compile distclean-generic distclean-tags distdir dvi \
-	dvi-am html html-am info info-am install install-am \
-	install-binPROGRAMS install-data install-data-am install-dvi \
-	install-dvi-am install-exec install-exec-am install-html \
-	install-html-am install-info install-info-am \
-	install-libexecPROGRAMS install-man install-pdf install-pdf-am \
-	install-ps install-ps-am install-strip installcheck \
-	installcheck-am installdirs maintainer-clean \
+	clean-binPROGRAMS clean-generic clean-noinstLIBRARIES \
+	cscopelist-am ctags ctags-am distclean distclean-compile \
+	distclean-generic distclean-tags distdir dvi dvi-am html \
+	html-am info info-am install install-am install-binPROGRAMS \
+	install-data install-data-am install-dvi install-dvi-am \
+	install-exec install-exec-am install-html install-html-am \
+	install-info install-info-am install-man install-pdf \
+	install-pdf-am install-ps install-ps-am install-strip \
+	installcheck installcheck-am installdirs maintainer-clean \
 	maintainer-clean-generic mostlyclean mostlyclean-compile \
 	mostlyclean-generic pdf pdf-am ps ps-am tags tags-am uninstall \
-	uninstall-am uninstall-binPROGRAMS uninstall-libexecPROGRAMS
+	uninstall-am uninstall-binPROGRAMS
 
 .PRECIOUS: Makefile
 
@@ -1692,11 +1301,7 @@ uninstall-am: uninstall-binPROGRAMS uninstall-libexecPROGRAMS
 @HAVE_W32_SYSTEM_TRUE@.rc.o:
 @HAVE_W32_SYSTEM_TRUE@	$(WINDRES) $(DEFAULT_INCLUDES) $(INCLUDES) "$<" "$@"
 
-@HAVE_W32_SYSTEM_TRUE@keyboxd-w32info.o : keyboxd.w32-manifest ../common/w32info-rc.h
-
-# Make sure that all libs are build before we use them.  This is
-# important for things like make -j2.
-$(PROGRAMS): $(common_libs) $(commonpth_libs)
+$(PROGRAMS) : ../common/libcommon.a
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

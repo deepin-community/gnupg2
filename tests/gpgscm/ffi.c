@@ -45,10 +45,6 @@
 #include "../../common/exechelp.h"
 #include "../../common/sysutils.h"
 
-#ifdef HAVE_W32_SYSTEM
-#include <windows.h>
-#endif
-
 #include "private.h"
 #include "ffi.h"
 #include "ffi-private.h"
@@ -219,7 +215,7 @@ do_chdir (scheme *sc, pointer args)
   FFI_ARG_OR_RETURN (sc, char *, name, path, args);
   FFI_ARGS_DONE_OR_RETURN (sc, args);
   if (chdir (name))
-    FFI_RETURN_ERR (sc, gpg_error_from_syserror ());
+    FFI_RETURN_ERR (sc, errno);
   FFI_RETURN (sc);
 }
 
@@ -792,6 +788,7 @@ do_spawn_process (scheme *sc, pointer args)
     }
 
   err = gnupg_spawn_process (argv[0], (const char **) &argv[1],
+                             NULL,
                              NULL,
                              flags,
                              &infp, &outfp, &errfp, &pid);

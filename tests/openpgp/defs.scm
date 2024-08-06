@@ -111,10 +111,6 @@
 (assert (equal? (percent-encode "%61") "%2561"))
 (assert (equal? (percent-encode "foob%61r") "foob%2561r"))
 
-;; Note that the entry for pinentry relies on the fact that
-;; GNUPG_BUILD_ROOT is the top of the build root.  The second element
-;; in each list is an envvar which can be used to specifiy a different
-;; tool than the installed one.
 (define tools
   '((gpgv "GPGV" "g10/gpgv")
     (gpg-connect-agent "GPG_CONNECT_AGENT" "tools/gpg-connect-agent")
@@ -122,15 +118,19 @@
     (gpg-preset-passphrase "GPG_PRESET_PASSPHRASE"
 			   "agent/gpg-preset-passphrase")
     (gpgtar "GPGTAR" "tools/gpgtar")
+    (gpg-zip "GPGZIP" "tools/gpg-zip")
     (pinentry "PINENTRY" "tests/openpgp/fake-pinentry")))
+
+(define bin-prefix (getenv "BIN_PREFIX"))
+(define installed? (not (string=? "" bin-prefix)))
+(define with-valgrind? (not (string=? (getenv "with_valgrind") "")))
 
 (define (tool-hardcoded which)
   (let ((t (assoc which tools)))
     (getenv' (cadr t)
-	     (qualify (string-append (getenv "GNUPG_BUILD_ROOT")
-                                     "/" (caddr t))))))
-
-(define with-valgrind? (not (string=? (getenv "with_valgrind") "")))
+	     (qualify (if installed?
+			  (string-append bin-prefix "/" (basename (caddr t)))
+			  (string-append (getenv "objdir") "/" (caddr t)))))))
 
 ;; You can splice VALGRIND into your argument vector to run programs
 ;; under valgrind.  For example, to run valgrind on gpg, you may want
@@ -142,13 +142,15 @@
   '("/usr/bin/valgrind" -q --leak-check=no --track-origins=yes
                         --error-exitcode=154 --exit-on-first-error=yes))
 
+(unless installed?
+	(setenv "GNUPG_BUILDDIR" (getenv "objdir") #t))
+
 (define (gpg-conf . args)
   (gpg-conf' "" args))
 (define (gpg-conf' input args)
   (let ((s (call-popen `(,(tool-hardcoded 'gpgconf)
-			 ,@(if *win32*
-			       (list '--build-prefix (getenv "objdir"))
-			       '())
+			 ,@(if installed? '()
+			       (list '--build-prefix (getenv "objdir")))
 			 ,@args) input)))
     (map (lambda (line) (map percent-decode (string-split line #\:)))
 	 (string-split-newlines s))))
@@ -190,7 +192,7 @@
 
 (define (tool which)
   (case which
-    ((gpg gpg-agent scdaemon gpgsm keyboxd dirmngr)
+    ((gpg gpg-agent scdaemon gpgsm dirmngr)
      (:gc:c:pgmname (assoc (symbol->string which) gpg-components)))
     (else
      (tool-hardcoded which))))
@@ -217,7 +219,7 @@
   (tr:spawn input `(,@GPG --output dummy --status-file **out** ,@args **in**)))
 
 (define (pipe:gpg args)
-  (pipe:spawn `(,@GPG --output - ,@args)))
+  (pipe:spawn `(,@GPG --output - ,@args -)))
 
 (define (gpg-with-colons args)
   (let ((s (call-popen `(,@GPG --with-colons ,@args) "")))
@@ -336,15 +338,7 @@
   (if (flag "--use-keyring" *args*)
       (create-file "pubring.gpg"))
 
-  (create-file "common.conf"
-	       (if (flag "--use-keyboxd" *args*)
-		   "use-keyboxd" "#use-keyboxd")
-	       (string-append "keyboxd-program " (tool 'keyboxd))
-	       )
-
   (create-file "gpg.conf"
-               ;;"log-file socket:///tmp/S.wklog"
-               ;;"verbose"
 	       "no-greeting"
 	       "no-secmem-warning"
 	       "no-permission-warning"
@@ -352,7 +346,7 @@
                "no-auto-key-retrieve"
                "no-auto-key-locate"
 	       "allow-weak-digest-algos"
-	       "allow-old-cipher-algos"
+               "allow-weak-key-signatures"
                "ignore-mdc-error"
 	       (if have-opt-always-trust
 		   "no-auto-check-trustdb" "#no-auto-check-trustdb")
@@ -360,17 +354,12 @@
 			      (tool 'gpg-agent)
 			      "|--debug-quick-random\n")
 	       )
-  (create-file "keyboxd.conf"
-               ;;"log-file socket:///tmp/S.wklog"
-               ;;"verbose"
-               ;;"debug ipc"
-	       )
-
   (create-file "gpg-agent.conf"
 	       "allow-preset-passphrase"
 	       "no-grab"
 	       "enable-ssh-support"
-               "s2k-count 65536"
+	       (if (flag "--extended-key-format" *args*)
+		   "enable-extended-key-format" "#enable-extended-key-format")
 	       (string-append "pinentry-program " (tool 'pinentry))
 	       "disable-scdaemon"))
 
@@ -525,8 +514,6 @@
 (when with-valgrind?
   (set! gpg `(,@valgrind ,@gpg)))
 
-
-;;(set! *args* (append *args* (list "--use-keyboxd")))
 
 
 ;; end

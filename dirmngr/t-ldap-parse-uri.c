@@ -20,12 +20,8 @@
 #include <config.h>
 
 #include "ldap-parse-uri.h"
+
 #include "t-support.h"
-
-#define PGM "t-ldap-parse-uri"
-
-static int verbose;
-
 
 struct test_ldap_uri_p
 {
@@ -36,11 +32,7 @@ struct test_ldap_uri_p
 void
 check_ldap_uri_p (int test_count, struct test_ldap_uri_p *test)
 {
-  int result;
-
-  if (verbose)
-    fprintf (stderr, PGM ": checking '%s'\n", test->uri);
-  result = ldap_uri_p (test->uri);
+  int result = ldap_uri_p (test->uri);
   if (result != test->result)
     {
       printf ("'%s' is %san LDAP schema, but ldap_uri_p says opposite.\n",
@@ -114,8 +106,6 @@ check_ldap_parse_uri (int test_count, struct test_ldap_parse_uri *test)
   gpg_error_t err;
   parsed_uri_t puri;
 
-  if (verbose)
-    fprintf (stderr, PGM ": parsing '%s'\n", test->uri);
   err = ldap_parse_uri (&puri, test->uri);
   if (err)
     {
@@ -252,48 +242,12 @@ test_ldap_escape_filter (void)
        test_count ++)
     check_ldap_escape_filter (test_count, &tests[test_count - 1]);
 }
-
-
 
 int
 main (int argc, char **argv)
 {
-  int last_argc = -1;
-
-  if (argc)
-    { argc--; argv++; }
-  while (argc && last_argc != argc )
-    {
-      last_argc = argc;
-      if (!strcmp (*argv, "--"))
-        {
-          argc--; argv++;
-          break;
-        }
-      else if (!strcmp (*argv, "--help"))
-        {
-          fputs ("usage: " PGM "\n"
-                 "Options:\n"
-                 "  --verbose         print timings etc.\n",
-                 stdout);
-          exit (0);
-        }
-      else if (!strcmp (*argv, "--verbose"))
-        {
-          verbose++;
-          argc--; argv++;
-        }
-      else if (!strncmp (*argv, "--", 2))
-        {
-          fprintf (stderr, PGM ": unknown option '%s'\n", *argv);
-          exit (1);
-        }
-    }
-  if (argc)
-    {
-      fprintf (stderr, PGM ": no argumenst are expected\n");
-      exit (1);
-    }
+  (void)argc;
+  (void)argv;
 
   test_ldap_uri_p ();
   test_ldap_parse_uri ();

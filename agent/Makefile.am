@@ -20,30 +20,29 @@
 
 bin_PROGRAMS = gpg-agent
 libexec_PROGRAMS = gpg-protect-tool
+if !HAVE_W32CE_SYSTEM
 # fixme: Do no use simple-pwquery for preset-passphrase.
 libexec_PROGRAMS += gpg-preset-passphrase
+endif
 noinst_PROGRAMS = $(TESTS)
 
-EXTRA_DIST = ChangeLog-2011 all-tests.scm \
-             gpg-agent-w32info.rc gpg-agent.w32-manifest.in
+EXTRA_DIST = ChangeLog-2011 \
+             gpg-agent-w32info.rc gpg-agent.w32-manifest.in \
+             all-tests.scm
+
 
 AM_CPPFLAGS =
 
 include $(top_srcdir)/am/cmacros.am
 
 if HAVE_W32_SYSTEM
-resource_objs += gpg-agent-w32info.o
-
+gpg_agent_rc_objs = $(resource_objs) gpg-agent-w32info.o
 gpg-agent-w32info.o : gpg-agent.w32-manifest ../common/w32info-rc.h
+else
+gpg_agent_rc_objs =
 endif
 
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS)
-
-if HAVE_LIBTSS
-tpm2_sources =  divert-tpm2.c call-tpm2d.c
-else
-tpm2_sources =
-endif
 
 gpg_agent_SOURCES = \
 	gpg-agent.c agent.h \
@@ -52,7 +51,6 @@ gpg_agent_SOURCES = \
 	cache.c \
 	trans.c \
 	findkey.c \
-	sexp-secret.c \
 	pksign.c \
 	pkdecrypt.c \
 	genkey.c \
@@ -61,13 +59,15 @@ gpg_agent_SOURCES = \
 	divert-scd.c \
 	cvt-openpgp.c cvt-openpgp.h \
 	call-scd.c \
-	call-daemon.c \
-	$(tpm2_sources) \
 	learncard.c
 
 common_libs = $(libcommon)
 commonpth_libs = $(libcommonpth)
+if HAVE_W32CE_SYSTEM
+pwquery_libs =
+else
 pwquery_libs = ../common/libsimple-pwquery.a
+endif
 
 
 gpg_agent_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) \
@@ -75,13 +75,12 @@ gpg_agent_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) \
 gpg_agent_LDADD = $(commonpth_libs) \
                 $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
 	        $(GPG_ERROR_LIBS) $(LIBINTL) $(NETLIBS) $(LIBICONV) \
-		$(resource_objs)
-gpg_agent_LDFLAGS =
-gpg_agent_DEPENDENCIES = $(resource_objs)
+		$(gpg_agent_rc_objs)
+gpg_agent_LDFLAGS = $(extra_bin_ldflags)
+gpg_agent_DEPENDENCIES = $(gpg_agent_rc_objs)
 
 gpg_protect_tool_SOURCES = \
 	protect-tool.c \
-	sexp-secret.c \
 	protect.c cvt-openpgp.c
 
 gpg_protect_tool_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) \
@@ -91,7 +90,6 @@ gpg_protect_tool_LDADD = $(common_libs) $(LIBGCRYPT_LIBS) $(LIBASSUAN_LIBS) \
 
 gpg_preset_passphrase_SOURCES = \
 	preset-passphrase.c
-gpg_preset_passphrase_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
 
 # Needs $(NETLIBS) for libsimple-pwquery.la.
 gpg_preset_passphrase_LDADD = \
@@ -108,12 +106,10 @@ $(PROGRAMS): $(common_libs) $(commonpth_libs) $(pwquery_libs)
 #
 # Module tests
 #
-module_tests = t-protect
-
 if DISABLE_TESTS
 TESTS =
 else
-TESTS = $(module_tests)
+TESTS = t-protect
 endif
 
 t_common_ldadd = $(common_libs)  $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
@@ -121,4 +117,3 @@ t_common_ldadd = $(common_libs)  $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
 
 t_protect_SOURCES = t-protect.c protect.c
 t_protect_LDADD = $(t_common_ldadd)
-t_protect_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)

@@ -86,53 +86,6 @@ static int validate_keys (ctrl_t ctrl, int interactive);
  ************* some helpers *******************
  **********************************************/
 
-
-
-static u32
-keyid_from_fpr20 (ctrl_t ctrl, const byte *fpr, u32 *keyid)
-{
-  u32 dummy_keyid[2];
-  int fprlen;
-
-  if( !keyid )
-    keyid = dummy_keyid;
-
-  /* Problem: We do only use fingerprints in the trustdb but
-   * we need the keyID here to identify the key; we can only
-   * use that ugly hack to distinguish between 16 and 20
-   * bytes fpr - it does not work always so we better change
-   * the whole validation code to only work with
-   * fingerprints */
-  fprlen = (!fpr[16] && !fpr[17] && !fpr[18] && !fpr[19])? 16:20;
-
-  if (fprlen != 20)
-    {
-      /* This is special as we have to lookup the key first.  */
-      PKT_public_key pk;
-      int rc;
-
-      memset (&pk, 0, sizeof pk);
-      rc = get_pubkey_byfprint (ctrl, &pk, NULL, fpr, fprlen);
-      if (rc)
-        {
-          log_printhex (fpr, fprlen,
-                        "Oops: keyid_from_fingerprint: no pubkey; fpr:");
-          keyid[0] = 0;
-          keyid[1] = 0;
-        }
-      else
-        keyid_from_pk (&pk, keyid);
-    }
-  else
-    {
-      keyid[0] = buf32_to_u32 (fpr+12);
-      keyid[1] = buf32_to_u32 (fpr+16);
-    }
-
-  return keyid[1];
-}
-
-
 static struct key_item *
 new_key_item (void)
 {
@@ -286,17 +239,11 @@ tdb_register_trusted_key (const char *string)
           tdb_register_trusted_keyid (desc.u.kid);
           return;
         }
-      if (desc.mode == KEYDB_SEARCH_MODE_FPR && desc.fprlen == 20)
+      if (desc.mode == KEYDB_SEARCH_MODE_FPR
+          || desc.mode == KEYDB_SEARCH_MODE_FPR20)
         {
           kid[0] = buf32_to_u32 (desc.u.fpr+12);
           kid[1] = buf32_to_u32 (desc.u.fpr+16);
-          tdb_register_trusted_keyid (kid);
-          return;
-        }
-      if (desc.mode == KEYDB_SEARCH_MODE_FPR && desc.fprlen == 32)
-        {
-          kid[0] = buf32_to_u32 (desc.u.fpr);
-          kid[1] = buf32_to_u32 (desc.u.fpr+4);
           tdb_register_trusted_keyid (kid);
           return;
         }
@@ -390,12 +337,20 @@ verify_own_keys (ctrl_t ctrl)
   /* scan the trustdb to find all ultimately trusted keys */
   for (recnum=1; !tdbio_read_record (recnum, &rec, 0); recnum++ )
     {
-      if (rec.rectype == RECTYPE_TRUST
-          && (rec.r.trust.ownertrust & TRUST_MASK) == TRUST_ULTIMATE)
+      if ( rec.rectype == RECTYPE_TRUST
+           && (rec.r.trust.ownertrust & TRUST_MASK) == TRUST_ULTIMATE)
         {
+          byte *fpr = rec.r.trust.fingerprint;
+          int fprlen;
           u32 kid[2];
 
-          keyid_from_fpr20 (ctrl, rec.r.trust.fingerprint, kid);
+          /* Problem: We do only use fingerprints in the trustdb but
+           * we need the keyID here to indetify the key; we can only
+           * use that ugly hack to distinguish between 16 and 20 bytes
+           * fpr - it does not work always so we better change the
+           * whole validation code to only work with fingerprints */
+          fprlen = (!fpr[16] && !fpr[17] && !fpr[18] && !fpr[19])? 16:20;
+          keyid_from_fingerprint (ctrl, fpr, fprlen, kid);
           if (!add_utk (kid))
             log_info (_("key %s occurs more than once in the trustdb\n"),
                       keystr(kid));
@@ -566,7 +521,7 @@ setup_trustdb( int level, const char *dbname )
 }
 
 void
-how_to_fix_the_trustdb (void)
+how_to_fix_the_trustdb ()
 {
   const char *name = trustdb_args.dbname;
 
@@ -574,7 +529,7 @@ how_to_fix_the_trustdb (void)
     name = "trustdb.gpg";
 
   log_info (_("You may try to re-create the trustdb using the commands:\n"));
-  log_info ("  cd %s\n", gnupg_homedir ());
+  log_info ("  cd %s\n", default_homedir ());
   log_info ("  %s --export-ownertrust > otrust.tmp\n", GPG_NAME);
 #ifdef HAVE_W32_SYSTEM
   log_info ("  del %s\n", name);
@@ -922,6 +877,8 @@ tdb_update_ownertrust (ctrl_t ctrl, PKT_public_key *pk, unsigned int new_trust,
     }
   else if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
     { /* no record yet - create a new one */
+      size_t dummy;
+
       if (DBG_TRUST)
         log_debug ("insert ownertrust %u%s\n", new_trust,
                    as_trusted_key? " via --trusted-key":"");
@@ -929,7 +886,7 @@ tdb_update_ownertrust (ctrl_t ctrl, PKT_public_key *pk, unsigned int new_trust,
       memset (&rec, 0, sizeof rec);
       rec.recnum = tdbio_new_recnum (ctrl);
       rec.rectype = RECTYPE_TRUST;
-      fpr20_from_pk (pk, rec.r.trust.fingerprint);
+      fingerprint_from_pk (pk, rec.r.trust.fingerprint, &dummy);
       rec.r.trust.ownertrust = new_trust;
       if ((rec.r.trust.ownertrust & TRUST_MASK) == TRUST_ULTIMATE
           && as_trusted_key)
@@ -982,13 +939,15 @@ update_min_ownertrust (ctrl_t ctrl, u32 *kid, unsigned int new_trust)
     }
   else if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
     { /* no record yet - create a new one */
+      size_t dummy;
+
       if (DBG_TRUST)
         log_debug ("insert min_ownertrust %u\n", new_trust );
 
       memset (&rec, 0, sizeof rec);
       rec.recnum = tdbio_new_recnum (ctrl);
       rec.rectype = RECTYPE_TRUST;
-      fpr20_from_pk (pk, rec.r.trust.fingerprint);
+      fingerprint_from_pk (pk, rec.r.trust.fingerprint, &dummy);
       rec.r.trust.min_ownertrust = new_trust;
       write_record (ctrl, &rec);
       tdb_revalidation_mark (ctrl);
@@ -1089,10 +1048,12 @@ update_validity (ctrl_t ctrl, PKT_public_key *pk, PKT_user_id *uid,
   if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
     {
       /* No record yet - create a new one. */
+      size_t dummy;
+
       memset (&trec, 0, sizeof trec);
       trec.recnum = tdbio_new_recnum (ctrl);
       trec.rectype = RECTYPE_TRUST;
-      fpr20_from_pk (pk, trec.r.trust.fingerprint);
+      fingerprint_from_pk (pk, trec.r.trust.fingerprint, &dummy);
       trec.r.trust.ownertrust = 0;
       }
 
@@ -1310,7 +1271,7 @@ tdb_get_validity_core (ctrl_t ctrl,
           if (sig && sig->signers_uid)
             /* Make sure the UID matches.  */
             {
-              char *email = mailbox_from_userid (user_id->name, 0);
+              char *email = mailbox_from_userid (user_id->name);
               if (!email || !*email || strcmp (sig->signers_uid, email) != 0)
                 {
                   if (DBG_TRUST)
@@ -1564,7 +1525,6 @@ ask_ownertrust (ctrl_t ctrl, u32 *kid, int minimum)
     {
       log_error (_("public key %s not found: %s\n"),
                  keystr(kid), gpg_strerror (rc) );
-      free_public_key (pk);
       return TRUST_UNKNOWN;
     }
 
@@ -1981,7 +1941,7 @@ search_skipfnc (void *opaque, u32 *kid, int dummy_uid_no)
 
 /*
  * Scan all keys and return a key_array of all suitable keys from
- * klist.  The caller has to pass keydb handle so that we don't use
+ * kllist.  The caller has to pass keydb handle so that we don't use
  * to create our own.  Returns either a key_array or NULL in case of
  * an error.  No results found are indicated by an empty array.
  * Caller hast to release the returned array.
@@ -2193,7 +2153,7 @@ validate_keys (ctrl_t ctrl, int interactive)
      trust. */
   keydb_rebuild_caches (ctrl, 0);
 
-  kdb = keydb_new (ctrl);
+  kdb = keydb_new ();
   if (!kdb)
     return gpg_error_from_syserror ();
 

@@ -90,7 +90,8 @@ general best to use @code{gpgconf --launch dirmngr}.
 @opindex supervised
 Run in the foreground, sending logs to stderr, and listening on file
 descriptor 3, which must already be bound to a listening socket.  This
-option is deprecated and not supported on Windows.
+is useful when running under systemd or other similar process
+supervision schemes.  This option is not supported on Windows.
 
 @item --list-crls
 @opindex list-crls
@@ -172,15 +173,8 @@ socket.
 Set compatibility flags to work around certain problems or to emulate
 bugs.  The @var{flags} are given as a comma separated list of flag
 names and are OR-ed together.  The special flag "none" clears the list
-and allows one to start over with an empty list.  To get a list of
+and allows to start over with an empty list.  To get a list of
 available flags the sole word "help" can be used.
-
-@item --faked-system-time @var{epoch}
-@opindex faked-system-time
-This option is only useful for testing; it sets the system time back or
-forth to @var{epoch} which is the number of seconds elapsed since the year
-1970.  Alternatively @var{epoch} may be given as a full ISO time string
-(e.g. "20070924T154812").
 
 @item --debug-level @var{level}
 @opindex debug-level
@@ -212,11 +206,11 @@ however carefully selected to best aid in debugging.
 
 @item --debug @var{flags}
 @opindex debug
-Set debug flags.  All flags are or-ed and @var{flags} may be given in
-C syntax (e.g. 0x0042) or as a comma separated list of flag names.  To
-get a list of all supported flags the single word "help" can be used.
-This option is only useful for debugging and the behavior may change
-at any time without notice.
+Set debugging flags.  This option is only useful for debugging and its
+behavior may change with a new release.  All flags are or-ed and may
+be given in C syntax (e.g. 0x0042) or as a comma separated list of
+flag names.  To get a list of all supported flags the single word
+"help" can be used.
 
 @item --debug-all
 @opindex debug-all
@@ -267,9 +261,9 @@ network).  Certain other features are disabled in this mode.  The
 effect of @option{--use-tor} cannot be overridden by any other command
 or even by reloading dirmngr.  The use of @option{--no-use-tor}
 disables the use of Tor.  The default is to use Tor if it is available
-on startup or after reloading dirmngr.  The test on the availability of
-Tor is done by trying to connect to a SOCKS proxy at either port 9050
-or 9150; if another type of proxy is listening on one of these ports,
+on startup or after reloading dirmngr.  The test on the available of
+Tor is done by trying to connects to a SOCKS proxy at either port 9050
+or 9150); if another type of proxy is listening on one of these ports,
 you should use @option{--no-use-tor}.
 
 @item --standard-resolver
@@ -326,13 +320,13 @@ Use @var{name} as your keyserver.  This is the server that @command{gpg}
 communicates with to receive keys, send keys, and search for
 keys.  The format of the @var{name} is a URI:
 `scheme:[//]keyservername[:port]' The scheme is the type of keyserver:
-"hkp" for the HTTP (or compatible) keyservers or "ldap" for the LDAP
-keyservers. Note that your particular installation of GnuPG may have
-other keyserver types available as well. Keyserver schemes are
-case-insensitive. After the keyserver name, optional keyserver
-configuration options may be provided.  These are the same as the
-@option{--keyserver-options} of @command{gpg}, but apply only to this
-particular keyserver.
+"hkp" for the HTTP (or compatible) keyservers, "ldap" for the LDAP
+keyservers, or "mailto" for the Graff email keyserver. Note that your
+particular installation of GnuPG may have other keyserver types
+available as well. Keyserver schemes are case-insensitive. After the
+keyserver name, optional keyserver configuration options may be
+provided.  These are the same as the @option{--keyserver-options} of
+@command{gpg}, but apply only to this particular keyserver.
 
 Some keyservers synchronize with each other, so there is not always a
 need to send keys to more than one server. Some keyservers use round
@@ -431,7 +425,7 @@ value to access HTTP servers.  If on Windows the option is used but
 the environment variable is not set, the proxy settings are taken
 from the system.
 
-@item --http-proxy @var{host}[:@var{port}]
+@item --http-proxy [http://]@var{host}[:@var{port}]
 @opindex http-proxy
 @efindex http_proxy
 Use @var{host} and @var{port} to access HTTP servers.  The use of this
@@ -521,22 +515,17 @@ out.  The default are 15 seconds.  0 will never timeout.
 @opindex add-servers
 This option makes dirmngr add any servers it discovers when validating
 certificates against CRLs to the internal list of servers to consult for
-certificates and CRLs.  This option should in general not be used.
+certificates and CRLs.
 
-This option might be useful when trying to validate a certificate that
-has a CRL distribution point that points to a server that is not
-already listed in the ldapserverlist.  Dirmngr will always go to this
-server and try to download the CRL, but chances are high that the
-certificate used to sign the CRL is located on the same server. So if
-dirmngr doesn't add that new server to list, it will often not be able
-to verify the signature of the CRL unless the @code{--add-servers}
-option is used.
+This option is useful when trying to validate a certificate that has
+a CRL distribution point that points to a server that is not already
+listed in the ldapserverlist. Dirmngr will always go to this server and
+try to download the CRL, but chances are high that the certificate used
+to sign the CRL is located on the same server. So if dirmngr doesn't add
+that new server to list, it will often not be able to verify the
+signature of the CRL unless the @code{--add-servers} option is used.
 
-Caveat emptor: Using this option may enable denial-of-service attacks
-and leak search requests to unknown third parties.  This is because
-arbitrary servers are added to the internal list of LDAP servers which
-in turn is used for all unspecific LDAP queries as well as a fallback
-for queries which did not return a result.
+Note: The current version of dirmngr has this option disabled by default.
 
 
 @item --allow-ocsp
@@ -657,7 +646,7 @@ system CAs.
 @section Configuration
 
 Dirmngr makes use of several directories when running in daemon mode:
-There are a few configuration files to control the operation of
+There are a few configuration files whih control the operation of
 dirmngr.  By default they may all be found in the current home
 directory (@pxref{option --homedir}).
 
@@ -707,67 +696,14 @@ part will be created by dirmngr if it does not exists but you need to
 make sure that the upper directory exists.
 
 @end table
+@manpause
 
-Several options control the use of trusted certificates for TLS and
-CRLs.  Here is an Overview on the use and origin of those Root CA
-certificates:
-@table @asis
-
-@item System
-
-These System root certificates are used by:  FIXME
-
-The origin of the system provided certificates depends on the
-platform.  On Windows all certificates from the Windows System Stores
-@code{ROOT} and @code{CA} are used.
-
-On other platforms the certificates are read from the first file found
-form this list: @file{/etc/ssl/ca-bundle.pem},
-@file{/etc/ssl/certs/ca-certificates.crt},
-@file{/etc/pki/tls/cert.pem},
-@file{/usr/local/share/certs/ca-root-nss.crt},
-@file{/etc/ssl/cert.pem}.
-
-@item GnuPG
-
-The GnuPG specific certificates stored in the directory
-@file{/etc/gnupg/trusted-certs} are only used to validate CRLs.
-
-@c Note that dirmngr's VALIDATE command also uses them but that
-@c command is anyway only intended for debugging.
-
-@item OpenPGP keyserver
-
-For accessing the OpenPGP keyservers the only certificates used are
-those set with the configuration option @option{hkp-cacert}.
-
-@item OpenPGP keyserver pool
-
-This is usually only one certificate read from the file
-@file{@value{DATADIR}/gnupg/sks-keyservers.netCA.pem}.  If this
-certificate exists it is used to access the special keyservers
-@code{hkps.pool.sks-keyservers.net} (or @file{hkps://keys.gnupg.net}).
-
-@end table
-
-Please note that @command{gpgsm} accepts Root CA certificates for its
-own purposes only if they are listed in its file @file{trustlist.txt}.
-@command{dirmngr} does not make use of this list - except FIXME.
-
-
-@mansect notes
-
-To be able to see diagnostics it is often useful to put at least the
-following lines into the configuration file
-@file{~/gnupg/dirmngr.conf}:
+To be able to see what's going on you should create the configure file
+@file{~/gnupg/dirmngr.conf} with at least one line:
 
 @example
 log-file ~/dirmngr.log
-verbose
 @end example
-
-You may want to check the log file to see whether all desired root CA
-certificates are correctly loaded.
 
 To be able to perform OCSP requests you probably want to add the line:
 
@@ -775,24 +711,16 @@ To be able to perform OCSP requests you probably want to add the line:
 allow-ocsp
 @end example
 
-To make sure that new options are read or that after the installation
-of a new GnuPG versions the right dirmngr version is running, you
-should kill an existing dirmngr so that a new instance is started as
-needed by the other components:
+To make sure that new options are read and that after the installation
+of a new GnuPG versions the installed dirmngr is running, you may want
+to kill an existing dirmngr first:
 
 @example
 gpgconf --kill dirmngr
 @end example
 
-Direct interfaction with the dirmngr is possible by using the command
-
-@example
-gpg-connect-agent --dirmngr
-@end example
-
-Enter @code{HELP} at the prompt to see a list of commands and enter
-@code{HELP} followed by a command name to get help on that command.
-
+You may check the log file to see whether all desired root
+certificates have been loaded correctly.
 
 
 @c
@@ -1264,7 +1192,7 @@ as a binary blob.
 @c
 @c If no certificate was found, the function returns with the error
 @c GPG_ERR_MISSING_CERT.  Now the signature is verified.  If this fails,
-@c the error is returned.  On success the @code{validate_cert_chain} is
+@c the erro is returned.  On success the @code{validate_cert_chain} is
 @c used to verify that the certificate is actually valid.
 @c
 @c Here we may encounter a recursive situation:
@@ -1281,7 +1209,7 @@ as a binary blob.
 @c In the end the same fucntionality is used, albeit hidden by a couple
 @c of indirection and argument and result code mangling.  It furthere
 @c ingetrages OCSP checking depending on options are the way it is
-@c called.  GPGSM still uses this command but might eventually switch over
+@c called.  GPGSM still uses this command but might eventuall switch over
 @c to CHECKCRL and CHECKOCSP so that ISVALID can be retired.
 @c
 @c

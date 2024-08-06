@@ -81,7 +81,7 @@ hash_domain (const char *domain)
 
 
 void
-domaininfo_print_stats (ctrl_t ctrl)
+domaininfo_print_stats (void)
 {
   int bidx;
   domaininfo_t di;
@@ -112,16 +112,15 @@ domaininfo_print_stats (ctrl_t ctrl)
       if (minlen == -1 || len < minlen)
         minlen = len;
     }
-  dirmngr_status_helpf
-    (ctrl, "domaininfo: items=%d chainlen=%d..%d nn=%d nf=%d ns=%d s=%d\n",
-     count,
-     minlen > 0? minlen : 0,
-     maxlen,
-     no_name, wkd_not_found, wkd_not_supported, wkd_supported);
+  log_info ("domaininfo: items=%d chainlen=%d..%d nn=%d nf=%d ns=%d s=%d\n",
+            count,
+            minlen > 0? minlen : 0,
+            maxlen,
+            no_name, wkd_not_found, wkd_not_supported, wkd_supported);
 }
 
 
-/* Return true if DOMAIN definitely does not support WKD.  Note that
+/* Return true if DOMAIN definitely does not support WKD.  Noet that
  * DOMAIN is expected to be lowercase.  */
 int
 domaininfo_is_wkd_not_supported (const char *domain)

@@ -139,11 +139,9 @@ libexec_PROGRAMS = scdaemon$(EXEEXT)
 @GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
 @GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-@HAVE_W32_SYSTEM_TRUE@am__append_9 = scdaemon-w32info.o
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
 subdir = scd
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -157,6 +155,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -167,15 +166,18 @@ CONFIG_CLEAN_FILES = scdaemon.w32-manifest
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(libexecdir)"
 PROGRAMS = $(libexec_PROGRAMS)
-am__objects_1 = app-openpgp.$(OBJEXT) app-piv.$(OBJEXT) \
-	app-nks.$(OBJEXT) app-dinsig.$(OBJEXT) app-p15.$(OBJEXT) \
-	app-geldkarte.$(OBJEXT) app-sc-hsm.$(OBJEXT)
+am__objects_1 = app-openpgp.$(OBJEXT) app-nks.$(OBJEXT) \
+	app-dinsig.$(OBJEXT) app-p15.$(OBJEXT) app-geldkarte.$(OBJEXT) \
+	app-sc-hsm.$(OBJEXT)
 am_scdaemon_OBJECTS = scdaemon.$(OBJEXT) command.$(OBJEXT) \
 	atr.$(OBJEXT) apdu.$(OBJEXT) ccid-driver.$(OBJEXT) \
 	iso7816.$(OBJEXT) app.$(OBJEXT) app-help.$(OBJEXT) \
 	$(am__objects_1)
 scdaemon_OBJECTS = $(am_scdaemon_OBJECTS)
 am__DEPENDENCIES_1 =
+@HAVE_W32_SYSTEM_FALSE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1)
+@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1) \
+@HAVE_W32_SYSTEM_TRUE@	scdaemon-w32info.o
 AM_V_P = $(am__v_P_@AM_V@)
 am__v_P_ = $(am__v_P_@AM_DEFAULT_V@)
 am__v_P_0 = false
@@ -194,11 +196,10 @@ am__maybe_remake_depfiles = depfiles
 am__depfiles_remade = ./$(DEPDIR)/apdu.Po ./$(DEPDIR)/app-dinsig.Po \
 	./$(DEPDIR)/app-geldkarte.Po ./$(DEPDIR)/app-help.Po \
 	./$(DEPDIR)/app-nks.Po ./$(DEPDIR)/app-openpgp.Po \
-	./$(DEPDIR)/app-p15.Po ./$(DEPDIR)/app-piv.Po \
-	./$(DEPDIR)/app-sc-hsm.Po ./$(DEPDIR)/app.Po \
-	./$(DEPDIR)/atr.Po ./$(DEPDIR)/ccid-driver.Po \
-	./$(DEPDIR)/command.Po ./$(DEPDIR)/iso7816.Po \
-	./$(DEPDIR)/scdaemon.Po
+	./$(DEPDIR)/app-p15.Po ./$(DEPDIR)/app-sc-hsm.Po \
+	./$(DEPDIR)/app.Po ./$(DEPDIR)/atr.Po \
+	./$(DEPDIR)/ccid-driver.Po ./$(DEPDIR)/command.Po \
+	./$(DEPDIR)/iso7816.Po ./$(DEPDIR)/scdaemon.Po
 am__mv = mv -f
 COMPILE = $(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) \
 	$(CPPFLAGS) $(AM_CFLAGS) $(CFLAGS)
@@ -282,11 +283,9 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
-GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -295,7 +294,6 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -323,10 +321,9 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
-LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
-LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
+LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -363,14 +360,13 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
+SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
-SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-TPMSERVER = @TPMSERVER@
-TSSSTARTUP = @TSSSTARTUP@
-TSS_INCLUDE = @TSS_INCLUDE@
+SYS_SOCKET_H = @SYS_SOCKET_H@
+TAR = @TAR@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -433,29 +429,37 @@ target_alias = @target_alias@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-EXTRA_DIST = ChangeLog-2011 \
-             scdaemon-w32info.rc scdaemon.w32-manifest.in
-
+EXTRA_DIST = ChangeLog-2011 scdaemon-w32info.rc scdaemon.w32-manifest.in
 
 # NB: AM_CFLAGS may also be used by tools running on the build
 # platform to create source files.
 AM_CPPFLAGS = $(LIBUSB_CPPFLAGS) -DLOCALEDIR=\"$(localedir)\" \
 	$(am__append_1) $(am__append_2) $(am__append_3) \
 	$(am__append_4) $(am__append_5) $(am__append_6) \
-	$(am__append_7) $(am__append_8)
-resource_objs = $(am__append_9)
+	$(am__append_7)
+@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
+
+# Under Windows we use LockFileEx.  WindowsCE provides this only on
+# the WindowsMobile 6 platform and thus we need to use the coredll6
+# import library.  We also want to use a stacksize of 256k instead of
+# the 2MB which is the default with cegcc.  256k is the largest stack
+# we use with pth.
+@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
+@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
+resource_objs = 
 
 # Convenience macros
 libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
+@HAVE_W32_SYSTEM_FALSE@scdaemon_rc_objs = $(resource_objs)
+@HAVE_W32_SYSTEM_TRUE@scdaemon_rc_objs = $(resource_objs) scdaemon-w32info.o
 AM_CFLAGS = $(LIBGCRYPT_CFLAGS) \
 	     $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
 
-card_apps = app-openpgp.c app-piv.c app-nks.c app-dinsig.c app-p15.c \
-	    app-geldkarte.c app-sc-hsm.c
-
+card_apps = app-openpgp.c app-nks.c app-dinsig.c app-p15.c app-geldkarte.c app-sc-hsm.c
 scdaemon_SOURCES = \
 	scdaemon.c scdaemon.h \
 	command.c \
@@ -468,9 +472,9 @@ scdaemon_SOURCES = \
 scdaemon_LDADD = $(libcommonpth) \
 	$(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) $(NPTH_LIBS) \
 	$(LIBUSB_LIBS) $(GPG_ERROR_LIBS) \
-        $(LIBINTL) $(DL_LIBS) $(NETLIBS) $(LIBICONV) $(resource_objs)
+        $(LIBINTL) $(DL_LIBS) $(NETLIBS) $(LIBICONV) $(scdaemon_rc_objs)
 
-scdaemon_DEPENDENCIES = $(resource_objs)
+scdaemon_DEPENDENCIES = $(scdaemon_rc_objs)
 all: all-am
 
 .SUFFIXES:
@@ -567,7 +571,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/app-nks.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/app-openpgp.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/app-p15.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/app-piv.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/app-sc-hsm.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/app.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/atr.Po@am__quote@ # am--include-marker
@@ -730,7 +733,6 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/app-nks.Po
 	-rm -f ./$(DEPDIR)/app-openpgp.Po
 	-rm -f ./$(DEPDIR)/app-p15.Po
-	-rm -f ./$(DEPDIR)/app-piv.Po
 	-rm -f ./$(DEPDIR)/app-sc-hsm.Po
 	-rm -f ./$(DEPDIR)/app.Po
 	-rm -f ./$(DEPDIR)/atr.Po
@@ -790,7 +792,6 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/app-nks.Po
 	-rm -f ./$(DEPDIR)/app-openpgp.Po
 	-rm -f ./$(DEPDIR)/app-p15.Po
-	-rm -f ./$(DEPDIR)/app-piv.Po
 	-rm -f ./$(DEPDIR)/app-sc-hsm.Po
 	-rm -f ./$(DEPDIR)/app.Po
 	-rm -f ./$(DEPDIR)/atr.Po

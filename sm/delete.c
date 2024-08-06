@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -53,7 +54,7 @@ delete_one (ctrl_t ctrl, const char *username)
       goto leave;
     }
 
-  kh = keydb_new (ctrl);
+  kh = keydb_new ();
   if (!kh)
     {
       log_error ("keydb_new failed\n");
@@ -63,6 +64,8 @@ delete_one (ctrl_t ctrl, const char *username)
   /* If the key is specified in a unique way, include ephemeral keys
      in the search.  */
   if ( desc.mode == KEYDB_SEARCH_MODE_FPR
+       || desc.mode == KEYDB_SEARCH_MODE_FPR20
+       || desc.mode == KEYDB_SEARCH_MODE_FPR16
        || desc.mode == KEYDB_SEARCH_MODE_KEYGRIP )
     {
       is_ephem = 1;
@@ -112,8 +115,7 @@ delete_one (ctrl_t ctrl, const char *username)
       goto leave;
     }
 
-  /* We need to search again to get back to the right position.  Note
-   * that the lock is kept until the KH is released.  */
+  /* We need to search again to get back to the right position. */
   rc = keydb_lock (kh);
   if (rc)
     {
@@ -132,7 +134,7 @@ delete_one (ctrl_t ctrl, const char *username)
           goto leave;
         }
 
-      rc = keydb_delete (kh);
+      rc = keydb_delete (kh, duplicates ? 0 : 1);
       if (rc)
         goto leave;
       if (opt.verbose)

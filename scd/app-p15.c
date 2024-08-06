@@ -74,10 +74,8 @@ typedef enum
     CARD_TYPE_MICARDO,
     CARD_TYPE_CARDOS_50,
     CARD_TYPE_CARDOS_53,
-    CARD_TYPE_CARDOS_54,
     CARD_TYPE_AET,     /* A.E.T. Europe JCOP card.  */
-    CARD_TYPE_BELPIC,  /* Belgian eID card specs. */
-    CARD_TYPE_STARCOS_32
+    CARD_TYPE_BELPIC   /* Belgian eID card specs. */
   }
 card_type_t;
 
@@ -88,11 +86,8 @@ typedef enum
   {
     CARD_PRODUCT_UNKNOWN,
     CARD_PRODUCT_RSCS,     /* Rohde&Schwarz Cybersecurity       */
-    CARD_PRODUCT_DTRUST3,  /* D-Trust GmbH (bundesdruckerei.de) */
-    CARD_PRODUCT_DTRUST4,
-    CARD_PRODUCT_GENUA,    /* GeNUA mbH                         */
-    CARD_PRODUCT_NEXUS,    /* Technology Nexus                  */
-    CARD_PRODUCT_CVISION   /* Cryptovision GmbH                 */
+    CARD_PRODUCT_DTRUST,   /* D-Trust GmbH (bundesdruckerei.de) */
+    CARD_PRODUCT_GENUA     /* GeNUA mbH                         */
   }
 card_product_t;
 
@@ -127,25 +122,17 @@ static struct
     CARD_TYPE_CARDOS_50 }, /* CardOS 5.0 */
   { 11, X("\x3b\xd2\x18\x00\x81\x31\xfe\x58\xc9\x03\x16"),
     CARD_TYPE_CARDOS_53 }, /* CardOS 5.3 */
-  { 11, X("\x3b\xd2\x18\x00\x81\x31\xfe\x58\xc9\x04\x11"),
-    CARD_TYPE_CARDOS_54 }, /* CardOS 5.4 */
   { 24, X("\x3b\xfe\x18\x00\x00\x80\x31\xfe\x45\x53\x43\x45"
           "\x36\x30\x2d\x43\x44\x30\x38\x31\x2d\x6e\x46\xa9"),
     CARD_TYPE_AET },
-  { 25, X("\x3b\x9f\x96\x81\xb1\xfe\x45\x1f\x07\x00\x64\x05"
-          "\x1e\xb2\x00\x31\xb0\x73\x96\x21\xdb\x05\x90\x00\x5c"),
-    CARD_TYPE_STARCOS_32 },
   { 0 }
 };
 #undef X
 
 
-/* Macro to test for CardOS 5.0, 5.3 and 5.4.  */
+/* Macro to test for CardOS 5.0 and 5.3.  */
 #define IS_CARDOS_5(a) ((a)->app_local->card_type == CARD_TYPE_CARDOS_50 \
-                        || (a)->app_local->card_type == CARD_TYPE_CARDOS_53 \
-                        || (a)->app_local->card_type == CARD_TYPE_CARDOS_54)
-#define IS_STARCOS_3(a) ((a)->app_local->card_type == CARD_TYPE_STARCOS_32)
-
+                        || (a)->app_local->card_type == CARD_TYPE_CARDOS_53)
 
 /* The default PKCS-15 home DF */
 #define DEFAULT_HOME_DF 0x5015
@@ -158,11 +145,6 @@ static char const pkcs15_aid[] = { 0xA0, 0, 0, 0, 0x63,
    is useful for a standard.  Oh well. */
 static char const pkcs15be_aid[] = { 0xA0, 0, 0, 0x01, 0x77,
                                    0x50, 0x4B, 0x43, 0x53, 0x2D, 0x31, 0x35 };
-
-/* The D-TRUST Card 4.x variant - dito */
-static char const pkcs15dtrust4_aid[] = { 0xE8, 0x28, 0xBD, 0x08, 0x0F, 0xA0,
-                                          0x00, 0x00, 0x01, 0x67, 0x45, 0x53,
-                                          0x49, 0x47, 0x4E };
 
 
 /* The PIN types as defined in pkcs#15 v1.1 */
@@ -305,7 +287,7 @@ struct prkdf_object_s
   keyaccess_flags_t accessflags;
 
   /* Extended key usage flags.  Only used if .valid is set.  This
-   * information is computed from an associated certificate.  */
+   * information is computed from an associated certificate15.  */
   struct {
     unsigned int valid:1;
     unsigned int sign:1;
@@ -520,9 +502,6 @@ struct app_local_s
   /* Information on all useful certificates. */
   cdf_object_t useful_certificate_info;
 
-  /* Counter to make object ids of certificates unique.  */
-  unsigned int cdf_dup_counter;
-
   /* Information on all public keys. */
   prkdf_object_t public_key_info;
 
@@ -556,10 +535,8 @@ cardtype2str (card_type_t cardtype)
     case CARD_TYPE_MICARDO:   return "Micardo";
     case CARD_TYPE_CARDOS_50: return "CardOS 5.0";
     case CARD_TYPE_CARDOS_53: return "CardOS 5.3";
-    case CARD_TYPE_CARDOS_54: return "CardOS 5.4";
     case CARD_TYPE_BELPIC:    return "Belgian eID";
     case CARD_TYPE_AET:       return "AET";
-    case CARD_TYPE_STARCOS_32:return "STARCOS 3.2";
     }
   return "";
 }
@@ -571,11 +548,8 @@ cardproduct2str (card_product_t cardproduct)
     {
     case CARD_PRODUCT_UNKNOWN: return "";
     case CARD_PRODUCT_RSCS:    return "R&S";
-    case CARD_PRODUCT_DTRUST3: return "D-Trust 3";
-    case CARD_PRODUCT_DTRUST4: return "D-Trust 4.1/4.4";
+    case CARD_PRODUCT_DTRUST:  return "D-Trust";
     case CARD_PRODUCT_GENUA:   return "GeNUA";
-    case CARD_PRODUCT_NEXUS:   return "Nexus";
-    case CARD_PRODUCT_CVISION: return "Cryptovison";
     }
   return "";
 }
@@ -734,7 +708,7 @@ select_and_read_record (app_t app, unsigned short efid, int recno,
                         unsigned char **buffer, size_t *buflen, int *r_sw)
 {
   gpg_error_t err;
-  int sw = 0;
+  int sw;
 
   if (r_sw)
     *r_sw = 0x9000;
@@ -789,28 +763,20 @@ select_and_read_record (app_t app, unsigned short efid, int recno,
 
 
 /* This function calls select file to read a file using a complete
- * path which may or may not start at the master file (MF).  If
- * EXPECT_DF is set a directory or file is expected - otherwise an
- * elementary file expected.  */
+   path which may or may not start at the master file (MF). */
 static gpg_error_t
-select_by_path (app_t app, const unsigned short *path, size_t pathlen,
-                int expect_df)
+select_ef_by_path (app_t app, const unsigned short *path, size_t pathlen)
 {
   gpg_error_t err;
   int i, j;
-  int home_df_used = 0;
 
   if (!pathlen)
     return gpg_error (GPG_ERR_INV_VALUE);
 
-  if (opt.debug)
-    {
-      log_debug ("%s: path=", __func__);
-      for (j=0; j < pathlen; j++)
-        log_printf ("%s%04hX", j? "/":"", path[j]);
-      log_printf ("%s", expect_df?" (DF requested)":"");
-      log_printf ("%s\n",app->app_local->direct_path_selection?" (direct)":"");
-    }
+  /* log_debug ("%s: path=", __func__); */
+  /* for (j=0; j < pathlen; j++) */
+  /*   log_printf ("%s%04hX", j? "/":"", path[j]); */
+  /* log_printf ("%s\n",app->app_local->direct_path_selection?" (direct)":"");*/
 
   if (app->app_local->direct_path_selection)
     {
@@ -823,15 +789,33 @@ select_by_path (app_t app, const unsigned short *path, size_t pathlen,
                                        0);
         }
       else
-        {
-          home_df_used = 1;
-          err = iso7816_select_path (app_get_slot (app), path, pathlen,
-                                     app->app_local->home_df);
-        }
+        err = iso7816_select_path (app_get_slot (app), path, pathlen,
+                                   app->app_local->home_df);
       if (err)
         {
           log_error ("p15: error selecting path ");
           goto err_print_path;
+        }
+    }
+  else if (pathlen > 1 && path[0] == 0x3fff)
+    {
+      err = iso7816_select_file (app_get_slot (app), 0x3f00, 0);
+      if (err)
+        {
+          log_error ("p15: error selecting part %d from path ", 0);
+          goto err_print_path;
+        }
+      path++;
+      pathlen--;
+      for (i=0; i < pathlen; i++)
+        {
+          err = iso7816_select_file (app_get_slot (app),
+                                     path[i], (i+1 == pathlen)? 2 : 1);
+          if (err)
+            {
+              log_error ("p15: error selecting part %d from path ", i);
+              goto err_print_path;
+            }
         }
     }
   else
@@ -843,7 +827,7 @@ select_by_path (app_t app, const unsigned short *path, size_t pathlen,
       for (i=0; i < pathlen; i++)
         {
           err = iso7816_select_file (app_get_slot (app),
-                                     path[i], (expect_df || (i+1 < pathlen)));
+                                     path[i], !(i+1 == pathlen));
           if (err)
             {
               log_error ("p15: error selecting part %d from path ", i);
@@ -856,29 +840,13 @@ select_by_path (app_t app, const unsigned short *path, size_t pathlen,
  err_print_path:
   if (pathlen && *path != 0x3f00 )
     log_printf ("3F00/");
-  else if (home_df_used)
+  else
     log_printf ("%04hX/", app->app_local->home_df);
   for (j=0; j < pathlen; j++)
     log_printf ("%s%04hX", j? "/":"", path[j]);
   log_printf (": %s\n", gpg_strerror (err));
   return err;
 }
-
-
-static gpg_error_t
-select_ef_by_path (app_t app, const unsigned short *path, size_t pathlen)
-{
-  return select_by_path (app, path, pathlen, 0);
-}
-
-
-#if 0 /* Currently not used.  */
-static gpg_error_t
-select_df_by_path (app_t app, const unsigned short *path, size_t pathlen)
-{
-  return select_by_path (app, path, pathlen, 1);
-}
-#endif
 
 
 /* Parse a cert Id string (or a key Id string) and return the binary
@@ -2422,22 +2390,6 @@ read_ef_pukdf (app_t app, unsigned short fid, pukdf_object_t *result)
 }
 
 
-/* Return true id CDFLIST has the given object id.  */
-static int
-objid_in_cdflist_p (cdf_object_t cdflist,
-                    const unsigned char *objid, size_t objidlen)
-{
-  cdf_object_t cdf;
-
-  if (!objid || !objidlen)
-    return 0;
-  for (cdf = cdflist; cdf; cdf = cdf->next)
-    if (cdf->objidlen == objidlen && !memcmp (cdf->objid, objid, objidlen))
-      return 1;
-  return 0;
-}
-
-
 /* Read and parse the Certificate Directory Files identified by FID.
    On success a newlist of CDF object gets stored at RESULT and the
    caller is then responsible of releasing this list.  On error a
@@ -2483,7 +2435,6 @@ read_ef_cdf (app_t app, unsigned short fid, int cdftype, cdf_object_t *result)
       unsigned long ul;
       const unsigned char *objid;
       size_t objidlen;
-      int objidextralen;
 
       err = parse_ber_header (&p, &n, &class, &tag, &constructed,
                               &ndef, &objlen, &hdrlen);
@@ -2608,19 +2559,8 @@ read_ef_cdf (app_t app, unsigned short fid, int cdftype, cdf_object_t *result)
           label = NULL;
         }
 
-      /* Card's have been found in the wild which do not have unique
-       * IDs for their certificate objects.  If we detect this we
-       * append a counter to the ID.  */
-      objidextralen =
-        (objid_in_cdflist_p (cdflist, objid, objidlen)
-         || objid_in_cdflist_p (app->app_local->certificate_info,
-                                objid, objidlen)
-         || objid_in_cdflist_p (app->app_local->trusted_certificate_info,
-                                objid, objidlen)
-         || objid_in_cdflist_p (app->app_local->useful_certificate_info,
-                                objid, objidlen));
-      cdf->objidlen = objidlen + objidextralen;
-      cdf->objid = xtrymalloc (objidlen + objidextralen);
+      cdf->objidlen = objidlen;
+      cdf->objid = xtrymalloc (objidlen);
       if (!cdf->objid)
         {
           err = gpg_error_from_syserror ();
@@ -2628,16 +2568,6 @@ read_ef_cdf (app_t app, unsigned short fid, int cdftype, cdf_object_t *result)
           goto leave;
         }
       memcpy (cdf->objid, objid, objidlen);
-      if (objidextralen)
-        {
-          if (app->app_local->cdf_dup_counter == 255)
-            {
-              log_error ("p15: too many duplicate certificate ids\n");
-              err = gpg_error (GPG_ERR_TOO_MANY);
-              goto parse_error;
-            }
-          cdf->objid[objidlen] = ++app->app_local->cdf_dup_counter;
-        }
 
       cdf->pathlen = objlen/2;
       for (i=0; i < cdf->pathlen; i++, pp += 2, nn -= 2)
@@ -3313,7 +3243,7 @@ read_ef_aodf (app_t app, unsigned short fid, aodf_object_t *result)
               if (aodf->max_length_valid)
                 log_printf (" max=%lu", aodf->max_length);
               if (aodf->pad_char_valid)
-                log_printf (" pad=0x%02x", (unsigned char)aodf->pad_char);
+                log_printf (" pad=0x%02x", aodf->pad_char);
 
               log_info ("p15:             flags=");
               s = "";
@@ -3563,7 +3493,7 @@ read_ef_tokeninfo (app_t app)
       ul |= (*p++) & 0xff;
       n--;
     }
-  if (ul > 1)
+  if (ul)
     {
       log_error ("p15: invalid version %lu in TokenInfo\n", ul);
       err = gpg_error (GPG_ERR_INV_OBJ);
@@ -3656,7 +3586,6 @@ read_p15_info (app_t app)
   gpg_error_t err;
   prkdf_object_t prkdf;
   unsigned int flag;
-  const char *manu;
 
   err = read_ef_tokeninfo (app);
   if (err)
@@ -3676,22 +3605,12 @@ read_p15_info (app_t app)
 
   release_lists (app);
 
-  /* Set a product type from the manufacturer_id.  */
-  if (!(manu = app->app_local->manufacturer_id) || !*manu)
-    ; /* No manufacturer_id. */
-  else if (app->app_local->card_product)
-    ; /* Already set.  */
-  else if (IS_CARDOS_5 (app))
+  if (IS_CARDOS_5 (app)
+      && app->app_local->manufacturer_id
+      && !ascii_strcasecmp (app->app_local->manufacturer_id, "GeNUA mbH"))
     {
-      if (!ascii_strcasecmp (manu, "GeNUA mbH"))
+      if (!app->app_local->card_product)
         app->app_local->card_product = CARD_PRODUCT_GENUA;
-      else if (!ascii_strcasecmp (manu, "Technology Nexus"))
-        app->app_local->card_product = CARD_PRODUCT_NEXUS;
-    }
-  else if (app->app_local->card_type == CARD_TYPE_STARCOS_32)
-    {
-      if (strstr (manu, "cryptovision"))
-        app->app_local->card_product = CARD_PRODUCT_CVISION;
     }
 
   /* Read the ODF so that we know the location of all directory
@@ -3705,7 +3624,6 @@ read_p15_info (app_t app)
   log_assert (!app->app_local->certificate_info);
   log_assert (!app->app_local->trusted_certificate_info);
   log_assert (!app->app_local->useful_certificate_info);
-  app->app_local->cdf_dup_counter = 0;
   err = read_ef_cdf (app, app->app_local->odf.certificates, 'c',
                      &app->app_local->certificate_info);
   if (!err || gpg_err_code (err) == GPG_ERR_NO_DATA)
@@ -3903,14 +3821,7 @@ read_p15_info (app_t app)
       && !strncmp (app->app_local->token_label, "D-TRUST Card V3", 15)
       && app->app_local->card_type == CARD_TYPE_CARDOS_50)
     {
-      app->app_local->card_product = CARD_PRODUCT_DTRUST3;
-    }
-  if (!app->app_local->card_product
-      && app->app_local->token_label
-      && !strncmp (app->app_local->token_label, "D-TRUST Card 4.", 15)
-      && app->app_local->card_type == CARD_TYPE_CARDOS_54)
-    {
-      app->app_local->card_product = CARD_PRODUCT_DTRUST4;
+      app->app_local->card_product = CARD_PRODUCT_DTRUST;
     }
 
 
@@ -4228,48 +4139,6 @@ keyref_from_prkdf (app_t app, prkdf_object_t prkdf)
 }
 
 
-static void
-set_usage_string (char usage[5], prkdf_object_t prkdf)
-{
-  size_t usagelen = 0;
-  if (prkdf->gpgusage.any)
-    {
-      if (prkdf->gpgusage.sign)
-        usage[usagelen++] = 's';
-      if (prkdf->gpgusage.cert)
-        usage[usagelen++] = 'c';
-      if (prkdf->gpgusage.encr)
-        usage[usagelen++] = 'e';
-      if (prkdf->gpgusage.auth)
-        usage[usagelen++] = 'a';
-    }
-  else
-    {
-      if ((prkdf->usageflags.sign
-           || prkdf->usageflags.sign_recover
-           || prkdf->usageflags.non_repudiation)
-          && (!prkdf->extusage.valid
-              || prkdf->extusage.sign))
-        usage[usagelen++] = 's';
-      if ((prkdf->usageflags.sign
-           || prkdf->usageflags.sign_recover)
-          && (!prkdf->extusage.valid || prkdf->extusage.sign))
-        usage[usagelen++] = 'c';
-      if ((prkdf->usageflags.decrypt
-           || prkdf->usageflags.unwrap
-           || prkdf->usageflags.derive)
-          && (!prkdf->extusage.valid || prkdf->extusage.encr))
-        usage[usagelen++] = 'e';
-      if ((prkdf->usageflags.sign
-           || prkdf->usageflags.sign_recover)
-          && (!prkdf->extusage.valid || prkdf->extusage.auth))
-        usage[usagelen++] = 'a';
-    }
-  if (!usagelen)
-    usage[usagelen++] = '-';
-  usage[usagelen++] = 0;
-}
-
 /* Helper to do_learn_status: Send information about all known
    keypairs back.  FIXME: much code duplication from
    send_certinfo(). */
@@ -4300,6 +4169,40 @@ send_keypairinfo (app_t app, ctrl_t ctrl, prkdf_object_t prkdf)
           char usage[5];
           char keytime[20];
           const char *algostr;
+          size_t usagelen = 0;
+
+          if (prkdf->gpgusage.any)
+            {
+              if (prkdf->gpgusage.sign)
+                usage[usagelen++] = 's';
+              if (prkdf->gpgusage.cert)
+                usage[usagelen++] = 'c';
+              if (prkdf->gpgusage.encr)
+                usage[usagelen++] = 'e';
+              if (prkdf->gpgusage.auth)
+                usage[usagelen++] = 'a';
+            }
+          else
+            {
+              if ((prkdf->usageflags.sign
+                   || prkdf->usageflags.sign_recover
+                   || prkdf->usageflags.non_repudiation)
+                  && (!prkdf->extusage.valid
+                      || prkdf->extusage.sign))
+                usage[usagelen++] = 's';
+              if ((prkdf->usageflags.sign
+                   || prkdf->usageflags.sign_recover)
+                  && (!prkdf->extusage.valid || prkdf->extusage.sign))
+                usage[usagelen++] = 'c';
+              if ((prkdf->usageflags.decrypt
+                   || prkdf->usageflags.unwrap)
+                  && (!prkdf->extusage.valid || prkdf->extusage.encr))
+                usage[usagelen++] = 'e';
+              if ((prkdf->usageflags.sign
+                   || prkdf->usageflags.sign_recover)
+                  && (!prkdf->extusage.valid || prkdf->extusage.auth))
+                usage[usagelen++] = 'a';
+            }
 
           log_assert (strlen (prkdf->keygrip) == 40);
           if (prkdf->keytime && prkdf->have_keytime)
@@ -4310,11 +4213,10 @@ send_keypairinfo (app_t app, ctrl_t ctrl, prkdf_object_t prkdf)
 
           algostr = prkdf->keyalgostr;
 
-          set_usage_string (usage, prkdf);
           send_status_info (ctrl, "KEYPAIRINFO",
                             prkdf->keygrip, 2*KEYGRIP_LEN,
                             buf, strlen (buf),
-                            usage, strlen (usage),
+                            usage, usagelen,
                             keytime, strlen (keytime),
                             algostr, strlen (algostr?algostr:""),
                             NULL, (size_t)0);
@@ -4704,7 +4606,7 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
 
       /* We return the ID of the first private key capable of the
        * requested action.  If any gpgusage flag has been set for the
-       * card we consult the gpgusage flags and not the regular usage
+       * card we consult the gpgusage flags and not the regualr usage
        * flags.
        */
       /* FIXME: This changed: Note that we do not yet return
@@ -4726,8 +4628,7 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
               if ((name[1] == 'A' && (prkdf->usageflags.sign
                                       || prkdf->usageflags.sign_recover))
                   || (name[1] == 'E' && (prkdf->usageflags.decrypt
-                                         || prkdf->usageflags.unwrap
-                                         || prkdf->usageflags.derive))
+                                         || prkdf->usageflags.unwrap))
                   || (name[1] == 'S' && (prkdf->usageflags.sign
                                          || prkdf->usageflags.sign_recover)))
                 break;
@@ -4936,8 +4837,7 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
             }
           else
             {
-              if (prkdf->usageflags.decrypt || prkdf->usageflags.unwrap
-                  || prkdf->usageflags.derive)
+              if (prkdf->usageflags.decrypt || prkdf->usageflags.unwrap)
                 break;
             }
         }
@@ -5091,7 +4991,7 @@ prepare_verify_pin (app_t app, const char *keyref,
     }
 
 
-  if (app->app_local->card_product == CARD_PRODUCT_DTRUST3)
+  if (app->app_local->card_product == CARD_PRODUCT_DTRUST)
     {
       /* According to our protocol analysis we need to select a
        * special AID here.  Before that the master file needs to be
@@ -5105,20 +5005,6 @@ prepare_verify_pin (app_t app, const char *keyref,
                                           dtrust_aid, sizeof dtrust_aid, 0);
       if (err)
         log_error ("p15: error selecting D-TRUST's AID for key %s: %s\n",
-                   keyref, gpg_strerror (err));
-    }
-  else if (app->app_local->card_product == CARD_PRODUCT_CVISION)
-    {
-      /* According to our protocol analysis we need to select the
-       * PKCS#15 AID here.  The traces actually show that this is done
-       * two times but that looks more like a bug.  Before that the
-       * master file needs to be selected.  */
-      err = iso7816_select_mf (app_get_slot (app));
-      if (!err)
-        err = iso7816_select_application (app_get_slot (app),
-                                          pkcs15_aid, sizeof pkcs15_aid, 0);
-      if (err)
-        log_error ("p15: error selecting PKCS#15 AID for key %s: %s\n",
                    keyref, gpg_strerror (err));
     }
   else if (prkdf)
@@ -5185,7 +5071,9 @@ get_dispserialno (app_t app, prkdf_object_t prkdf)
       if (serial && (n=strlen (serial)) > 8)
         memmove (serial, serial + n - 8, 9);
     }
-  else if (app->app_local->card_product == CARD_PRODUCT_NEXUS
+  else if (IS_CARDOS_5 (app) && app->app_local->manufacturer_id
+           && !ascii_strcasecmp (app->app_local->manufacturer_id,
+                                 "Technology Nexus")
            && APP_CARD(app)->serialno && APP_CARD(app)->serialnolen == 4+9
            && !memcmp (APP_CARD(app)->serialno, "\xff\x00\x00\xff", 4)
            && !any_control_or_space_mem (APP_CARD(app)->serialno + 4, 9))
@@ -5356,8 +5244,7 @@ verify_pin (app_t app,
   if (prkdf
       && prkdf->usageflags.non_repudiation
       && (app->app_local->card_type == CARD_TYPE_BELPIC
-          || app->app_local->card_product == CARD_PRODUCT_DTRUST3
-          || app->app_local->card_product == CARD_PRODUCT_DTRUST4))
+          || app->app_local->card_product == CARD_PRODUCT_DTRUST))
     label = _("||Please enter the PIN for the key to create "
               "qualified signatures.");
   else if (aodf->pinflags.so_pin)
@@ -5558,7 +5445,6 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
   unsigned char oidbuf[64];
   size_t oidbuflen;
   size_t n;
-  int i;
   unsigned char *indata_buffer = NULL; /* Malloced helper.  */
 
   (void)ctrl;
@@ -5656,6 +5542,7 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
     {
       unsigned int framelen;
       unsigned char *frame;
+      int i;
 
       framelen = (prkdf->keynbits+7) / 8;
       if (!framelen)
@@ -5720,32 +5607,13 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
           err = gpg_error_from_syserror ();
           goto leave;
         }
-      if (app->app_local->card_type == CARD_TYPE_BELPIC
-          || app->app_local->card_product == CARD_PRODUCT_NEXUS
-          || app->app_local->card_product == CARD_PRODUCT_DTRUST4)
+      if (app->app_local->card_type == CARD_TYPE_BELPIC)
         {
-          /* The default for these cards is to use a plain hash.  We
-           * assume that due to the used certificate the correct hash
-           * algo is used.  */
+          /* This card wants only the plain hash w/o any prefix.  */
+          /* FIXME: We may want to remove this code because it is unlikely
+           * that such cards are still in use.  */
           memcpy (frame, indata, indatalen);
           framelen = indatalen;
-        }
-      else if (hashalgo && IS_STARCOS_3 (app)
-               && app->app_local->card_product != CARD_PRODUCT_CVISION)
-        {
-          /* For Starcos we need the plain hash w/o the prefix.  */
-          /* Note: This has never been tested because the cvision
-           * sample cards seem not to work this way.  */
-          if (indatalen != oidbuflen + digestlen
-              || memcmp (indata, oidbuf, oidbuflen))
-            {
-              log_error ("p15: non-matching input data for Starcos:"
-                         " hash=%d len=%zu\n", hashalgo, indatalen);
-              err = gpg_error (GPG_ERR_INV_VALUE);
-              goto leave;
-            }
-          framelen = indatalen - oidbuflen;
-          memcpy (frame, (const char*)indata + oidbuflen, framelen);
         }
       else
         {
@@ -5825,85 +5693,6 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
       else
         err = micardo_mse (app, prkdf->path[prkdf->pathlen-1]);
     }
-  else if (app->app_local->card_product == CARD_PRODUCT_DTRUST4)
-    {
-      if (prkdf->is_ecc)
-        {
-          err = iso7816_manage_security_env (app_get_slot (app),
-                                             0xf3, 0x21, NULL, 0);
-        }
-      else
-        {
-          /* The D-TRUST Card 4.x doesn't support setting a security
-           * environment, at least as specified in the specs.  Instead a
-           * predefined security environment has to be loaded depending on the
-           * cipher and message digest used.  The spec states SE-ID 0x25 for
-           * SHA256, 0x26 for SHA384 and 0x27 for SHA512, when using PKCS#1
-           * padding.  But this matters only if the message digest is computed
-           * on the card.  When providing the digest info and a pre-calculated
-           * hash, all security environments yield the same result.  Thus we
-           * choose 0x25.
-           *
-           * Note: For PSS signatures, different values apply. */
-            err = iso7816_manage_security_env (app_get_slot (app),
-                                               0xf3, 0x25, NULL, 0);
-        }
-    }
-  else if (app->app_local->card_product == CARD_PRODUCT_CVISION)
-    {
-      /* I can't make the Starcos 3.2 work the correct way, so let's
-       * make them work in the same way the cryptovision product seems
-       * to do it: Use the plain RSA decryption instead.  */
-      unsigned char mse[9];
-
-      i = 0;
-      mse[i++] = 0x84; /* Key reference.  */
-      mse[i++] = 1;
-      mse[i++] = prkdf->key_reference;
-      mse[i++] = 0x89; /* Algorithm reference (BCD encoded).  */
-      mse[i++] = 2;
-      mse[i++] = 0x11; /* RSA no padding (1 1 3 0).  */
-      mse[i++] = 0x30;
-      log_assert (i <= DIM(mse));
-      err = iso7816_manage_security_env (app_get_slot (app), 0x41, 0xB8,
-                                         mse, i);
-    }
-  else if (prkdf->key_reference_valid && IS_STARCOS_3 (app))
-    {
-      unsigned char mse[9];
-
-      i = 0;
-      if (prkdf->is_ecc)
-        {
-          log_info ("Note: ECC is not yet implemented for Starcos 3 cards\n");
-          err = gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
-        }
-      else
-        {
-          err = 0;
-          mse[i++] = 0x84; /* Key reference.  */
-          mse[i++] = 1;
-          mse[i++] = prkdf->key_reference;
-          mse[i++] = 0x89; /* Algorithm reference (BCD encoded).  */
-          mse[i++] = 3;
-          mse[i++] = 0x13; /* RSA PKCS#1 (standard) (1 3 2 3).  */
-          mse[i++] = 0x23;
-          switch (hashalgo)
-            {
-            case GCRY_MD_SHA1:   mse[i++] = 0x10; break;
-            case GCRY_MD_RMD160: mse[i++] = 0x20; break;
-            case GCRY_MD_SHA256: mse[i++] = 0x30; break;
-            case GCRY_MD_SHA384: mse[i++] = 0x40; break;
-            case GCRY_MD_SHA512: mse[i++] = 0x50; break;
-            case GCRY_MD_SHA224: mse[i++] = 0x60; break;
-            default: err = gpg_error (GPG_ERR_DIGEST_ALGO); break;
-            }
-          log_assert (i <= DIM(mse));
-          if (!err)
-            err = iso7816_manage_security_env (app_get_slot (app), 0x41, 0xB6,
-                                               mse, i);
-        }
-    }
   else if (prkdf->key_reference_valid)
     {
       unsigned char mse[3];
@@ -5933,14 +5722,9 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
       le_value = 0;
     }
 
-  if (app->app_local->card_product == CARD_PRODUCT_CVISION)
-    err = iso7816_decipher (app_get_slot (app),
+  err = iso7816_compute_ds (app_get_slot (app),
                             exmode, indata, indatalen,
-                            le_value, 0, outdata, outdatalen);
-  else
-    err = iso7816_compute_ds (app_get_slot (app),
-                              exmode, indata, indatalen,
-                              le_value, outdata, outdatalen);
+                            le_value, outdata, outdatalen);
 
  leave:
   xfree (indata_buffer);
@@ -5971,8 +5755,7 @@ do_auth (app_t app, ctrl_t ctrl, const char *keyidstr,
   err = prkdf_object_from_keyidstr (app, keyidstr, &prkdf);
   if (err)
     return err;
-  if (!(prkdf->usageflags.sign || prkdf->usageflags.sign_recover
-        || prkdf->gpgusage.auth))
+  if (!(prkdf->usageflags.sign || prkdf->gpgusage.auth))
     {
       log_error ("p15: key %s may not be used for authentication\n", keyidstr);
       return gpg_error (GPG_ERR_WRONG_KEY_USAGE);
@@ -6000,7 +5783,6 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
   prkdf_object_t prkdf;    /* The private key object. */
   aodf_object_t aodf;      /* The associated authentication object. */
   int exmode, le_value, padind;
-  int i;
 
   (void)ctrl;
   (void)r_info;
@@ -6015,7 +5797,6 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
     return err;
   if (!(prkdf->usageflags.decrypt
         || prkdf->usageflags.unwrap
-        || prkdf->usageflags.derive
         || prkdf->gpgusage.encr     ))
     {
       log_error ("p15: key %s may not be used for decryption\n", keyidstr);
@@ -6025,18 +5806,17 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
   /* Find the authentication object to this private key object. */
   if (!prkdf->authid)
     {
-      log_info ("p15: no authentication object defined for %s\n", keyidstr);
-      aodf = NULL;
+      log_error ("p15: no authentication object defined for %s\n", keyidstr);
+      /* fixme: we might want to go ahead and do without PIN
+         verification. */
+      return gpg_error (GPG_ERR_UNSUPPORTED_OPERATION);
     }
-  else
-    {
-      for (aodf = app->app_local->auth_object_info; aodf; aodf = aodf->next)
-        if (aodf->objidlen == prkdf->authidlen
-            && !memcmp (aodf->objid, prkdf->authid, prkdf->authidlen))
-          break;
-      if (!aodf)
-        log_info ("p15: no authentication for %s needed\n", keyidstr);
-    }
+  for (aodf = app->app_local->auth_object_info; aodf; aodf = aodf->next)
+    if (aodf->objidlen == prkdf->authidlen
+        && !memcmp (aodf->objid, prkdf->authid, prkdf->authidlen))
+      break;
+  if (!aodf)
+    log_info ("p15: no authentication for %s needed\n", keyidstr);
 
   /* We need some more info about the key - get the keygrip to
    * populate these fields.  */
@@ -6068,7 +5848,7 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
 
 
   /* The next is guess work for CardOS.  */
-  if (app->app_local->card_product == CARD_PRODUCT_DTRUST3)
+  if (app->app_local->card_product == CARD_PRODUCT_DTRUST)
     {
       /* From analyzing an USB trace of a Windows signing application
        * we see that the SE is simply reset to 0x14.  It seems to be
@@ -6085,48 +5865,10 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
                                          0xF3, 0x14, NULL, 0);
 
     }
-  else if (app->app_local->card_product == CARD_PRODUCT_DTRUST4)
-    {
-      if (prkdf->is_ecc)
-        {
-          err = iso7816_manage_security_env (app_get_slot (app),
-                                             0xF3, 0x39, NULL, 0);
-        }
-      else
-        {
-          /* SE-ID 0x31 is for PKCS#1 padded cryptograms. For OAEP encryption
-           * schemes, different values apply. */
-          err = iso7816_manage_security_env (app_get_slot (app),
-                                             0xF3, 0x31, NULL, 0);
-        }
-    }
-  else if (prkdf->key_reference_valid && IS_STARCOS_3 (app))
-    {
-      unsigned char mse[9];
-
-      i = 0;
-      if (prkdf->is_ecc)
-        {
-          log_info ("Note: ECC is not yet implemented for Starcos 3 cards\n");
-          err = gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
-        }
-      else
-        {
-          mse[i++] = 0x84; /* Key reference.  */
-          mse[i++] = 1;
-          mse[i++] = prkdf->key_reference;
-          mse[i++] = 0x89; /* Algorithm reference (BCD encoded).  */
-          mse[i++] = 2;
-          mse[i++] = 0x11; /* RSA no padding (1 1 3 0).  */
-          mse[i++] = 0x30;
-          log_assert (i <= DIM(mse));
-          err = iso7816_manage_security_env (app_get_slot (app), 0x41, 0xB8,
-                                             mse, i);
-        }
-    }
   else if (prkdf->key_reference_valid)
     {
       unsigned char mse[9];
+      int i;
 
       /* Note: This works with CardOS but the D-Trust card has the
        * problem that the next created signature would be broken.  */
@@ -6166,8 +5908,7 @@ do_decipher (app_t app, ctrl_t ctrl, const char *keyidstr,
       le_value = prkdf->keynbits / 8;
     }
 
-  if (app->app_local->card_product == CARD_PRODUCT_DTRUST3
-      || app->app_local->card_product == CARD_PRODUCT_DTRUST4)
+  if (app->app_local->card_product == CARD_PRODUCT_DTRUST)
     padind = 0x81;
 
   if (prkdf->is_ecc && IS_CARDOS_5(app))
@@ -6310,7 +6051,6 @@ do_with_keygrip (app_t app, ctrl_t ctrl, int action,
       else if (!want_keygripstr || !strcmp (prkdf->keygrip, want_keygripstr))
         {
           char *keyref;
-          char usage[5];
 
           if (capability == GCRY_PK_USAGE_SIGN)
             {
@@ -6320,8 +6060,7 @@ do_with_keygrip (app_t app, ctrl_t ctrl, int action,
             }
           else if (capability == GCRY_PK_USAGE_ENCR)
             {
-              if (!(prkdf->usageflags.decrypt || prkdf->usageflags.unwrap
-                    || prkdf->usageflags.derive))
+              if (!(prkdf->usageflags.decrypt || prkdf->usageflags.unwrap))
                 continue;
             }
           else if (capability == GCRY_PK_USAGE_AUTH)
@@ -6337,8 +6076,7 @@ do_with_keygrip (app_t app, ctrl_t ctrl, int action,
               goto leave;
             }
 
-          set_usage_string (usage, prkdf);
-          send_keyinfo (ctrl, as_data, prkdf->keygrip, serialno, keyref, usage);
+          send_keyinfo (ctrl, as_data, prkdf->keygrip, serialno, keyref, NULL);
           xfree (keyref);
           if (want_keygripstr)
             {
@@ -6430,13 +6168,6 @@ app_select_p15 (app_t app)
 
   rc = iso7816_select_application_ext (slot, pkcs15_aid, sizeof pkcs15_aid, 1,
                                        &fci, &fcilen);
-  if (rc)
-    {
-      /* D-TRUST Card 4.x uses a different AID. */
-      rc = iso7816_select_application_ext (slot, pkcs15dtrust4_aid,
-                                           sizeof pkcs15dtrust4_aid, 1,
-                                           &fci, &fcilen);
-    }
   if (rc)
     { /* Not found: Try to locate it from 2F00.  We use direct path
          selection here because it seems that the Belgian eID card
@@ -6536,11 +6267,9 @@ app_select_p15 (app_t app)
         {
         case CARD_TYPE_CARDOS_50:
         case CARD_TYPE_CARDOS_53:
-        case CARD_TYPE_CARDOS_54:
           direct = 1;
           break;
         case CARD_TYPE_AET:
-        case CARD_TYPE_STARCOS_32:
           app->app_local->no_extended_mode = 1;
           break;
         default:

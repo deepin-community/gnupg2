@@ -69,14 +69,9 @@ gpg_error_t iso7816_select_mf (int slot);
 gpg_error_t iso7816_select_file (int slot, int tag, int is_dir);
 gpg_error_t iso7816_select_path (int slot,
                                  const unsigned short *path, size_t pathlen,
-                                 unsigned short topdf);
+                                 unsigned short top_df);
 gpg_error_t iso7816_list_directory (int slot, int list_dirs,
                                     unsigned char **result, size_t *resultlen);
-gpg_error_t iso7816_send_apdu (int slot, int extended_mode,
-                               int class, int ins, int p0, int p1,
-                               int lc, const void *data,
-                               unsigned int *r_sw,
-                               unsigned char **result, size_t *resultlen);
 gpg_error_t iso7816_apdu_direct (int slot,
                                  const void *apdudata, size_t apdudatalen,
                                  int handle_more, unsigned int *r_sw,
@@ -101,8 +96,6 @@ gpg_error_t iso7816_reset_retry_counter_with_rc (int slot, int chvno,
 gpg_error_t iso7816_select_data (int slot, int occurrence, int tag);
 gpg_error_t iso7816_get_data (int slot, int extended_mode, int tag,
                               unsigned char **result, size_t *resultlen);
-gpg_error_t iso7816_get_data_odd (int slot, int extended_mode, unsigned int tag,
-                                  unsigned char **result, size_t *resultlen);
 gpg_error_t iso7816_put_data (int slot, int extended_mode, int tag,
                               const void *data, size_t datalen);
 gpg_error_t iso7816_put_data_odd (int slot, int extended_mode, int tag,

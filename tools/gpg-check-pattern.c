@@ -61,7 +61,7 @@ enum cmd_and_opt_values
 
 
 /* The list of commands and options.  */
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
 
   { 301, NULL, 0, N_("@Options:\n ") },
 
@@ -88,7 +88,7 @@ static struct
 enum {
   PAT_NULL,    /* Indicates end of the array.  */
   PAT_STRING,  /* The pattern is a simple string.  */
-  PAT_REGEX    /* The pattern is an extended regular expression. */
+  PAT_REGEX    /* The pattern is an extended regualr expression. */
 };
 
 
@@ -160,13 +160,13 @@ my_strusage (int level)
 int
 main (int argc, char **argv )
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   char *raw_pattern;
   size_t raw_pattern_length;
   pattern_t *patternarray;
 
   early_system_init ();
-  gpgrt_set_strusage (my_strusage);
+  set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
   log_set_prefix ("gpg-check-pattern", GPGRT_LOG_WITH_PREFIX);
 
@@ -180,7 +180,7 @@ main (int argc, char **argv )
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gpgrt_argparse (NULL, &pargs, opts))
+  while (gnupg_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -192,12 +192,13 @@ main (int argc, char **argv )
         default : pargs.err = 2; break;
 	}
     }
-  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+
   if (log_get_errorcount(0))
     exit (2);
 
   if (argc != 1)
-    gpgrt_usage (1);
+    usage (1);
 
   /* We read the entire pattern file into our memory and parse it
      using a separate function.  This allows us to eventually do the
@@ -227,7 +228,7 @@ main (int argc, char **argv )
 /* Read a file FNAME into a buffer and return that malloced buffer.
    Caller must free the buffer.  On error NULL is returned, on success
    the valid length of the buffer is stored at R_LENGTH.  The returned
-   buffer is guaranteed to be nul terminated.  */
+   buffer is guarnteed to be nul terminated.  */
 static char *
 read_file (const char *fname, size_t *r_length)
 {
@@ -285,7 +286,7 @@ read_file (const char *fname, size_t *r_length)
 
       buflen = st.st_size;
       buf = xmalloc (buflen+1);
-      if (es_fread (buf, buflen, 1, fp) != 1)
+      if (buflen && es_fread (buf, buflen, 1, fp) != 1)
         {
           log_error ("error reading '%s': %s\n", fname, strerror (errno));
           es_fclose (fp);

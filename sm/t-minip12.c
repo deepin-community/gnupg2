@@ -539,7 +539,10 @@ run_one_test (const char *name, const char *desc, const char *pass,
             }
         }
 
-      resulthash = hash_buffer (tmpstring, strlen (tmpstring));
+      /* Hash only if we have at least one parameter; i.e. the curve
+       * alone is not sufficient.  */
+      if (result[0])
+        resulthash = hash_buffer (tmpstring, strlen (tmpstring));
       xfree (tmpstring);
     }
 
@@ -580,7 +583,13 @@ run_one_test (const char *name, const char *desc, const char *pass,
       ret = 0;
     }
 
-  p12_parse_free_kparms (result);
+  if (result)
+    {
+      int i;
+      for (i=0; result[i]; i++)
+        gcry_mpi_release (result[i]);
+      gcry_free (result);
+    }
   xfree (certstr);
   xfree (resulthash);
   xfree (curve);
@@ -772,7 +781,7 @@ main (int argc, char **argv)
 
       if (verbose > 1)
         p12_set_verbosity (verbose > 1? (verbose - 1):0, debug);
-      descfname = prepend_srcdir ("../tests/cms/samplekeys/Description-p12");
+      descfname = prepend_srcdir ("../tests/samplekeys/Description-p12");
       ret = run_tests_from_file (descfname);
       xfree (descfname);
 

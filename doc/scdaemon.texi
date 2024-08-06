@@ -160,11 +160,33 @@ helpers to debug problems.
 
 @item --debug @var{flags}
 @opindex debug
-Set debug flags.  All flags are or-ed and @var{flags} may be given
-in C syntax (e.g. 0x0042) or as a comma separated list of flag names.
-To get a list of all supported flags the single word "help" can be
-used. This option is only useful for debugging and the behavior may
-change at any time without notice.
+This option is only useful for debugging and the behavior may change at
+any time without notice.  FLAGS are bit encoded and may be given in
+usual C-Syntax. The currently defined bits are:
+
+@table @code
+@item 0  (1)
+command I/O
+@item 1  (2)
+values of big number integers
+@item 2  (4)
+low level crypto operations
+@item 5  (32)
+memory allocation
+@item 6  (64)
+caching
+@item 7  (128)
+show memory statistics
+@item 9  (512)
+write hashed data to files named @code{dbgmd-000*}
+@item 10 (1024)
+trace Assuan protocol.
+See also option @option{--debug-assuan-log-cats}.
+@item 11 (2048)
+trace APDU I/O to the card.  This may reveal sensitive data.
+@item 12 (4096)
+trace some card reader related function calls.
+@end table
 
 @item --debug-all
 @opindex debug-all
@@ -241,16 +263,18 @@ Instead of using this option you might also want to install a symbolic
 link to the default file name (e.g. from @file{libpcsclite.so.1}).
 A Unicode file name may not be used on Windows.
 
+@item --ctapi-driver @var{library}
+@opindex ctapi-driver
+Use @var{library} to access the smartcard reader.  The current default
+is @file{libtowitoko.so}.  Note that the use of this interface is
+deprecated; it may be removed in future releases.
+
 @item --disable-ccid
 @opindex disable-ccid
-The integrated CCID driver for CCID compliant devices can be available
-when libusb was detected at build time, and it is used to access the
-smartcard reader.  If access via PC/SC driver is needed, please
-configure this option to disable CCID driver support (if any).  In
-GnuPG 2.2, there was a fallback mechanism from CCID driver to PC/SC
-driver.  The fallback mechanism worked, because scdaemon in GnuPG 2.2
-only supported a single token/reader.  To support of multiple
-tokens/readers at the same time, fallback mechanism was removed.
+Disable the integrated support for CCID compliant readers.  This
+allows falling back to one of the other drivers even if the internal
+CCID driver can handle the reader.  Note, that CCID support is only
+available if libusb was available at build time.
 
 @item --reader-port @var{number_or_string}
 @opindex reader-port
@@ -271,9 +295,17 @@ To get a list of available CCID readers you may use this command:
 
 @item --card-timeout @var{n}
 @opindex card-timeout
-This option is deprecated.  In GnuPG 2.0, it used to be used for
-DISCONNECT command to control timing issue.  Since DISCONNECT command
-works synchronously, it has no effect.
+If @var{n} is not 0 and no client is actively using the card, the card
+will be powered down after @var{n} seconds.  Powering down the card
+avoids a potential risk of damaging a card when used with certain
+cheap readers.  This also allows applications that are not aware of
+Scdaemon to access the card.  The disadvantage of using a card timeout
+is that accessing the card takes longer and that the user needs to
+enter the PIN again after the next power up.
+
+Note that with the current version of Scdaemon the card is powered
+down immediately at the next timer tick for any value of @var{n} other
+than 0.
 
 @item --enable-pinpad-varlen
 @opindex enable-pinpad-varlen
@@ -306,21 +338,6 @@ now to allow admin commands.
 This option disables the use of the card application named
 @var{name}.  This is mainly useful for debugging or if a application
 with lower priority should be used by default.
-
-@item --application-priority @var{namelist}
-@opindex application-priority
-This option allows one to change the order in which applications of a card
-a tried if no specific application was requested.  @var{namelist} is a
-space or comma delimited list of application names.  Unknown names are
-simply skipped.  Applications not mentioned in the list are put in the
-former order at the end of the new priority list.
-
-To get the list of current active applications, use
-@cartouche
-@smallexample
-    gpg-connect-agent 'scd getinfo app_list' /bye
-@end smallexample
-@end cartouche
 
 @end table
 
@@ -431,8 +448,7 @@ name may be changed on the command line (@pxref{option --options}).
 @cindex scd-event
 If this file is present and executable, it will be called on every card
 reader's status change.  An example of this script is provided with the
-source code distribution.  This option is deprecated in favor of the
-@command{DEVINFO --watch}.
+distribution
 
 @item reader_@var{n}.status
 This file is created by @command{scdaemon} to let other applications now
@@ -755,6 +771,6 @@ length up to N bytes.  If N is not given a default value is used
 @ifset isman
 @command{gpg-agent}(1),
 @command{gpgsm}(1),
-@command{gpg}(1)
+@command{gpg2}(1)
 @end ifset
 @include see-also-note.texi

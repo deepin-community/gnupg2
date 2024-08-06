@@ -44,10 +44,7 @@
 #include "../common/mbox-util.h"
 #include "../common/zb32.h"
 #include "tofu.h"
-#include "../common/init.h"
-#include "../common/recsel.h"
 #include "../common/compliance.h"
-#include "../common/pkscreening.h"
 
 
 static void list_all (ctrl_t, int, int);
@@ -66,74 +63,21 @@ struct keylist_context
   int no_validity; /* Do not show validity.  */
 };
 
-/* An object and a global instance to store selectors created from
- * --list-filter select=EXPR.
- */
-struct list_filter_s
-{
-  recsel_expr_t selkey;
-};
-struct list_filter_s list_filter;
+
+static void list_keyblock (ctrl_t ctrl,
+                           kbnode_t keyblock, int secret, int has_secret,
+                           int fpr, struct keylist_context *listctx);
 
 
 /* The stream used to write attribute packets to.  */
 static estream_t attrib_fp;
 
 
-
-
-static void list_keyblock (ctrl_t ctrl,
-                           kbnode_t keyblock, int secret, int has_secret,
-                           int fpr, struct keylist_context *listctx);
-
 /* Release resources from a keylist context.  */
 static void
 keylist_context_release (struct keylist_context *listctx)
 {
   (void)listctx; /* Nothing to release.  */
-}
-
-
-static void
-release_list_filter (struct list_filter_s *filt)
-{
-  recsel_release (filt->selkey);
-  filt->selkey = NULL;
-}
-
-
-static void
-cleanup_keylist_globals (void)
-{
-  release_list_filter (&list_filter);
-}
-
-
-/* Parse and set an list filter from string.  STRING has the format
- * "NAME=EXPR" with NAME being the name of the filter.  Spaces before
- * and after NAME are not allowed.  If this function is all called
- * several times all expressions for the same NAME are concatenated.
- * Supported filter names are:
- *
- *  - select :: If the expression evaluates to true for a certain key
- *              this key will be listed.  The expression may use any
- *              variable defined for the export and import filters.
- *
- */
-gpg_error_t
-parse_and_set_list_filter (const char *string)
-{
-  gpg_error_t err;
-
-  /* Auto register the cleanup function.  */
-  register_mem_cleanup_func (cleanup_keylist_globals);
-
-  if (!strncmp (string, "select=", 7))
-    err = recsel_parse_expr (&list_filter.selkey, string+7);
-  else
-    err = gpg_error (GPG_ERR_INV_NAME);
-
-  return err;
 }
 
 
@@ -221,15 +165,43 @@ secret_key_list (ctrl_t ctrl, strlist_t list)
     list_one (ctrl, list, 1, 0);
 }
 
-
-/* Helper for print_key_info and print_key_info_log.  */
-static char *
-format_key_info (ctrl_t ctrl, PKT_public_key *pk, int secret)
+char *
+format_seckey_info (ctrl_t ctrl, PKT_public_key *pk)
 {
   u32 keyid[2];
   char *p;
   char pkstrbuf[PUBKEY_STRING_SIZE];
-  char *result;
+  char *info;
+
+  keyid_from_pk (pk, keyid);
+  p = get_user_id_native (ctrl, keyid);
+
+  info = xtryasprintf ("sec  %s/%s %s %s",
+                       pubkey_string (pk, pkstrbuf, sizeof pkstrbuf),
+                       keystr (keyid), datestr_from_pk (pk), p);
+
+  xfree (p);
+
+  return info;
+}
+
+void
+print_seckey_info (ctrl_t ctrl, PKT_public_key *pk)
+{
+  char *p = format_seckey_info (ctrl, pk);
+  tty_printf ("\n%s\n", p);
+  xfree (p);
+}
+
+/* Print information about the public key.  With FP passed as NULL,
+   the tty output interface is used, otherwise output is directed to
+   the given stream.  */
+void
+print_pubkey_info (ctrl_t ctrl, estream_t fp, PKT_public_key *pk)
+{
+  u32 keyid[2];
+  char *p;
+  char pkstrbuf[PUBKEY_STRING_SIZE];
 
   keyid_from_pk (pk, keyid);
 
@@ -240,59 +212,13 @@ format_key_info (ctrl_t ctrl, PKT_public_key *pk, int secret)
   else
     p = get_user_id_native (ctrl, keyid);
 
-  result = xtryasprintf ("%s  %s/%s %s %s",
-                         secret? (pk->flags.primary? "sec":"ssb")
-                         /* */ : (pk->flags.primary? "pub":"sub"),
-                         pubkey_string (pk, pkstrbuf, sizeof pkstrbuf),
-                         keystr (keyid), datestr_from_pk (pk), p);
+  if (!fp)
+    tty_printf ("\n");
+  tty_fprintf (fp, "%s  %s/%s %s %s\n",
+               pk->flags.primary? "pub":"sub",
+               pubkey_string (pk, pkstrbuf, sizeof pkstrbuf),
+               keystr (keyid), datestr_from_pk (pk), p);
   xfree (p);
-  return result;
-}
-
-
-/* Print basic information about a public or secret key.  With FP
- * passed as NULL, the tty output interface is used, otherwise output
- * is directed to the given stream.  INDENT gives the requested
- * indentation; if that is a negative value indentation is suppressed
- * for the first line.  SECRET tells that the PK has a secret part.
- * FIXME: This is similar in use to print_key_line and thus both
- * functions should eventually be united.
- */
-void
-print_key_info (ctrl_t ctrl, estream_t fp,
-                int indent, PKT_public_key *pk, int secret)
-{
-  int indentabs = indent >= 0? indent : -indent;
-  char *info;
-
-  /* Note: Negative values for INDENT are not yet needed. */
-
-  info = format_key_info (ctrl, pk, secret);
-
-  if (!fp && indent >= 0)
-    tty_printf ("\n");  /* (Backward compatibility to old code) */
-  tty_fprintf (fp, "%*s%s\n", indentabs, "",
-               info? info : "[Ooops - out of core]");
-
-  xfree (info);
-}
-
-
-/* Same as print_key_info put print using the log functions at
- * LOGLEVEL.  */
-void
-print_key_info_log (ctrl_t ctrl, int loglevel,
-                    int indent, PKT_public_key *pk, int secret)
-{
-  int indentabs = indent >= 0? indent : -indent;
-  char *info;
-
-  info = format_key_info (ctrl, pk, secret);
-
-  log_log (loglevel, "%*s%s\n", indentabs, "",
-           info? info : "[Ooops - out of core]");
-
-  xfree (info);
 }
 
 
@@ -560,7 +486,8 @@ show_policy_url (PKT_signature * sig, int indent, int mode)
   int seq = 0, crit;
   estream_t fp = mode < 0? NULL : mode ? log_get_stream () : es_stdout;
 
-  while ((p = enum_sig_subpkt (sig, 1, SIGSUBPKT_POLICY, &len, &seq, &crit)))
+  while ((p =
+	  enum_sig_subpkt (sig->hashed, SIGSUBPKT_POLICY, &len, &seq, &crit)))
     {
       if (mode != 2)
 	{
@@ -600,7 +527,9 @@ show_keyserver_url (PKT_signature * sig, int indent, int mode)
   int seq = 0, crit;
   estream_t fp = mode < 0? NULL : mode ? log_get_stream () : es_stdout;
 
-  while ((p = enum_sig_subpkt (sig, 1, SIGSUBPKT_PREF_KS, &len, &seq, &crit)))
+  while ((p =
+	  enum_sig_subpkt (sig->hashed, SIGSUBPKT_PREF_KS, &len, &seq,
+			   &crit)))
     {
       if (mode != 2)
 	{
@@ -750,7 +679,7 @@ list_all (ctrl_t ctrl, int secret, int mark_secret)
   if (opt.check_sigs)
     listctx.check_sigs = 1;
 
-  hd = keydb_new (ctrl);
+  hd = keydb_new ();
   if (!hd)
     rc = gpg_error_from_syserror ();
   else
@@ -774,12 +703,14 @@ list_all (ctrl_t ctrl, int secret, int mark_secret)
 	{
           if (gpg_err_code (rc) == GPG_ERR_LEGACY_KEY)
             continue;  /* Skip legacy keys.  */
+          if (gpg_err_code (rc) == GPG_ERR_UNKNOWN_VERSION)
+            continue;  /* Skip keys with unknown versions.  */
 	  log_error ("keydb_get_keyblock failed: %s\n", gpg_strerror (rc));
 	  goto leave;
 	}
 
       if (secret || mark_secret)
-        any_secret = !agent_probe_any_secret_key (ctrl, keyblock);
+        any_secret = !agent_probe_any_secret_key (NULL, keyblock);
       else
         any_secret = 0;
 
@@ -871,7 +802,7 @@ list_one (ctrl_t ctrl, strlist_t names, int secret, int mark_secret)
       if (secret)
         any_secret = 1;
       else if (mark_secret)
-        any_secret = !agent_probe_any_secret_key (ctrl, keyblock);
+        any_secret = !agent_probe_any_secret_key (NULL, keyblock);
       else
         any_secret = 0;
 
@@ -963,37 +894,6 @@ print_key_data (PKT_public_key * pk)
       es_putc ('\n', es_stdout);
     }
 }
-
-
-/* Various public key screenings.  (Right now just ROCA).  With
- * COLON_MODE set the output is formatted for use in the compliance
- * field of a colon listing.
- */
-static void
-print_pk_screening (PKT_public_key *pk, int colon_mode)
-{
-  gpg_error_t err;
-
-  if (is_RSA (pk->pubkey_algo) && pubkey_get_npkey (pk->pubkey_algo))
-    {
-      err = screen_key_for_roca (pk->pkey[0]);
-      if (!err)
-        ;
-      else if (gpg_err_code (err) == GPG_ERR_TRUE)
-        {
-          if (colon_mode)
-            es_fprintf (es_stdout, colon_mode > 1? " %d":"%d", 6001);
-          else
-            es_fprintf (es_stdout,
-                        "      Screening: ROCA vulnerability detected\n");
-        }
-      else if (!colon_mode)
-        es_fprintf (es_stdout, "      Screening: [ROCA check failed: %s]\n",
-                    gpg_strerror (err));
-    }
-
-}
-
 
 static void
 print_capabilities (ctrl_t ctrl, PKT_public_key *pk, KBNODE keyblock)
@@ -1121,12 +1021,12 @@ print_subpackets_colon (PKT_signature * sig)
 
       seq = 0;
 
-      while ((p = enum_sig_subpkt (sig, 1, *i, &len, &seq, &crit)))
+      while ((p = enum_sig_subpkt (sig->hashed, *i, &len, &seq, &crit)))
 	print_one_subpacket (*i, len, 0x01 | (crit ? 0x02 : 0), p);
 
       seq = 0;
 
-      while ((p = enum_sig_subpkt (sig, 0, *i, &len, &seq, &crit)))
+      while ((p = enum_sig_subpkt (sig->unhashed, *i, &len, &seq, &crit)))
 	print_one_subpacket (*i, len, 0x00 | (crit ? 0x02 : 0), p);
     }
 }
@@ -1172,7 +1072,7 @@ dump_attribs (const PKT_user_id *uid, PKT_public_key *pk)
 
 
 /* Order two signatures.  We first order by keyid and then by creation
- * time.  */
+ * time.  This is currently only used in keyedit.c  */
 int
 cmp_signodes (const void *av, const void *bv)
 {
@@ -1216,185 +1116,14 @@ cmp_signodes (const void *av, const void *bv)
 }
 
 
-/* Helper for list_keyblock_print.  The caller must have set
- * NODFLG_MARK_B to indicate self-signatures.  */
-static void
-list_signature_print (ctrl_t ctrl, kbnode_t keyblock, kbnode_t node,
-                      struct keylist_context *listctx)
-{
-          /* (extra indentation to keep the diff history short)  */
-	  PKT_signature *sig = node->pkt->pkt.signature;
-	  int rc, sigrc;
-	  char *sigstr;
-          char *reason_text = NULL;
-          char *reason_comment = NULL;
-          size_t reason_commentlen;
-          int reason_code = 0;
-
-	  if (listctx->check_sigs)
-	    {
-	      rc = check_key_signature (ctrl, keyblock, node, NULL);
-	      switch (gpg_err_code (rc))
-		{
-		case 0:
-		  listctx->good_sigs++;
-		  sigrc = '!';
-		  break;
-		case GPG_ERR_BAD_SIGNATURE:
-		  listctx->inv_sigs++;
-		  sigrc = '-';
-		  break;
-		case GPG_ERR_NO_PUBKEY:
-		case GPG_ERR_UNUSABLE_PUBKEY:
-		  listctx->no_key++;
-		  return;
-                case GPG_ERR_DIGEST_ALGO:
-                case GPG_ERR_PUBKEY_ALGO:
-                  if (!(opt.list_options & LIST_SHOW_UNUSABLE_SIGS))
-                    return;
-                  /* fallthru. */
-		default:
-		  listctx->oth_err++;
-		  sigrc = '%';
-		  break;
-		}
-
-	      /* TODO: Make sure a cached sig record here still has
-	         the pk that issued it.  See also
-	         keyedit.c:print_and_check_one_sig */
-	    }
-	  else
-	    {
-              if (!(opt.list_options & LIST_SHOW_UNUSABLE_SIGS)
-                  && (gpg_err_code (openpgp_pk_test_algo (sig->pubkey_algo)
-                                    == GPG_ERR_PUBKEY_ALGO)
-                      || gpg_err_code (openpgp_md_test_algo (sig->digest_algo)
-                                       == GPG_ERR_DIGEST_ALGO)
-                      || (sig->digest_algo == DIGEST_ALGO_SHA1
-                          && !(node->flag & NODFLG_MARK_B) /*no selfsig*/
-                          && !opt.flags.allow_weak_key_signatures)))
-                return;
-	      rc = 0;
-	      sigrc = ' ';
-	    }
-
-	  if (sig->sig_class == 0x20 || sig->sig_class == 0x28
-	      || sig->sig_class == 0x30)
-            {
-              sigstr = "rev";
-              reason_code = get_revocation_reason (sig, &reason_text,
-                                                   &reason_comment,
-                                                   &reason_commentlen);
-            }
-	  else if ((sig->sig_class & ~3) == 0x10)
-	    sigstr = "sig";
-	  else if (sig->sig_class == 0x18)
-	    sigstr = "sig";
-	  else if (sig->sig_class == 0x1F)
-	    sigstr = "sig";
-	  else
-	    {
-	      es_fprintf (es_stdout, "sig                             "
-		      "[unexpected signature class 0x%02x]\n",
-		      sig->sig_class);
-	      return;
-	    }
-
-	  es_fputs (sigstr, es_stdout);
-	  es_fprintf (es_stdout, "%c%c %c%c%c%c%c%c %s %s",
-		  sigrc, (sig->sig_class - 0x10 > 0 &&
-			  sig->sig_class - 0x10 <
-			  4) ? '0' + sig->sig_class - 0x10 : ' ',
-		  sig->flags.exportable ? ' ' : 'L',
-		  sig->flags.revocable ? ' ' : 'R',
-		  sig->flags.policy_url ? 'P' : ' ',
-		  sig->flags.notation ? 'N' : ' ',
-		  sig->flags.expired ? 'X' : ' ',
-		  (sig->trust_depth > 9) ? 'T' : (sig->trust_depth >
-						  0) ? '0' +
-		  sig->trust_depth : ' ', keystr (sig->keyid),
-		  datestr_from_sig (sig));
-	  if (opt.list_options & LIST_SHOW_SIG_EXPIRE)
-	    es_fprintf (es_stdout, " %s", expirestr_from_sig (sig));
-	  es_fprintf (es_stdout, "  ");
-	  if (sigrc == '%')
-	    es_fprintf (es_stdout, "[%s] ", gpg_strerror (rc));
-	  else if (sigrc == '?')
-	    ;
-	  else if ((node->flag & NODFLG_MARK_B))
-            es_fputs (_("[self-signature]"), es_stdout);
-          else if (!opt.fast_list_mode )
-	    {
-	      size_t n;
-	      char *p = get_user_id (ctrl, sig->keyid, &n, NULL);
-	      print_utf8_buffer (es_stdout, p, n);
-	      xfree (p);
-	    }
-	  es_putc ('\n', es_stdout);
-
-	  if (sig->flags.policy_url
-	      && (opt.list_options & LIST_SHOW_POLICY_URLS))
-	    show_policy_url (sig, 3, 0);
-
-	  if (sig->flags.notation && (opt.list_options & LIST_SHOW_NOTATIONS))
-	    show_notation (sig, 3, 0,
-			   ((opt.
-			     list_options & LIST_SHOW_STD_NOTATIONS) ? 1 : 0)
-			   +
-			   ((opt.
-			     list_options & LIST_SHOW_USER_NOTATIONS) ? 2 :
-			    0));
-
-	  if (sig->flags.pref_ks
-	      && (opt.list_options & LIST_SHOW_KEYSERVER_URLS))
-	    show_keyserver_url (sig, 3, 0);
-
-          if (reason_text && (reason_code || reason_comment))
-            {
-              es_fprintf (es_stdout, "      %s%s\n",
-                          _("reason for revocation: "), reason_text);
-              if (reason_comment)
-                {
-                  const byte *s, *s_lf;
-                  size_t n, n_lf;
-
-                  s = reason_comment;
-                  n = reason_commentlen;
-                  s_lf = NULL;
-                  do
-                    {
-                      /* We don't want any empty lines, so we skip them.  */
-                      for (;n && *s == '\n'; s++, n--)
-                        ;
-                      if (n)
-                        {
-                          s_lf = memchr (s, '\n', n);
-                          n_lf = s_lf? s_lf - s : n;
-                          es_fprintf (es_stdout, "         %s",
-                                      _("revocation comment: "));
-                          es_write_sanitized (es_stdout, s, n_lf, NULL, NULL);
-                          es_putc ('\n', es_stdout);
-                          s += n_lf; n -= n_lf;
-                        }
-                    } while (s_lf);
-                }
-            }
-
-          xfree (reason_text);
-          xfree (reason_comment);
-
-	  /* fixme: check or list other sigs here */
-}
-
-
 static void
 list_keyblock_print (ctrl_t ctrl, kbnode_t keyblock, int secret, int fpr,
                      struct keylist_context *listctx)
 {
   int rc;
-  kbnode_t node;
+  KBNODE kbctx;
+  KBNODE node;
   PKT_public_key *pk;
-  u32 *mainkid;
   int skip_sigs = 0;
   char *hexgrip = NULL;
   char *serialno = NULL;
@@ -1409,7 +1138,6 @@ list_keyblock_print (ctrl_t ctrl, kbnode_t keyblock, int secret, int fpr,
     }
 
   pk = node->pkt->pkt.public_key;
-  mainkid = pk_keyid (pk);
 
   if (secret || opt.with_keygrip)
     {
@@ -1445,9 +1173,6 @@ list_keyblock_print (ctrl_t ctrl, kbnode_t keyblock, int secret, int fpr,
   if (opt.with_key_data)
     print_key_data (pk);
 
-  if (opt.with_key_screening)
-    print_pk_screening (pk, 0);
-
   if (opt.with_key_origin
       && (pk->keyorg || pk->keyupdate || pk->updateurl))
     {
@@ -1462,11 +1187,9 @@ list_keyblock_print (ctrl_t ctrl, kbnode_t keyblock, int secret, int fpr,
       es_putc ('\n', es_stdout);
     }
 
-  for (node = keyblock; node; node = node->next)
-    {
-      if (is_deleted_kbnode (node))
-        continue;
 
+  for (kbctx = NULL; (node = walk_kbnode (keyblock, &kbctx, 0));)
+    {
       if (node->pkt->pkttype == PKT_USER_ID)
 	{
 	  PKT_user_id *uid = node->pkt->pkt.user_id;
@@ -1518,7 +1241,7 @@ list_keyblock_print (ctrl_t ctrl, kbnode_t keyblock, int secret, int fpr,
               char *mbox, *hash, *p;
               char hashbuf[32];
 
-              mbox = mailbox_from_userid (uid->name, 0);
+              mbox = mailbox_from_userid (uid->name);
               if (mbox && (p = strchr (mbox, '@')))
                 {
                   *p++ = 0;
@@ -1596,39 +1319,153 @@ list_keyblock_print (ctrl_t ctrl, kbnode_t keyblock, int secret, int fpr,
             es_fprintf (es_stdout, "      Keygrip = %s\n", hexgrip);
 	  if (opt.with_key_data)
 	    print_key_data (pk2);
-          if (opt.with_key_screening)
-            print_pk_screening (pk2, 0);
 	}
       else if (opt.list_sigs
 	       && node->pkt->pkttype == PKT_SIGNATURE && !skip_sigs)
 	{
-          kbnode_t n;
-          unsigned int sigcount = 0;
-          kbnode_t *sigarray;
-          unsigned int idx;
+	  PKT_signature *sig = node->pkt->pkt.signature;
+	  int sigrc;
+	  char *sigstr;
+          char *reason_text = NULL;
+          char *reason_comment = NULL;
+          size_t reason_commentlen;
 
-          for (n=node; n && n->pkt->pkttype == PKT_SIGNATURE; n = n->next)
-            sigcount++;
-          sigarray = xcalloc (sigcount, sizeof *sigarray);
+	  if (listctx->check_sigs)
+	    {
+	      rc = check_key_signature (ctrl, keyblock, node, NULL);
+	      switch (gpg_err_code (rc))
+		{
+		case 0:
+		  listctx->good_sigs++;
+		  sigrc = '!';
+		  break;
+		case GPG_ERR_BAD_SIGNATURE:
+		  listctx->inv_sigs++;
+		  sigrc = '-';
+		  break;
+		case GPG_ERR_NO_PUBKEY:
+		case GPG_ERR_UNUSABLE_PUBKEY:
+		  listctx->no_key++;
+		  continue;
+		default:
+		  listctx->oth_err++;
+		  sigrc = '%';
+		  break;
+		}
 
-          sigcount = 0;
-          for (n=node; n && n->pkt->pkttype == PKT_SIGNATURE; n = n->next)
+	      /* TODO: Make sure a cached sig record here still has
+	         the pk that issued it.  See also
+	         keyedit.c:print_and_check_one_sig */
+	    }
+	  else
+	    {
+	      rc = 0;
+	      sigrc = ' ';
+	    }
+
+	  if (sig->sig_class == 0x20 || sig->sig_class == 0x28
+	      || sig->sig_class == 0x30)
             {
-              if (keyid_eq (mainkid, n->pkt->pkt.signature->keyid))
-                n->flag |= NODFLG_MARK_B;  /* Is a self-sig.  */
-              else
-                n->flag &= ~NODFLG_MARK_B;
-
-              sigarray[sigcount++] = node = n;
+              sigstr = "rev";
+              get_revocation_reason (sig, &reason_text,
+                                     &reason_comment, &reason_commentlen);
             }
-          /* Note that NODE is now at the last signature.  */
+	  else if ((sig->sig_class & ~3) == 0x10)
+	    sigstr = "sig";
+	  else if (sig->sig_class == 0x18)
+	    sigstr = "sig";
+	  else if (sig->sig_class == 0x1F)
+	    sigstr = "sig";
+	  else
+	    {
+	      es_fprintf (es_stdout, "sig                             "
+		      "[unexpected signature class 0x%02x]\n",
+		      sig->sig_class);
+	      continue;
+	    }
 
-          if ((opt.list_options & LIST_SORT_SIGS))
-            qsort (sigarray, sigcount, sizeof *sigarray, cmp_signodes);
+	  es_fputs (sigstr, es_stdout);
+	  es_fprintf (es_stdout, "%c%c %c%c%c%c%c%c %s %s",
+		  sigrc, (sig->sig_class - 0x10 > 0 &&
+			  sig->sig_class - 0x10 <
+			  4) ? '0' + sig->sig_class - 0x10 : ' ',
+		  sig->flags.exportable ? ' ' : 'L',
+		  sig->flags.revocable ? ' ' : 'R',
+		  sig->flags.policy_url ? 'P' : ' ',
+		  sig->flags.notation ? 'N' : ' ',
+		  sig->flags.expired ? 'X' : ' ',
+		  (sig->trust_depth > 9) ? 'T' : (sig->trust_depth >
+						  0) ? '0' +
+		  sig->trust_depth : ' ', keystr (sig->keyid),
+		  datestr_from_sig (sig));
+	  if (opt.list_options & LIST_SHOW_SIG_EXPIRE)
+	    es_fprintf (es_stdout, " %s", expirestr_from_sig (sig));
+	  es_fprintf (es_stdout, "  ");
+	  if (sigrc == '%')
+	    es_fprintf (es_stdout, "[%s] ", gpg_strerror (rc));
+	  else if (sigrc == '?')
+	    ;
+	  else if (!opt.fast_list_mode)
+	    {
+	      size_t n;
+	      char *p = get_user_id (ctrl, sig->keyid, &n, NULL);
+	      print_utf8_buffer (es_stdout, p, n);
+	      xfree (p);
+	    }
+	  es_putc ('\n', es_stdout);
 
-          for (idx=0; idx < sigcount; idx++)
-            list_signature_print (ctrl, keyblock, sigarray[idx], listctx);
-          xfree (sigarray);
+	  if (sig->flags.policy_url
+	      && (opt.list_options & LIST_SHOW_POLICY_URLS))
+	    show_policy_url (sig, 3, 0);
+
+	  if (sig->flags.notation && (opt.list_options & LIST_SHOW_NOTATIONS))
+	    show_notation (sig, 3, 0,
+			   ((opt.
+			     list_options & LIST_SHOW_STD_NOTATIONS) ? 1 : 0)
+			   +
+			   ((opt.
+			     list_options & LIST_SHOW_USER_NOTATIONS) ? 2 :
+			    0));
+
+	  if (sig->flags.pref_ks
+	      && (opt.list_options & LIST_SHOW_KEYSERVER_URLS))
+	    show_keyserver_url (sig, 3, 0);
+
+          if (reason_text)
+            {
+              es_fprintf (es_stdout, "      %s%s\n",
+                          _("reason for revocation: "), reason_text);
+              if (reason_comment)
+                {
+                  const byte *s, *s_lf;
+                  size_t n, n_lf;
+
+                  s = reason_comment;
+                  n = reason_commentlen;
+                  s_lf = NULL;
+                  do
+                    {
+                      /* We don't want any empty lines, so we skip them.  */
+                      for (;n && *s == '\n'; s++, n--)
+                        ;
+                      if (n)
+                        {
+                          s_lf = memchr (s, '\n', n);
+                          n_lf = s_lf? s_lf - s : n;
+                          es_fprintf (es_stdout, "         %s",
+                                      _("revocation comment: "));
+                          es_write_sanitized (es_stdout, s, n_lf, NULL, NULL);
+                          es_putc ('\n', es_stdout);
+                          s += n_lf; n -= n_lf;
+                        }
+                    } while (s_lf);
+                }
+            }
+
+          xfree (reason_text);
+          xfree (reason_comment);
+
+	  /* fixme: check or list other sigs here */
 	}
     }
   es_putc ('\n', es_stdout);
@@ -1671,7 +1508,7 @@ list_keyblock_simple (ctrl_t ctrl, kbnode_t keyblock)
 	  if (uid->flags.expired || uid->flags.revoked)
             continue;
 
-          mbox = mailbox_from_userid (uid->name, 0);
+          mbox = mailbox_from_userid (uid->name);
           if (!mbox)
             {
               ec = gpg_err_code_from_syserror ();
@@ -1703,7 +1540,7 @@ print_revokers (estream_t fp, PKT_public_key * pk)
 
 	  es_fprintf (fp, "rvk:::%d::::::", pk->revkey[i].algid);
 	  p = pk->revkey[i].fpr;
-	  for (j = 0; j < pk->revkey[i].fprlen; j++, p++)
+	  for (j = 0; j < 20; j++, p++)
 	    es_fprintf (fp, "%02X", *p);
 	  es_fprintf (fp, ":%02x%s:\n",
                       pk->revkey[i].class,
@@ -1738,9 +1575,6 @@ print_compliance_flags (PKT_public_key *pk,
 		  gnupg_status_compliance_flag (CO_DE_VS));
       any++;
     }
-
-  if (opt.with_key_screening)
-    print_pk_screening (pk, 1+any);
 }
 
 
@@ -1785,8 +1619,8 @@ list_keyblock_colon (ctrl_t ctrl, kbnode_t keyblock,
       if (rc)
         log_error ("error computing a keygrip: %s\n", gpg_strerror (rc));
       /* In the error case we print an empty string so that we have a
-       * "grp" record for each primary and subkey - even if it is
-       * empty.  This may help to prevent sync problems.  */
+       * "grp" record for each and subkey - even if it is empty.  This
+       * may help to prevent sync problems.  */
       hexgrip = hexgrip_buffer? hexgrip_buffer : "";
     }
   stubkey = 0;
@@ -2031,7 +1865,7 @@ list_keyblock_colon (ctrl_t ctrl, kbnode_t keyblock,
           char *reason_text = NULL;
           char *reason_comment = NULL;
           size_t reason_commentlen;
-          int reason_code = 0;  /* Init to silence compiler warning.  */
+          int reason_code = 0;  /* init to silence cc warning.  */
 
 	  if (sig->sig_class == 0x20 || sig->sig_class == 0x28
 	      || sig->sig_class == 0x30)
@@ -2231,31 +2065,12 @@ reorder_keyblock (KBNODE keyblock)
   do_reorder_keyblock (keyblock, 0);
 }
 
-
 static void
 list_keyblock (ctrl_t ctrl,
                KBNODE keyblock, int secret, int has_secret, int fpr,
                struct keylist_context *listctx)
 {
   reorder_keyblock (keyblock);
-
-  if (list_filter.selkey)
-    {
-      int selected = 0;
-      struct impex_filter_parm_s parm;
-      parm.ctrl = ctrl;
-
-      for (parm.node = keyblock; parm.node; parm.node = parm.node->next)
-        {
-          if (recsel_select (list_filter.selkey, impex_filter_getval, &parm))
-            {
-              selected = 1;
-              break;
-            }
-        }
-      if (!selected)
-        return;  /* Skip this one.  */
-    }
 
   if (opt.with_colons)
     list_keyblock_colon (ctrl, keyblock, secret, has_secret);
@@ -2413,12 +2228,6 @@ print_fingerprint (ctrl_t ctrl, estream_t override_fp,
   if (with_colons && !mode)
     {
       es_fprintf (fp, "fpr:::::::::%s:", hexfpr);
-      if (opt.with_v5_fingerprint && pk->version == 4)
-        {
-          char *v5fpr = v5hexfingerprint (pk, NULL, 0);
-          es_fprintf (fp, "\nfp2:::::::::%s:", v5fpr);
-          xfree (v5fpr);
-        }
     }
   else if (compact && !opt.fingerprint && !opt.with_fingerprint)
     {
@@ -2442,9 +2251,9 @@ print_fingerprint (ctrl_t ctrl, estream_t override_fp,
         {
           if (!i)
             ;
-          else if (!(i%10))
+          else if (!(i%8))
             tty_fprintf (fp, "\n%*s ", (int)strlen(text)+1, "");
-          else if (!(i%5))
+          else if (!(i%4))
             tty_fprintf (fp, "  ");
           else
             tty_fprintf (fp, " ");
@@ -2482,9 +2291,6 @@ print_card_serialno (const char *serialno)
  *
  * pub   dsa2048 2007-12-31 [SC] [expires: 2018-12-31]
  *       80615870F5BAD690333686D0F2AD85AC1E42B367
- *
- * pub   rsa2048 2017-12-31 [SC] [expires: 2028-12-31]
- *       80615870F5BAD690333686D0F2AD85AC1E42B3671122334455
  *
  * Some global options may result in a different output format.  If
  * SECRET is set, "sec" or "ssb" is used instead of "pub" or "sub" and

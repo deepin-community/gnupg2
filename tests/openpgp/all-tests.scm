@@ -47,24 +47,17 @@
      (string-append "--" variant))))
 
  (define setup-use-keyring (setup* "use-keyring"))
- (define setup-use-keyboxd (setup* "use-keyboxd"))
+ (define setup-extended-key-format (setup* "extended-key-format"))
 
  (define all-tests
    (parse-makefile-expand (in-srcdir "tests" "openpgp" "Makefile.am")
 			  (lambda (filename port key) (parse-makefile port key))
 			  "XTESTS"))
 
- (define keyboxd-enabled?
-   ;; Parse the variable "libexec_PROGRAMS" in kbx/Makefile
-   (not (null?
-	 (parse-makefile-expand (in-objdir "kbx" "Makefile")
-				(lambda (filename port key) (parse-makefile port key))
-				"libexec_PROGRAMS"))))
-
  (define tests
    (map (lambda (name)
 	  (test::scm setup
-		     "standard"
+                     #f
 		     (path-join "tests" "openpgp" name)
 		     (in-srcdir "tests" "openpgp" name))) all-tests))
 
@@ -72,20 +65,17 @@
        (set! tests
 	     (append
 	      tests
-	      ;; The second pass uses the keyboxd
-	      (if keyboxd-enabled?
-		  (map (lambda (name)
-			 (test::scm setup-use-keyboxd
-				    "keyboxd"
-				    (path-join "tests" "openpgp" name)
-				    (in-srcdir "tests" "openpgp" name)
-				    "--use-keyboxd")) all-tests))
-	      ;; The third pass uses the legact pubring.gpg
 	      (map (lambda (name)
 		     (test::scm setup-use-keyring
-				"keyring"
+				"use-keyring"
 				(path-join "tests" "openpgp" name)
 				(in-srcdir "tests" "openpgp" name)
-				"--use-keyring")) all-tests))))
+				"--use-keyring")) all-tests)
+	      (map (lambda (name)
+		     (test::scm setup-extended-key-format
+				"extended-key-format"
+				(path-join "tests" "openpgp" name)
+				(in-srcdir "tests" "openpgp" name)
+				"--extended-key-format")) all-tests))))
 
  tests)

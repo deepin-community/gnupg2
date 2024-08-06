@@ -21,7 +21,6 @@
 
 #include <config.h>
 
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
@@ -49,6 +48,7 @@
 
 #include <gpg-error.h>
 #include "../common/logging.h"
+#include "../common/argparse.h"
 #include "../common/stringhelp.h"
 #include "../common/mischelp.h"
 #include "../common/strlist.h"
@@ -93,13 +93,14 @@ enum
     oLdapTLS,
     oNtds,
     oARecOnly,
+
     oOnlySearchTimeout,
     oLogWithPID
   };
 
 
 /* The list of options as used by the argparse.c code.  */
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
   { oVerbose,  "verbose",   0, "verbose" },
   { oQuiet,    "quiet",     0, "be somewhat more quiet" },
   { oTimeout,  "timeout",   1, "|N|set LDAP timeout to N seconds"},
@@ -107,7 +108,7 @@ static gpgrt_opt_t opts[] = {
                                " a record oriented format"},
   { oProxy,    "proxy",     2,
                 "|NAME|ignore host part and connect through NAME"},
-  { oStartTLS, "starttls",  0, "use STARTLS for the connection"},
+  { oStartTLS, "starttls",  0, "use STARTLS for the conenction"},
   { oLdapTLS,  "ldaptls",   0, "use a TLS for the connection"},
   { oNtds,     "ntds",      0, "authenticate using AD"},
   { oARecOnly, "areconly",  0, "do only an A record lookup"},
@@ -167,7 +168,7 @@ my_strusage (int level)
 {
   const char *p;
 
-  switch (level)
+  switch(level)
     {
     case  9: p = "GPL-3.0-or-later"; break;
     case 11: p = "dirmngr_ldap (@GNUPG@)";
@@ -196,7 +197,7 @@ my_strusage (int level)
 int
 main (int argc, char **argv)
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   int any_err = 0;
   char *p;
   int only_search_timeout = 0;
@@ -205,7 +206,7 @@ main (int argc, char **argv)
 
   early_system_init ();
 
-  gpgrt_set_strusage (my_strusage);
+  set_strusage (my_strusage);
   log_set_prefix ("dirmngr_ldap", GPGRT_LOG_WITH_PREFIX);
 
   init_common_subsystems (&argc, &argv);
@@ -222,7 +223,7 @@ main (int argc, char **argv)
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gpgrt_argparse (NULL, &pargs, opts))
+  while (gnupg_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -262,7 +263,7 @@ main (int argc, char **argv)
           break;
 	}
     }
-  gpgrt_argparse (NULL, &pargs, NULL);
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (only_search_timeout)
     opt.alarm_timeout = 0;
@@ -385,7 +386,7 @@ set_timeout (void)
           sec_attr.nLength = sizeof sec_attr;
           sec_attr.bInheritHandle = FALSE;
 
-          /* Create a manual resettable timer.  */
+          /* Create a manual resetable timer.  */
           timer = CreateWaitableTimer (NULL, TRUE, NULL);
           /* Initially set the timer.  */
           SetWaitableTimer (timer, &due_time, 0, NULL, NULL, 0);
@@ -761,7 +762,7 @@ print_ldap_entries (LDAP *ld, LDAPMessage *msg, char *want_attr)
 
 /* Fetch data from the server at LD using FILTER.  */
 static int
-fetch_ldap (LDAP *ld, const char *base, int scope, const char *filter)
+fetch_ldap (LDAP *ld, char *base, int scope, char *filter)
 {
   gpg_error_t err;
   int lerr;

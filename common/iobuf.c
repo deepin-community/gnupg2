@@ -59,27 +59,26 @@
 
 /*-- Begin configurable part.  --*/
 
-/* The standard size of the internal buffers.  */
-#define DEFAULT_IOBUF_BUFFER_SIZE  (64*1024)
+/* The size of the internal buffers.
+   NOTE: If you change this value you MUST also adjust the regression
+   test "armored_key_8192" in armor.test! */
+#define IOBUF_BUFFER_SIZE  8192
 
 /* To avoid a potential DoS with compression packets we better limit
    the number of filters in a chain.  */
 #define MAX_NESTING_FILTER 64
 
-/* The threshold for switching to use external buffers directly
-   instead of the internal buffers. */
-#define IOBUF_ZEROCOPY_THRESHOLD_SIZE 1024
-
 /*-- End configurable part.  --*/
-
-/* The size of the iobuffers.  This can be changed using the
- * iobuf_set_buffer_size function.  */
-static unsigned int iobuf_buffer_size = DEFAULT_IOBUF_BUFFER_SIZE;
 
 
 #ifdef HAVE_W32_SYSTEM
-# define FD_FOR_STDIN  (GetStdHandle (STD_INPUT_HANDLE))
-# define FD_FOR_STDOUT (GetStdHandle (STD_OUTPUT_HANDLE))
+# ifdef HAVE_W32CE_SYSTEM
+#  define FD_FOR_STDIN  (es_fileno (es_stdin))
+#  define FD_FOR_STDOUT (es_fileno (es_stdout))
+# else
+#  define FD_FOR_STDIN  (GetStdHandle (STD_INPUT_HANDLE))
+#  define FD_FOR_STDOUT (GetStdHandle (STD_OUTPUT_HANDLE))
+# endif
 #else /*!HAVE_W32_SYSTEM*/
 # define FD_FOR_STDIN  (0)
 # define FD_FOR_STDOUT (1)
@@ -93,7 +92,6 @@ typedef struct
   int keep_open;
   int no_cache;
   int eof_seen;
-  int delayed_rc;
   int print_only_name; /* Flags indicating that fname is not a real file.  */
   char peeked[32];     /* Read ahead buffer.  */
   byte npeeked;        /* Number of bytes valid in peeked.  */
@@ -108,8 +106,6 @@ typedef struct
   int keep_open;
   int no_cache;
   int eof_seen;
-  int use_readlimit;   /* Take care of the readlimit.  */
-  size_t readlimit;    /* Number of bytes left to read.  */
   int print_only_name; /* Flags indicating that fname is not a real file.  */
   char fname[1];       /* Name of the file.  */
 } file_es_filter_ctx_t;
@@ -175,7 +171,7 @@ static int translate_file_handle (int fd, int for_write);
    to be sent to A's filter function.
 
    If A is a IOBUF_OUTPUT_TEMP filter, then this also enlarges the
-   buffer by iobuf_buffer_size.
+   buffer by IOBUF_BUFFER_SIZE.
 
    May only be called on an IOBUF_OUTPUT or IOBUF_OUTPUT_TEMP filters.  */
 static int filter_flush (iobuf_t a);
@@ -311,13 +307,6 @@ direct_open (const char *fname, const char *mode, int mode700)
         {
           hfile = CreateFileW (wfname, da, sm, NULL, cd,
                                FILE_ATTRIBUTE_NORMAL, NULL);
-          if (hfile == INVALID_HANDLE_VALUE)
-            {
-              gnupg_w32_set_errno (-1);
-              if (DBG_IOBUF)
-                log_debug ("iobuf:direct_open '%s' CreateFile failed: %s\n",
-                           fname, gpg_strerror (gpg_error_from_syserror()));
-            }
           xfree (wfname);
         }
       else
@@ -433,9 +422,8 @@ fd_cache_open (const char *fname, const char *mode)
 #ifdef HAVE_W32_SYSTEM
 	  if (SetFilePointer (fp, 0, NULL, FILE_BEGIN) == 0xffffffff)
 	    {
-              int ec = (int) GetLastError ();
-	      log_error ("rewind file failed on handle %p: ec=%d\n", fp, ec);
-              gnupg_w32_set_errno (ec);
+	      log_error ("rewind file failed on handle %p: ec=%d\n",
+			 fp, (int) GetLastError ());
 	      fp = GNUPG_INVALID_FD;
 	    }
 #else
@@ -483,14 +471,6 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 	  rc = -1;
 	  *ret_len = 0;
 	}
-      else if (a->delayed_rc)
-        {
-          rc = a->delayed_rc;
-          a->delayed_rc = 0;
-          if (rc == -1)
-            a->eof_seen = -1;
-	  *ret_len = 0;
-        }
       else
 	{
 #ifdef HAVE_W32_SYSTEM
@@ -522,39 +502,29 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 	  int n;
 
 	  nbytes = 0;
-        read_more:
-          do
-            {
-              n = read (f, buf + nbytes, size - nbytes);
-            }
-          while (n == -1 && errno == EINTR);
-          if (n > 0)
-            {
-              nbytes += n;
-              if (nbytes < size)
-                goto read_more;
-            }
-          else if (!n) /* eof */
-            {
-              if (nbytes)
-                a->delayed_rc = -1;
-              else
-                {
-                  a->eof_seen = 1;
-                  rc = -1;
-                }
-            }
-          else /* error */
-            {
-              rc = gpg_error_from_syserror ();
-              if (gpg_err_code (rc) != GPG_ERR_EPIPE)
-                log_error ("%s: read error: %s\n", a->fname, gpg_strerror (rc));
-              if (nbytes)
-                {
-                  a->delayed_rc = rc;
-                  rc = 0;
-                }
-            }
+	  do
+	    {
+	      n = read (f, buf, size);
+	    }
+	  while (n == -1 && errno == EINTR);
+	  if (n == -1)
+	    {			/* error */
+	      if (errno != EPIPE)
+		{
+		  rc = gpg_error_from_syserror ();
+		  log_error ("%s: read error: %s\n",
+			     a->fname, strerror (errno));
+		}
+	    }
+	  else if (!n)
+	    {			/* eof */
+	      a->eof_seen = 1;
+	      rc = -1;
+	    }
+	  else
+	    {
+	      nbytes = n;
+	    }
 #endif
 	  *ret_len = nbytes;
 	}
@@ -615,7 +585,6 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
   else if (control == IOBUFCTRL_INIT)
     {
       a->eof_seen = 0;
-      a->delayed_rc = 0;
       a->keep_open = 0;
       a->no_cache = 0;
       a->npeeked = 0;
@@ -667,18 +636,13 @@ file_filter (void *opaque, int control, iobuf_t chain, byte * buf,
         }
       else if (!n) /* eof */
         {
-          if (a->npeeked)
-            a->delayed_rc = -1;
-          else
-            a->eof_seen = 1;
+          a->eof_seen = 1;
         }
       else /* error */
         {
           rc = gpg_error_from_syserror ();
           if (gpg_err_code (rc) != GPG_ERR_EPIPE)
             log_error ("%s: read error: %s\n", a->fname, gpg_strerror (rc));
-          if (a->npeeked)
-            a->delayed_rc = rc;
         }
 #endif /* Unix */
 
@@ -727,34 +691,6 @@ file_es_filter (void *opaque, int control, iobuf_t chain, byte * buf,
 	{
 	  rc = -1;
 	  *ret_len = 0;
-	}
-      else if (a->use_readlimit)
-	{
-          nbytes = 0;
-          if (!a->readlimit)
-	    {			/* eof */
-	      a->eof_seen = 1;
-	      rc = -1;
-	    }
-          else
-            {
-              if (size > a->readlimit)
-                size = a->readlimit;
-              rc = es_read (f, buf, size, &nbytes);
-              if (rc == -1)
-                {			/* error */
-                  rc = gpg_error_from_syserror ();
-                  log_error ("%s: read error: %s\n", a->fname,strerror (errno));
-                }
-              else if (!nbytes)
-                {			/* eof */
-                  a->eof_seen = 1;
-                  rc = -1;
-                }
-              else
-                a->readlimit -= nbytes;
-            }
-	  *ret_len = nbytes;
 	}
       else
 	{
@@ -1000,22 +936,16 @@ block_filter (void *opaque, int control, iobuf_t chain, byte * buffer,
 		    }
 		  else if (c == 255)
 		    {
-                      size_t len = 0;
-                      int i;
-
-                      for (i = 0; i < 4; i++)
-                        if ((c = iobuf_get (chain)) == -1)
-                          break;
-                        else
-                          len = ((len << 8) | c);
-
-                      if (i < 4)
+		      a->size = iobuf_get_noeof (chain) << 24;
+		      a->size |= iobuf_get_noeof (chain) << 16;
+		      a->size |= iobuf_get_noeof (chain) << 8;
+		      if ((c = iobuf_get (chain)) == -1)
 			{
 			  log_error ("block_filter: invalid 4 byte length\n");
 			  rc = GPG_ERR_BAD_DATA;
 			  break;
 			}
-                      a->size = len;
+		      a->size |= c;
                       a->partial = 2;
                       if (!a->size)
                         {
@@ -1203,30 +1133,6 @@ block_filter (void *opaque, int control, iobuf_t chain, byte * buffer,
   return rc;
 }
 
-
-/* Change the default size for all IOBUFs to KILOBYTE.  This needs to
- * be called before any iobufs are used and can only be used once.
- * Returns the current value.  Using 0 has no effect except for
- * returning the current value.  */
-unsigned int
-iobuf_set_buffer_size (unsigned int kilobyte)
-{
-  static int used;
-
-  if (!used && kilobyte)
-    {
-      if (kilobyte < 4)
-        kilobyte = 4;
-      else if (kilobyte > 16*1024)
-        kilobyte = 16*1024;
-
-      iobuf_buffer_size = kilobyte * 1024;
-      used = 1;
-    }
-  return iobuf_buffer_size / 1024;
-}
-
-
 #define MAX_IOBUF_DESC 32
 /*
  * Fill the buffer by the description of iobuf A.
@@ -1279,17 +1185,13 @@ iobuf_alloc (int use, size_t bufsize)
   if (bufsize == 0)
     {
       log_bug ("iobuf_alloc() passed a bufsize of 0!\n");
-      bufsize = iobuf_buffer_size;
+      bufsize = IOBUF_BUFFER_SIZE;
     }
 
   a = xcalloc (1, sizeof *a);
   a->use = use;
   a->d.buf = xmalloc (bufsize);
   a->d.size = bufsize;
-  a->e_d.buf = NULL;
-  a->e_d.len = 0;
-  a->e_d.used = 0;
-  a->e_d.preferred = 0;
   a->no = ++number;
   a->subno = 0;
   a->real_fname = NULL;
@@ -1362,7 +1264,7 @@ iobuf_cancel (iobuf_t a)
   /* send a cancel message to all filters */
   for (a2 = a; a2; a2 = a2->chain)
     {
-      size_t dummy = 0;
+      size_t dummy;
       if (a2->filter)
 	a2->filter (a2->filter_ov, IOBUFCTRL_CANCEL, a2->chain, NULL, &dummy);
     }
@@ -1374,7 +1276,6 @@ iobuf_cancel (iobuf_t a)
       /* Argg, MSDOS does not allow removing open files.  So
        * we have to do it here */
       gnupg_remove (remove_name);
-
       xfree (remove_name);
     }
 #endif
@@ -1385,7 +1286,7 @@ iobuf_cancel (iobuf_t a)
 iobuf_t
 iobuf_temp (void)
 {
-  return iobuf_alloc (IOBUF_OUTPUT_TEMP, iobuf_buffer_size);
+  return iobuf_alloc (IOBUF_OUTPUT_TEMP, IOBUF_BUFFER_SIZE);
 }
 
 iobuf_t
@@ -1460,7 +1361,7 @@ do_open (const char *fname, int special_filenames,
 	return NULL;
     }
 
-  a = iobuf_alloc (use, iobuf_buffer_size);
+  a = iobuf_alloc (use, IOBUF_BUFFER_SIZE);
   fcx = xmalloc (sizeof *fcx + strlen (fname));
   fcx->fp = fp;
   fcx->print_only_name = print_only;
@@ -1502,12 +1403,12 @@ do_iobuf_fdopen (int fd, const char *mode, int keep_open)
   iobuf_t a;
   gnupg_fd_t fp;
   file_filter_ctx_t *fcx;
-  size_t len = 0;
+  size_t len;
 
   fp = INT2FD (fd);
 
   a = iobuf_alloc (strchr (mode, 'w') ? IOBUF_OUTPUT : IOBUF_INPUT,
-		   iobuf_buffer_size);
+		   IOBUF_BUFFER_SIZE);
   fcx = xmalloc (sizeof *fcx + 20);
   fcx->fp = fp;
   fcx->print_only_name = 1;
@@ -1538,22 +1439,19 @@ iobuf_fdopen_nc (int fd, const char *mode)
 
 
 iobuf_t
-iobuf_esopen (estream_t estream, const char *mode, int keep_open,
-              size_t readlimit)
+iobuf_esopen (estream_t estream, const char *mode, int keep_open)
 {
   iobuf_t a;
   file_es_filter_ctx_t *fcx;
   size_t len = 0;
 
   a = iobuf_alloc (strchr (mode, 'w') ? IOBUF_OUTPUT : IOBUF_INPUT,
-		   iobuf_buffer_size);
+		   IOBUF_BUFFER_SIZE);
   fcx = xtrymalloc (sizeof *fcx + 30);
   fcx->fp = estream;
   fcx->print_only_name = 1;
   fcx->keep_open = keep_open;
-  fcx->readlimit = readlimit;
-  fcx->use_readlimit = !!readlimit;
-  snprintf (fcx->fname, 30, "[fd %p]", estream);
+  sprintf (fcx->fname, "[fd %p]", estream);
   a->filter = file_es_filter;
   a->filter_ov = fcx;
   file_es_filter (fcx, IOBUFCTRL_INIT, NULL, NULL, &len);
@@ -1573,7 +1471,7 @@ iobuf_sockopen (int fd, const char *mode)
   size_t len;
 
   a = iobuf_alloc (strchr (mode, 'w') ? IOBUF_OUTPUT : IOBUF_INPUT,
-		   iobuf_buffer_size);
+		   IOBUF_BUFFER_SIZE);
   scx = xmalloc (sizeof *scx + 25);
   scx->sock = fd;
   scx->print_only_name = 1;
@@ -1793,13 +1691,13 @@ iobuf_push_filter2 (iobuf_t a,
 	 increased accordingly.  We don't need to allocate a 10 MB
 	 buffer for a non-terminal filter.  Just use the default
 	 size.  */
-      a->d.size = iobuf_buffer_size;
+      a->d.size = IOBUF_BUFFER_SIZE;
     }
   else if (a->use == IOBUF_INPUT_TEMP)
     /* Same idea as above.  */
     {
       a->use = IOBUF_INPUT;
-      a->d.size = iobuf_buffer_size;
+      a->d.size = IOBUF_BUFFER_SIZE;
     }
 
   /* The new filter (A) gets a new buffer.
@@ -1968,15 +1866,12 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
 
   log_assert (a->use == IOBUF_INPUT);
 
-  a->e_d.used = 0;
-
   /* If there is still some buffered data, then move it to the start
      of the buffer and try to fill the end of the buffer.  (This is
      useful if we are called from iobuf_peek().)  */
   log_assert (a->d.start <= a->d.len);
   a->d.len -= a->d.start;
-  if (a->d.len)
-    memmove (a->d.buf, &a->d.buf[a->d.start], a->d.len);
+  memmove (a->d.buf, &a->d.buf[a->d.start], a->d.len);
   a->d.start = 0;
 
   if (a->d.len < target && a->filter_eof)
@@ -2027,57 +1922,23 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
     {
       /* Be careful to account for any buffered data.  */
       len = a->d.size - a->d.len;
-
-      if (a->e_d.preferred && a->d.len < IOBUF_ZEROCOPY_THRESHOLD_SIZE
-	  && (IOBUF_ZEROCOPY_THRESHOLD_SIZE - a->d.len) < len)
-	{
-	  if (DBG_IOBUF)
-	    log_debug ("iobuf-%d.%d: limit buffering as external drain is "
-			"preferred\n",  a->no, a->subno);
-	  len = IOBUF_ZEROCOPY_THRESHOLD_SIZE - a->d.len;
-	}
-
+      if (DBG_IOBUF)
+	log_debug ("iobuf-%d.%d: underflow: A->FILTER (%lu bytes)\n",
+		   a->no, a->subno, (ulong) len);
       if (len == 0)
 	/* There is no space for more data.  Don't bother calling
 	   A->FILTER.  */
 	rc = 0;
       else
-      {
-	/* If no buffered data and drain buffer has been setup, and drain
-	 * buffer is largish, read data directly to drain buffer. */
-	if (a->d.len == 0
-	    && a->e_d.buf
-	    && a->e_d.len >= IOBUF_ZEROCOPY_THRESHOLD_SIZE)
-	  {
-	    len = a->e_d.len;
-
-	    if (DBG_IOBUF)
-	      log_debug ("iobuf-%d.%d: underflow: A->FILTER (%lu bytes, to external drain)\n",
-			 a->no, a->subno, (ulong)len);
-
-	    rc = a->filter (a->filter_ov, IOBUFCTRL_UNDERFLOW, a->chain,
-			    a->e_d.buf, &len);
-	    a->e_d.used = len;
-	    len = 0;
-	  }
-	else
-	  {
-	    if (DBG_IOBUF)
-	      log_debug ("iobuf-%d.%d: underflow: A->FILTER (%lu bytes)\n",
-			 a->no, a->subno, (ulong)len);
-
-	    rc = a->filter (a->filter_ov, IOBUFCTRL_UNDERFLOW, a->chain,
-			    &a->d.buf[a->d.len], &len);
-	  }
-      }
+	rc = a->filter (a->filter_ov, IOBUFCTRL_UNDERFLOW, a->chain,
+			&a->d.buf[a->d.len], &len);
       a->d.len += len;
 
       if (DBG_IOBUF)
-	log_debug ("iobuf-%d.%d: A->FILTER() returned rc=%d (%s), read %lu bytes%s\n",
+	log_debug ("iobuf-%d.%d: A->FILTER() returned rc=%d (%s), read %lu bytes\n",
 		   a->no, a->subno,
 		   rc, rc == 0 ? "ok" : rc == -1 ? "EOF" : gpg_strerror (rc),
-		   (ulong)(a->e_d.used ? a->e_d.used : len),
-		   a->e_d.used ? " (to external buffer)" : "");
+		   (ulong) len);
 /*  	    if( a->no == 1 ) */
 /*                   log_hexdump ("     data:", a->d.buf, len); */
 
@@ -2098,8 +1959,7 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
 	  a->filter = NULL;
 	  a->filter_eof = 1;
 
-	  if (clear_pending_eof && a->d.len == 0 && a->e_d.used == 0
-	      && a->chain)
+	  if (clear_pending_eof && a->d.len == 0 && a->chain)
 	    /* We don't need to keep this filter around at all:
 
 	         - we got an EOF
@@ -2121,7 +1981,7 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
 
 	      return -1;
 	    }
-	  else if (a->d.len == 0 && a->e_d.used == 0)
+	  else if (a->d.len == 0)
 	    /* We can't unlink this filter (it is the only one in the
 	       pipeline), but we can immediately return EOF.  */
 	    return -1;
@@ -2131,15 +1991,13 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
 	{
 	  a->error = rc;
 
-	  if (a->d.len == 0 && a->e_d.used == 0)
+	  if (a->d.len == 0)
 	    /* There is no buffered data.  Immediately return EOF.  */
 	    return -1;
 	}
     }
 
   log_assert (a->d.start <= a->d.len);
-  if (a->e_d.used > 0)
-    return 0;
   if (a->d.start < a->d.len)
     return a->d.buf[a->d.start++];
 
@@ -2151,17 +2009,12 @@ underflow_target (iobuf_t a, int clear_pending_eof, size_t target)
 static int
 filter_flush (iobuf_t a)
 {
-  int external_used = 0;
-  byte *src_buf;
-  size_t src_len;
   size_t len;
   int rc;
 
-  a->e_d.used = 0;
-
   if (a->use == IOBUF_OUTPUT_TEMP)
     {				/* increase the temp buffer */
-      size_t newsize = a->d.size + iobuf_buffer_size;
+      size_t newsize = a->d.size + IOBUF_BUFFER_SIZE;
 
       if (DBG_IOBUF)
 	log_debug ("increasing temp iobuf from %lu to %lu\n",
@@ -2175,23 +2028,9 @@ filter_flush (iobuf_t a)
     log_bug ("flush on non-output iobuf\n");
   else if (!a->filter)
     log_bug ("filter_flush: no filter\n");
-
-  if (a->d.len == 0 && a->e_d.buf && a->e_d.len > 0)
-    {
-      src_buf = a->e_d.buf;
-      src_len = a->e_d.len;
-      external_used = 1;
-    }
-  else
-    {
-      src_buf = a->d.buf;
-      src_len = a->d.len;
-      external_used = 0;
-    }
-
-  len = src_len;
-  rc = a->filter (a->filter_ov, IOBUFCTRL_FLUSH, a->chain, src_buf, &len);
-  if (!rc && len != src_len)
+  len = a->d.len;
+  rc = a->filter (a->filter_ov, IOBUFCTRL_FLUSH, a->chain, a->d.buf, &len);
+  if (!rc && len != a->d.len)
     {
       log_info ("filter_flush did not write all!\n");
       rc = GPG_ERR_INTERNAL;
@@ -2199,8 +2038,6 @@ filter_flush (iobuf_t a)
   else if (rc)
     a->error = rc;
   a->d.len = 0;
-  if (external_used)
-    a->e_d.used = len;
 
   return rc;
 }
@@ -2272,13 +2109,6 @@ iobuf_read (iobuf_t a, void *buffer, unsigned int buflen)
       return n;
     }
 
-  a->e_d.buf = NULL;
-  a->e_d.len = 0;
-
-  /* Hint for how full to fill iobuf internal drain buffer. */
-  a->e_d.preferred = (a->use != IOBUF_INPUT_TEMP)
-    && (buf && buflen >= IOBUF_ZEROCOPY_THRESHOLD_SIZE);
-
   n = 0;
   do
     {
@@ -2300,46 +2130,16 @@ iobuf_read (iobuf_t a, void *buffer, unsigned int buflen)
 	   underflow to read more data into the filter's internal
 	   buffer.  */
 	{
-	  if (a->use != IOBUF_INPUT_TEMP && buf && n < buflen)
-	    {
-	      /* Setup external drain buffer for faster moving of data
-	       * (avoid memcpy). */
-	      a->e_d.buf = buf;
-	      a->e_d.len = (buflen - n) / IOBUF_ZEROCOPY_THRESHOLD_SIZE
-			    * IOBUF_ZEROCOPY_THRESHOLD_SIZE;
-	      if (a->e_d.len == 0)
-		a->e_d.buf = NULL;
-	      if (a->e_d.buf && DBG_IOBUF)
-		log_debug ("iobuf-%d.%d: reading to external buffer, %lu bytes\n",
-			   a->no, a->subno, (ulong)a->e_d.len);
-	    }
-
 	  if ((c = underflow (a, 1)) == -1)
 	    /* EOF.  If we managed to read something, don't return EOF
 	       now.  */
 	    {
-	      a->e_d.buf = NULL;
-	      a->e_d.len = 0;
 	      a->nbytes += n;
 	      return n ? n : -1 /*EOF*/;
 	    }
-
-	  if (a->e_d.buf && a->e_d.used > 0)
-	    {
-	      /* Drain buffer was used, 'c' only contains return code
-	       * 0 or -1. */
-	      n += a->e_d.used;
-	      buf += a->e_d.used;
-	    }
-	  else
-	    {
-	      if (buf)
-		*buf++ = c;
-	      n++;
-	    }
-
-	  a->e_d.buf = NULL;
-	  a->e_d.len = 0;
+	  if (buf)
+	    *buf++ = c;
+	  n++;
 	}
     }
   while (n < buflen);
@@ -2424,39 +2224,11 @@ iobuf_write (iobuf_t a, const void *buffer, unsigned int buflen)
       return -1;
     }
 
-  a->e_d.buf = NULL;
-  a->e_d.len = 0;
-
-  /* Hint for how full to fill iobuf internal drain buffer. */
-  a->e_d.preferred = (a->use != IOBUF_OUTPUT_TEMP)
-    && (buflen >= IOBUF_ZEROCOPY_THRESHOLD_SIZE);
-
   do
     {
-      if ((a->use != IOBUF_OUTPUT_TEMP)
-	  && a->d.len == 0 && buflen >= IOBUF_ZEROCOPY_THRESHOLD_SIZE)
+      if (buflen && a->d.len < a->d.size)
 	{
-	  /* Setup external drain buffer for faster moving of data
-	    * (avoid memcpy). */
-	  a->e_d.buf = (byte *)buf;
-	  a->e_d.len = buflen / IOBUF_ZEROCOPY_THRESHOLD_SIZE
-			* IOBUF_ZEROCOPY_THRESHOLD_SIZE;
-	  if (a->e_d.len == 0)
-	    a->e_d.buf = NULL;
-	  if (a->e_d.buf && DBG_IOBUF)
-	    log_debug ("iobuf-%d.%d: writing from external buffer, %lu bytes\n",
-			a->no, a->subno, (ulong)a->e_d.len);
-	}
-
-      if (a->e_d.buf == NULL && buflen && a->d.len < a->d.size)
-	{
-	  unsigned size;
-
-	  if (a->e_d.preferred && a->d.len < IOBUF_ZEROCOPY_THRESHOLD_SIZE)
-	    size = IOBUF_ZEROCOPY_THRESHOLD_SIZE - a->d.len;
-	  else
-	    size = a->d.size - a->d.len;
-
+	  unsigned size = a->d.size - a->d.len;
 	  if (size > buflen)
 	    size = buflen;
 	  memcpy (a->d.buf + a->d.len, buf, size);
@@ -2464,26 +2236,12 @@ iobuf_write (iobuf_t a, const void *buffer, unsigned int buflen)
 	  buf += size;
 	  a->d.len += size;
 	}
-
       if (buflen)
 	{
 	  rc = filter_flush (a);
           if (rc)
-	    {
-	      a->e_d.buf = NULL;
-	      a->e_d.len = 0;
-	      return rc;
-	    }
+	    return rc;
 	}
-
-      if (a->e_d.buf && a->e_d.used > 0)
-	{
-	  buf += a->e_d.used;
-	  buflen -= a->e_d.used;
-	}
-
-      a->e_d.buf = NULL;
-      a->e_d.len = 0;
     }
   while (buflen);
   return 0;
@@ -2545,7 +2303,9 @@ size_t
 iobuf_copy (iobuf_t dest, iobuf_t source)
 {
   char *temp;
-  size_t temp_size;
+  /* Use a 32 KB buffer.  */
+  const size_t temp_size = 32 * 1024;
+
   size_t nread;
   size_t nwrote = 0;
   size_t max_read = 0;
@@ -2556,9 +2316,6 @@ iobuf_copy (iobuf_t dest, iobuf_t source)
 
   if (iobuf_error (dest))
     return (size_t)(-1);
-
-  /* Use iobuf buffer size for temporary buffer. */
-  temp_size = iobuf_set_buffer_size(0) * 1024;
 
   temp = xmalloc (temp_size);
   while (1)
@@ -2863,50 +2620,12 @@ iobuf_read_line (iobuf_t a, byte ** addr_of_buffer,
     }
 
   p = buffer;
-  while (1)
+  while ((c = iobuf_get (a)) != -1)
     {
-      if (!a->nofast && a->d.start < a->d.len && nbytes < length - 1)
-	/* Fast path for finding '\n' by using standard C library's optimized
-	   memchr.  */
-	{
-	  unsigned size = a->d.len - a->d.start;
-	  byte *newline_pos;
-
-	  if (size > length - 1 - nbytes)
-	    size = length - 1 - nbytes;
-
-	  newline_pos = memchr (a->d.buf + a->d.start, '\n', size);
-	  if (newline_pos)
-	    {
-	      /* Found newline, copy buffer and return. */
-	      size = (newline_pos - (a->d.buf + a->d.start)) + 1;
-	      memcpy (p, a->d.buf + a->d.start, size);
-	      p += size;
-	      nbytes += size;
-	      a->d.start += size;
-	      a->nbytes += size;
-	      break;
-	    }
-	  else
-	    {
-	      /* No newline, copy buffer and continue. */
-	      memcpy (p, a->d.buf + a->d.start, size);
-	      p += size;
-	      nbytes += size;
-	      a->d.start += size;
-	      a->nbytes += size;
-	    }
-	}
-      else
-	{
-	  c = iobuf_readbyte (a);
-	  if (c == -1)
-	    break;
-	  *p++ = c;
-	  nbytes++;
-	  if (c == '\n')
-	    break;
-	}
+      *p++ = c;
+      nbytes++;
+      if (c == '\n')
+	break;
 
       if (nbytes == length - 1)
 	/* We don't have enough space to add a \n and a \0.  Increase
@@ -2916,7 +2635,7 @@ iobuf_read_line (iobuf_t a, byte ** addr_of_buffer,
 	    /* We reached the buffer's size limit!  */
 	    {
 	      /* Skip the rest of the line.  */
-	      while ((c = iobuf_get (a)) != -1 && c != '\n')
+	      while (c != '\n' && (c = iobuf_get (a)) != -1)
 		;
 
 	      /* p is pointing at the last byte in the buffer.  We
@@ -2951,7 +2670,12 @@ iobuf_read_line (iobuf_t a, byte ** addr_of_buffer,
 static int
 translate_file_handle (int fd, int for_write)
 {
-#if defined(HAVE_W32_SYSTEM)
+#if defined(HAVE_W32CE_SYSTEM)
+  /* This is called only with one of the special filenames.  Under
+     W32CE the FD here is not a file descriptor but a rendezvous id,
+     thus we need to finish the pipe first.  */
+  fd = _assuan_w32ce_finish_pipe (fd, for_write);
+#elif defined(HAVE_W32_SYSTEM)
   {
     int x;
 
@@ -3027,124 +2751,4 @@ iobuf_skip_rest (iobuf_t a, unsigned long n, int partial)
 	    }
 	}
     }
-}
-
-
-/* Check whether (BUF,LEN) is valid header for an OpenPGP compressed
- * packet.  LEN should be at least 6.  */
-static int
-is_openpgp_compressed_packet (const unsigned char *buf, size_t len)
-{
-  int c, ctb, pkttype;
-  int lenbytes;
-
-  ctb = *buf++; len--;
-  if (!(ctb & 0x80))
-    return 0; /* Invalid packet.  */
-
-  if ((ctb & 0x40)) /* New style (OpenPGP) CTB.  */
-    {
-      pkttype = (ctb & 0x3f);
-      if (!len)
-        return 0; /* Expected first length octet missing.  */
-      c = *buf++; len--;
-      if (c < 192)
-        ;
-      else if (c < 224)
-        {
-          if (!len)
-            return 0; /* Expected second length octet missing. */
-        }
-      else if (c == 255)
-        {
-          if (len < 4)
-            return 0; /* Expected length octets missing */
-        }
-    }
-  else /* Old style CTB.  */
-    {
-      pkttype = (ctb>>2)&0xf;
-      lenbytes = ((ctb&3)==3)? 0 : (1<<(ctb & 3));
-      if (len < lenbytes)
-        return 0; /* Not enough length bytes.  */
-    }
-
-  return (pkttype == 8);
-}
-
-
-/*
- * Check if the file is compressed, by peeking the iobuf.  You need to
- * pass the iobuf with INP.  Returns true if the buffer seems to be
- * compressed.
- */
-int
-is_file_compressed (iobuf_t inp)
-{
-  int i;
-  char buf[32];
-  int buflen;
-
-  struct magic_compress_s
-  {
-    byte len;
-    byte extchk;
-    byte magic[5];
-  } magic[] =
-      {
-       { 3, 0, { 0x42, 0x5a, 0x68, 0x00 } }, /* bzip2 */
-       { 3, 0, { 0x1f, 0x8b, 0x08, 0x00 } }, /* gzip */
-       { 4, 0, { 0x50, 0x4b, 0x03, 0x04 } }, /* (pk)zip */
-       { 5, 0, { '%', 'P', 'D', 'F', '-'} }, /* PDF */
-       { 4, 1, { 0xff, 0xd8, 0xff, 0xe0 } }, /* Maybe JFIF */
-       { 5, 2, { 0x89, 'P','N','G', 0x0d} }  /* Likely PNG */
-  };
-
-  if (!inp)
-    return 0;
-
-  for ( ; inp->chain; inp = inp->chain )
-    ;
-
-  buflen = iobuf_ioctl (inp, IOBUF_IOCTL_PEEK, sizeof buf, buf);
-  if (buflen < 0)
-    {
-      buflen = 0;
-      log_debug ("peeking at input failed\n");
-    }
-
-  if ( buflen < 6 )
-    {
-      return 0;  /* Too short to check - assume uncompressed.  */
-    }
-
-  for ( i = 0; i < DIM (magic); i++ )
-    {
-      if (!memcmp( buf, magic[i].magic, magic[i].len))
-        {
-          switch (magic[i].extchk)
-            {
-            case 0:
-              return 1; /* Is compressed.  */
-            case 1:
-              if (buflen > 11 && !memcmp (buf + 6, "JFIF", 5))
-                return 1; /* JFIF: this likely a compressed JPEG.  */
-              break;
-            case 2:
-              if (buflen > 8
-                  && buf[5] == 0x0a && buf[6] == 0x1a && buf[7] == 0x0a)
-                return 1; /* This is a PNG.  */
-              break;
-            default:
-              break;
-            }
-        }
-    }
-
-  if (buflen >= 6 && is_openpgp_compressed_packet (buf, buflen))
-    {
-      return 1; /* Already compressed.  */
-    }
-
-  return 0;  /* Not detected as compressed.  */
 }
