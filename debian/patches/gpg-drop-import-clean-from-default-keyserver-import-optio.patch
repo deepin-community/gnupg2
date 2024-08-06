@@ -21,29 +21,29 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  2 files changed, 2 insertions(+), 3 deletions(-)
 
 diff --git a/doc/gpg.texi b/doc/gpg.texi
-index 9fdabc7..76e95ac 100644
+index d1142a3..b658253 100644
 --- a/doc/gpg.texi
 +++ b/doc/gpg.texi
-@@ -2114,7 +2114,7 @@ are available for all keyserver types, some common options are:
+@@ -2048,7 +2048,7 @@ are available for all keyserver types, some common options are:
  
  @end table
  
 -The default list of options is: "self-sigs-only, import-clean,
 +The default list of options is: "self-sigs-only,
- repair-keys, repair-pks-subkey-bug, export-attributes". However, if
+ repair-keys, repair-pks-subkey-bug, export-attributes,
+ honor-pka-record". However, if
  the actual used source is an LDAP server "no-self-sigs-only" is
- assumed unless "self-sigs-only" has been explicitly configured.
 diff --git a/g10/gpg.c b/g10/gpg.c
-index b759cc1..8fa4a74 100644
+index 2296351..a75d0b8 100644
 --- a/g10/gpg.c
 +++ b/g10/gpg.c
-@@ -2461,8 +2461,7 @@ main (int argc, char **argv)
+@@ -2414,8 +2414,7 @@ main (int argc, char **argv)
+     opt.export_options = EXPORT_ATTRIBUTES;
+     opt.keyserver_options.import_options = (IMPORT_REPAIR_KEYS
  					    | IMPORT_REPAIR_PKS_SUBKEY_BUG
-                                             | IMPORT_SELF_SIGS_ONLY
-                                             | IMPORT_COLLAPSE_UIDS
--                                            | IMPORT_COLLAPSE_SUBKEYS
+-                                            | IMPORT_SELF_SIGS_ONLY
 -                                            | IMPORT_CLEAN);
-+                                            | IMPORT_COLLAPSE_SUBKEYS);
++                                            | IMPORT_SELF_SIGS_ONLY);
      opt.keyserver_options.export_options = EXPORT_ATTRIBUTES;
-     opt.keyserver_options.options = 0;
+     opt.keyserver_options.options = KEYSERVER_HONOR_PKA_RECORD;
      opt.verify_options = (LIST_SHOW_UID_VALIDITY

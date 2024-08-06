@@ -23,13 +23,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <assert.h>
 #include <npth.h>
 
 #include "agent.h"
-
-/* The default TTL for DATA items.  This has no configure
- * option because it is expected that clients provide a TTL.  */
-#define DEF_CACHE_TTL_DATA  (10 * 60)  /* 10 minutes.  */
 
 /* The size of the encryption key in bytes.  */
 #define ENCRYPTION_KEYSIZE (128/8)
@@ -53,12 +50,11 @@ struct secret_data_s {
   char data[1];  /* A string.  */
 };
 
-/* The cache object.  */
 typedef struct cache_item_s *ITEM;
 struct cache_item_s {
   ITEM next;
   time_t created;
-  time_t accessed;  /* Not updated for CACHE_MODE_DATA */
+  time_t accessed;
   int ttl;  /* max. lifetime given in seconds, -1 one means infinite */
   struct secret_data_s *pw;
   cache_mode_t cache_mode;
@@ -204,9 +200,7 @@ housekeeping (void)
   /* First expire the actual data */
   for (r=thecache; r; r = r->next)
     {
-      if (r->cache_mode == CACHE_MODE_PIN)
-        ; /* Don't let it expire - scdaemon explicitly flushes them.  */
-      else if (r->pw && r->ttl >= 0 && r->accessed + r->ttl < current)
+      if (r->pw && r->ttl >= 0 && r->accessed + r->ttl < current)
         {
           if (DBG_CACHE)
             log_debug ("  expired '%s'.%d (%ds after last access)\n",
@@ -217,19 +211,14 @@ housekeeping (void)
         }
     }
 
-  /* Second, make sure that we also remove them based on the created
-   * stamp so that the user has to enter it from time to time.  We
-   * don't do this for data items which are used to storage secrets in
-   * meory and are not user entered passphrases etc.  */
+  /* Second, make sure that we also remove them based on the created stamp so
+     that the user has to enter it from time to time. */
   for (r=thecache; r; r = r->next)
     {
       unsigned long maxttl;
 
       switch (r->cache_mode)
         {
-        case CACHE_MODE_DATA:
-        case CACHE_MODE_PIN:
-          continue;  /* No MAX TTL here.  */
         case CACHE_MODE_SSH: maxttl = opt.max_cache_ttl_ssh; break;
         default: maxttl = opt.max_cache_ttl; break;
         }
@@ -291,13 +280,13 @@ agent_cache_housekeeping (void)
 
 
 void
-agent_flush_cache (int pincache_only)
+agent_flush_cache (void)
 {
   ITEM r;
   int res;
 
   if (DBG_CACHE)
-    log_debug ("agent_flush_cache%s\n", pincache_only?" (pincache only)":"");
+    log_debug ("agent_flush_cache\n");
 
   res = npth_mutex_lock (&cache_lock);
   if (res)
@@ -305,8 +294,6 @@ agent_flush_cache (int pincache_only)
 
   for (r=thecache; r; r = r->next)
     {
-      if (pincache_only && r->cache_mode != CACHE_MODE_PIN)
-        continue;
       if (r->pw)
         {
           if (DBG_CACHE)
@@ -328,11 +315,8 @@ static int
 cache_mode_equal (cache_mode_t a, cache_mode_t b)
 {
   /* CACHE_MODE_ANY matches any mode other than CACHE_MODE_IGNORE.  */
-  return ((a == CACHE_MODE_ANY
-           && !(b == CACHE_MODE_IGNORE || b == CACHE_MODE_DATA))
-          || (b == CACHE_MODE_ANY
-              && !(a == CACHE_MODE_IGNORE || a == CACHE_MODE_DATA))
-          || a == b);
+  return ((a == CACHE_MODE_ANY && b != CACHE_MODE_IGNORE)
+          || (b == CACHE_MODE_ANY && a != CACHE_MODE_IGNORE) || a == b);
 }
 
 
@@ -365,8 +349,6 @@ agent_put_cache (ctrl_t ctrl, const char *key, cache_mode_t cache_mode,
       switch(cache_mode)
         {
         case CACHE_MODE_SSH: ttl = opt.def_cache_ttl_ssh; break;
-        case CACHE_MODE_DATA: ttl = DEF_CACHE_TTL_DATA; break;
-        case CACHE_MODE_PIN: ttl = -1; break;
         default: ttl = opt.def_cache_ttl; break;
         }
     }
@@ -375,24 +357,11 @@ agent_put_cache (ctrl_t ctrl, const char *key, cache_mode_t cache_mode,
 
   for (r=thecache; r; r = r->next)
     {
-      if (cache_mode == CACHE_MODE_PIN && data)
-        {
-          /* PIN mode is special because it is only used by scdaemon.  */
-          if (!strcmp (r->key, key))
-            break;
-        }
-      else if (cache_mode == CACHE_MODE_PIN)
-        {
-          /* FIXME: Parse the structure of the key and delete several
-           * cached PINS.  */
-          if (!strcmp (r->key, key))
-            break;
-        }
-      else if (((cache_mode != CACHE_MODE_USER
-                 && cache_mode != CACHE_MODE_NONCE)
-                || cache_mode_equal (r->cache_mode, cache_mode))
-               && r->restricted == restricted
-               && !strcmp (r->key, key))
+      if (((cache_mode != CACHE_MODE_USER
+            && cache_mode != CACHE_MODE_NONCE)
+           || cache_mode_equal (r->cache_mode, cache_mode))
+          && r->restricted == restricted
+          && !strcmp (r->key, key))
         break;
     }
   if (r) /* Replace.  */
@@ -446,8 +415,9 @@ agent_put_cache (ctrl_t ctrl, const char *key, cache_mode_t cache_mode,
 }
 
 
-/* Try to find an item in the cache.  Returns NULL if not found or an
- * malloced string with the value.  */
+/* Try to find an item in the cache.  Note that we currently don't
+   make use of CACHE_MODE except for CACHE_MODE_NONCE and
+   CACHE_MODE_USER.  */
 char *
 agent_get_cache (ctrl_t ctrl, const char *key, cache_mode_t cache_mode)
 {
@@ -457,7 +427,6 @@ agent_get_cache (ctrl_t ctrl, const char *key, cache_mode_t cache_mode)
   int res;
   int last_stored = 0;
   int restricted = ctrl? ctrl->restricted : -1;
-  int yes;
 
   if (cache_mode == CACHE_MODE_IGNORE)
     return NULL;
@@ -476,31 +445,21 @@ agent_get_cache (ctrl_t ctrl, const char *key, cache_mode_t cache_mode)
 
   if (DBG_CACHE)
     log_debug ("agent_get_cache '%s'.%d (mode %d)%s ...\n",
-               key, restricted, cache_mode,
+               key, ctrl->restricted, cache_mode,
                last_stored? " (stored cache key)":"");
   housekeeping ();
 
   for (r=thecache; r; r = r->next)
     {
-      if (cache_mode == CACHE_MODE_PIN)
-        yes = (r->pw && !strcmp (r->key, key));
-      else if (r->pw
-               && ((cache_mode != CACHE_MODE_USER
-                    && cache_mode != CACHE_MODE_NONCE)
-                   || cache_mode_equal (r->cache_mode, cache_mode))
-               && r->restricted == restricted
-               && !strcmp (r->key, key))
-        yes = 1;
-      else
-        yes = 0;
-
-      if (yes)
+      if (r->pw
+          && ((cache_mode != CACHE_MODE_USER
+               && cache_mode != CACHE_MODE_NONCE)
+              || cache_mode_equal (r->cache_mode, cache_mode))
+          && r->restricted == restricted
+          && !strcmp (r->key, key))
         {
-          /* Note: To avoid races KEY may not be accessed anymore
-           * below.  Note also that we don't update the accessed time
-           * for data items.  */
-          if (r->cache_mode != CACHE_MODE_DATA)
-            r->accessed = gnupg_get_time ();
+          /* Note: To avoid races KEY may not be accessed anymore below.  */
+          r->accessed = gnupg_get_time ();
           if (DBG_CACHE)
             log_debug ("... hit\n");
           if (r->pw->totallen < 32)

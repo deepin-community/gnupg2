@@ -35,7 +35,6 @@
 
 #define NODFLG_MARK_B (1<<11)   /* Temporary mark in key listing code.  */
 
-
 /*-- keyedit.c --*/
 void keyedit_menu (ctrl_t ctrl, const char *username, strlist_t locusr,
 		   strlist_t commands, int quiet, int seckey_check );
@@ -44,7 +43,6 @@ void keyedit_quick_adduid (ctrl_t ctrl, const char *username,
                            const char *newuid);
 void keyedit_quick_addkey (ctrl_t ctrl, const char *fpr, const char *algostr,
                            const char *usagestr, const char *expirestr);
-void keyedit_quick_addadsk (ctrl_t ctrl, const char *fpr, const char *adskfpr);
 void keyedit_quick_revuid (ctrl_t ctrl, const char *username,
                            const char *uidtorev);
 void keyedit_quick_sign (ctrl_t ctrl, const char *fpr,
@@ -63,6 +61,5 @@ int keyedit_print_one_sig (ctrl_t ctrl, estream_t fp,
 			   kbnode_t node, int *inv_sigs, int *no_key,
 			   int *oth_err, int is_selfsig,
 			   int print_without_key, int extended);
-void no_usable_encr_subkeys_warning (kbnode_t keyblock);
 
 #endif	/* GNUPG_G10_KEYEDIT_H */

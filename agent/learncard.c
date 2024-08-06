@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -39,7 +40,7 @@ struct keypair_info_s
   char hexgrip[1];   /* The keygrip (i.e. a hash over the public key
                         parameters) formatted as a hex string.
                         Allocated somewhat large to also act as
-                        memory for the above ID field. */
+                        memeory for the above ID field. */
 };
 typedef struct keypair_info_s *KEYPAIR_INFO;
 
@@ -296,9 +297,12 @@ send_cert_back (ctrl_t ctrl, const char *id, void *assuan_context)
 }
 
 /* Perform the learn operation.  If ASSUAN_CONTEXT is not NULL and
-   SEND is true all new certificates are send back via Assuan.  */
+   SEND is true all new certificates are send back via Assuan.  If
+   REALLYFORCE is true a private key will be overwritten by a stub
+   key. */
 int
-agent_handle_learn (ctrl_t ctrl, int send, void *assuan_context, int force)
+agent_handle_learn (ctrl_t ctrl, int send, void *assuan_context,
+                    int force, int reallyforce)
 {
   int rc;
   struct kpinfo_cb_parm_s parm;
@@ -397,28 +401,25 @@ agent_handle_learn (ctrl_t ctrl, int send, void *assuan_context, int force)
       for (p=item->hexgrip, i=0; i < 20; p += 2, i++)
         grip[i] = xtoi_2 (p);
 
-      if (!force && !agent_key_available (ctrl, grip))
+      if (!force && !agent_key_available (grip))
         continue; /* The key is already available. */
 
       /* Unknown key - store it. */
-      rc = agent_card_readkey (ctrl, item->id, &pubkey, NULL);
+      rc = agent_card_readkey (ctrl, item->id, &pubkey);
       if (rc)
         {
           log_debug ("agent_card_readkey failed: %s\n", gpg_strerror (rc));
           goto leave;
         }
 
-      if (!ctrl->ephemeral_mode)
-        {
-          char *dispserialno;
+      {
+        char *dispserialno;
 
-          agent_card_getattr (ctrl, "$DISPSERIALNO", &dispserialno,
-                              item->hexgrip);
-          rc = agent_write_shadow_key (ctrl,
-                                       grip, serialno, item->id, pubkey, force,
-                                       dispserialno);
-          xfree (dispserialno);
-        }
+        agent_card_getattr (ctrl, "$DISPSERIALNO", &dispserialno);
+        rc = agent_write_shadow_key (grip, serialno, item->id, pubkey,
+                                     force, reallyforce, dispserialno);
+        xfree (dispserialno);
+      }
       xfree (pubkey);
       if (rc)
         goto leave;

@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -85,7 +86,7 @@ store_mb_lines (membuf_t *mb, membuf_t *lines)
 }
 
 
-/* Check whether we have a key for the key with HEXGRIP.  Returns NULL
+/* Chech whether we have a key for the key with HEXGRIP.  Returns NULL
    if not or a string describing the type of the key (RSA, ELG, DSA,
    etc..).  */
 static const char *

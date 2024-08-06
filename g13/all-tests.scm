@@ -26,21 +26,10 @@
  (define (parse filename key)
    (parse-makefile-expand filename expander key))
 
- (define g13-enabled?
-   ;; Parse the variable "g13" in the Makefile
-   (not (null?
-         (parse-makefile-expand (in-objdir "Makefile")
-                                (lambda (filename port key) (parse-makefile port key))
-			        "g13"))))
- (if g13-enabled?
-     (map (lambda (name)
-            (let ((name-ext (string-append name (getenv "EXEEXT"))))
-	      (test::binary #f
-		            (path-join "g13" name-ext)
-		            (path-join (getenv "objdir") "g13" name-ext))))
-          (parse-makefile-expand (in-srcdir "g13" "Makefile.am")
-			         (lambda (filename port key) (parse-makefile port key))
-			         "module_tests"))
-     (begin
-       (info "SKIP: g13")
-       '())))
+ (map (lambda (name)
+	(test::binary #f
+		      (path-join "g13" name)
+		      (path-join (getenv "objdir") "g13" name)))
+      (parse-makefile-expand (in-srcdir "g13" "Makefile.am")
+			     (lambda (filename port key) (parse-makefile port key))
+			     "module_tests")))

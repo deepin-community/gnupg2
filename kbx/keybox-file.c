@@ -156,7 +156,7 @@ _keybox_write_blob (KEYBOXBLOB blob, estream_t fp, FILE *outfp)
 
 
 /* Write a fresh header type blob. */
-gpg_error_t
+int
 _keybox_write_header_blob (estream_t fp, int for_openpgp)
 {
   unsigned char image[32];

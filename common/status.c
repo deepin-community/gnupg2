@@ -34,10 +34,6 @@
 #include "status.h"
 #include "status-codes.h"
 
-/* The stream to output the status information.  Output is disabled if
- * this is NULL.  */
-static estream_t statusfp;
-
 
 /* Return the status string for code NO. */
 const char *
@@ -48,101 +44,6 @@ get_status_string ( int no )
     return "?";
   else
     return statusstr_msgstr + statusstr_msgidx[idx];
-}
-
-
-/* Set a global status FD.  */
-void
-gnupg_set_status_fd (int fd)
-{
-  static int last_fd = -1;
-
-  if (fd != -1 && last_fd == fd)
-    return;
-
-  if (statusfp && statusfp != es_stdout && statusfp != es_stderr)
-    es_fclose (statusfp);
-  statusfp = NULL;
-  if (fd == -1)
-    return;
-
-  if (fd == 1)
-    statusfp = es_stdout;
-  else if (fd == 2)
-    statusfp = es_stderr;
-  else
-    statusfp = es_fdopen (fd, "w");
-  if (!statusfp)
-    {
-      log_fatal ("can't open fd %d for status output: %s\n",
-                 fd, gpg_strerror (gpg_error_from_syserror ()));
-    }
-  last_fd = fd;
-}
-
-
-/* Write a status line with code NO followed by the output of the
- * printf style FORMAT.  The caller needs to make sure that LFs and
- * CRs are not printed.  */
-void
-gnupg_status_printf (int no, const char *format, ...)
-{
-  va_list arg_ptr;
-
-  if (!statusfp)
-    return;  /* Not enabled.  */
-
-  es_fputs ("[GNUPG:] ", statusfp);
-  es_fputs (get_status_string (no), statusfp);
-  if (format)
-    {
-      es_putc (' ', statusfp);
-      va_start (arg_ptr, format);
-      es_vfprintf (statusfp, format, arg_ptr);
-      va_end (arg_ptr);
-    }
-  es_putc ('\n', statusfp);
-}
-
-
-/* Write a status line with code NO followed by the remaining
- * arguments which must be a list of strings terminated by a NULL.
- * Embedded CR and LFs in the strings are C-style escaped.  All
- * strings are printed with a space as delimiter.  */
-gpg_error_t
-gnupg_status_strings (ctrl_t dummy, int no, ...)
-{
-  va_list arg_ptr;
-  const char *s;
-
-  (void)dummy;
-
-  if (!statusfp)
-    return 0;  /* Not enabled. */
-
-  va_start (arg_ptr, no);
-
-  es_fputs ("[GNUPG:] ", statusfp);
-  es_fputs (get_status_string (no), statusfp);
-  while ((s = va_arg (arg_ptr, const char*)))
-    {
-      if (*s)
-        es_putc (' ', statusfp);
-      for (; *s; s++)
-        {
-          if (*s == '\n')
-            es_fputs ("\\n", statusfp);
-          else if (*s == '\r')
-            es_fputs ("\\r", statusfp);
-          else
-            es_fputc (*(const byte *)s, statusfp);
-        }
-    }
-  es_putc ('\n', statusfp);
-  es_fflush (statusfp);
-
-  va_end (arg_ptr);
-  return 0;
 }
 
 
@@ -158,8 +59,7 @@ get_inv_recpsgnr_code (gpg_error_t err)
     case GPG_ERR_WRONG_KEY_USAGE: errstr = "3"; break;
     case GPG_ERR_CERT_REVOKED:    errstr = "4"; break;
     case GPG_ERR_CERT_EXPIRED:    errstr = "5"; break;
-    case GPG_ERR_NO_CRL_KNOWN:
-    case GPG_ERR_INV_CRL_OBJ:     errstr = "6"; break;
+    case GPG_ERR_NO_CRL_KNOWN:    errstr = "6"; break;
     case GPG_ERR_CRL_TOO_OLD:     errstr = "7"; break;
     case GPG_ERR_NO_POLICY_MATCH: errstr = "8"; break;
 

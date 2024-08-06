@@ -15,6 +15,7 @@ agent/cvt-openpgp.c
 
 common/exechelp-posix.c
 common/exechelp-w32.c
+common/exechelp-w32ce.c
 common/simple-pwquery.c
 common/sysutils.c
 common/yesno.c
@@ -25,8 +26,9 @@ common/helpfile.c
 common/gettime.c
 common/ksba-io-support.c
 common/ttyio.c
-common/comopt.c
 
+common/argparse.c
+common/logging.c
 common/utf8conv.c
 common/dotlock.c
 common/init.c
@@ -78,12 +80,9 @@ g10/tofu.c
 g10/trustdb.c
 g10/trust.c
 g10/verify.c
-g10/cipher-cfb.c
-g10/cipher-aead.c
 
 kbx/kbxutil.c
 
-scd/app-piv.c
 scd/app-p15.c
 scd/app-nks.c
 scd/app-openpgp.c
@@ -131,8 +130,3 @@ tools/gpgconf-comp.c
 tools/gpgconf.c
 tools/no-libgcrypt.c
 tools/gpg-check-pattern.c
-tools/gpg-card.c
-tools/card-misc.c
-tools/card-keys.c
-tools/card-yubikey.c
-tools/card-call-scd.c

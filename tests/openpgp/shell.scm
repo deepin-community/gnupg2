@@ -47,9 +47,7 @@
 			(pathsep-split (getenv "PATH"))))
 	#t)
 
-(if (prompt-yes-no? "Run system shell" #t)
-    ((echo "\nEnjoy your test environment. "
+(echo "\nEnjoy your test environment. "
       "Type 'exit' to exit it, it will be cleaned up after you.\n")
-     (interactive-shell))
-    ((echo "\nEnjoy the REPL.")
-     (interactive-repl (current-environment))))
+
+(interactive-shell)

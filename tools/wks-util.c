@@ -71,7 +71,7 @@ wks_set_status_fd (int fd)
 }
 
 
-/* Write a status line with code NO followed by the output of the
+/* Write a status line with code NO followed by the outout of the
  * printf style FORMAT.  The caller needs to make sure that LFs and
  * CRs are not printed.  */
 void
@@ -121,7 +121,7 @@ append_to_uidinfo_list (uidinfo_list_t *list, const char *uid, time_t created,
   strcpy (sl->uid, plainuid);
   sl->created = created;
   sl->flags = 0;
-  sl->mbox = mailbox_from_userid (plainuid, 0);
+  sl->mbox = mailbox_from_userid (plainuid);
   sl->expired = !!expired;
   sl->revoked = !!revoked;
   sl->next = NULL;
@@ -246,8 +246,7 @@ wks_get_key (estream_t *r_key, const char *fingerprint, const char *addrspec,
   ccparray_put (&ccp, "--always-trust");
   if (!binary)
     ccparray_put (&ccp, "--armor");
-  ccparray_put (&ccp, opt.realclean? "--export-options=export-realclean"
-                /* */              : "--export-options=export-clean");
+  ccparray_put (&ccp, "--export-options=export-clean");
   ccparray_put (&ccp, "--export-filter");
   ccparray_put (&ccp, filterexp);
   ccparray_put (&ccp, "--export");
@@ -893,27 +892,18 @@ wks_free_policy (policy_flags_t policy)
 }
 
 
-/* Write the content of SRC to the new file FNAME.  If FNAME is NULL
- * SRC is written to stdout. */
-gpg_error_t
-wks_write_to_file (estream_t src, const char *fname)
+/* Write the content of SRC to the new file FNAME.  */
+static gpg_error_t
+write_to_file (estream_t src, const char *fname)
 {
   gpg_error_t err;
   estream_t dst;
   char buffer[4096];
   size_t nread, written;
 
-  if (!fname)
-    {
-      dst = es_stdout;
-      es_set_binary (es_stdout);
-    }
-  else
-    {
-      dst = es_fopen (fname, "wb");
-      if (!dst)
-        return gpg_error_from_syserror ();
-    }
+  dst = es_fopen (fname, "wb");
+  if (!dst)
+    return gpg_error_from_syserror ();
 
   do
     {
@@ -928,15 +918,12 @@ wks_write_to_file (estream_t src, const char *fname)
   if (!es_feof (src) || es_ferror (src) || es_ferror (dst))
     {
       err = gpg_error_from_syserror ();
-      if (dst != es_stdout)
-        {
-          es_fclose (dst);
-          gnupg_remove (fname);
-        }
+      es_fclose (dst);
+      gnupg_remove (fname);
       return err;
     }
 
-  if (dst != es_stdout && es_fclose (dst))
+  if (es_fclose (dst))
     {
       err = gpg_error_from_syserror ();
       log_error ("error closing '%s': %s\n", fname, gpg_strerror (err));
@@ -966,7 +953,7 @@ wks_fname_from_userid (const char *userid, int hash_only,
   if (r_addrspec)
     *r_addrspec = NULL;
 
-  addrspec = mailbox_from_userid (userid, 0);
+  addrspec = mailbox_from_userid (userid);
   if (!addrspec)
     {
       if (opt.verbose || hash_only)
@@ -1168,7 +1155,7 @@ install_key_from_spec_file (const char *fname)
   char *line = NULL;
   size_t linelen = 0;
   size_t maxlen = 2048;
-  const char *fields[2];
+  char *fields[2];
   unsigned int lnr = 0;
 
   if (!fname || !strcmp (fname, ""))
@@ -1238,7 +1225,7 @@ wks_install_key_core (estream_t key, const char *addrspec)
     goto leave;
 
   /* Publish.  */
-  err = wks_write_to_file (key, huname);
+  err = write_to_file (key, huname);
   if (err)
     {
       log_error ("copying key to '%s' failed: %s\n", huname,gpg_strerror (err));
@@ -1276,7 +1263,7 @@ wks_cmd_install_key (const char *fname, const char *userid)
   if (!userid)
     return install_key_from_spec_file (fname);
 
-  addrspec = mailbox_from_userid (userid, 0);
+  addrspec = mailbox_from_userid (userid);
   if (!addrspec)
     {
       log_error ("\"%s\" is not a proper mail address\n", userid);
@@ -1285,7 +1272,8 @@ wks_cmd_install_key (const char *fname, const char *userid)
     }
 
   if (!classify_user_id (fname, &desc, 1)
-      && desc.mode == KEYDB_SEARCH_MODE_FPR)
+      && (desc.mode == KEYDB_SEARCH_MODE_FPR
+          || desc.mode == KEYDB_SEARCH_MODE_FPR20))
     {
       /* FNAME looks like a fingerprint.  Get the key from the
        * standard keyring.  */

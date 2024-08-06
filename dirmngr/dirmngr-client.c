@@ -33,6 +33,7 @@
 #include <assuan.h>
 
 #include "../common/logging.h"
+#include "../common/argparse.h"
 #include "../common/stringhelp.h"
 #include "../common/mischelp.h"
 #include "../common/strlist.h"
@@ -65,7 +66,7 @@ enum
 
 
 /* The list of options as used by the argparse.c code.  */
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
   { oVerbose,  "verbose",   0, N_("verbose") },
   { oQuiet,    "quiet",     0, N_("be somewhat more quiet") },
   { oOCSP,     "ocsp",      0, N_("use OCSP instead of CRLs") },
@@ -188,7 +189,7 @@ my_strusage (int level)
 int
 main (int argc, char **argv )
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   assuan_context_t ctx;
   gpg_error_t err;
   unsigned char *certbuf;
@@ -201,12 +202,12 @@ main (int argc, char **argv )
   int cmd_squid_mode = 0;
 
   early_system_init ();
-  gpgrt_set_strusage (my_strusage);
+  set_strusage (my_strusage);
   log_set_prefix ("dirmngr-client",
                   GPGRT_LOG_WITH_PREFIX);
-  /* Register our string mapper with gpgrt.  Usually done in
-   * init_common_subsystems, but we don't need that here.  */
-  gpgrt_set_fixed_string_mapper (map_static_macro_string);
+  /* Register our string mapper.  Usually done in
+   * init_common_subsystems, but we don't use that here.  */
+  gnupg_set_fixed_string_mapper (map_static_macro_string);
 
   /* For W32 we need to initialize the socket subsystem.  Because we
      don't use Pth we need to do this explicit. */
@@ -229,7 +230,7 @@ main (int argc, char **argv )
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gpgrt_argparse (NULL, &pargs, opts))
+  while (gnupg_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -255,7 +256,7 @@ main (int argc, char **argv )
         default : pargs.err = ARGPARSE_PRINT_ERROR; break;
 	}
     }
-  gpgrt_argparse (NULL, &pargs, NULL);
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (log_get_errorcount (0))
     exit (2);
@@ -265,14 +266,14 @@ main (int argc, char **argv )
   else if (cmd_lookup || cmd_loadcrl)
     {
       if (!argc)
-        gpgrt_usage (1);
+        usage (1);
       err = 0;
     }
   else if (cmd_squid_mode)
     {
       err = 0;
       if (argc)
-        gpgrt_usage (1);
+        usage (1);
     }
   else if (!argc)
     {
@@ -291,7 +292,7 @@ main (int argc, char **argv )
   else
     {
       err = 0;
-      gpgrt_usage (1);
+      usage (1);
     }
 
   if (log_get_errorcount (0))
@@ -459,10 +460,9 @@ data_cb (void *opaque, const void *buffer, size_t length)
    returned in an alloced buffer whose address will be returned in
    RBUF and its length in RBUFLEN.  */
 static gpg_error_t
-read_pem_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen,
-                      int no_errmsg)
+read_pem_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen)
 {
-  estream_t fp;
+  FILE *fp;
   int c;
   int pos;
   int value;
@@ -476,16 +476,16 @@ read_pem_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen,
 
   init_asctobin ();
 
-  fp = fname? es_fopen (fname, "r") : es_stdin;
+  fp = fname? gnupg_fopen (fname, "r") : stdin;
   if (!fp)
-    return gpg_error_from_syserror ();
+    return gpg_error_from_errno (errno);
 
   pos = 0;
   value = 0;
   bufsize = 8192;
   buf = xmalloc (bufsize);
   buflen = 0;
-  while ((c=es_getc (fp)) != EOF)
+  while ((c=getc (fp)) != EOF)
     {
       int escaped_c = 0;
 
@@ -494,10 +494,10 @@ read_pem_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen,
           if (c == '%')
             {
               char tmp[2];
-              if ((c = es_getc(fp)) == EOF)
+              if ((c = getc(fp)) == EOF)
                 break;
               tmp[0] = c;
-              if ((c = es_getc(fp)) == EOF)
+              if ((c = getc(fp)) == EOF)
                 break;
               tmp[1] = c;
               if (!hexdigitp (tmp) || !hexdigitp (tmp+1))
@@ -505,7 +505,7 @@ read_pem_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen,
                   log_error ("invalid percent escape sequence\n");
                   state = s_idle; /* Force an error. */
                   /* Skip to end of line.  */
-                  while ( (c=es_getc (fp)) != EOF && c != '\n')
+                  while ( (c=getc (fp)) != EOF && c != '\n')
                     ;
                   goto ready;
                 }
@@ -594,7 +594,7 @@ read_pem_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen,
     }
  ready:
   if (fname)
-    es_fclose (fp);
+    fclose (fp);
 
   if (state == s_init && c == EOF)
     {
@@ -603,8 +603,7 @@ read_pem_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen,
     }
   else if (state != s_waitend)
     {
-      if (!no_errmsg)
-        log_error ("no certificate or invalid encoded\n");
+      log_error ("no certificate or invalid encoded\n");
       xfree (buf);
       return gpg_error (GPG_ERR_INV_ARMOR);
     }
@@ -622,27 +621,25 @@ static gpg_error_t
 read_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen)
 {
   gpg_error_t err;
-  estream_t fp;
+  FILE *fp;
   unsigned char *buf;
   size_t nread, bufsize, buflen;
 
   if (opt.pem)
-    return read_pem_certificate (fname, rbuf, rbuflen, 0);
+    return read_pem_certificate (fname, rbuf, rbuflen);
   else if (fname)
     {
       /* A filename has been given.  Let's just assume it is in PEM
          format and decode it, and fall back to interpreting it as
          binary certificate if that fails.  */
-      err = read_pem_certificate (fname, rbuf, rbuflen, 1);
+      err = read_pem_certificate (fname, rbuf, rbuflen);
       if (! err)
         return 0;
-      /* Clear the error count to try as binary certificate.  */
-      log_get_errorcount (1);
     }
 
-  fp = fname? es_fopen (fname, "rb") : es_stdin;
+  fp = fname? gnupg_fopen (fname, "rb") : stdin;
   if (!fp)
-    return gpg_error_from_syserror ();
+    return gpg_error_from_errno (errno);
 
   buf = NULL;
   bufsize = buflen = 0;
@@ -655,13 +652,13 @@ read_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen)
       else
         buf = xrealloc (buf, bufsize);
 
-      nread = es_fread (buf+buflen, 1, NCHUNK, fp);
-      if (nread < NCHUNK && es_ferror (fp))
+      nread = fread (buf+buflen, 1, NCHUNK, fp);
+      if (nread < NCHUNK && ferror (fp))
         {
-          err = gpg_error_from_syserror ();
+          err = gpg_error_from_errno (errno);
           xfree (buf);
           if (fname)
-            es_fclose (fp);
+            fclose (fp);
           return err;
         }
       buflen += nread;
@@ -669,7 +666,7 @@ read_certificate (const char *fname, unsigned char **rbuf, size_t *rbuflen)
   while (nread == NCHUNK);
 #undef NCHUNK
   if (fname)
-    es_fclose (fp);
+    fclose (fp);
   *rbuf = buf;
   *rbuflen = buflen;
   return 0;
@@ -907,7 +904,7 @@ squid_loop_body (assuan_context_t ctx)
   unsigned char *certbuf;
   size_t certbuflen = 0;
 
-  err = read_pem_certificate (NULL, &certbuf, &certbuflen, 0);
+  err = read_pem_certificate (NULL, &certbuf, &certbuflen);
   if (gpg_err_code (err) == GPG_ERR_EOF)
     return err;
   if (err)

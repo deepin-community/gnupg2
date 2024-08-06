@@ -19,7 +19,6 @@
  */
 
 #include <config.h>
-
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -33,6 +32,9 @@
 #endif
 #ifdef HAVE_ZIP
 # include <zlib.h>
+#endif
+#if defined(__riscos__) && defined(USE_ZLIBRISCOS)
+# include "zlib-riscos.h"
 #endif
 
 #define INCLUDED_BY_MAIN_MODULE 1
@@ -65,7 +67,7 @@ enum cmd_and_opt_values {
 };
 
 
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
 
     { 301, NULL, 0, "@Options:\n " },
 
@@ -112,22 +114,19 @@ my_strusage (int level)
 int
 main (int argc, char **argv)
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
 
 #ifdef HAVE_DOSISH_SYSTEM
   setmode( fileno(stdin), O_BINARY );
   setmode( fileno(stdout), O_BINARY );
 #endif
   log_set_prefix ("gpgsplit", GPGRT_LOG_WITH_PREFIX);
-  gpgrt_set_strusage (my_strusage);
-  /* Register our string mapper with gpgrt.  Usually done in
-   * init_common_subsystems, but we don't need that here.  */
-  gpgrt_set_fixed_string_mapper (map_static_macro_string);
+  set_strusage (my_strusage);
 
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gpgrt_argparse (NULL, &pargs, opts))
+  while (gnupg_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -136,10 +135,10 @@ main (int argc, char **argv)
         case oUncompress: opt_uncompress = 1; break;
         case oSecretToPublic: opt_secret_to_public = 1; break;
         case oNoSplit: opt_no_split = 1; break;
-        default : pargs.err = 2; break;
+        default : pargs.err = ARGPARSE_PRINT_ERROR; break;
 	}
     }
-  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (log_get_errorcount(0))
     g10_exit (2);
@@ -545,13 +544,19 @@ write_part (FILE *fpin, unsigned long pktlen,
   unsigned char *p;
   const char *outname = create_filename (pkttype);
 
+#if defined(__riscos__) && defined(USE_ZLIBRISCOS)
+  static int initialized = 0;
+
+  if (!initialized)
+      initialized = riscos_load_module("ZLib", zlib_path, 1);
+#endif
   if (opt_no_split)
     fpout = stdout;
   else
     {
       if (opt_verbose)
         log_info ("writing '%s'\n", outname);
-      fpout = fopen (outname, "wb");
+      fpout = gnupg_fopen (outname, "wb");
       if (!fpout)
         {
           log_error ("error creating '%s': %s\n", outname, strerror(errno));
@@ -573,10 +578,7 @@ write_part (FILE *fpin, unsigned long pktlen,
         {
           c = getc (fpin);
           if (c == EOF)
-            {
-              xfree (blob);
-              goto read_error;
-            }
+            goto read_error;
           blob[i] = c;
         }
       len = public_key_length (blob, pktlen);
@@ -588,30 +590,20 @@ write_part (FILE *fpin, unsigned long pktlen,
       if ( (hdr[0] & 0x40) )
         {
           if (write_new_header (fpout, pkttype, len))
-            {
-              xfree (blob);
-              goto write_error;
-            }
+            goto write_error;
         }
       else
         {
           if (write_old_header (fpout, pkttype, len))
-            {
-              xfree (blob);
-              goto write_error;
-            }
+            goto write_error;
         }
 
       for (i=0; i < len; i++)
         {
           if ( putc (blob[i], fpout) == EOF )
-            {
-              xfree (blob);
-              goto write_error;
-            }
+            goto write_error;
         }
 
-      xfree (blob);
       goto ready;
     }
 
@@ -885,7 +877,7 @@ split_packets (const char *fname)
       fp = stdin;
       fname = "-";
     }
-  else if ( !(fp = fopen (fname,"rb")) )
+  else if ( !(fp = gnupg_fopen (fname,"rb")) )
     {
       log_error ("can't open '%s': %s\n", fname, strerror (errno));
       return;

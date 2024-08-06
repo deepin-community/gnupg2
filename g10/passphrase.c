@@ -48,13 +48,63 @@ static char *next_pw = NULL;
 static char *last_pw = NULL;
 
 
+
+/* Pack an s2k iteration count into the form specified in 2440.  If
+   we're in between valid values, round up.  With value 0 return the
+   old default.  */
+unsigned char
+encode_s2k_iterations (int iterations)
+{
+  gpg_error_t err;
+  unsigned char c=0;
+  unsigned char result;
+  unsigned int count;
+
+  if (!iterations)
+    {
+      unsigned long mycnt;
+
+      /* Ask the gpg-agent for a useful iteration count.  */
+      err = agent_get_s2k_count (&mycnt);
+      if (err || mycnt < 65536)
+        {
+          /* Don't print an error if an older agent is used.  */
+          if (err && gpg_err_code (err) != GPG_ERR_ASS_PARAMETER)
+            log_error (_("problem with the agent: %s\n"), gpg_strerror (err));
+          /* Default to 65536 which we used up to 2.0.13.  */
+          return 96;
+        }
+      else if (mycnt >= 65011712)
+        return 255; /* Largest possible value.  */
+      else
+        return encode_s2k_iterations ((int)mycnt);
+    }
+
+  if (iterations <= 1024)
+    return 0;  /* Command line arg compatibility.  */
+
+  if (iterations >= 65011712)
+    return 255;
+
+  /* Need count to be in the range 16-31 */
+  for (count=iterations>>6; count>=32; count>>=1)
+    c++;
+
+  result = (c<<4)|(count-16);
+
+  if (S2K_DECODE_COUNT(result) < iterations)
+    result++;
+
+  return result;
+}
+
+
 int
-have_static_passphrase (void)
+have_static_passphrase()
 {
   return (!!fd_passwd
           && (opt.batch || opt.pinentry_mode == PINENTRY_MODE_LOOPBACK));
 }
-
 
 /* Return a static passphrase.  The returned value is only valid as
    long as no other passphrase related function is called.  NULL may
@@ -89,7 +139,7 @@ set_next_passphrase( const char *s )
  * the caller must free the result.  May return NULL:
  */
 char *
-get_last_passphrase (void)
+get_last_passphrase()
 {
   char *p = last_pw;
   last_pw = NULL;
@@ -271,8 +321,9 @@ passphrase_clear_cache (const char *cacheid)
  * Returns NULL if the user canceled the passphrase entry and if
  * CANCELED is not NULL, sets it to true.
  *
- * If CREATE is true a new passphrase will be created.  If NOCACHE is
+ * If CREATE is true a new passphrase sll be created.  If NOCACHE is
  * true the symmetric key caching will not be used.
+ *
  * FLAG bits are:
  *   GETPASSWORD_FLAG_SYMDECRYPT := for symmetric decryption
  */
@@ -318,7 +369,7 @@ passphrase_to_dek (int cipher_algo, STRING2KEY *s2k,
              call out to gpg-agent and that should not be done during
              option processing in main().  */
           if (!opt.s2k_count)
-            opt.s2k_count = encode_s2k_iterations (agent_get_s2k_count ());
+            opt.s2k_count = encode_s2k_iterations (0);
           s2k->count = opt.s2k_count;
         }
     }
@@ -459,23 +510,12 @@ gpg_format_keydesc (ctrl_t ctrl, PKT_public_key *pk, int mode, int escaped)
   const char *trailer = "";
   int is_subkey;
 
-  if (mode == FORMAT_KEYDESC_KEYGRIP)
-    {
-      is_subkey = 0;
-      algo_name = NULL;
-      timestr = NULL;
-      uid = NULL;
-    }
-  else
-    {
-      is_subkey = (pk->main_keyid[0] && pk->main_keyid[1]
-                   && pk->keyid[0] != pk->main_keyid[0]
-                   && pk->keyid[1] != pk->main_keyid[1]);
-      algo_name = openpgp_pk_algo_name (pk->pubkey_algo);
-      timestr = strtimestamp (pk->timestamp);
-      uid = get_user_id (ctrl, is_subkey? pk->main_keyid:pk->keyid,
-                         &uidlen, NULL);
-    }
+  is_subkey = (pk->main_keyid[0] && pk->main_keyid[1]
+               && pk->keyid[0] != pk->main_keyid[0]
+               && pk->keyid[1] != pk->main_keyid[1]);
+  algo_name = openpgp_pk_algo_name (pk->pubkey_algo);
+  timestr = strtimestamp (pk->timestamp);
+  uid = get_user_id (ctrl, is_subkey? pk->main_keyid:pk->keyid, &uidlen, NULL);
 
   orig_codeset = i18n_switchto_utf8 ();
 
@@ -511,30 +551,20 @@ gpg_format_keydesc (ctrl_t ctrl, PKT_public_key *pk, int mode, int escaped)
                    " OpenPGP secret key:");
       trailer = "?";
       break;
-    case FORMAT_KEYDESC_KEYGRIP:
-      prompt = _("Please enter the passphrase to export the"
-                 " secret key with keygrip:");
-      break;
     default:
       prompt = "?";
       break;
     }
 
-  if (mode == FORMAT_KEYDESC_KEYGRIP)
-    desc = xtryasprintf ("%s\n\n"
-                         "   %s\n",
-                         prompt,
-                         "<keygrip>");
-  else
-    desc = xtryasprintf (_("%s\n"
-                           "\"%.*s\"\n"
-                           "%u-bit %s key, ID %s,\n"
-                           "created %s%s.\n%s"),
-                         prompt,
-                         (int)uidlen, uid,
-                         nbits_from_pk (pk), algo_name,
-                         keystr (pk->keyid), timestr,
-                         maink?maink:"", trailer);
+  desc = xtryasprintf (_("%s\n"
+                         "\"%.*s\"\n"
+                         "%u-bit %s key, ID %s,\n"
+                         "created %s%s.\n%s"),
+                       prompt,
+                       (int)uidlen, uid,
+                       nbits_from_pk (pk), algo_name,
+                       keystr (pk->keyid), timestr,
+                       maink?maink:"", trailer);
   xfree (maink);
   xfree (uid);
 

@@ -40,10 +40,9 @@ struct
   int with_colons;
   int no_autostart;
   int add_revocs;
-  int realclean;
-  char *output;
-  char *gpg_program;
-  char *directory;
+  const char *output;
+  const char *gpg_program;
+  const char *directory;
   const char *default_from;
   strlist_t extra_headers;
 } opt;
@@ -107,7 +106,6 @@ gpg_error_t wks_send_mime (mime_maker_t mime);
 gpg_error_t wks_parse_policy (policy_flags_t flags, estream_t stream,
                               int ignore_unknown);
 void wks_free_policy (policy_flags_t policy);
-gpg_error_t wks_write_to_file (estream_t src, const char *fname);
 
 gpg_error_t wks_fname_from_userid (const char *userid, int hash_only,
                                    char **r_fname, char **r_addrspec);

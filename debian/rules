@@ -38,10 +38,11 @@ endif
 %:
 	dh $@ --with=autoreconf --builddirectory=build
 
-GPGV_UDEB_UNNEEDED = gpgtar bzip2 gpgsm scdaemon dirmngr doc tofu exec ldap gnutls sqlite libdns keyboxd
+GPGV_UDEB_UNNEEDED = gpgtar bzip2 gpgsm scdaemon dirmngr doc tofu exec ldap gnutls sqlite libdns
 
 WIN32_FLAGS=LDFLAGS="-Xlinker --no-insert-timestamp -static" CFLAGS="-g -Os" CPPFLAGS=
 
+# runs for both arch-all and arch-indep builds
 execute_after_dh_auto_configure:
 	dh_auto_configure --builddirectory=build --verbose -- \
 		--libexecdir=\$${prefix}/lib/gnupg \
@@ -50,7 +51,6 @@ execute_after_dh_auto_configure:
 		--with-agent-s2k-calibration=300 \
 		--enable-large-secmem \
 		--with-mailprog=/usr/sbin/sendmail \
-		--enable-maintainer-mode \
 		$(NODOC)
 	# win32 uses hand-written *FLAGS
 	# mkdefsinc is built with *_FOR_BUILD
@@ -60,6 +60,10 @@ execute_after_dh_auto_configure:
 	@echo 'blhc: ignore-line-regexp: .*-o gpgscm .*'
 
 override_dh_auto_configure-arch:
+	dh_auto_configure --builddirectory=build-maintainer -- \
+		--enable-maintainer-mode \
+	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x)) \
+		$(NODOC)
 	dh_auto_configure --builddirectory=build-gpgv-udeb -- \
 		$(NODOC) \
 		$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x))
@@ -67,11 +71,13 @@ override_dh_auto_configure-arch:
 override_dh_auto_configure-indep:
 	# nothing to do
 
+# needed for both arch-all and -indep builds
 execute_after_dh_auto_build:
 	dh_auto_build --builddirectory=build
 
 override_dh_auto_build-arch:
 	dh_auto_build --builddirectory=build-gpgv-udeb
+	dh_auto_build --builddirectory=build-maintainer
 	cp -a build-gpgv-udeb build-gpgv-static
 	rm -f build-gpgv-static/g10/gpgv
 	cd build-gpgv-static/g10 && $(MAKE) LDFLAGS="$$LDFLAGS $(GPGV_STATIC_HARDENING) -static" gpgv
@@ -88,9 +94,9 @@ override_dh_auto_build-indep:
 		--prefix=/usr/i686-w64-mingw32 \
 		--host i686-w64-mingw32
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) status-codes.h audit-events.h
+	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libcommon.a
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libgpgrl.a
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libsimple-pwquery.a
-	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libcommonpth.a
 	cd build-gpgv-win32/kbx && $(WIN32_FLAGS) $(MAKE) libkeybox.a
 	cd build-gpgv-win32/regexp && $(WIN32_FLAGS) $(MAKE) _unicode_mapping.c
 	cd build-gpgv-win32/regexp && $(WIN32_FLAGS) $(MAKE) libregexp.a
@@ -105,12 +111,6 @@ override_dh_shlibdeps:
 # Make ldap a recommends rather than a hard dependency.
 	dpkg-shlibdeps -Tdebian/dirmngr.substvars -dRecommends debian/dirmngr/usr/lib/gnupg/dirmngr_ldap -dDepends debian/dirmngr/usr/bin/dirmngr*
 	dh_shlibdeps -Ndirmngr
-
-override_dh_installsystemduser:
-	dh_installsystemduser
-	dh_installsystemduser --name=gpg-agent-ssh
-	dh_installsystemduser --name=gpg-agent-extra
-	dh_installsystemduser --name=gpg-agent-browser
 
 execute_before_dh_autoreconf:
 	echo "Developer change history can be found in the source tarball. See NEWS for high-level changes." > ChangeLog

@@ -131,7 +131,7 @@ import_ownertrust (ctrl_t ctrl, const char *fname )
     char *p;
     size_t n, fprlen;
     unsigned int otrust;
-    byte fpr[MAX_FINGERPRINT_LEN];
+    byte fpr[20];
     int any = 0;
     int rc;
 
@@ -173,7 +173,7 @@ import_ownertrust (ctrl_t ctrl, const char *fname )
 	    continue;
 	}
 	fprlen = p - line;
-	if( fprlen != 32 && fprlen != 40 && fprlen != 64) {
+	if( fprlen != 32 && fprlen != 40 ) {
 	    log_error (_("error in '%s': %s\n"),
                        fname, _("invalid fingerprint") );
 	    continue;
@@ -185,19 +185,13 @@ import_ownertrust (ctrl_t ctrl, const char *fname )
 	}
 	if( !otrust )
 	    continue; /* no otrust defined - no need to update or insert */
-	/* Convert the ascii fingerprint to binary */
-	for(p=line, fprlen=0;
-            fprlen < MAX_FINGERPRINT_LEN && *p != ':';
-            p += 2 )
-          fpr[fprlen++] = HEXTOBIN(p[0]) * 16 + HEXTOBIN(p[1]);
-	while (fprlen < MAX_FINGERPRINT_LEN)
+	/* convert the ascii fingerprint to binary */
+	for(p=line, fprlen=0; fprlen < 20 && *p != ':'; p += 2 )
+	    fpr[fprlen++] = HEXTOBIN(p[0]) * 16 + HEXTOBIN(p[1]);
+	while (fprlen < 20)
 	    fpr[fprlen++] = 0;
 
-        /* FIXME: The intention is to save the special fpr20 as used
-         * in the trustdb here.  However, the above conversions seems
-         * not to be aware of this.  Or why does it allow up to
-         * MAX_FINGERPRINT_LEN ?  */
-	rc = tdbio_search_trust_byfpr (ctrl, fpr, 20, &rec);
+	rc = tdbio_search_trust_byfpr (ctrl, fpr, &rec);
 	if( !rc ) { /* found: update */
 	    if (rec.r.trust.ownertrust != otrust)
               {

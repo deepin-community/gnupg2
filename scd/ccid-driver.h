@@ -70,7 +70,6 @@ enum {
   VENDOR_FSIJ   = 0x234b,
   VENDOR_VASCO  = 0x1a44,
   VENDOR_NXP    = 0x1fc9,
-  VENDOR_ACR    = 0x072f
 };
 
 
@@ -78,7 +77,6 @@ enum {
 #define SCM_SCR331      0xe001
 #define SCM_SCR331DI    0x5111
 #define SCM_SCR335      0x5115
-#define SCM_SCR3310     0x5116    /* @MAXX Basic */
 #define SCM_SCR3320     0x5117
 #define SCM_SPR532      0xe003    /* Also used succeeding model SPR332. */
 #define CHERRY_ST2000   0x003e
@@ -89,7 +87,6 @@ enum {
 #define VEGA_ALPHA      0x0008
 #define CYBERJACK_GO    0x0504
 #define CRYPTOUCAN      0x81e6
-#define ACR_122U        0x2200    /* NFC Reader */
 
 #endif /*CCID_DRIVER_INCLUDE_USB_IDS*/
 
@@ -118,8 +115,6 @@ enum {
 #define CCID_DRIVER_ERR_USB_BUSY       0x10026
 #define CCID_DRIVER_ERR_USB_TIMEOUT    0x10027
 #define CCID_DRIVER_ERR_USB_OVERFLOW   0x10028
-#define CCID_DRIVER_ERR_UI_CANCELLED   0x10030
-#define CCID_DRIVER_ERR_UI_TIMEOUT     0x10031
 
 struct ccid_driver_s;
 typedef struct ccid_driver_s *ccid_driver_t;

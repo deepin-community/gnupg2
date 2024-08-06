@@ -147,20 +147,19 @@ noinst_PROGRAMS = $(am__EXEEXT_2) $(am__EXEEXT_3) $(am__EXEEXT_4)
 @GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
 @GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-@HAVE_W32_SYSTEM_TRUE@am__append_9 = -lwinhttp -lsecurity
-@USE_LIBDNS_TRUE@am__append_10 = dns.c dns.h
-@USE_LDAP_TRUE@am__append_11 = ldapserver.h ldapserver.c ldap.c \
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+@HAVE_W32_SYSTEM_TRUE@am__append_8 = -lwinhttp -lsecurity
+@USE_LIBDNS_TRUE@am__append_9 = dns.c dns.h
+@USE_LDAP_TRUE@am__append_10 = ldapserver.h ldapserver.c ldap.c w32-ldap-help.h \
 @USE_LDAP_TRUE@                   ldap-wrapper.h ldap-parse-uri.c ldap-parse-uri.h \
 @USE_LDAP_TRUE@                   ldap-misc.c ldap-misc.h \
 @USE_LDAP_TRUE@                   ks-engine-ldap.c $(ldap_url) ldap-wrapper.c
 
-@USE_LDAP_TRUE@am__append_12 = $(ldaplibs) $(LBER_LIBS)
-@USE_LIBDNS_TRUE@am__append_13 = dns.c dns.h
-@USE_LDAP_TRUE@am__append_14 = t-ldap-parse-uri t-ldap-misc
+@USE_LDAP_TRUE@am__append_11 = $(ldaplibs) $(LBER_LIBS)
+@USE_LIBDNS_TRUE@am__append_12 = dns.c dns.h
+@USE_LDAP_TRUE@am__append_13 = t-ldap-parse-uri t-ldap-misc
 subdir = dirmngr
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -174,6 +173,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -193,16 +193,16 @@ am__EXEEXT_2 = t-http-basic$(EXEEXT) $(am__EXEEXT_1)
 @MAINTAINER_MODE_TRUE@am__EXEEXT_4 = t-http$(EXEEXT)
 PROGRAMS = $(bin_PROGRAMS) $(libexec_PROGRAMS) $(noinst_PROGRAMS)
 am__dirmngr_SOURCES_DIST = dirmngr.c dirmngr.h server.c crlcache.c \
-	crlfetch.c fakecrl.c certcache.c certcache.h domaininfo.c \
-	workqueue.c loadswdb.c cdb.h cdblib.c misc.c dirmngr-err.h \
+	crlfetch.c certcache.c certcache.h domaininfo.c workqueue.c \
+	loadswdb.c cdb.h cdblib.c misc.c dirmngr-err.h \
 	dirmngr-status.h ocsp.c ocsp.h validate.c validate.h \
 	dns-stuff.c dns-stuff.h http.c http.h http-common.c \
 	http-common.h http-ntbtls.c ks-action.c ks-action.h \
 	ks-engine.h ks-engine-hkp.c ks-engine-http.c \
 	ks-engine-finger.c ks-engine-kdns.c dns.c dns.h ldapserver.h \
-	ldapserver.c ldap.c ldap-wrapper.h ldap-parse-uri.c \
-	ldap-parse-uri.h ldap-misc.c ldap-misc.h ks-engine-ldap.c \
-	ldap-url.h ldap-url.c ldap-wrapper.c
+	ldapserver.c ldap.c w32-ldap-help.h ldap-wrapper.h \
+	ldap-parse-uri.c ldap-parse-uri.h ldap-misc.c ldap-misc.h \
+	ks-engine-ldap.c ldap-url.h ldap-url.c ldap-wrapper.c
 @USE_LIBDNS_TRUE@am__objects_1 = dns.$(OBJEXT)
 @HAVE_W32_SYSTEM_TRUE@am__objects_2 = ldap-url.$(OBJEXT)
 @USE_LDAP_TRUE@am__objects_3 = ldapserver.$(OBJEXT) ldap.$(OBJEXT) \
@@ -210,11 +210,11 @@ am__dirmngr_SOURCES_DIST = dirmngr.c dirmngr.h server.c crlcache.c \
 @USE_LDAP_TRUE@	ks-engine-ldap.$(OBJEXT) $(am__objects_2) \
 @USE_LDAP_TRUE@	ldap-wrapper.$(OBJEXT)
 am_dirmngr_OBJECTS = dirmngr.$(OBJEXT) server.$(OBJEXT) \
-	crlcache.$(OBJEXT) crlfetch.$(OBJEXT) fakecrl.$(OBJEXT) \
-	certcache.$(OBJEXT) domaininfo.$(OBJEXT) workqueue.$(OBJEXT) \
-	loadswdb.$(OBJEXT) cdblib.$(OBJEXT) misc.$(OBJEXT) \
-	ocsp.$(OBJEXT) validate.$(OBJEXT) dns-stuff.$(OBJEXT) \
-	http.$(OBJEXT) http-common.$(OBJEXT) http-ntbtls.$(OBJEXT) \
+	crlcache.$(OBJEXT) crlfetch.$(OBJEXT) certcache.$(OBJEXT) \
+	domaininfo.$(OBJEXT) workqueue.$(OBJEXT) loadswdb.$(OBJEXT) \
+	cdblib.$(OBJEXT) misc.$(OBJEXT) ocsp.$(OBJEXT) \
+	validate.$(OBJEXT) dns-stuff.$(OBJEXT) http.$(OBJEXT) \
+	http-common.$(OBJEXT) http-ntbtls.$(OBJEXT) \
 	ks-action.$(OBJEXT) ks-engine-hkp.$(OBJEXT) \
 	ks-engine-http.$(OBJEXT) ks-engine-finger.$(OBJEXT) \
 	ks-engine-kdns.$(OBJEXT) $(am__objects_1) $(am__objects_3)
@@ -342,16 +342,15 @@ am__depfiles_remade = ./$(DEPDIR)/cdblib.Po ./$(DEPDIR)/certcache.Po \
 	./$(DEPDIR)/dirmngr_ldap-ldap-misc.Po \
 	./$(DEPDIR)/dirmngr_ldap-ldap-url.Po ./$(DEPDIR)/dns-stuff.Po \
 	./$(DEPDIR)/dns.Po ./$(DEPDIR)/domaininfo.Po \
-	./$(DEPDIR)/fakecrl.Po ./$(DEPDIR)/http-common.Po \
-	./$(DEPDIR)/http-ntbtls.Po ./$(DEPDIR)/http.Po \
-	./$(DEPDIR)/ks-action.Po ./$(DEPDIR)/ks-engine-finger.Po \
-	./$(DEPDIR)/ks-engine-hkp.Po ./$(DEPDIR)/ks-engine-http.Po \
-	./$(DEPDIR)/ks-engine-kdns.Po ./$(DEPDIR)/ks-engine-ldap.Po \
-	./$(DEPDIR)/ldap-misc.Po ./$(DEPDIR)/ldap-parse-uri.Po \
-	./$(DEPDIR)/ldap-url.Po ./$(DEPDIR)/ldap-wrapper.Po \
-	./$(DEPDIR)/ldap.Po ./$(DEPDIR)/ldapserver.Po \
-	./$(DEPDIR)/loadswdb.Po ./$(DEPDIR)/misc.Po \
-	./$(DEPDIR)/ocsp.Po ./$(DEPDIR)/server.Po \
+	./$(DEPDIR)/http-common.Po ./$(DEPDIR)/http-ntbtls.Po \
+	./$(DEPDIR)/http.Po ./$(DEPDIR)/ks-action.Po \
+	./$(DEPDIR)/ks-engine-finger.Po ./$(DEPDIR)/ks-engine-hkp.Po \
+	./$(DEPDIR)/ks-engine-http.Po ./$(DEPDIR)/ks-engine-kdns.Po \
+	./$(DEPDIR)/ks-engine-ldap.Po ./$(DEPDIR)/ldap-misc.Po \
+	./$(DEPDIR)/ldap-parse-uri.Po ./$(DEPDIR)/ldap-url.Po \
+	./$(DEPDIR)/ldap-wrapper.Po ./$(DEPDIR)/ldap.Po \
+	./$(DEPDIR)/ldapserver.Po ./$(DEPDIR)/loadswdb.Po \
+	./$(DEPDIR)/misc.Po ./$(DEPDIR)/ocsp.Po ./$(DEPDIR)/server.Po \
 	./$(DEPDIR)/t_dns_stuff-dns-stuff.Po \
 	./$(DEPDIR)/t_dns_stuff-dns.Po \
 	./$(DEPDIR)/t_dns_stuff-t-dns-stuff.Po \
@@ -526,11 +525,9 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
-GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -539,7 +536,6 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -567,10 +563,9 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
-LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
-LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
+LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -581,7 +576,7 @@ MKDIR_P = @MKDIR_P@
 MSGFMT = @MSGFMT@
 MSGFMT_015 = @MSGFMT_015@
 MSGMERGE = @MSGMERGE@
-NETLIBS = @NETLIBS@ $(am__append_9)
+NETLIBS = @NETLIBS@ $(am__append_8)
 NPTH_CFLAGS = @NPTH_CFLAGS@
 NPTH_CONFIG = @NPTH_CONFIG@
 NPTH_LIBS = @NPTH_LIBS@
@@ -607,14 +602,13 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
+SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
-SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-TPMSERVER = @TPMSERVER@
-TSSSTARTUP = @TSSSTARTUP@
-TSS_INCLUDE = @TSS_INCLUDE@
+SYS_SOCKET_H = @SYS_SOCKET_H@
+TAR = @TAR@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -688,8 +682,17 @@ dist_pkgdata_DATA = sks-keyservers.netCA.pem
 # platform to create source files.
 AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_1) \
 	$(am__append_2) $(am__append_3) $(am__append_4) \
-	$(am__append_5) $(am__append_6) $(am__append_7) \
-	$(am__append_8)
+	$(am__append_5) $(am__append_6) $(am__append_7)
+@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
+
+# Under Windows we use LockFileEx.  WindowsCE provides this only on
+# the WindowsMobile 6 platform and thus we need to use the coredll6
+# import library.  We also want to use a stacksize of 256k instead of
+# the 2MB which is the default with cegcc.  256k is the largest stack
+# we use with pth.
+@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
+@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
 resource_objs = 
 
 # Convenience macros
@@ -709,21 +712,20 @@ AM_CFLAGS = $(USE_C99_CFLAGS) \
 @HAVE_W32_SYSTEM_TRUE@ldap_url = ldap-url.h ldap-url.c
 noinst_HEADERS = dirmngr.h crlcache.h crlfetch.h misc.h
 dirmngr_SOURCES = dirmngr.c dirmngr.h server.c crlcache.c crlfetch.c \
-	fakecrl.c certcache.c certcache.h domaininfo.c workqueue.c \
-	loadswdb.c cdb.h cdblib.c misc.c dirmngr-err.h \
-	dirmngr-status.h ocsp.c ocsp.h validate.c validate.h \
-	dns-stuff.c dns-stuff.h http.c http.h http-common.c \
-	http-common.h http-ntbtls.c ks-action.c ks-action.h \
-	ks-engine.h ks-engine-hkp.c ks-engine-http.c \
-	ks-engine-finger.c ks-engine-kdns.c $(am__append_10) \
-	$(am__append_11)
+	certcache.c certcache.h domaininfo.c workqueue.c loadswdb.c \
+	cdb.h cdblib.c misc.c dirmngr-err.h dirmngr-status.h ocsp.c \
+	ocsp.h validate.c validate.h dns-stuff.c dns-stuff.h http.c \
+	http.h http-common.c http-common.h http-ntbtls.c ks-action.c \
+	ks-action.h ks-engine.h ks-engine-hkp.c ks-engine-http.c \
+	ks-engine-finger.c ks-engine-kdns.c $(am__append_9) \
+	$(am__append_10)
 @USE_LDAP_FALSE@ldaplibs = 
 @USE_LDAP_TRUE@ldaplibs = $(LDAPLIBS)
 dirmngr_LDADD = $(libcommonpth) $(DNSLIBS) $(LIBASSUAN_LIBS) \
 	$(KSBA_LIBS) $(NPTH_LIBS) $(NTBTLS_LIBS) $(LIBGNUTLS_LIBS) \
 	$(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV) \
-	$(NETLIBS) $(dirmngr_rc_objs) $(am__append_12)
-dirmngr_LDFLAGS = 
+	$(NETLIBS) $(dirmngr_rc_objs) $(am__append_11)
+dirmngr_LDFLAGS = $(extra_bin_ldflags)
 dirmngr_DEPENDENCIES = $(dirmngr_rc_objs)
 @USE_LDAP_TRUE@dirmngr_ldap_SOURCES = dirmngr_ldap.c ldap-misc.c ldap-misc.h $(ldap_url)
 @USE_LDAP_TRUE@dirmngr_ldap_CFLAGS = $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
@@ -742,13 +744,13 @@ dirmngr_client_LDADD = $(libcommon) \
 
 dirmngr_client_LDFLAGS = 
 dirmngr_client_DEPENDENCIES = $(dirmngr_client_rc_objs)
-t_common_src = t-support.h t-support.c $(am__append_13)
-t_common_ldadd = $(libcommon) $(LIBASSUAN_LIBS)  \
+t_common_src = t-support.h t-support.c $(am__append_12)
+t_common_ldadd = $(libcommon) $(LIBASSUAN_LIBS) \
                  $(NTBTLS_LIBS) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
                  $(LIBGNUTLS_LIBS) \
                  $(NETLIBS) $(DNSLIBS) $(LIBINTL) $(LIBICONV)
 
-module_tests = t-http-basic $(am__append_14)
+module_tests = t-http-basic $(am__append_13)
 @MAINTAINER_MODE_FALSE@module_net_tests = 
 
 # Test which need a network connections are only used in maintainer mode.
@@ -777,9 +779,9 @@ t_http_basic_CFLAGS = -DWITHOUT_NPTH=1  $(USE_C99_CFLAGS) \
                  $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS) $(KSBA_CFLAGS)
 
 t_http_basic_LDADD = $(t_common_ldadd) \
-                 $(NTBTLS_LIBS) $(KSBA_LIBS) $(LIBGCRYPT_LIBS) \
-                 $(GPG_ERROR_LIBS) \
-                 $(LIBGNUTLS_LIBS) $(DNSLIBS)
+	               $(NTBTLS_LIBS) $(KSBA_LIBS) $(LIBGCRYPT_LIBS) \
+                       $(GPG_ERROR_LIBS) \
+                       $(LIBGNUTLS_LIBS) $(DNSLIBS)
 
 t_ldap_parse_uri_SOURCES = \
 	t-ldap-parse-uri.c ldap-parse-uri.c ldap-parse-uri.h \
@@ -787,20 +789,21 @@ t_ldap_parse_uri_SOURCES = \
         $(ldap_url) $(t_common_src)
 
 t_ldap_parse_uri_CFLAGS = -DWITHOUT_NPTH=1  $(USE_C99_CFLAGS) \
-			  $(LIBGCRYPT_CFLAGS) \
-              $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS) $(KSBA_CFLAGS) \
-              $(NTBTLS_CFLAGS)
+			  $(LIBGCRYPT_CFLAGS) $(NTBTLS_CFLAGS) \
+                          $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS) $(KSBA_CFLAGS)
 
 t_ldap_parse_uri_LDADD = $(ldaplibs) $(t_common_ldadd) $(KSBA_LIBS) $(DNSLIBS)
 t_ldap_misc_SOURCES = t-ldap-misc.c ldap-misc.c ldap-misc.h $(ldap_url)
-t_ldap_misc_CFLAGS = -DWITHOUT_NPTH=1 $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
+t_ldap_misc_CFLAGS = -DWITHOUT_NPTH=1 $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) \
+                     $(NTBTLS_CFLAGS)
+
 t_ldap_misc_LDFLAGS = 
 t_ldap_misc_LDADD = $(libcommon) $(NTBTLS_LIBS) $(LIBGCRYPT_LIBS) \
                     $(LDAPLIBS) $(LBER_LIBS) $(LIBINTL) \
-		    $(KSBA_LIBS) $(GPG_ERROR_LIBS) $(LIBICONV) $(NETLIBS)
+                    $(KSBA_LIBS) $(GPG_ERROR_LIBS) $(LIBICONV) $(NETLIBS)
 
 t_dns_stuff_CFLAGS = -DWITHOUT_NPTH=1  $(USE_C99_CFLAGS) \
-		     $(LIBGCRYPT_CFLAGS) \
+		     $(LIBGCRYPT_CFLAGS) $(NTBTLS_CFLAGS) \
 	             $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS)
 
 t_dns_stuff_SOURCES = $(t_common_src) t-dns-stuff.c dns-stuff.c
@@ -983,7 +986,6 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns-stuff.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/dns.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/domaininfo.Po@am__quote@ # am--include-marker
-@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/fakecrl.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/http-common.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/http-ntbtls.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/http.Po@am__quote@ # am--include-marker
@@ -1743,7 +1745,6 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/dns-stuff.Po
 	-rm -f ./$(DEPDIR)/dns.Po
 	-rm -f ./$(DEPDIR)/domaininfo.Po
-	-rm -f ./$(DEPDIR)/fakecrl.Po
 	-rm -f ./$(DEPDIR)/http-common.Po
 	-rm -f ./$(DEPDIR)/http-ntbtls.Po
 	-rm -f ./$(DEPDIR)/http.Po
@@ -1850,7 +1851,6 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/dns-stuff.Po
 	-rm -f ./$(DEPDIR)/dns.Po
 	-rm -f ./$(DEPDIR)/domaininfo.Po
-	-rm -f ./$(DEPDIR)/fakecrl.Po
 	-rm -f ./$(DEPDIR)/http-common.Po
 	-rm -f ./$(DEPDIR)/http-ntbtls.Po
 	-rm -f ./$(DEPDIR)/http.Po

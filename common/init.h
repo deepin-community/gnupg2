@@ -32,6 +32,8 @@
 
 #ifndef GPG_ERR_SOURCE_DEFAULT
 # error GPG_ERR_SOURCE_DEFAULT is not defined
+#elseif GPG_ERR_SOURCE_DEFAULT == GPG_ERR_SOURCE_UNKNOWN
+# error GPG_ERR_SOURCE_DEFAULT has default value
 #endif
 
 void register_mem_cleanup_func (void (*func)(void));

@@ -30,22 +30,6 @@
 #include "options.h"
 
 
-/* Run time check to see whether mpi_copy does not copy the flags
- * properly.   This was fixed in version 1.8.6.  */
-static int
-is_mpi_copy_broken (void)
-{
-  static char result;
-
-  if (!result)
-    {
-      result = !gcry_check_version ("1.8.6");
-      result |= 0x80;
-    }
-  return (result & 1);
-}
-
-
 /* This is mpi_copy with a fix for opaque MPIs which store a NULL
    pointer.  This will also be fixed in Libggcrypt 1.7.0.  */
 static gcry_mpi_t
@@ -55,17 +39,6 @@ my_mpi_copy (gcry_mpi_t a)
       && gcry_mpi_get_flag (a, GCRYMPI_FLAG_OPAQUE)
       && !gcry_mpi_get_opaque (a, NULL))
     return NULL;
-
-  if (is_mpi_copy_broken ())
-    {
-      int flag_user2 = a? gcry_mpi_get_flag (a, GCRYMPI_FLAG_USER2) : 0;
-      gcry_mpi_t b;
-
-      b = gcry_mpi_copy (a);
-      if (b && flag_user2)
-        gcry_mpi_set_flag (b, GCRYMPI_FLAG_USER2);
-      return b;
-    }
 
   return gcry_mpi_copy (a);
 }
@@ -104,6 +77,11 @@ free_seckey_enc( PKT_signature *sig )
   xfree(sig->hashed);
   xfree(sig->unhashed);
 
+  if (sig->pka_info)
+    {
+      xfree (sig->pka_info->uri);
+      xfree (sig->pka_info);
+    }
   xfree (sig->signers_uid);
 
   xfree(sig);
@@ -211,10 +189,10 @@ copy_prefs (const prefitem_t *prefs)
 
 
 /* Copy the public key S to D.  If D is NULL allocate a new public key
- * structure.  Only the basic stuff is copied; not any ancillary
- * data.  */
+   structure.  If S has seckret key infos, only the public stuff is
+   copied.  */
 PKT_public_key *
-copy_public_key_basics (PKT_public_key *d, PKT_public_key *s)
+copy_public_key (PKT_public_key *d, PKT_public_key *s)
 {
   int n, i;
 
@@ -222,8 +200,8 @@ copy_public_key_basics (PKT_public_key *d, PKT_public_key *s)
     d = xmalloc (sizeof *d);
   memcpy (d, s, sizeof *d);
   d->seckey_info = NULL;
-  d->user_id = NULL;
-  d->prefs = NULL;
+  d->user_id = scopy_user_id (s->user_id);
+  d->prefs = copy_prefs (s->prefs);
 
   n = pubkey_get_npkey (s->pubkey_algo);
   i = 0;
@@ -237,24 +215,6 @@ copy_public_key_basics (PKT_public_key *d, PKT_public_key *s)
   for (; i < PUBKEY_MAX_NSKEY; i++)
     d->pkey[i] = NULL;
 
-  d->revkey = NULL;
-  d->serialno = NULL;
-  d->updateurl = NULL;
-
-  return d;
-}
-
-
-/* Copy the public key S to D.  If D is NULL allocate a new public key
-   structure.  If S has seckret key infos, only the public stuff is
-   copied.  */
-PKT_public_key *
-copy_public_key (PKT_public_key *d, PKT_public_key *s)
-{
-  d = copy_public_key_basics (d, s);
-  d->user_id = scopy_user_id (s->user_id);
-  d->prefs = copy_prefs (s->prefs);
-
   if (!s->revkey && s->numrevkeys)
     BUG();
   if (s->numrevkeys)
@@ -262,6 +222,8 @@ copy_public_key (PKT_public_key *d, PKT_public_key *s)
       d->revkey = xmalloc(sizeof(struct revocation_key)*s->numrevkeys);
       memcpy(d->revkey,s->revkey,sizeof(struct revocation_key)*s->numrevkeys);
     }
+  else
+    d->revkey = NULL;
 
   if (s->serialno)
     d->serialno = xstrdup (s->serialno);
@@ -271,6 +233,20 @@ copy_public_key (PKT_public_key *d, PKT_public_key *s)
   return d;
 }
 
+
+
+static pka_info_t *
+cp_pka_info (const pka_info_t *s)
+{
+  pka_info_t *d = xmalloc (sizeof *s + strlen (s->email));
+
+  d->valid = s->valid;
+  d->checked = s->checked;
+  d->uri = s->uri? xstrdup (s->uri):NULL;
+  memcpy (d->fpr, s->fpr, sizeof s->fpr);
+  strcpy (d->email, s->email);
+  return d;
+}
 
 
 PKT_signature *
@@ -288,6 +264,7 @@ copy_signature( PKT_signature *d, PKT_signature *s )
 	for(i=0; i < n; i++ )
 	    d->data[i] = my_mpi_copy( s->data[i] );
     }
+    d->pka_info = s->pka_info? cp_pka_info (s->pka_info) : NULL;
     d->hashed = cp_subpktarea (s->hashed);
     d->unhashed = cp_subpktarea (s->unhashed);
     if (s->signers_uid)

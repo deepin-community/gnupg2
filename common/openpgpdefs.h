@@ -119,15 +119,21 @@ typedef enum
     SIGSUBPKT_ISSUER_FPR    = 33, /* Issuer fingerprint. */
     SIGSUBPKT_PREF_AEAD     = 34, /* Preferred AEAD algorithms. */
 
-    SIGSUBPKT_ATTST_SIGS    = 37, /* Attested Certifications.  */
     SIGSUBPKT_KEY_BLOCK     = 38, /* Entire key used.          */
-
-    SIGSUBPKT_META_HASH     = 40, /* Literal Data Meta Hash.   */
-    SIGSUBPKT_TRUST_ALIAS   = 41, /* Trust Alias.              */
 
     SIGSUBPKT_FLAG_CRITICAL = 128
   }
 sigsubpkttype_t;
+
+
+/* Note that we encode the AEAD algo in a 3 bit field at some places.  */
+typedef enum
+  {
+    AEAD_ALGO_NONE	    =  0,
+    AEAD_ALGO_EAX	    =  1,  /* Deprecated.  */
+    AEAD_ALGO_OCB	    =  2   /* The one and only.  */
+  }
+aead_algo_t;
 
 
 typedef enum
@@ -148,16 +154,6 @@ typedef enum
     CIPHER_ALGO_PRIVATE10   = 110
   }
 cipher_algo_t;
-
-
-/* Note that we encode the AEAD algo in a 3 bit field at some places.  */
-typedef enum
-  {
-    AEAD_ALGO_NONE	    =  0,
-    AEAD_ALGO_EAX	    =  1,
-    AEAD_ALGO_OCB	    =  2
-  }
-aead_algo_t;
 
 
 typedef enum
@@ -209,13 +205,6 @@ compress_algo_t;
 #define OPENPGP_MAX_NENC   2  /* Maximum number of encryption parameters. */
 
 
-/* Decode an rfc4880 encoded S2K count.  */
-#define S2K_DECODE_COUNT(_val) ((16ul + ((_val) & 15)) << (((_val) >> 4) + 6))
-
-
-/*-- openpgp-s2k.c --*/
-unsigned char encode_s2k_iterations (int iterations);
-
 /*-- openpgp-fpr.c --*/
 gpg_error_t compute_openpgp_fpr (int keyversion, int pgpalgo,
                                  unsigned long timestamp,
@@ -238,9 +227,7 @@ gpg_error_t compute_openpgp_fpr_ecc (int keyversion,
                                      unsigned int *r_resultlen);
 
 /*-- openpgp-oid.c --*/
-pubkey_algo_t map_gcry_pk_to_openpgp (enum gcry_pk_algos algo);
 enum gcry_pk_algos map_openpgp_pk_to_gcry (pubkey_algo_t algo);
-
 
 
 #endif /*GNUPG_COMMON_OPENPGPDEFS_H*/

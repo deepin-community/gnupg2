@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 
 #include "gpgsm.h"
 
@@ -36,7 +37,6 @@
 #include "../common/i18n.h"
 #include "../common/tlv.h"
 #include "../common/compliance.h"
-#include "../common/pkscreening.h"
 
 struct list_external_parm_s
 {
@@ -49,15 +49,43 @@ struct list_external_parm_s
 };
 
 
+/* This table is to map Extended Key Usage OIDs to human readable
+   names.  */
+struct
+{
+  const char *oid;
+  const char *name;
+} key_purpose_map[] = {
+  { "1.3.6.1.5.5.7.3.1",  "serverAuth" },
+  { "1.3.6.1.5.5.7.3.2",  "clientAuth" },
+  { "1.3.6.1.5.5.7.3.3",  "codeSigning" },
+  { "1.3.6.1.5.5.7.3.4",  "emailProtection" },
+  { "1.3.6.1.5.5.7.3.5",  "ipsecEndSystem" },
+  { "1.3.6.1.5.5.7.3.6",  "ipsecTunnel" },
+  { "1.3.6.1.5.5.7.3.7",  "ipsecUser" },
+  { "1.3.6.1.5.5.7.3.8",  "timeStamping" },
+  { "1.3.6.1.5.5.7.3.9",  "ocspSigning" },
+  { "1.3.6.1.5.5.7.3.10", "dvcs" },
+  { "1.3.6.1.5.5.7.3.11", "sbgpCertAAServerAuth" },
+  { "1.3.6.1.5.5.7.3.13", "eapOverPPP" },
+  { "1.3.6.1.5.5.7.3.14", "wlanSSID" },
+
+  { "2.16.840.1.113730.4.1", "serverGatedCrypto.ns" }, /* Netscape. */
+  { "1.3.6.1.4.1.311.10.3.3", "serverGatedCrypto.ms"}, /* Microsoft. */
+
+  { "1.3.6.1.5.5.7.48.1.5", "ocspNoCheck" },
+
+  { NULL, NULL }
+};
+
+
 /* Do not print this extension in the list of extensions.  This is set
    for oids which are already available via ksba functions. */
 #define OID_FLAG_SKIP 1
 /* The extension is a simple UTF8String and should be printed.  */
 #define OID_FLAG_UTF8 2
-/* The extension can be printed as a hex string.  */
+/* The extension can be trnted as a hex string.  */
 #define OID_FLAG_HEX  4
-/* Define if this specififies a key purpose.  */
-#define OID_FLAG_KP   8
 
 /* A table mapping OIDs to a descriptive string. */
 static struct
@@ -115,23 +143,7 @@ static struct
   { "1.3.6.1.5.5.7.1.10", "acProxying" },
   { "1.3.6.1.5.5.7.1.11", "subjectInfoAccess" },
 
-  { "1.3.6.1.5.5.7.3.1",  "serverAuth", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.2",  "clientAuth", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.3",  "codeSigning", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.4",  "emailProtection", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.5",  "ipsecEndSystem", OID_FLAG_KP }, /* historic */
-  { "1.3.6.1.5.5.7.3.6",  "ipsecTunnel", OID_FLAG_KP },    /* historic */
-  { "1.3.6.1.5.5.7.3.7",  "ipsecUser", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.8",  "timeStamping", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.9",  "ocspSigning", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.10", "dvcs", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.11", "sbgpCertAAServerAuth", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.13", "eapOverPPP", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.14", "wlanSSID", OID_FLAG_KP },
-  { "1.3.6.1.5.5.7.3.17", "ipsecIKE", OID_FLAG_KP },       /* rfc-4945 */
-
   { "1.3.6.1.5.5.7.48.1", "ocsp" },
-  { "1.3.6.1.5.5.7.48.1.5", "ocspNoCheck", OID_FLAG_KP },
   { "1.3.6.1.5.5.7.48.2", "caIssuers" },
   { "1.3.6.1.5.5.7.48.3", "timeStamping" },
   { "1.3.6.1.5.5.7.48.5", "caRepository" },
@@ -159,7 +171,6 @@ static struct
   { "2.5.29.35", "authorityKeyIdentifier", OID_FLAG_SKIP},
   { "2.5.29.36", "policyConstraints" },
   { "2.5.29.37", "extKeyUsage", OID_FLAG_SKIP},
-  { "2.5.29.37.0", "anyExtendedKeyUsage", OID_FLAG_KP},
   { "2.5.29.46", "freshestCRL" },
   { "2.5.29.54", "inhibitAnyPolicy" },
 
@@ -175,16 +186,11 @@ static struct
   { "2.16.840.1.113730.1.11", "netscape-userPicture" },
   { "2.16.840.1.113730.1.12", "netscape-ssl-server-name" },
   { "2.16.840.1.113730.1.13", "netscape-comment" },
-  { "2.16.840.1.113730.4.1", "serverGatedCrypto.ns", OID_FLAG_KP },
 
   /* GnuPG extensions */
   { "1.3.6.1.4.1.11591.2.1.1", "pkaAddress" },
   { "1.3.6.1.4.1.11591.2.2.1", "standaloneCertificate" },
   { "1.3.6.1.4.1.11591.2.2.2", "wellKnownPrivateKey" },
-  { "1.3.6.1.4.1.11591.2.6.1", "gpgUsageCert", OID_FLAG_KP },
-  { "1.3.6.1.4.1.11591.2.6.2", "gpgUsageSign", OID_FLAG_KP },
-  { "1.3.6.1.4.1.11591.2.6.3", "gpgUsageEncr", OID_FLAG_KP },
-  { "1.3.6.1.4.1.11591.2.6.4", "gpgUsageAuth", OID_FLAG_KP },
 
   /* Extensions used by the Bundesnetzagentur.  */
   { "1.3.6.1.4.1.8301.3.5", "validityModel" },
@@ -195,49 +201,20 @@ static struct
   { "1.3.6.1.4.1.41482.3.8", "yubikey-pin-touch-policy", OID_FLAG_HEX },
   { "1.3.6.1.4.1.41482.3.9", "yubikey-formfactor", OID_FLAG_HEX },
 
-  /* Microsoft extensions.  */
-  { "1.3.6.1.4.1.311.3.10.3.12","ms-old-documentSigning", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.10.3.3", "ms-serverGatedCrypto", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.10.3.11","ms-keyRecovery", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.10.3.12","ms-documentSigning", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.10.3.4", "ms-encryptedFileSystem", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.10.3.4.1","ms-efsRecovery", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.20.2.1", "ms-enrollmentAgent", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.20.2.2", "ms-smartcardLogon", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.21.5",   "ms-caExchange", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.21.6",   "ms-keyRecovery", OID_FLAG_KP },
-  { "1.3.6.1.4.1.311.21.19",  "ms-dsEmailReplication", OID_FLAG_KP },
-
-  /* BSI policies.  */
-
-  /* Other vendor extensions.  */
-  { "1.3.6.1.4.1.30205.13.1.1", "trusted-disk", OID_FLAG_KP },
-  { "1.2.840.113583.1.1.5",     "pdfAuthenticDocumentsTrust", OID_FLAG_KP },
-  { "1.3.6.1.4.1.6449.1.3.5.2", "comodoCertifiedDeliveryService", OID_FLAG_KP },
-
-  /* ARRL */
-  { "1.3.6.1.4.1.12348.1.1",    "lotw-callsign" },
-  { "1.3.6.1.4.1.12348.1.2",    "lotw-qso-first-date" },
-  { "1.3.6.1.4.1.12348.1.3",    "lotw-qso-end-date" },
-  { "1.3.6.1.4.1.12348.1.4",    "lotw-dxcc-entity" },
-  /* { "1.3.6.1.4.1.12348.1.5",    "lotw-fixme" }, */
-
   { NULL }
 };
 
 
-/* Return the description for OID; if no description is available NULL
- * is returned.  If MATCHFLAG is set the flag of the OID must match
- * MATCHFLAG; otherwise NULL is returned.  */
+/* Return the description for OID; if no description is available
+   NULL is returned. */
 static const char *
-get_oid_desc (const char *oid, unsigned int matchflag, unsigned int *flag)
+get_oid_desc (const char *oid, unsigned int *flag)
 {
   int i;
 
   if (oid)
     for (i=0; oidtranstbl[i].oid; i++)
-      if (!strcmp (oidtranstbl[i].oid, oid)
-          && (!matchflag || (oidtranstbl[i].flag & matchflag)))
+      if (!strcmp (oidtranstbl[i].oid, oid))
         {
           if (flag)
             *flag = oidtranstbl[i].flag;
@@ -268,38 +245,6 @@ print_key_data (ksba_cert_t cert, estream_t fp)
   (void)fp;
 #endif
 }
-
-
-/* Various public key screenings.  (Right now just ROCA).  With
- * COLON_MODE set the output is formatted for use in the compliance
- * field of a colon listing.  */
-static void
-print_pk_screening (ksba_cert_t cert, int colon_mode, estream_t fp)
-{
-  gpg_error_t err;
-  gcry_mpi_t modulus;
-
-  modulus = gpgsm_get_rsa_modulus (cert);
-  if (modulus)
-    {
-      err = screen_key_for_roca (modulus);
-      if (!err)
-        ;
-      else if (gpg_err_code (err) == GPG_ERR_TRUE)
-        {
-          if (colon_mode)
-            es_fprintf (fp, colon_mode > 1? " %d":"%d", 6001);
-          else
-            es_fprintf (fp, "    screening: ROCA vulnerability detected\n");
-        }
-      else if (!colon_mode)
-        es_fprintf (fp, "    screening: [ROCA check failed: %s]\n",
-                    gpg_strerror (err));
-      gcry_mpi_release (modulus);
-    }
-
-}
-
 
 static void
 print_capabilities (ksba_cert_t cert, int algo, estream_t fp)
@@ -432,7 +377,6 @@ static void
 print_compliance_flags (ksba_cert_t cert, int algo, unsigned int nbits,
                         const char *curvename, estream_t fp)
 {
-  int indent = 0;
   int hashalgo;
 
   /* Note that we do not need to test for PK_ALGO_FLAG_RSAPSS because
@@ -444,12 +388,8 @@ print_compliance_flags (ksba_cert_t cert, int algo, unsigned int nbits,
       if (gnupg_digest_is_compliant (CO_DE_VS, hashalgo))
         {
           es_fputs (gnupg_status_compliance_flag (CO_DE_VS), fp);
-          indent = 1;
         }
     }
-
-  if (opt.with_key_screening)
-    print_pk_screening (cert, 1+indent, fp);
 }
 
 
@@ -822,8 +762,6 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
   ksba_name_t name, name2;
   unsigned int reason;
   const unsigned char *cert_der = NULL;
-  char *algostr;
-  int algoid;
 
   (void)have_secret;
 
@@ -877,47 +815,6 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
   es_fprintf (fp, "      md5_fpr: %s\n", dn?dn:"error");
   xfree (dn);
 
-  algoid = 0;
-  algostr = gpgsm_pubkey_algo_string (cert, &algoid);
-
-  /* For RSA we support printing an OpenPGP v4 fingerprint under the
-   * assumption that the not-before date would be used as the OpenPGP
-   * key creation date.  */
-  if (algoid == GCRY_PK_RSA)
-    {
-      ksba_sexp_t pk;
-      size_t pklen;
-      const unsigned char *m, *e;
-      size_t mlen, elen;
-      unsigned char fpr20[20];
-      time_t tmpt;
-      unsigned long keytime;
-
-      pk = ksba_cert_get_public_key (cert);
-      if (pk)
-        {
-          ksba_cert_get_validity (cert, 0, t);
-          tmpt = isotime2epoch (t);
-          keytime = (tmpt == (time_t)(-1))? 0 : (u32)tmpt;
-
-          pklen = gcry_sexp_canon_len (pk, 0, NULL, NULL);
-          if (!pklen)
-            log_error ("libksba did not return a proper S-Exp\n");
-          else if (!get_rsa_pk_from_canon_sexp (pk, pklen,
-                                                &m, &mlen, &e, &elen)
-                   && !compute_openpgp_fpr_rsa (4,
-                                                keytime,
-                                                m, mlen, e, elen,
-                                                fpr20, NULL))
-            {
-              char *fpr = bin2hex (fpr20, 20, NULL);
-              es_fprintf (fp, "      pgp_fpr: %s\n", fpr);
-              xfree (fpr);
-            }
-          ksba_free (pk);
-        }
-    }
-
   dn = gpgsm_get_certid (cert);
   es_fprintf (fp, "       certid: %s\n", dn?dn:"error");
   xfree (dn);
@@ -936,10 +833,16 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
   es_putc ('\n', fp);
 
   oid = ksba_cert_get_digest_algo (cert);
-  s = get_oid_desc (oid, 0, NULL);
+  s = get_oid_desc (oid, NULL);
   es_fprintf (fp, "     hashAlgo: %s%s%s%s\n", oid, s?" (":"",s?s:"",s?")":"");
 
-  es_fprintf (fp, "      keyType: %s\n", algostr? algostr : "[error]");
+  {
+    char *algostr;
+
+    algostr = gpgsm_pubkey_algo_string (cert, NULL);
+    es_fprintf (fp, "      keyType: %s\n", algostr? algostr : "[error]");
+    xfree (algostr);
+  }
 
   /* subjectKeyIdentifier */
   es_fputs ("    subjKeyId: ", fp);
@@ -1029,8 +932,10 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
           while (p && (pend=strchr (p, ':')))
             {
               *pend++ = 0;
-              s = get_oid_desc (p, OID_FLAG_KP, NULL);
-              es_fputs (s ? s : p, fp);
+              for (i=0; key_purpose_map[i].oid; i++)
+                if ( !strcmp (key_purpose_map[i].oid, p) )
+                  break;
+              es_fputs (key_purpose_map[i].oid?key_purpose_map[i].name:p, fp);
               p = pend;
               if (*p != 'C')
                 es_fputs (" (suggested)", fp);
@@ -1060,8 +965,10 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
           while (p && (pend=strchr (p, ':')))
             {
               *pend++ = 0;
-              s = get_oid_desc (p, OID_FLAG_KP, NULL);
-              es_fputs (s?s:p, fp);
+              for (i=0; key_purpose_map[i].oid; i++)
+                if ( !strcmp (key_purpose_map[i].oid, p) )
+                  break;
+              es_fputs (p, fp);
               p = pend;
               if (*p == 'C')
                 es_fputs (" (critical)", fp);
@@ -1138,7 +1045,7 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
                                                          &name)); idx++)
     {
       es_fputs ("     authInfo: ", fp);
-      s = get_oid_desc (string, 0, NULL);
+      s = get_oid_desc (string, NULL);
       es_fprintf (fp, "%s%s%s%s\n", string, s?" (":"", s?s:"", s?")":"");
       print_names_raw (fp, -15, name);
       ksba_name_release (name);
@@ -1155,7 +1062,7 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
                                                          &name)); idx++)
     {
       es_fputs ("  subjectInfo: ", fp);
-      s = get_oid_desc (string, 0, NULL);
+      s = get_oid_desc (string, NULL);
       es_fprintf (fp, "%s%s%s%s\n", string, s?" (":"", s?s:"", s?")":"");
       print_names_raw (fp, -15, name);
       ksba_name_release (name);
@@ -1173,7 +1080,7 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
     {
       unsigned int flag;
 
-      s = get_oid_desc (oid, 0, &flag);
+      s = get_oid_desc (oid, &flag);
       if ((flag & OID_FLAG_SKIP))
         continue;
 
@@ -1205,15 +1112,6 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
     {
       err = gpgsm_validate_chain (ctrl, cert,
                                   GNUPG_ISOTIME_NONE, NULL, 1, fp, 0, NULL);
-      if (gpg_err_code (err) == GPG_ERR_CERT_REVOKED
-          && !check_isotime (ctrl->revoked_at))
-        {
-          es_fputs ("      revoked: ", fp);
-          gpgsm_print_time (fp, ctrl->revoked_at);
-          if (ctrl->revocation_reason)
-            es_fprintf (fp, " (%s)", ctrl->revocation_reason);
-          es_putc ('\n', fp);
-        }
       if (!err)
         es_fprintf (fp, "  [certificate is good]\n");
       else
@@ -1231,7 +1129,6 @@ list_cert_raw (ctrl_t ctrl, KEYDB_HANDLE hd,
         es_fprintf (fp, "  [stored as ephemeral]\n");
     }
 
-  xfree (algostr);
 }
 
 
@@ -1246,12 +1143,12 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
   ksba_sexp_t sexp;
   char *dn;
   ksba_isotime_t t;
-  int idx;
+  int idx, i;
   int is_ca, chainlen;
   unsigned int kusage;
   char *string, *p, *pend;
   size_t off, len;
-  const char *oid, *s;
+  const char *oid;
   const unsigned char *cert_der = NULL;
 
 
@@ -1352,8 +1249,10 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
           while (p && (pend=strchr (p, ':')))
             {
               *pend++ = 0;
-              s = get_oid_desc (p, OID_FLAG_KP, NULL);
-              es_fputs (s? s : p, fp);
+              for (i=0; key_purpose_map[i].oid; i++)
+                if ( !strcmp (key_purpose_map[i].oid, p) )
+                  break;
+              es_fputs (key_purpose_map[i].oid?key_purpose_map[i].name:p, fp);
               p = pend;
               if (*p != 'C')
                 es_fputs (" (suggested)", fp);
@@ -1376,7 +1275,7 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
         {
           if (!cert_der)
             cert_der = ksba_cert_get_image (cert, NULL);
-          log_assert (cert_der);
+          assert (cert_der);
           es_fputs ("  restriction: ", fp);
           print_utf8_extn (fp, 15, cert_der+off, len);
         }
@@ -1425,7 +1324,7 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
     }
 
   dn = gpgsm_get_fingerprint_string (cert, 0);
-  es_fprintf (fp, "     sha1 fpr: %s\n", dn?dn:"error");
+  es_fprintf (fp, "  fingerprint: %s\n", dn?dn:"error");
   xfree (dn);
 
   dn = gpgsm_get_fingerprint_string (cert, GCRY_MD_SHA256);
@@ -1441,9 +1340,6 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
           xfree (dn);
         }
     }
-
-  if (opt.with_key_screening)
-    print_pk_screening (cert, 0, fp);
 
   if (have_secret)
     {
@@ -1464,15 +1360,6 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
 
       err = gpgsm_validate_chain (ctrl, cert,
                                   GNUPG_ISOTIME_NONE, NULL, 1, fp, 0, NULL);
-      if (gpg_err_code (err) == GPG_ERR_CERT_REVOKED
-          && !check_isotime (ctrl->revoked_at))
-        {
-          es_fputs ("      revoked: ", fp);
-          gpgsm_print_time (fp, ctrl->revoked_at);
-          if (ctrl->revocation_reason)
-            es_fprintf (fp, " (%s)", ctrl->revocation_reason);
-          es_putc ('\n', fp);
-        }
       tmperr = ksba_cert_get_user_data (cert, "is_qualified",
                                         &buffer, sizeof (buffer), &buflen);
       if (!tmperr && buflen)
@@ -1491,8 +1378,6 @@ list_cert_std (ctrl_t ctrl, ksba_cert_t cert, estream_t fp, int have_secret,
       else
         es_fprintf (fp, "  [certificate is bad: %s]\n", gpg_strerror (err));
     }
-  if (opt.debug)
-    es_fflush (fp);
 }
 
 
@@ -1551,7 +1436,7 @@ list_internal_keys (ctrl_t ctrl, strlist_t names, estream_t fp,
   int have_secret;
   int want_ephemeral = ctrl->with_ephemeral_keys;
 
-  hd = keydb_new (ctrl);
+  hd = keydb_new ();
   if (!hd)
     {
       log_error ("keydb_new failed\n");
@@ -1603,6 +1488,8 @@ list_internal_keys (ctrl_t ctrl, strlist_t names, estream_t fp,
 
       for (i=0; (i < ndesc
                  && (desc[i].mode == KEYDB_SEARCH_MODE_FPR
+                     || desc[i].mode == KEYDB_SEARCH_MODE_FPR20
+                     || desc[i].mode == KEYDB_SEARCH_MODE_FPR16
                      || desc[i].mode == KEYDB_SEARCH_MODE_KEYGRIP)); i++)
         ;
       if (i == ndesc)
@@ -1803,99 +1690,4 @@ gpgsm_list_keys (ctrl_t ctrl, strlist_t names, estream_t fp,
   if (!err && (mode & (1<<7)))
     err = list_external_keys (ctrl, names, fp, (mode&256));
   return err;
-}
-
-
-
-static gpg_error_t
-do_show_certs (ctrl_t ctrl, const char *fname, estream_t outfp)
-{
-  gpg_error_t err;
-  gnupg_ksba_io_t b64reader = NULL;
-  ksba_reader_t reader;
-  ksba_cert_t cert = NULL;
-  estream_t fp;
-  int any = 0;
-
-  if (!fname || (fname[0] == '-' && !fname[1]))
-    {
-      fp = es_stdin;
-      fname = "[stdin]";
-    }
-  else
-    {
-      fp = es_fopen (fname, "rb");
-      if (!fp)
-        {
-          err = gpg_error_from_syserror ();
-          log_error (_("can't open '%s': %s\n"), fname, gpg_strerror (err));
-          return err;
-        }
-    }
-
-  err = gnupg_ksba_create_reader
-    (&b64reader, ((ctrl->is_pem? GNUPG_KSBA_IO_PEM : 0)
-                  | (ctrl->is_base64? GNUPG_KSBA_IO_BASE64 : 0)
-                  | (ctrl->autodetect_encoding? GNUPG_KSBA_IO_AUTODETECT : 0)
-                  | GNUPG_KSBA_IO_MULTIPEM),
-     fp, &reader);
-  if (err)
-    {
-      log_error ("can't create reader: %s\n", gpg_strerror (err));
-      goto leave;
-    }
-
-  /* We need to loop here to handle multiple PEM objects per file. */
-  do
-    {
-      ksba_cert_release (cert); cert = NULL;
-
-      err = ksba_cert_new (&cert);
-      if (err)
-        goto leave;
-
-      err = ksba_cert_read_der (cert, reader);
-      if (err)
-        goto leave;
-
-      es_fprintf (outfp, "File ........: %s\n", fname);
-      list_cert_raw (ctrl, NULL, cert, outfp, 0, 0);
-      es_putc ('\n', outfp);
-      any = 1;
-
-      ksba_reader_clear (reader, NULL, NULL);
-    }
-  while (!gnupg_ksba_reader_eof_seen (b64reader));
-
- leave:
-  if (any && gpg_err_code (err) == GPG_ERR_EOF)
-    err = 0;
-  ksba_cert_release (cert);
-  gnupg_ksba_destroy_reader (b64reader);
-  if (fp != es_stdin)
-    es_fclose (fp);
-  return err;
-}
-
-
-/* Show a raw dump of the certificates found in the files given in
- * the arrag FILES.  Write output to FP.  */
-gpg_error_t
-gpgsm_show_certs (ctrl_t ctrl, int nfiles, char **files, estream_t fp)
-{
-  gpg_error_t saveerr = 0;
-  gpg_error_t err;
-
-  if (!nfiles)
-    saveerr = do_show_certs (ctrl, NULL, fp);
-  else
-    {
-      for (; nfiles; nfiles--, files++)
-        {
-          err = do_show_certs (ctrl, *files, fp);
-          if (err && !saveerr)
-            saveerr = err;
-        }
-    }
-  return saveerr;
 }

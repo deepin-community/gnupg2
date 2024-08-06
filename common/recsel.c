@@ -143,7 +143,6 @@ find_next_lc (char *string)
  *   -c  The string match in this part is done case-sensitive.
  *   -t  Do not trim leading and trailing spaces from VALUE.
  *       Note that a space after <op> is here required.
- *   -r  RFU: String match uses a regular expression
  *
  * For example four calls to recsel_parse_expr() with these values for
  * EXPR
@@ -162,7 +161,7 @@ find_next_lc (char *string)
  *
  * The caller must pass the address of a selector variable to this
  * function and initialize the value of the function to NULL before
- * the first call.  recsel_release needs to be called to free the
+ * the first call.  recset_release needs to be called to free the
  * selector.
  */
 gpg_error_t
@@ -223,13 +222,7 @@ recsel_parse_expr (recsel_expr_t *selector, const char *expression)
 
   se = xtrymalloc (sizeof *se + strlen (expr));
   if (!se)
-    {
-      gpg_error_t err = my_error_from_syserror ();
-
-      recsel_release (se_head);
-      xfree (expr_buffer);
-      return err;
-    }
+    return my_error_from_syserror ();
   strcpy (se->name, expr);
   se->next = NULL;
   se->not = 0;

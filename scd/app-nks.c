@@ -1233,6 +1233,11 @@ do_readkey (app_t app, ctrl_t ctrl, const char *keyid, unsigned int flags,
   if (!pklen)
     pklen = &dummy_pklen;
 
+  (void)ctrl;
+
+  if ((flags & APP_READKEY_FLAG_ADVANCED))
+    return GPG_ERR_NOT_SUPPORTED;
+
   /* We use a generic name to retrieve PK.AUT.IFD-SPK.  */
   if (!strcmp (keyid, "$IFDAUTHKEY") && app->appversion >= 3)
     {
@@ -1450,7 +1455,6 @@ do_writekey (app_t app, ctrl_t ctrl,
   size_t rsa_n_len, rsa_e_len;
   unsigned int nbits;
 
-  (void)ctrl;
   (void)pincb;
   (void)pincb_arg;
 
@@ -1613,7 +1617,7 @@ verify_pin (app_t app, int pwid, const char *desc,
   memset (&pininfo, 0, sizeof pininfo);
   pininfo.fixedlen = -1;
 
-  /* FIXME: TCOS allows one to read the min. and max. values - do this.  */
+  /* FIXME: TCOS allows to read the min. and max. values - do this.  */
   if (app->appversion == 15)
     {
       if (app->app_local->active_nks_app == NKS_APP_NKS && pwid == 0x03)
@@ -2310,13 +2314,13 @@ do_change_pin (app_t app, ctrl_t ctrl,  const char *pwidstr,
         }
       memcpy (data, oldpin, oldpinlen);
       memcpy (data+oldpinlen, newpin, newpinlen);
-      err = iso7816_reset_retry_counter_with_rc (app_get_slot (app), pwid,
+      err = iso7816_reset_retry_counter_with_rc (app->slot, pwid,
                                                  data, datalen);
       wipememory (data, datalen);
       xfree (data);
     }
   else
-    err = iso7816_change_reference_data (app_get_slot (app), pwid,
+    err = iso7816_change_reference_data (app->slot, pwid,
                                          oldpin, oldpinlen,
                                          newpin, newpinlen);
  leave:
@@ -2486,8 +2490,7 @@ switch_application (app_t app, int nks_app_id)
     err = iso7816_select_application (app_get_slot (app),
                                       aid_sigg, sizeof aid_sigg, 0);
   else
-    err = iso7816_select_application (app_get_slot (app),
-                                      aid_nks, sizeof aid_nks, 0);
+    err = iso7816_select_application (app->slot, aid_nks, sizeof aid_nks, 0);
 
   if (!err && nks_app_id == NKS_APP_SIGG
       && app->appversion >= 3
@@ -2501,10 +2504,9 @@ switch_application (app_t app, int nks_app_id)
 
       app->app_local->sigg_msig_checked = 1;
       app->app_local->sigg_is_msig = 1;
-      err = iso7816_select_file (app_get_slot (app), 0x5349, 0);
+      err = iso7816_select_file (app->slot, 0x5349, 0);
       if (!err)
-        err = iso7816_read_record (app_get_slot (app), 1, 1, 0,
-                                   &buffer, &buflen);
+        err = iso7816_read_record (app->slot, 1, 1, 0, &buffer, &buflen);
       if (!err)
         {
           tmpl = find_tlv (buffer, buflen, 0x7a, &tmpllen);
@@ -2538,7 +2540,7 @@ switch_application (app_t app, int nks_app_id)
 gpg_error_t
 app_select_nks (app_t app)
 {
-  int slot = app_get_slot (app);
+  int slot = app->slot;
   int rc;
   int is_idlm = 0;
 
@@ -2577,8 +2579,6 @@ app_select_nks (app_t app)
         app->app_local->qes_app_id = NKS_APP_SIGG;
 
       app->fnc.deinit = do_deinit;
-      app->fnc.prep_reselect = NULL;
-      app->fnc.reselect = NULL;
       app->fnc.learn_status = do_learn_status;
       app->fnc.readcert = do_readcert;
       app->fnc.readkey = do_readkey;

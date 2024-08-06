@@ -1,0 +1,33 @@
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Thu, 16 May 2024 10:28:38 +0900
+Subject: [PATCH] scd:openpgp: Fix PIN pin2hash_if_kdf.
+
+From bb57c808b2ad2d064ef9dd5a69ca94f6e6f7a763 Mon Sep 17 00:00:00 2001
+Bug-Debian: https://bugs.debian.org/1071168
+Bug: https://dev.gnupg.org/T7121
+
+* scd/app-openpgp.c (pin2hash_if_kdf): DEK had been changed to pointer
+to allocated memory, so, we need to use DEKLEN for the length.
+
+--
+
+GnuPG-bug-id: 7121
+Fixes-commit: 20e85585ed20af67ce68e637ea5c3637615ba2e9
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+---
+ scd/app-openpgp.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/scd/app-openpgp.c b/scd/app-openpgp.c
+index 0ce09e1..8527c47 100644
+--- a/scd/app-openpgp.c
++++ b/scd/app-openpgp.c
+@@ -2534,7 +2534,7 @@ pin2hash_if_kdf (app_t app, int chvno, const char *pin,
+       err = gcry_kdf_derive (pin, pinlen,
+                              GCRY_KDF_ITERSALTED_S2K,
+                              DIGEST_ALGO_SHA256, salt, 8,
+-                             s2k_count, sizeof (dek), dek);
++                             s2k_count, deklen, dek);
+       if (!err)
+         {
+           *r_pinlen = deklen;

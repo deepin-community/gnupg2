@@ -33,7 +33,6 @@
 
 (define alpha "Alpha <alpha@invalid.example.net>")
 (define bravo "Bravo <bravo@invalid.example.net>")
-(define bravohash "F75B1420CC5881F4005333379355CFF5873094DE")
 (define charlie "Charlie <charlie@invalid.example.net>")
 (define delta "Delta <delta@invalid.example.net>")
 (define deltahash "359DC5EFF98B14A58AAA615C638E8BD0CEDA537B")
@@ -78,8 +77,7 @@
 
 (info "Checking that we can mark an user ID as primary.")
 (call-check `(,@gpg --quick-set-primary-uid ,(exact alpha) ,alpha))
-(info "Checking that we can mark a user ID as primary by its hash...")
-(call-check `(,@gpg --quick-set-primary-uid ,(exact alpha) ,bravohash))
+(call-check `(,@gpg --quick-set-primary-uid ,(exact alpha) ,bravo))
 ;; XXX I don't know how to verify this.  The keylisting does not seem
 ;; to indicate the primary UID.
 

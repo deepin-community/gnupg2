@@ -45,14 +45,14 @@ my_gcry_logger (void *dummy, int level, const char *fmt, va_list arg_ptr)
   /* Map the log levels.  */
   switch (level)
     {
-    case GCRY_LOG_CONT: level = GPGRT_LOGLVL_CONT; break;
-    case GCRY_LOG_INFO: level = GPGRT_LOGLVL_INFO; break;
-    case GCRY_LOG_WARN: level = GPGRT_LOGLVL_WARN; break;
-    case GCRY_LOG_ERROR:level = GPGRT_LOGLVL_ERROR; break;
-    case GCRY_LOG_FATAL:level = GPGRT_LOGLVL_FATAL; break;
-    case GCRY_LOG_BUG:  level = GPGRT_LOGLVL_BUG; break;
-    case GCRY_LOG_DEBUG:level = GPGRT_LOGLVL_DEBUG; break;
-    default:            level = GPGRT_LOGLVL_ERROR; break;
+    case GCRY_LOG_CONT: level = GPGRT_LOG_CONT; break;
+    case GCRY_LOG_INFO: level = GPGRT_LOG_INFO; break;
+    case GCRY_LOG_WARN: level = GPGRT_LOG_WARN; break;
+    case GCRY_LOG_ERROR:level = GPGRT_LOG_ERROR; break;
+    case GCRY_LOG_FATAL:level = GPGRT_LOG_FATAL; break;
+    case GCRY_LOG_BUG:  level = GPGRT_LOG_BUG; break;
+    case GCRY_LOG_DEBUG:level = GPGRT_LOG_DEBUG; break;
+    default:            level = GPGRT_LOG_ERROR; break;
     }
   log_logv (level, fmt, arg_ptr);
 }
@@ -117,11 +117,59 @@ xoutofcore (void)
 }
 
 
-/* Wrapper around gpgrt_reallocarray.   */
+/* This is safe version of realloc useful for reallocing a calloced
+ * array.  There are two ways to call it:  The first example
+ * reallocates the array A to N elements each of SIZE but does not
+ * clear the newly allocated elements:
+ *
+ *  p = gpgrt_reallocarray (a, n, n, nsize);
+ *
+ * Note that when NOLD is larger than N no cleaning is needed anyway.
+ * The second example reallocates an array of size NOLD to N elements
+ * each of SIZE but clear the newly allocated elements:
+ *
+ *  p = gpgrt_reallocarray (a, nold, n, nsize);
+ *
+ * Note that gnupg_reallocarray (NULL, 0, n, nsize) is equivalent to
+ * gcry_calloc (n, nsize).
+ */
+void *
+gnupg_reallocarray (void *a, size_t oldnmemb, size_t nmemb, size_t size)
+{
+  size_t oldbytes, bytes;
+  char *p;
+
+  bytes = nmemb * size; /* size_t is unsigned so the behavior on overflow
+                         * is defined. */
+  if (size && bytes / size != nmemb)
+    {
+      gpg_err_set_errno (ENOMEM);
+      return NULL;
+    }
+
+  p = gcry_realloc (a, bytes);
+  if (p && oldnmemb < nmemb)
+    {
+      /* OLDNMEMBS is lower than NMEMB thus the user asked for a
+         calloc.  Clear all newly allocated members.  */
+      oldbytes = oldnmemb * size;
+      if (size && oldbytes / size != oldnmemb)
+        {
+          xfree (p);
+          gpg_err_set_errno (ENOMEM);
+          return NULL;
+        }
+      memset (p + oldbytes, 0, bytes - oldbytes);
+    }
+  return p;
+}
+
+
+/* Die-on-error version of gnupg_reallocarray.   */
 void *
 xreallocarray (void *a, size_t oldnmemb, size_t nmemb, size_t size)
 {
-  void *p = gpgrt_reallocarray (a, oldnmemb, nmemb, size);
+  void *p = gnupg_reallocarray (a, oldnmemb, nmemb, size);
   if (!p)
     xoutofcore ();
   return p;
@@ -412,6 +460,112 @@ decode_c_string (const char *src)
   *dst++ = 0;
 
   return buffer;
+}
+
+
+/* Check whether (BUF,LEN) is valid header for an OpenPGP compressed
+ * packet.  LEN should be at least 6.  */
+static int
+is_openpgp_compressed_packet (const unsigned char *buf, size_t len)
+{
+  int c, ctb, pkttype;
+  int lenbytes;
+
+  ctb = *buf++; len--;
+  if (!(ctb & 0x80))
+    return 0; /* Invalid packet.  */
+
+  if ((ctb & 0x40)) /* New style (OpenPGP) CTB.  */
+    {
+      pkttype = (ctb & 0x3f);
+      if (!len)
+        return 0; /* Expected first length octet missing.  */
+      c = *buf++; len--;
+      if (c < 192)
+        ;
+      else if (c < 224)
+        {
+          if (!len)
+            return 0; /* Expected second length octet missing. */
+        }
+      else if (c == 255)
+        {
+          if (len < 4)
+            return 0; /* Expected length octets missing */
+        }
+    }
+  else /* Old style CTB.  */
+    {
+      pkttype = (ctb>>2)&0xf;
+      lenbytes = ((ctb&3)==3)? 0 : (1<<(ctb & 3));
+      if (len < lenbytes)
+        return 0; /* Not enough length bytes.  */
+    }
+
+  return (pkttype == 8);
+}
+
+
+
+/*
+ * Check if the file is compressed.  You need to pass the first bytes
+ * of the file as (BUF,BUFLEN).  Returns true if the buffer seems to
+ * be compressed.
+ */
+int
+is_file_compressed (const byte *buf, unsigned int buflen)
+{
+  int i;
+
+  struct magic_compress_s
+  {
+    byte len;
+    byte extchk;
+    byte magic[5];
+  } magic[] =
+      {
+       { 3, 0, { 0x42, 0x5a, 0x68, 0x00 } }, /* bzip2 */
+       { 3, 0, { 0x1f, 0x8b, 0x08, 0x00 } }, /* gzip */
+       { 4, 0, { 0x50, 0x4b, 0x03, 0x04 } }, /* (pk)zip */
+       { 5, 0, { '%', 'P', 'D', 'F', '-'} }, /* PDF */
+       { 4, 1, { 0xff, 0xd8, 0xff, 0xe0 } }, /* Maybe JFIF */
+       { 5, 2, { 0x89, 'P','N','G', 0x0d} }  /* Likely PNG */
+  };
+
+  if ( buflen < 6 )
+    {
+      return 0;  /* Too short to check - assume uncompressed.  */
+    }
+
+  for ( i = 0; i < DIM (magic); i++ )
+    {
+      if (!memcmp( buf, magic[i].magic, magic[i].len))
+        {
+          switch (magic[i].extchk)
+            {
+            case 0:
+              return 1; /* Is compressed.  */
+            case 1:
+              if (buflen > 11 && !memcmp (buf + 6, "JFIF", 5))
+                return 1; /* JFIF: this likely a compressed JPEG.  */
+              break;
+            case 2:
+              if (buflen > 8
+                  && buf[5] == 0x0a && buf[6] == 0x1a && buf[7] == 0x0a)
+                return 1; /* This is a PNG.  */
+              break;
+            default:
+              break;
+            }
+        }
+    }
+
+  if (buflen >= 6 && is_openpgp_compressed_packet (buf, buflen))
+    {
+      return 1; /* Already compressed.  */
+    }
+
+  return 0;  /* Not detected as compressed.  */
 }
 
 

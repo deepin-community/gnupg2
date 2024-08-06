@@ -20,7 +20,6 @@
  */
 
 #include <config.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,7 +38,6 @@
 #include "../common/exectool.h"
 #include "../common/mbox-util.h"
 #include "../common/name-value.h"
-#include "../common/comopt.h"
 #include "call-dirmngr.h"
 #include "mime-maker.h"
 #include "send-mail.h"
@@ -78,14 +76,13 @@ enum cmd_and_opt_values
     oNoAutostart,
     oAddRevocs,
     oNoAddRevocs,
-    oRealClean,
 
     oDummy
   };
 
 
 /* The list of commands and options. */
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
   ARGPARSE_group (300, ("@Commands:\n ")),
 
   ARGPARSE_c (aSupported, "supported",
@@ -122,9 +119,8 @@ static gpgrt_opt_t opts[] = {
   ARGPARSE_s_n (oWithColons, "with-colons", "@"),
   ARGPARSE_s_s (oBlacklist, "blacklist", "@"),
   ARGPARSE_s_s (oDirectory, "directory", "@"),
-  ARGPARSE_s_n (oAddRevocs, "add-revocs", "@"),
+  ARGPARSE_s_n (oAddRevocs, "add-revocs", "add revocation certificates"),
   ARGPARSE_s_n (oNoAddRevocs, "no-add-revocs", "do not add revocation certificates"),
-  ARGPARSE_s_n (oRealClean, "realclean", "remove most key signatures"),
 
   ARGPARSE_s_s (oFakeSubmissionAddr, "fake-submission-addr", "@"),
 
@@ -156,7 +152,7 @@ static char **blacklist_array;
 static size_t blacklist_array_len;
 
 
-static void wrong_args (const char *t1, const char *t2) GPGRT_ATTR_NORETURN;
+static void wrong_args (const char *text) GPGRT_ATTR_NORETURN;
 static void add_blacklist (const char *fname);
 static gpg_error_t proc_userid_from_stdin (gpg_error_t (*func)(const char *),
                                            const char *text);
@@ -206,15 +202,9 @@ my_strusage( int level )
 
 
 static void
-wrong_args (const char *text, const char *text2)
+wrong_args (const char *text)
 {
-#if GPGRT_VERSION_NUMBER >= 0x013000 /* >= 1.48 */
-  /* Skip the leading dashes if build with command support.  */
-  if (text[0] == '-' && text[1] == '-' && text[2])
-    text += 2;
-#endif
-  es_fprintf (es_stderr, _("usage: %s %s [options] %s\n"),
-              gpgrt_strusage (11), text, text2);
+  es_fprintf (es_stderr, _("usage: %s [options] %s\n"), strusage (11), text);
   exit (2);
 }
 
@@ -222,12 +212,12 @@ wrong_args (const char *text, const char *text2)
 
 /* Command line parsing.  */
 static enum cmd_and_opt_values
-parse_arguments (gpgrt_argparse_t *pargs, gpgrt_opt_t *popts)
+parse_arguments (ARGPARSE_ARGS *pargs, ARGPARSE_OPTS *popts)
 {
   enum cmd_and_opt_values cmd = 0;
   int no_more_options = 0;
 
-  while (!no_more_options && gpgrt_argparse (NULL, pargs, popts))
+  while (!no_more_options && gnupg_argparse (NULL, pargs, popts))
     {
       switch (pargs->r_opt)
         {
@@ -242,16 +232,16 @@ parse_arguments (gpgrt_argparse_t *pargs, gpgrt_opt_t *popts)
           break;
 
         case oGpgProgram:
-          opt.gpg_program = make_filename (pargs->r.ret_str, NULL);
+          opt.gpg_program = pargs->r.ret_str;
           break;
         case oDirectory:
-          opt.directory = make_filename (pargs->r.ret_str, NULL);
+          opt.directory = pargs->r.ret_str;
           break;
         case oSend:
           opt.use_sendmail = 1;
           break;
         case oOutput:
-          opt.output = make_filename (pargs->r.ret_str, NULL);
+          opt.output = pargs->r.ret_str;
           break;
         case oFakeSubmissionAddr:
           fake_submission_addr = pargs->r.ret_str;
@@ -273,10 +263,6 @@ parse_arguments (gpgrt_argparse_t *pargs, gpgrt_opt_t *popts)
           break;
         case oNoAddRevocs:
           opt.add_revocs = 0;
-          break;
-
-        case oRealClean:
-          opt.realclean = 1;
           break;
 
 	case aSupported:
@@ -306,11 +292,11 @@ int
 main (int argc, char **argv)
 {
   gpg_error_t err, delayed_err;
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   enum cmd_and_opt_values cmd;
 
   gnupg_reopen_std ("gpg-wks-client");
-  gpgrt_set_strusage (my_strusage);
+  set_strusage (my_strusage);
   log_set_prefix ("gpg-wks-client", GPGRT_LOG_WITH_PREFIX);
 
   /* Make sure that our subsystems are ready.  */
@@ -326,31 +312,11 @@ main (int argc, char **argv)
   pargs.argc  = &argc;
   pargs.argv  = &argv;
   pargs.flags = ARGPARSE_FLAG_KEEP;
-#if GPGRT_VERSION_NUMBER >= 0x013000 /* >= 1.48 */
-  pargs.flags |= ARGPARSE_FLAG_COMMAND;
-#endif
   cmd = parse_arguments (&pargs, opts);
-  gpgrt_argparse (NULL, &pargs, NULL);
-
-  /* Check if gpg is build with sendmail support */
-  if (opt.use_sendmail && !NAME_OF_SENDMAIL[0])
-    {
-      err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
-      log_error ("sending mail is not supported in this build: %s\n",
-                gpg_strerror (err));
-    }
+  gnupg_argparse (NULL, &pargs, NULL);
 
   if (log_get_errorcount (0))
     exit (2);
-
-  /* Process common component options.  Note that we set the config
-   * dir only here so that --homedir will have an effect.  */
-  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
-  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
-  if (parse_comopt (GNUPG_MODULE_NAME_CONNECT_AGENT, opt.verbose > 1))
-    exit(2);
-  if (comopt.no_autostart)
-     opt.no_autostart = 1;
 
   /* Print a warning if an argument looks like an option.  */
   if (!opt.quiet && !(pargs.flags & ARGPARSE_FLAG_STOP_SEEN))
@@ -364,7 +330,7 @@ main (int argc, char **argv)
 
   /* Set defaults for non given options.  */
   if (!opt.gpg_program)
-    opt.gpg_program = xstrdup (gnupg_module_name (GNUPG_MODULE_NAME_GPG));
+    opt.gpg_program = gnupg_module_name (GNUPG_MODULE_NAME_GPG);
 
   if (!opt.directory)
     opt.directory = "openpgpkey";
@@ -408,7 +374,7 @@ main (int argc, char **argv)
       else
         {
           if (argc != 1)
-            wrong_args ("--supported", "DOMAIN");
+            wrong_args ("--supported DOMAIN");
           err = command_supported (argv[0]);
           if (err && gpg_err_code (err) != GPG_ERR_FALSE)
             log_error ("checking support failed: %s\n", gpg_strerror (err));
@@ -417,7 +383,7 @@ main (int argc, char **argv)
 
     case aCreate:
       if (argc != 2)
-        wrong_args ("--create", "FINGERPRINT USER-ID");
+        wrong_args ("--create FINGERPRINT USER-ID");
       err = command_create (argv[0], argv[1]);
       if (err)
         log_error ("creating request failed: %s\n", gpg_strerror (err));
@@ -425,7 +391,7 @@ main (int argc, char **argv)
 
     case aReceive:
       if (argc)
-        wrong_args ("--receive", "< MIME-DATA");
+        wrong_args ("--receive < MIME-DATA");
       err = wks_receive (es_stdin, command_receive_cb, NULL);
       if (err)
         log_error ("processing mail failed: %s\n", gpg_strerror (err));
@@ -433,7 +399,7 @@ main (int argc, char **argv)
 
     case aRead:
       if (argc)
-        wrong_args ("--read", "< WKS-DATA");
+        wrong_args ("--read < WKS-DATA");
       err = read_confirmation_request (es_stdin);
       if (err)
         log_error ("processing mail failed: %s\n", gpg_strerror (err));
@@ -441,7 +407,7 @@ main (int argc, char **argv)
 
     case aCheck:
       if (argc != 1)
-        wrong_args ("--check", "USER-ID");
+        wrong_args ("--check USER-ID");
       err = command_check (argv[0]);
       break;
 
@@ -458,12 +424,12 @@ main (int argc, char **argv)
       else if (argc == 2)
         err = wks_cmd_install_key (*argv, argv[1]);
       else
-        wrong_args ("--install-key", "[FILE|FINGERPRINT USER-ID]");
+        wrong_args ("--install-key [FILE|FINGERPRINT USER-ID]");
       break;
 
     case aRemoveKey:
       if (argc != 1)
-        wrong_args ("--remove-key", "USER-ID");
+        wrong_args ("--remove-key USER-ID");
       err = wks_cmd_remove_key (*argv);
       break;
 
@@ -501,7 +467,7 @@ main (int argc, char **argv)
       break;
 
     default:
-      gpgrt_usage (1);
+      usage (1);
       err = 0;
       break;
     }
@@ -778,7 +744,7 @@ decrypt_stream_status_cb (void *opaque, const char *keyword, char *args)
     log_debug ("gpg status: %s %s\n", keyword, args);
   if (!strcmp (keyword, "DECRYPTION_KEY") && !decinfo->fpr)
     {
-      const char *fields[3];
+      char *fields[3];
 
       if (split_fields (args, fields, DIM (fields)) >= 3)
         {
@@ -1006,11 +972,11 @@ command_supported (char *userid)
   if (!strchr (userid, '@'))
     {
       char *tmp = xstrconcat ("foo@", userid, NULL);
-      addrspec = mailbox_from_userid (tmp, 0);
+      addrspec = mailbox_from_userid (tmp);
       xfree (tmp);
     }
   else
-    addrspec = mailbox_from_userid (userid, 0);
+    addrspec = mailbox_from_userid (userid);
   if (!addrspec)
     {
       log_error (_("\"%s\" is not a proper mail address\n"), userid);
@@ -1073,7 +1039,7 @@ command_check (char *userid)
   uidinfo_list_t sl;
   int found = 0;
 
-  addrspec = mailbox_from_userid (userid, 0);
+  addrspec = mailbox_from_userid (userid);
   if (!addrspec)
     {
       log_error (_("\"%s\" is not a proper mail address\n"), userid);
@@ -1147,19 +1113,6 @@ command_check (char *userid)
                  addrspec);
       err = gpg_error (GPG_ERR_CERT_REVOKED);
     }
-  else if (opt.output)
-    {
-      /* Save to file.  */
-      const char *fname = opt.output;
-
-      if (*fname == '-' && !fname[1])
-        fname = NULL;
-      es_rewind (key);
-      err = wks_write_to_file (key, fname);
-      if (err)
-        log_error ("writing key to '%s' failed: %s\n",
-                   fname? fname : "[stdout]", gpg_strerror (err));
-    }
 
  leave:
   xfree (fpr);
@@ -1193,14 +1146,15 @@ command_create (const char *fingerprint, const char *userid)
   int any;
 
   if (classify_user_id (fingerprint, &desc, 1)
-      || desc.mode != KEYDB_SEARCH_MODE_FPR)
+      || !(desc.mode == KEYDB_SEARCH_MODE_FPR
+           || desc.mode == KEYDB_SEARCH_MODE_FPR20))
     {
       log_error (_("\"%s\" is not a fingerprint\n"), fingerprint);
       err = gpg_error (GPG_ERR_INV_NAME);
       goto leave;
     }
 
-  addrspec = mailbox_from_userid (userid, 0);
+  addrspec = mailbox_from_userid (userid);
   if (!addrspec)
     {
       log_error (_("\"%s\" is not a proper mail address\n"), userid);
@@ -1479,7 +1433,7 @@ static void
 encrypt_response_status_cb (void *opaque, const char *keyword, char *args)
 {
   gpg_error_t *failure = opaque;
-  const char *fields[2];
+  char *fields[2];
 
   if (DBG_CRYPTO)
     log_debug ("gpg status: %s %s\n", keyword, args);
@@ -1793,8 +1747,6 @@ process_confirmation_request (estream_t msg, const char *mainfpr)
       log_info ("no encryption key found - sending response in the clear\n");
       err = send_confirmation_response (sender, address, nonce, 0, NULL);
     }
-  if (!err)
-    log_info ("response sent to '%s' for '%s'\n", sender, address);
 
  leave:
   nvc_release (nvc);
@@ -1843,7 +1795,7 @@ read_confirmation_request (estream_t msg)
         {
           err = gpg_error (GPG_ERR_WRONG_SECKEY);
           log_error ("key used to decrypt the confirmation request"
-                     " was not generated by us (otrust=%c)\n", decinfo.otrust);
+                     " was not generated by us\n");
         }
       else
         err = process_confirmation_request (plaintext, decinfo.mainfpr);
@@ -1919,7 +1871,7 @@ domain_matches_mbox (const char *domain, const char *mbox)
  * so that for a key with
  *    uid: Joe Someone <joe@example.org>
  *    uid: Joe <joe@example.org>
- * only the newest user id (and thus its self-signature) is used.
+ * only the news user id (and thus its self-signature) is used.
  * UIDLIST is nodified to set all MBOX fields to NULL for a processed
  * user id.  FPR is the fingerprint of the key.
  */

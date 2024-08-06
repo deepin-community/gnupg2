@@ -41,7 +41,6 @@
 
 #include "cvt-openpgp.h"
 #include "../common/sexp-parse.h"
-#include "../common/openpgpdefs.h"  /* For s2k functions.  */
 
 
 /* The protection mode for encryption.  The supported modes for
@@ -49,6 +48,9 @@
 #define PROT_CIPHER        GCRY_CIPHER_AES128
 #define PROT_CIPHER_STRING "aes"
 #define PROT_CIPHER_KEYLEN (128/8)
+
+/* Decode an rfc4880 encoded S2K count.  */
+#define S2K_DECODE_COUNT(_val) ((16ul + ((_val) & 15)) << (((_val) >> 4) + 6))
 
 
 /* A table containing the information needed to create a protected
@@ -96,36 +98,21 @@ hash_passphrase (const char *passphrase, int hashalgo,
 
 
 
-/*
- * Determine if we can use clock_gettime with CLOCK_THREAD_CPUTIME_ID,
- * at compile time.
- */
-#if defined (CLOCK_THREAD_CPUTIME_ID)
-# if _POSIX_THREAD_CPUTIME > 0
-# define USE_CLOCK_GETTIME 1
-# elif _POSIX_THREAD_CPUTIME == 0
-/*
- * In this case, we should check sysconf with _POSIX_THREAD_CPUTIME at
- * run time.  As heuristics, for system with newer GNU C library, we
- * can assume it is available.
- */
-#  if __GLIBC__ >= 2 && __GLIBC_MINOR__ >= 17
-#  define USE_CLOCK_GETTIME 1
-#  endif
-# endif
-#else
-#undef USE_CLOCK_GETTIME
-#endif
-
 /* Get the process time and store it in DATA.  */
 static void
 calibrate_get_time (struct calibrate_time_s *data)
 {
 #ifdef HAVE_W32_SYSTEM
+# ifdef HAVE_W32CE_SYSTEM
+  GetThreadTimes (GetCurrentThread (),
+                  &data->creation_time, &data->exit_time,
+                  &data->kernel_time, &data->user_time);
+# else
   GetProcessTimes (GetCurrentProcess (),
                    &data->creation_time, &data->exit_time,
                    &data->kernel_time, &data->user_time);
-#elif defined (USE_CLOCK_GETTIME)
+# endif
+#elif defined (CLOCK_THREAD_CPUTIME_ID)
   struct timespec tmp;
 
   clock_gettime (CLOCK_THREAD_CPUTIME_ID, &tmp);
@@ -504,18 +491,18 @@ do_encryption (const unsigned char *hashbegin, size_t hashlen,
   gcry_cipher_close (hd);
 
   /* Now allocate the buffer we want to return.  This is
-
-     (protected openpgp-s2k3-sha1-aes-cbc
-       ((sha1 salt no_of_iterations) 16byte_iv)
-       encrypted_octet_string)
-
-     in canoncical format of course.  We use asprintf and %n modifier
-     and dummy values as placeholders.  */
+   *
+   * (protected openpgp-s2k3-ocb-aes
+   *   ((sha1 salt no_of_iterations) 12byte_nonce)
+   *   encrypted_octet_string)
+   *
+   * in canoncical format of course.  We use asprintf and %n modifier
+   * and dummy values as placeholders.  */
   {
     char countbuf[35];
 
     snprintf (countbuf, sizeof countbuf, "%lu",
-	    s2k_count ? s2k_count : get_standard_s2k_count ());
+              s2k_count ? s2k_count : get_standard_s2k_count ());
     p = xtryasprintf
       ("(9:protected%d:%s((4:sha18:%n_8bytes_%u:%s)%d:%n%*s)%d:%n%*s)",
        (int)strlen (modestr), modestr,
@@ -665,11 +652,11 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
   hash_end = s;
   s++;
   /* Skip to the end of the S-expression.  */
-  log_assert (depth == 1);
+  assert (depth == 1);
   rc = sskip (&s, &depth);
   if (rc)
     return rc;
-  log_assert (!depth);
+  assert (!depth);
   real_end = s-1;
 
   rc = do_encryption (hash_begin, hash_end - hash_begin + 1,
@@ -707,7 +694,7 @@ agent_protect (const unsigned char *plainkey, const char *passphrase,
 
   memcpy (p, prot_end+1, real_end - prot_end);
   p += real_end - prot_end;
-  log_assert ( p - *result == *resultlen);
+  assert ( p - *result == *resultlen);
   xfree (protected);
 
   return 0;
@@ -896,10 +883,7 @@ merge_lists (const unsigned char *protectedkey,
   /* Copy the cleartext.  */
   s = cleartext;
   if (*s != '(' && s[1] != '(')
-    {
-      xfree (newlist);
-      return gpg_error (GPG_ERR_BUG);  /*we already checked this */
-    }
+    return gpg_error (GPG_ERR_BUG);  /*we already checked this */
   s += 2;
   startpos = s;
   while ( *s == '(' )
@@ -949,7 +933,7 @@ merge_lists (const unsigned char *protectedkey,
 
   /* Skip over the protected list element in the original list.  */
   s = protectedkey + replacepos;
-  log_assert (*s == '(');
+  assert (*s == '(');
   s++;
   i = 1;
   rc = sskip (&s, &i);
@@ -976,7 +960,7 @@ merge_lists (const unsigned char *protectedkey,
   rc = sskip (&s, &i);
   if (rc)
     goto failure;
-  log_assert (s[-1] == ')');
+  assert (s[-1] == ')');
   endpos = s; /* one behind the end of the list */
 
   /* Append the rest. */
@@ -1076,7 +1060,7 @@ agent_unprotect (ctrl_t ctrl,
   if (!protect_info[infidx].algo)
     return gpg_error (GPG_ERR_UNSUPPORTED_ALGORITHM);
 
-  /* See whether we have a protected-at timestamp.  */
+  /* See wether we have a protected-at timestamp.  */
   protect_list = s;  /* Save for later.  */
   if (protected_at)
     {
@@ -1466,10 +1450,9 @@ make_shadow_info (const char *serialno, const char *idstring)
   to. The input parameters are expected to be valid canonicalized
   S-expressions */
 int
-agent_shadow_key_type (const unsigned char *pubkey,
-                       const unsigned char *shadow_info,
-                       const unsigned char *type,
-                       unsigned char **result)
+agent_shadow_key (const unsigned char *pubkey,
+                  const unsigned char *shadow_info,
+                  unsigned char **result)
 {
   const unsigned char *s;
   const unsigned char *point;
@@ -1522,10 +1505,10 @@ agent_shadow_key_type (const unsigned char *pubkey,
   point = s; /* insert right before the point */
   depth--;
   s++;
-  log_assert (depth == 1);
+  assert (depth == 1);
 
   /* Calculate required length by taking in account: the "shadowed-"
-     prefix, the "shadowed", shadow type as well as some parenthesis */
+     prefix, the "shadowed", "t1-v1" as well as some parenthesis */
   n = 12 + pubkey_len + 1 + 3+8 + 2+5 + shadow_info_len + 1;
   *result = xtrymalloc (n);
   p = (char*)*result;
@@ -1535,7 +1518,7 @@ agent_shadow_key_type (const unsigned char *pubkey,
   /* (10:public-key ...)*/
   memcpy (p, pubkey+14, point - (pubkey+14));
   p += point - (pubkey+14);
-  p += sprintf (p, "(8:shadowed%d:%s", (int)strlen(type), type);
+  p = stpcpy (p, "(8:shadowed5:t1-v1");
   memcpy (p, shadow_info, shadow_info_len);
   p += shadow_info_len;
   *p++ = ')';
@@ -1545,26 +1528,16 @@ agent_shadow_key_type (const unsigned char *pubkey,
   return 0;
 }
 
-int
-agent_shadow_key (const unsigned char *pubkey,
-                  const unsigned char *shadow_info,
-                  unsigned char **result)
-{
-  return agent_shadow_key_type (pubkey, shadow_info, "t1-v1", result);
-}
-
 /* Parse a canonical encoded shadowed key and return a pointer to the
-   inner list with the shadow_info and the shadow type */
+   inner list with the shadow_info */
 gpg_error_t
-agent_get_shadow_info_type (const unsigned char *shadowkey,
-                            unsigned char const **shadow_info,
-                            unsigned char **shadow_type)
+agent_get_shadow_info (const unsigned char *shadowkey,
+                       unsigned char const **shadow_info)
 {
-  const unsigned char *s, *saved_s;
-  size_t n, saved_n;
+  const unsigned char *s;
+  size_t n;
   int depth = 0;
 
-  (void)depth;
   s = shadowkey;
   if (*s != '(')
     return gpg_error (GPG_ERR_INV_SEXP);
@@ -1611,70 +1584,15 @@ agent_get_shadow_info_type (const unsigned char *shadowkey,
   n = snext (&s);
   if (!n)
     return gpg_error (GPG_ERR_INV_SEXP);
-  saved_s = s;
-  saved_n = n;
-  if (smatch (&s, n, "t1-v1") || smatch(&s, n, "tpm2-v1"))
+  if (smatch (&s, n, "t1-v1"))
     {
       if (*s != '(')
         return gpg_error (GPG_ERR_INV_SEXP);
-      if (shadow_info)
-        *shadow_info = s;
+      *shadow_info = s;
     }
   else
     return gpg_error (GPG_ERR_UNSUPPORTED_PROTOCOL);
-  s = saved_s;
-  n = saved_n;
-
-  if (shadow_type)
-    {
-      char *buf = xtrymalloc(n+1);
-      if (!buf)
-        return gpg_error_from_syserror ();
-      memcpy (buf, s, n);
-      buf[n] = '\0';
-      *shadow_type = buf;
-    }
-
   return 0;
-}
-
-
-gpg_error_t
-agent_get_shadow_info (const unsigned char *shadowkey,
-                       unsigned char const **shadow_info)
-{
-  return agent_get_shadow_info_type (shadowkey, shadow_info, NULL);
-}
-
-
-int
-agent_is_tpm2_key (gcry_sexp_t s_skey)
-{
-  unsigned char *buf;
-  unsigned char *type;
-  size_t len;
-  gpg_error_t err;
-
-  err = make_canon_sexp (s_skey, &buf, &len);
-  if (err)
-    return 0;
-
-  err = agent_get_shadow_info_type (buf, NULL, &type);
-  xfree (buf);
-  if (err)
-    return 0;
-
-  err = strcmp (type, "tpm2-v1") == 0;
-  xfree (type);
-  return err;
-}
-
-
-gpg_error_t
-agent_get_shadow_type (const unsigned char *shadowkey,
-                       unsigned char **shadow_type)
-{
-  return agent_get_shadow_info_type (shadowkey, NULL, shadow_type);
 }
 
 
@@ -1683,8 +1601,7 @@ agent_get_shadow_type (const unsigned char *shadowkey,
    R_HEXSN and the Id string as a malloced string at R_IDSTR.  On
    error an error code is returned and NULL is stored at the result
    parameters addresses.  If the serial number or the ID string is not
-   required, NULL may be passed for them.  Note that R_PINLEN is
-   currently not used by any caller.  */
+   required, NULL may be passed for them.  */
 gpg_error_t
 parse_shadow_info (const unsigned char *shadow_info,
                    char **r_hexsn, char **r_idstr, int *r_pinlen)
@@ -1740,6 +1657,7 @@ parse_shadow_info (const unsigned char *shadow_info,
         }
       memcpy (*r_idstr, s, n);
       (*r_idstr)[n] = 0;
+      trim_spaces (*r_idstr);
     }
 
   /* Parse the optional PINLEN.  */

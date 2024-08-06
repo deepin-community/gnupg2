@@ -25,6 +25,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 #ifdef HAVE_LOCALE_H
 #include <locale.h>
 #endif
@@ -75,13 +76,6 @@ struct import_key_parm_s
   size_t keylen;
 };
 
-struct sethash_inq_parm_s
-{
-  assuan_context_t ctx;
-  const void *data;
-  size_t datalen;
-};
-
 struct default_inq_parm_s
 {
   ctrl_t ctrl;
@@ -95,10 +89,41 @@ static gpg_error_t
 warn_version_mismatch (ctrl_t ctrl, assuan_context_t ctx,
                        const char *servername, int mode)
 {
-  return warn_server_version_mismatch (ctx, servername, mode,
-                                       gpgsm_status2, ctrl,
-                                       !opt.quiet);
+  gpg_error_t err;
+  char *serverversion;
+  const char *myversion = strusage (13);
+
+  err = get_assuan_server_version (ctx, mode, &serverversion);
+  if (err)
+    log_error (_("error getting version from '%s': %s\n"),
+               servername, gpg_strerror (err));
+  else if (compare_version_strings (serverversion, myversion) < 0)
+    {
+      char *warn;
+
+      warn = xtryasprintf (_("server '%s' is older than us (%s < %s)"),
+                           servername, serverversion, myversion);
+      if (!warn)
+        err = gpg_error_from_syserror ();
+      else
+        {
+          log_info (_("WARNING: %s\n"), warn);
+          if (!opt.quiet)
+            {
+              log_info (_("Note: Outdated servers may lack important"
+                          " security fixes.\n"));
+              log_info (_("Note: Use the command \"%s\" to restart them.\n"),
+                        "gpgconf --kill all");
+            }
+          gpgsm_status2 (ctrl, STATUS_WARNING, "server_version_mismatch 0",
+                         warn, NULL);
+          xfree (warn);
+        }
+    }
+  xfree (serverversion);
+  return err;
 }
+
 
 /* Try to connect to the agent via socket or fork it off and work by
    pipes.  Handle the server's initial greeting */
@@ -234,29 +259,8 @@ default_inq_cb (void *opaque, const char *line)
 
 
 
-/* This is the inquiry callback required by the SETHASH command.  */
-static gpg_error_t
-sethash_inq_cb (void *opaque, const char *line)
-{
-  gpg_error_t err = 0;
-  struct sethash_inq_parm_s *parm = opaque;
-
-  if (has_leading_keyword (line, "TBSDATA"))
-    {
-      err = assuan_send_data (parm->ctx, parm->data, parm->datalen);
-    }
-  else
-    log_error ("ignoring gpg-agent inquiry '%s'\n", line);
-
-  return err;
-}
-
-
 /* Call the agent to do a sign operation using the key identified by
- * the hex string KEYGRIP.  If DIGESTALGO is given (DIGEST,DIGESTLEN)
- * gives the to be signed hash created using the given algo.  If
- * DIGESTALGO is not given (i.e. zero) (DIGEST,DIGESTALGO) give the
- * entire data to-be-signed. */
+   the hex string KEYGRIP. */
 int
 gpgsm_agent_pksign (ctrl_t ctrl, const char *keygrip, const char *desc,
                     unsigned char *digest, size_t digestlen, int digestalgo,
@@ -275,7 +279,7 @@ gpgsm_agent_pksign (ctrl_t ctrl, const char *keygrip, const char *desc,
   inq_parm.ctrl = ctrl;
   inq_parm.ctx = agent_ctx;
 
-  if (digestalgo && digestlen*2 + 50 > DIM(line))
+  if (digestlen*2 + 50 > DIM(line))
     return gpg_error (GPG_ERR_GENERAL);
 
   rc = assuan_transact (agent_ctx, "RESET", NULL, NULL, NULL, NULL, NULL, NULL);
@@ -296,26 +300,11 @@ gpgsm_agent_pksign (ctrl_t ctrl, const char *keygrip, const char *desc,
         return rc;
     }
 
-  if (!digestalgo)
-    {
-      struct sethash_inq_parm_s sethash_inq_parm;
-
-      sethash_inq_parm.ctx = agent_ctx;
-      sethash_inq_parm.data = digest;
-      sethash_inq_parm.datalen = digestlen;
-      rc = assuan_transact (agent_ctx, "SETHASH --inquire",
-                            NULL, NULL, sethash_inq_cb, &sethash_inq_parm,
-                            NULL, NULL);
-    }
-  else
-    {
-      snprintf (line, sizeof line, "SETHASH %d ", digestalgo);
-      p = line + strlen (line);
-      for (i=0; i < digestlen ; i++, p += 2 )
-        sprintf (p, "%02X", digest[i]);
-      rc = assuan_transact (agent_ctx, line,
-                            NULL, NULL, NULL, NULL, NULL, NULL);
-    }
+  sprintf (line, "SETHASH %d ", digestalgo);
+  p = line + strlen (line);
+  for (i=0; i < digestlen ; i++, p += 2 )
+    sprintf (p, "%02X", digest[i]);
+  rc = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
   if (rc)
     return rc;
 
@@ -367,6 +356,7 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
     case GCRY_MD_RMD160:hashopt = "--hash=rmd160"; break;
     case GCRY_MD_MD5:   hashopt = "--hash=md5"; break;
     case GCRY_MD_SHA256:hashopt = "--hash=sha256"; break;
+    case GCRY_MD_SHA384:hashopt = "--hash=sha384"; break;
     case GCRY_MD_SHA512:hashopt = "--hash=sha512"; break;
     default:
       return gpg_error (GPG_ERR_DIGEST_ALGO);
@@ -422,19 +412,13 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
     {
     case GCRY_PK_RSA:
       rc = gcry_sexp_build (&sig, NULL, "(sig-val(rsa(s%b)))",
-                            (int)sigbuflen, sigbuf);
+                            sigbuflen, sigbuf);
       break;
 
     case GCRY_PK_ECC:
       rc = gcry_sexp_build (&sig, NULL, "(sig-val(ecdsa(r%b)(s%b)))",
-                            (int)sigbuflen/2, sigbuf,
-                            (int)sigbuflen/2, sigbuf + sigbuflen/2);
-      break;
-
-    case GCRY_PK_EDDSA:
-      rc = gcry_sexp_build (&sig, NULL, "(sig-val(eddsa(r%b)(s%b)))",
-                            (int)sigbuflen/2, sigbuf,
-                            (int)sigbuflen/2, sigbuf + sigbuflen/2);
+                            sigbuflen/2, sigbuf,
+                            sigbuflen/2, sigbuf + sigbuflen/2);
       break;
 
     default:
@@ -450,7 +434,7 @@ gpgsm_scd_pksign (ctrl_t ctrl, const char *keyid, const char *desc,
   if (rc)
     return rc;
 
-  log_assert (gcry_sexp_canon_len (*r_buf, *r_buflen, NULL, NULL));
+  assert (gcry_sexp_canon_len (*r_buf, *r_buflen, NULL, NULL));
   return  0;
 }
 
@@ -512,7 +496,7 @@ gpgsm_agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
   if (rc)
     return rc;
 
-  log_assert ( DIM(line) >= 50 );
+  assert ( DIM(line) >= 50 );
   snprintf (line, DIM(line), "SETKEY %s", keygrip);
   rc = assuan_transact (agent_ctx, line, NULL, NULL, NULL, NULL, NULL, NULL);
   if (rc)
@@ -546,7 +530,7 @@ gpgsm_agent_pkdecrypt (ctrl_t ctrl, const char *keygrip, const char *desc,
   buf = get_membuf (&data, &len);
   if (!buf)
     return gpg_error (GPG_ERR_ENOMEM);
-  log_assert (len); /* (we forced Nul termination.)  */
+  assert (len); /* (we forced Nul termination.)  */
 
   if (*buf == '(')
     {

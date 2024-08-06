@@ -31,7 +31,6 @@ enum {
   SW_EOF_REACHED    = 0x6282,
   SW_TERM_STATE     = 0x6285, /* Selected file is in termination state.  */
   SW_EEPROM_FAILURE = 0x6581,
-  SW_ACK_TIMEOUT    = 0x6600, /* OpenPGPcard: Ack timeout.  */
   SW_WRONG_LENGTH   = 0x6700,
   SW_SM_NOT_SUP     = 0x6882, /* Secure Messaging is not supported.  */
   SW_CC_NOT_SUP     = 0x6884, /* Command Chaining is not supported.  */
@@ -83,9 +82,7 @@ enum {
   SW_HOST_USB_NO_DEVICE = 0x10024,
   SW_HOST_USB_BUSY      = 0x10026,
   SW_HOST_USB_TIMEOUT   = 0x10027,
-  SW_HOST_USB_OVERFLOW  = 0x10028,
-  SW_HOST_UI_CANCELLED  = 0x10030,
-  SW_HOST_UI_TIMEOUT    = 0x10031
+  SW_HOST_USB_OVERFLOW  = 0x10028
 };
 
 struct dev_list;
@@ -105,7 +102,7 @@ gpg_error_t apdu_dev_list_start (const char *portstr, struct dev_list **l_p);
 void apdu_dev_list_finish (struct dev_list *l);
 
 /* Note, that apdu_open_reader returns no status word but -1 on error. */
-int apdu_open_reader (struct dev_list *l);
+int apdu_open_reader (struct dev_list *l, int app_empty);
 int apdu_open_remote_reader (const char *portstr,
                              const unsigned char *cookie, size_t length,
                              int (*readfnc) (void *opaque,
@@ -154,5 +151,6 @@ int apdu_send_direct (int slot, size_t extended_length,
                       int handle_more, unsigned int *r_sw,
                       unsigned char **retbuf, size_t *retbuflen);
 const char *apdu_get_reader_name (int slot);
+char *apdu_get_reader_list (void);
 
 #endif /*APDU_H*/

@@ -30,10 +30,10 @@ AM_CPPFLAGS =
 
 include $(top_srcdir)/am/cmacros.am
 
-AM_CFLAGS = $(SQLITE3_CFLAGS) $(LIBGCRYPT_CFLAGS) \
-            $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) $(GPG_ERROR_CFLAGS)
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(SQLITE3_CFLAGS) \
+            $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS)
 
-needed_libs = ../kbx/libkeybox.a $(libcommonpth) ../regexp/libregexp.a
+needed_libs = ../kbx/libkeybox.a $(libcommon) ../regexp/libregexp.a
 
 # Because there are no program specific transform macros we need to
 # work around that to allow installing gpg as gpg2.
@@ -49,7 +49,12 @@ endif
 # NB: We use noinst_ for gpg and gpgv so that we can install them with
 # the install-hook target under the name gpg2/gpgv2.
 noinst_PROGRAMS = gpg
+if !HAVE_W32CE_SYSTEM
 noinst_PROGRAMS += gpgv
+endif
+if MAINTAINER_MODE
+noinst_PROGRAMS += gpgcompose
+endif
 noinst_PROGRAMS += $(module_tests)
 if DISABLE_TESTS
 TESTS =
@@ -101,11 +106,7 @@ common_source =  \
 	      filter.h		\
 	      free-packet.c	\
 	      getkey.c		\
-	      expand-group.c	\
-	      keydb.h           \
-	      keydb-private.h   \
-              call-keyboxd.c    \
-	      keydb.c           \
+	      keydb.c keydb.h    \
 	      keyring.c keyring.h \
 	      seskey.c		\
 	      kbnode.c		\
@@ -127,7 +128,6 @@ common_source =  \
 	      sig-check.c	\
 	      keylist.c 	\
 	      pkglue.c pkglue.h \
-	      objcache.c objcache.h \
 	      ecdh.c
 
 gpg_sources = server.c          \
@@ -138,8 +138,7 @@ gpg_sources = server.c          \
 	      passphrase.c	\
 	      decrypt.c 	\
 	      decrypt-data.c	\
-	      cipher-cfb.c	\
-	      cipher-aead.c     \
+	      cipher.c		\
 	      encrypt.c		\
 	      sign.c		\
 	      verify.c		\
@@ -166,43 +165,48 @@ gpg_SOURCES  = gpg.c \
 	keyedit.c keyedit.h	\
 	$(gpg_sources)
 
+gpgcompose_SOURCES  = gpgcompose.c  $(gpg_sources)
 gpgv_SOURCES = gpgv.c           \
 	      $(common_source)  \
 	      verify.c
 
+#gpgd_SOURCES = gpgd.c \
+#	       ks-proto.h \
+#	       ks-proto.c \
+#	       ks-db.c \
+#	       ks-db.h \
+#	       $(common_source)
+
 LDADD =  $(needed_libs) ../common/libgpgrl.a \
          $(ZLIBS) $(LIBINTL) $(CAPLIBS)
-gpg_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
-             $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
-	     $(LIBICONV) $(gpg_rc_objs)
-gpg_LDFLAGS =
+gpg_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(SQLITE3_LIBS) $(LIBREADLINE) \
+             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	     $(LIBICONV) $(gpg_rc_objs) $(extra_sys_libs)
+gpg_LDFLAGS = $(extra_bin_ldflags)
 gpgv_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-	      $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
-	      $(LIBICONV) $(gpgv_rc_objs)
-gpgv_LDFLAGS =
+              $(GPG_ERROR_LIBS) $(NETLIBS) \
+	      $(LIBICONV) $(gpgv_rc_objs) $(extra_sys_libs)
+gpgv_LDFLAGS = $(extra_bin_ldflags)
 
+gpgcompose_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
+             $(LIBASSUAN_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+	     $(LIBICONV) $(extra_sys_libs)
+gpgcompose_LDFLAGS = $(extra_bin_ldflags)
 
 t_common_ldadd =
-module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter t-keyid
+module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter
 t_rmd160_SOURCES = t-rmd160.c rmd160.c
 t_rmd160_LDADD = $(t_common_ldadd)
 t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source)
-t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-              $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 t_keydb_get_keyblock_SOURCES = t-keydb-get-keyblock.c test-stubs.c \
 	      $(common_source)
-t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-              $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
-	      $(LIBICONV) $(t_common_ldadd)
+t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+	      $(NETLIBS) $(LIBICONV) $(t_common_ldadd)
 t_stutter_SOURCES = t-stutter.c test-stubs.c \
 	      $(common_source)
-t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-	      $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
-	      $(LIBICONV) $(t_common_ldadd)
-t_keyid_SOURCES = t-keyid.c test-stubs.c $(common_source)
-t_keyid_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
-              $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
 	      $(LIBICONV) $(t_common_ldadd)
 
 

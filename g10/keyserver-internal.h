@@ -50,6 +50,8 @@ gpg_error_t keyserver_search (ctrl_t ctrl, strlist_t tokens);
 int keyserver_fetch (ctrl_t ctrl, strlist_t urilist, int origin);
 int keyserver_import_cert (ctrl_t ctrl, const char *name, int dane_mode,
                            unsigned char **fpr,size_t *fpr_len);
+gpg_error_t keyserver_import_pka (ctrl_t ctrl, const char *name,
+                                  unsigned char **fpr,size_t *fpr_len);
 gpg_error_t keyserver_import_wkd (ctrl_t ctrl, const char *name,
                                   unsigned int flags,
                                   unsigned char **fpr, size_t *fpr_len);

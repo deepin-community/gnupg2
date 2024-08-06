@@ -24,6 +24,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 #ifdef HAVE_LOCALE_H
 #include <locale.h>
 #endif
@@ -45,28 +46,6 @@ struct dn_array_s {
   int   multivalued;
   int   done;
 };
-
-
-/* Get the first first element from the s-expression SN and return a
- * pointer to it.  Stores the length at R_LENGTH.  Returns NULL for no
- * value or an invalid expression.  */
-const void *
-gpgsm_get_serial (ksba_const_sexp_t sn, size_t *r_length)
-{
-  const char *p = (const char *)sn;
-  unsigned long n;
-  char *endp;
-
-  if (!p || *p != '(')
-    return NULL;
-  p++;
-  n = strtoul (p, &endp, 10);
-  p = endp;
-  if (*p++ != ':')
-    return NULL;
-  *r_length = n;
-  return p;
-}
 
 
 /* Print the first element of an S-Expression. */
@@ -103,7 +82,11 @@ gpgsm_print_serial_decimal (estream_t fp, ksba_const_sexp_t sn)
   unsigned long n, i;
   char *endp;
   gcry_mpi_t a, r, ten;
+#if GCRYPT_VERSION_NUMBER >= 0x010900 /* >= 1.9.0 */
   unsigned int dd;
+#else
+  unsigned char numbuf[10];
+#endif
 
   if (!p)
     es_fputs (_("none"), fp);
@@ -130,8 +113,15 @@ gpgsm_print_serial_decimal (estream_t fp, ksba_const_sexp_t sn)
           do
             {
               gcry_mpi_div (a, r, a, ten, 0);
+#if GCRYPT_VERSION_NUMBER >= 0x010900 /* >= 1.9.0 */
               gcry_mpi_get_ui (&dd, r);
               put_membuf_printf (&mb, "%u", dd);
+#else
+              *numbuf = 0;  /* Need to clear because USB format prints
+                             * an empty string for a value of 0.  */
+              gcry_mpi_print (GCRYMPI_FMT_USG, numbuf, 10, NULL, r);
+              put_membuf_printf (&mb, "%u", (unsigned int)*numbuf);
+#endif
             }
           while (gcry_mpi_cmp_ui (a, 0));
 
@@ -385,7 +375,7 @@ parse_dn_part (struct dn_array_s *array, const unsigned char *string)
     const char *oid;
   } label_map[] = {
     /* Warning: When adding new labels, make sure that the buffer
-       array->key will be allocated large enough. */
+       below we be allocated large enough. */
     {"EMail",        "1.2.840.113549.1.9.1" },
     {"T",            "2.5.4.12" },
     {"GN",           "2.5.4.42" },
@@ -397,7 +387,6 @@ parse_dn_part (struct dn_array_s *array, const unsigned char *string)
     {"PostalCode",   "2.5.4.17" },
     {"Pseudo",       "2.5.4.65" },
     {"SerialNumber", "2.5.4.5" },
-    {"Callsign",     "1.3.6.1.4.1.12348.1.1"},
     {NULL, NULL}
   };
   const unsigned char *s, *s1;
@@ -643,7 +632,7 @@ pretty_es_print_sexp (estream_t fp, const unsigned char *buf, size_t buflen)
       return;
     }
   len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_ADVANCED, NULL, 0);
-  log_assert (len);
+  assert (len);
   result = xtrymalloc (len);
   if (!result)
     {
@@ -652,7 +641,7 @@ pretty_es_print_sexp (estream_t fp, const unsigned char *buf, size_t buflen)
       return;
     }
   len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_ADVANCED, result, len);
-  log_assert (len);
+  assert (len);
   for (p = result; len; len--, p++)
     {
       if (*p == '\n')
@@ -728,14 +717,7 @@ gpgsm_es_print_name2 (estream_t fp, const char *name, int translate)
 void
 gpgsm_es_print_name (estream_t fp, const char *name)
 {
-  if (opt.no_pretty_dn)
-    {
-      if (!name)
-        name = "[error]";
-      es_write_sanitized (fp, name, strlen (name), NULL, NULL);
-    }
-  else
-    gpgsm_es_print_name2 (fp, name, 1);
+  gpgsm_es_print_name2 (fp, name, 1);
 }
 
 
@@ -755,7 +737,6 @@ format_name_writer (void *cookie, const void *buffer, size_t size)
   struct format_name_cookie *c = cookie;
   char *p;
 
-  /* FIXME: Replace the whole thing using es_fopenmem based code.  */
   if (!buffer)  /* Flush. */
     return 0;  /* (Actually we could use SIZE because that should be 0 too.)  */
 

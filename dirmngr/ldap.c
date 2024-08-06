@@ -234,25 +234,9 @@ url_fetch_ldap (ctrl_t ctrl, const char *url, ksba_reader_t *reader)
 
   if (ludp->lud_filter && ludp->lud_filter[0] != '(')
     {
-      if (!strcmp (ludp->lud_filter, "objectClass=cRLDistributionPoint"))
-        {
-          /* Hack for broken DPs in DGN certs.  */
-          log_info ("fixing broken LDAP URL\n");
-          free (ludp->lud_filter);
-          ludp->lud_filter
-            = strdup ("(objectClass=cRLDistributionPoint)");
-          if (!ludp->lud_filter)
-            {
-              err = gpg_error_from_syserror ();
-              goto leave;
-            }
-        }
-      else
-        {
-          log_error (_("'%s' is an invalid LDAP URL\n"), url);
-          err = gpg_error (GPG_ERR_BAD_URI);
-          goto leave;
-        }
+      log_error (_("'%s' is an invalid LDAP URL\n"), url);
+      err = gpg_error (GPG_ERR_BAD_URI);
+      goto leave;
     }
 
   if (ludp->lud_scheme && !strcmp (ludp->lud_scheme, "ldaps"))
@@ -525,7 +509,7 @@ make_one_filter (const char *pattern, char **r_result)
         {
           /* We need just the BaseDN.  This assumes that the Subject
            * is correcly stored in the DT.  This is however not always
-           * the case and the actual DN is different from the
+           * the case and the actual DN is different ffrom the
            * subject.  In this case we won't find anything.  */
           if (extfilt_need_escape (pattern)
               && !(pattern = pattern_buffer = extfilt_escape (pattern)))
@@ -670,6 +654,7 @@ start_cert_fetch_ldap (ctrl_t ctrl, cert_fetch_context_t *r_context,
   int argc_malloced = 0;
   char portbuf[30], timeoutbuf[30];
   int starttls, ldaptls, ntds;
+
 
   *r_context = NULL;
 

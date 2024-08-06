@@ -21,11 +21,9 @@
 
 #include "keydb.h"
 
-
 static void
 do_test (int argc, char *argv[])
 {
-  ctrl_t ctrl;
   char *fname;
   int rc;
   KEYDB_HANDLE hd1;
@@ -35,7 +33,6 @@ do_test (int argc, char *argv[])
   (void) argc;
   (void) argv;
 
-  ctrl = xcalloc (1, sizeof *ctrl);
   /* t-keydb-get-keyblock.gpg contains two keys: a modern key followed
      by a legacy key.  If we get the keyblock for the modern key, we
      shouldn't get
@@ -47,7 +44,7 @@ do_test (int argc, char *argv[])
   if (rc)
     ABORT ("Failed to open keyring.");
 
-  hd1 = keydb_new (ctrl);
+  hd1 = keydb_new ();
   if (!hd1)
     ABORT ("");
 
@@ -65,5 +62,4 @@ do_test (int argc, char *argv[])
 
   keydb_release (hd1);
   release_kbnode (kb1);
-  xfree (ctrl);
 }

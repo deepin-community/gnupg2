@@ -1,7 +1,5 @@
 /* ccidmon.c - CCID monitor for use with the Linux usbmon facility.
- * Copyright (C) 2009, 2016, 2019 Werner Koch
- * Copyright (C) 2021 g10 Code GmbH
- * Copyright (C) 2009 Free Software Foundation, Inc.
+ *	Copyright (C) 2009 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -17,7 +15,6 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
- * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 
@@ -67,10 +64,9 @@ static int any_error;
 struct
 {
   int is_bi;
-  char timestamp[20];
   char address[50];
   int count;
-  char data[16000];
+  char data[2000];
 } databuffer;
 
 
@@ -191,85 +187,6 @@ print_pr_data (const unsigned char *data, size_t datalen, size_t off)
 
 
 static void
-print_as_ascii (const unsigned char *buf, unsigned int buflen,unsigned int fill)
-{
-  unsigned int n;
-
-  if (!buflen)
-    return;
-  if (buflen > 16)
-    buflen = 16;
-
-  for (n = buflen; n < fill; n++)
-    fputs ("   ", stdout);
-  fputs ("  |", stdout);
-  for (n = 0; n < buflen; n++, buf++)
-    if (*buf >= 32 && *buf < 127 && *buf != '|')
-      putchar (*buf);
-    else
-      putchar ('.');
-  putchar ('|');
-}
-
-
-static void
-print_t1_block (const unsigned char *msg, size_t msglen, int to_rdr)
-{
-  unsigned int count, len;
-  unsigned char buf[16];
-
-  if (msglen < 4)
-    {
-      printf ("  T=1 ..: invalid block\n");
-      return;
-    }
-  printf ("  T=1 ..: NAD=%02x", msg[0]);
-  if (!(msg[1] & 0x80))
-    {
-      printf (" I-block seq=%d%s\n",
-              !!(msg[1] & 0x40), (msg[1] & 0x20)? " chaining":"");
-      len = msg[2];
-      msg += 3;
-      msglen -= 3;
-
-      printf ("  APDU-%c:", to_rdr? 's':'r');
-      count = 0;
-      while (msglen > 1 && len)
-        {
-          if (count == 16)
-            {
-              print_as_ascii (buf, count, count);
-              printf ("\n         ");
-              count = 0;
-            }
-          buf[count] = msg[0];
-          printf (" %02X", msg[0]);
-          msg++;
-          msglen--;
-          len--;
-          count++;
-        }
-      print_as_ascii (buf, count, 16);
-      putchar ('\n');
-    }
-  else if (!(msg[1] & 0x40))
-    printf (" R-block seq=%d%s\n",
-            !!(msg[1] & 0x10),
-            (msg[1] & 0x0f) == 0 ? "":
-            (msg[1] & 0x0f) == 1 ? "EDC error":
-            (msg[1] & 0x0f) == 2 ? "other error": "?");
-  else
-    printf (" S-block %s %s\n",
-            (msg[1] & 0x1f) == 0 ? "resync":
-            (msg[1] & 0x1f) == 1 ? "info_field_size":
-            (msg[1] & 0x1f) == 2 ? "abort":
-            (msg[1] & 0x1f) == 2 ? "BWT_extension":
-            (msg[1] & 0x1f) == 2 ? "VPP_error": "?",
-            (msg[1] & 0x20)? "response":"request");
-}
-
-
-static void
 print_p2r_header (const char *name, const unsigned char *msg, size_t msglen)
 {
   printf ("%s:\n", name);
@@ -328,11 +245,6 @@ print_p2r_xfrblock (const unsigned char *msg, size_t msglen)
           val == 3? " (continues+continued)":
           val == 16? " (DataBlock-expected)":"");
   print_pr_data (msg, msglen, 10);
-  if (msglen < 10)
-    return;
-  msg += 10;
-  msglen -= 10;
-  print_t1_block (msg, msglen, 1);
 }
 
 
@@ -541,11 +453,6 @@ print_r2p_datablock (const unsigned char *msg, size_t msglen)
             msg[9] == 3? " (continues+continued)":
             msg[9] == 16? " (XferBlock-expected)":"");
   print_pr_data (msg, msglen, 10);
-  if (msglen < 10)
-    return;
-  msg += 10;
-  msglen -= 10;
-  print_t1_block (msg, msglen, 0);
 }
 
 
@@ -669,10 +576,7 @@ flush_data (void)
     return;
 
   if (verbose)
-    {
-      printf ("Timestamp: %s\n", databuffer.timestamp);
-      printf ("Address..: %s\n", databuffer.address);
-    }
+    printf ("Address: %s\n", databuffer.address);
   if (databuffer.is_bi)
     {
       print_r2p (databuffer.data, databuffer.count);
@@ -686,8 +590,7 @@ flush_data (void)
 }
 
 static void
-collect_data (char *hexdata, const char *timestamp,
-              const char *address, unsigned int lineno)
+collect_data (char *hexdata, const char *address, unsigned int lineno)
 {
   size_t length;
   int is_bi;
@@ -699,9 +602,6 @@ collect_data (char *hexdata, const char *timestamp,
   if (databuffer.is_bi != is_bi || strcmp (databuffer.address, address))
     flush_data ();
   databuffer.is_bi = is_bi;
-  if (strlen (timestamp) >= sizeof databuffer.timestamp)
-    die ("timestamp field too long");
-  strcpy (databuffer.timestamp, timestamp);
   if (strlen (address) >= sizeof databuffer.address)
     die ("address field too long");
   strcpy (databuffer.address, address);
@@ -727,7 +627,7 @@ collect_data (char *hexdata, const char *timestamp,
 
       if (length >= sizeof (databuffer.data))
         {
-          err ("too much data at line %u - can handle only up to %zu bytes",
+          err ("too much data at line %u - can handle only up to % bytes",
                lineno, sizeof (databuffer.data));
           break;
         }
@@ -741,50 +641,43 @@ static void
 parse_line (char *line, unsigned int lineno)
 {
   char *p;
-  char *timestamp, *event_type, *address, *data, *status, *datatag;
-
-  if (*line == '#' || !*line)
-    return;
+  char *event_type, *address, *data, *status, *datatag;
 
   if (debug)
     printf ("line[%u] ='%s'\n", lineno, line);
 
   p = strtok (line, " ");
   if (!p)
-    die ("invalid line %d (no URB)", lineno);
-  timestamp = strtok (NULL, " ");
-  if (!timestamp)
-    die ("invalid line %d (no timestamp)", lineno);
+    die ("invalid line %d (no URB)");
+  p = strtok (NULL, " ");
+  if (!p)
+    die ("invalid line %d (no timestamp)");
   event_type = strtok (NULL, " ");
   if (!event_type)
-    die ("invalid line %d (no event type)", lineno);
+    die ("invalid line %d (no event type)");
   address = strtok (NULL, " ");
   if (!address)
-    die ("invalid line %d (no address", lineno);
+    die ("invalid line %d (no address");
   if (usb_bus || usb_dev)
     {
       int bus, dev;
 
       p = strchr (address, ':');
       if (!p)
-        die ("invalid line %d (invalid address", lineno);
+        die ("invalid line %d (invalid address");
       p++;
       bus = atoi (p);
       p = strchr (p, ':');
       if (!p)
-        die ("invalid line %d (invalid address", lineno);
+        die ("invalid line %d (invalid address");
       p++;
       dev = atoi (p);
 
       if ((usb_bus && usb_bus != bus) || (usb_dev && usb_dev != dev))
         return;  /* We don't want that one.  */
     }
-  if (*address == 'B' && (address[1] == 'o' || address[1] == 'i'))
-    ; /* We want block ind and out.  */
-  else if (*address == 'C' && (address[1] == 'o' || address[1] == 'i'))
-    ; /* We want control ind and out.  */
-  else
-    return; /* But nothing else.  */
+  if (*address != 'B' || (address[1] != 'o' && address[1] != 'i'))
+    return; /* We only want block in and block out.  */
   status = strtok (NULL, " ");
   if (!status)
     return;
@@ -799,7 +692,7 @@ parse_line (char *line, unsigned int lineno)
   if (datatag && *datatag == '=')
     {
       data = strtok (NULL, "");
-      collect_data (data?data:"", timestamp, address, lineno);
+      collect_data (data?data:"", address, lineno);
     }
 }
 

@@ -1,6 +1,6 @@
 /* server.c - Server mode and main entry point
- * Copyright (C) 2001-2010 Free Software Foundation, Inc.
- * Copyright (C) 2001-2011, 2013-2020 g10 Code GmbH
+ * Copyright (C) 2001, 2002, 2003, 2004, 2005, 2006, 2007, 2008, 2009,
+ *               2010 Free Software Foundation, Inc.
  *
  * This file is part of GnuPG.
  *
@@ -134,6 +134,9 @@ close_message_fd (ctrl_t ctrl)
 {
   if (ctrl->server_local->message_fd != -1)
     {
+#ifdef HAVE_W32CE_SYSTEM
+#warning Is this correct for W32/W32CE?
+#endif
       close (ctrl->server_local->message_fd);
       ctrl->server_local->message_fd = -1;
     }
@@ -885,6 +888,12 @@ cmd_message (assuan_context_t ctx, char *line)
   if (rc)
     return rc;
 
+#ifdef HAVE_W32CE_SYSTEM
+  sysfd = _assuan_w32ce_finish_pipe ((int)sysfd, 0);
+  if (sysfd == INVALID_HANDLE_VALUE)
+    return set_error (gpg_err_code_from_syserror (),
+		      "rvid conversion failed");
+#endif
 
   fd = translate_sys2libc_fd (sysfd, 0);
   if (fd == -1)
@@ -896,10 +905,10 @@ cmd_message (assuan_context_t ctx, char *line)
 
 
 static const char hlp_listkeys[] =
-  "LISTKEYS       [<options>] [<patterns>]\n"
-  "LISTSECRETKEYS [<options>] [<patterns>]\n"
-  "DUMPKEYS       [<options>] [<patterns>]\n"
-  "DUMPSECRETKEYS [<options>] [<patterns>]\n"
+  "LISTKEYS [<patterns>]\n"
+  "LISTSECRETKEYS [<patterns>]\n"
+  "DUMPKEYS [<patterns>]\n"
+  "DUMPSECRETKEYS [<patterns>]\n"
   "\n"
   "List all certificates or only those specified by PATTERNS.  Each\n"
   "pattern shall be a percent-plus escaped certificate specification.\n"
@@ -908,12 +917,8 @@ static const char hlp_listkeys[] =
   "smartcard has been registered.  The \"DUMP\" versions of the command\n"
   "are only useful for debugging.  The output format is a percent escaped\n"
   "colon delimited listing as described in the manual.\n"
-  "Supported values for OPTIONS are:\n"
-  "  --           Stop option processing\n"
-  "  --issuer-der PATTERN is a DER of the serialnumber as hexstring;\n"
-  "               the issuer is then inquired with \"ISSUER_DER\".\n"
   "\n"
-  "These Assuan \"OPTION\" command keys effect the output::\n"
+  "These \"OPTION\" command keys effect the output::\n"
   "\n"
   "  \"list-mode\" set to 0: List only local certificates (default).\n"
   "                     1: Ditto.\n"
@@ -933,14 +938,9 @@ do_listkeys (assuan_context_t ctx, char *line, int mode)
   ctrl_t ctrl = assuan_get_pointer (ctx);
   estream_t fp;
   char *p;
-  size_t n;
   strlist_t list, sl;
   unsigned int listmode;
   gpg_error_t err;
-  int opt_issuer_der;
-
-  opt_issuer_der = has_option (line, "--issuer-der");
-  line = skip_options (line);
 
   /* Break the line down into an strlist. */
   list = NULL;
@@ -964,63 +964,6 @@ do_listkeys (assuan_context_t ctx, char *line, int mode)
           list = sl;
         }
     }
-  if (opt_issuer_der && (!list || list->next))
-    {
-      free_strlist (list);
-      return set_error (GPG_ERR_INV_ARG,
-                        "only one arg for --issuer-der please");
-    }
-
-  if (opt_issuer_der)
-    {
-      unsigned char *value = NULL;
-      size_t valuelen;
-      char *issuer;
-
-      err = assuan_inquire (ctx, "ISSUER_DER", &value, &valuelen, 0);
-      if (err)
-        {
-          free_strlist (list);
-          return err;
-        }
-      if (!valuelen)
-        {
-          xfree (value);
-          free_strlist (list);
-          return gpg_error (GPG_ERR_MISSING_VALUE);
-        }
-      err = ksba_dn_der2str (value, valuelen, &issuer);
-      xfree (value);
-      if (err)
-        {
-          free_strlist (list);
-          return err;
-        }
-      /* ksba_dn_der2str seems to always append "\\0A".  Trim that.  */
-      n = strlen (issuer);
-      if (n > 3 && !strcmp (issuer + n - 3, "\\0A"))
-        issuer[n-3] = 0;
-
-      p = strconcat ("#", list->d, "/", issuer, NULL);
-      if (!p)
-        {
-          err = gpg_error_from_syserror ();
-          ksba_free (issuer);
-          free_strlist (list);
-          return err;
-        }
-      ksba_free (issuer);
-      free_strlist (list);
-      list = NULL;
-      if (!add_to_strlist_try (&list, p))
-        {
-          err = gpg_error_from_syserror ();
-          xfree (p);
-          return err;
-        }
-      xfree (p);
-    }
-
 
   if (ctrl->server_local->list_to_output)
     {
@@ -1057,7 +1000,6 @@ do_listkeys (assuan_context_t ctx, char *line, int mode)
   if (ctrl->server_local->list_external)
     listmode |= (1<<7);
   err = gpgsm_list_keys (assuan_get_pointer (ctx), list, fp, listmode);
-
   free_strlist (list);
   es_fclose (fp);
   if (ctrl->server_local->list_to_output)
@@ -1384,9 +1326,13 @@ gpgsm_server (certlist_t default_recplist)
   /* We use a pipe based server so that we can work from scripts.
      assuan_init_pipe_server will automagically detect when we are
      called with a socketpair and ignore FILEDES in this case. */
+#ifdef HAVE_W32CE_SYSTEM
+  #define SERVER_STDIN es_fileno(es_stdin)
+  #define SERVER_STDOUT es_fileno(es_stdout)
+#else
 #define SERVER_STDIN 0
 #define SERVER_STDOUT 1
-
+#endif
   filedes[0] = assuan_fdopen (SERVER_STDIN);
   filedes[1] = assuan_fdopen (SERVER_STDOUT);
   rc = assuan_new (&ctx);
@@ -1475,8 +1421,6 @@ gpgsm_server (certlist_t default_recplist)
 
   audit_release (ctrl.audit);
   ctrl.audit = NULL;
-
-  gpgsm_deinit_default_ctrl (&ctrl);
 
   assuan_release (ctx);
 }

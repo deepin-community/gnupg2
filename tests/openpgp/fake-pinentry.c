@@ -196,20 +196,28 @@ option_value (const char *line, const char *name)
   return NULL;
 }
 
-static int
-parse_pinentry_user_data (const char *args,
-                          char **r_passphrase)
+int
+main (int argc, char **argv)
 {
+  char *args;
+  char *option_user_data = NULL;
+  int got_environment_user_data;
   char *logfile;
   char *passphrasefile;
   char *passphrase;
 
-  *r_passphrase = NULL;
+  /* We get our options via PINENTRY_USER_DATA.  */
+  (void) argc, (void) argv;
 
-  if (log_stream)
-    fclose (log_stream);
-  log_stream = NULL;
+  setvbuf (stdin, NULL, _IOLBF, BUFSIZ);
+  setvbuf (stdout, NULL, _IOLBF, BUFSIZ);
 
+  args = getenv ("PINENTRY_USER_DATA");
+  got_environment_user_data = !!args;
+  if (! args)
+    args = "";
+
+ restart:
   logfile = option_value (args, "--logfile");
   if (logfile)
     {
@@ -224,7 +232,7 @@ parse_pinentry_user_data (const char *args,
       if (! log_stream)
         {
           perror (logfile);
-          return -1;
+          return 1;
         }
     }
 
@@ -243,31 +251,20 @@ parse_pinentry_user_data (const char *args,
         {
           reply ("# Passphrasefile '%s' is empty.  Terminating.\n",
                  passphrasefile);
-          return -1;
+          return 1;
         }
 
       rstrip (passphrase);
     }
   else
-    passphrase = strdup (skip_options (args));
+    {
+      passphrase = skip_options (args);
+      if (*passphrase == 0)
+        passphrase = "no PINENTRY_USER_DATA -- using default passphrase";
+    }
 
-  *r_passphrase = passphrase;
-  return 0;
-}
-
-
-int
-main (int argc, char **argv)
-{
-  char *passphrase = NULL;
-
-  /* We get our options via PINENTRY_USER_DATA.  */
-  (void) argc, (void) argv;
-
-  setvbuf (stdin, NULL, _IOLBF, BUFSIZ);
-  setvbuf (stdout, NULL, _IOLBF, BUFSIZ);
-
-  reply ("# fake-pinentry(%u) started.\n", (unsigned int)getpid ());
+  reply ("# fake-pinentry(%u) started.  Passphrase='%s'.\n",
+         (unsigned int)getpid (), passphrase);
   reply ("OK - what's up?\n");
 
   while (! feof (stdin))
@@ -285,12 +282,7 @@ main (int argc, char **argv)
 #define OPT_USER_DATA	"OPTION pinentry-user-data="
 
       if (strncmp (buffer, "GETPIN", 6) == 0)
-        {
-          if (passphrase)
-            reply ("D %s\n", passphrase);
-          else
-            reply ("D deafult\n");
-        }
+        reply ("D %s\n", passphrase);
       else if (strncmp (buffer, "BYE", 3) == 0)
 	{
 	  reply ("OK\n");
@@ -298,12 +290,18 @@ main (int argc, char **argv)
 	}
       else if (strncmp (buffer, OPT_USER_DATA, strlen (OPT_USER_DATA)) == 0)
         {
-          if (parse_pinentry_user_data (buffer + strlen (OPT_USER_DATA),
-                                        &passphrase) < 0)
+          if (got_environment_user_data)
             {
-              /* Failure. */
-              return 1;
+              reply ("OK - I already got the data from the environment.\n");
+              continue;
             }
+
+          if (log_stream)
+            fclose (log_stream);
+          log_stream = NULL;
+          free (option_user_data);
+          option_user_data = args = strdup (buffer + strlen (OPT_USER_DATA));
+          goto restart;
         }
 
       reply ("OK\n");
@@ -315,7 +313,6 @@ main (int argc, char **argv)
   if (log_stream)
     fclose (log_stream);
 
-  if (passphrase)
-    free (passphrase);
+  free (option_user_data);
   return 0;
 }

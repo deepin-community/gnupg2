@@ -15,10 +15,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  2 files changed, 4 insertions(+), 5 deletions(-)
 
 diff --git a/dirmngr/dirmngr.c b/dirmngr/dirmngr.c
-index 637007b..10f022a 100644
+index 0238359..c50905c 100644
 --- a/dirmngr/dirmngr.c
 +++ b/dirmngr/dirmngr.c
-@@ -2105,8 +2105,6 @@ housekeeping_thread (void *arg)
+@@ -2091,8 +2091,6 @@ housekeeping_thread (void *arg)
    if (network_activity_seen)
      {
        network_activity_seen = 0;
@@ -28,10 +28,10 @@ index 637007b..10f022a 100644
      }
    else
 diff --git a/doc/dirmngr.texi b/doc/dirmngr.texi
-index 8e0979c..836cd62 100644
+index f988fe2..39c0c45 100644
 --- a/doc/dirmngr.texi
 +++ b/doc/dirmngr.texi
-@@ -293,9 +293,10 @@ Set the size of the queue for pending connections.  The default is 64.
+@@ -302,9 +302,10 @@ Set the size of the queue for pending connections.  The default is 64.
  @item --allow-version-check
  @opindex allow-version-check
  Allow Dirmngr to connect to @code{https://versions.gnupg.org} to get

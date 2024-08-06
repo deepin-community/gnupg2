@@ -29,7 +29,7 @@
 static char *fd_passwd = NULL;
 
 int
-have_static_passphrase (void)
+have_static_passphrase ()
 {
   return (!!fd_passwd
           && (opt.batch || opt.pinentry_mode == PINENTRY_MODE_LOOPBACK));

@@ -48,6 +48,7 @@
 
 /*-- trust.c --*/
 int cache_disabled_value (ctrl_t ctrl, PKT_public_key *pk);
+void register_trusted_keyid (u32 *keyid);
 void register_trusted_key (const char *string);
 
 const char *trust_value_to_string (unsigned int value);

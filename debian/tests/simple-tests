@@ -15,8 +15,8 @@ chmod 700 $GPG_HOME
 cd $DIR
 
 cat > key-batch << EOF
-Key-Type: RSA
-Subkey-Type: RSA
+Key-Type: default
+Subkey-Type: default
 Name-Real: test case
 Name-Email: example@example.com
 Expire-Date: 0

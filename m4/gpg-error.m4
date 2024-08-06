@@ -1,5 +1,5 @@
 # gpg-error.m4 - autoconf macro to detect libgpg-error.
-# Copyright (C) 2002, 2003, 2004, 2011, 2014, 2018, 2020, 2021, 2022
+# Copyright (C) 2002, 2003, 2004, 2011, 2014, 2018, 2020, 2021
 #               g10 Code GmbH
 #
 # This file is free software; as a special exception the author gives
@@ -10,13 +10,23 @@
 # WITHOUT ANY WARRANTY, to the extent permitted by law; without even the
 # implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 #
-# Last-changed: 2023-04-01
+# Last-changed: 2022-09-21
 
+
+dnl AM_PATH_GPG_ERROR([MINIMUM-VERSION,
+dnl                   [ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND ]]])
 dnl
-dnl Find gpg-error-config, for backward compatibility
+dnl Test for libgpg-error and define GPG_ERROR_CFLAGS, GPG_ERROR_LIBS,
+dnl GPG_ERROR_MT_CFLAGS, and GPG_ERROR_MT_LIBS.  The _MT_ variants are
+dnl used for programs requireing real multi thread support.
 dnl
-dnl _AM_PATH_POSSIBLE_GPG_ERROR_CONFIG
-AC_DEFUN([_AM_PATH_POSSIBLE_GPG_ERROR_CONFIG],[dnl
+dnl If a prefix option is not used, the config script is first
+dnl searched in $SYSROOT/bin and then along $PATH.  If the used
+dnl config script does not match the host specification the script
+dnl is added to the gpg_config_script_warn variable.
+dnl
+AC_DEFUN([AM_PATH_GPG_ERROR],
+[ AC_REQUIRE([AC_CANONICAL_HOST])
   gpg_error_config_prefix=""
   dnl --with-libgpg-error-prefix=PFX is the preferred name for this option,
   dnl since that is consistent with how our three siblings use the directory/
@@ -52,14 +62,9 @@ AC_DEFUN([_AM_PATH_POSSIBLE_GPG_ERROR_CONFIG],[dnl
   fi
 
   AC_PATH_PROG(GPG_ERROR_CONFIG, gpg-error-config, no)
-])
+  min_gpg_error_version=ifelse([$1], ,1.33,$1)
+  ok=no
 
-dnl
-dnl Find gpgrt-config, which uses .pc file
-dnl (minimum pkg-config functionality, supporting cross build)
-dnl
-dnl _AM_PATH_GPGRT_CONFIG
-AC_DEFUN([_AM_PATH_GPGRT_CONFIG],[dnl
   AC_PATH_PROG(GPGRT_CONFIG, gpgrt-config, no, [$prefix/bin:$PATH])
   if test "$GPGRT_CONFIG" != "no"; then
     # Determine gpgrt_libdir
@@ -115,9 +120,12 @@ AC_DEFUN([_AM_PATH_GPGRT_CONFIG],[dnl
         fi
         if test -n "$gpgrt_libdir"; then break; fi
       done
-    fi
-    if test -z "$gpgrt_libdir"; then
-      # No valid pkgconfig dir in any of the system directories, fallback
+      if test -z "$libdir_candidates"; then
+        # No valid pkgconfig dir in any of the system directories, fallback
+        gpgrt_libdir=${possible_libdir1}
+      fi
+    else
+      # When we cannot determine system libdir-format, use this:
       gpgrt_libdir=${possible_libdir1}
     fi
   else
@@ -131,33 +139,12 @@ AC_DEFUN([_AM_PATH_GPGRT_CONFIG],[dnl
       AC_MSG_NOTICE([Use gpgrt-config with $gpgrt_libdir as gpg-error-config])
       gpg_error_config_version=`$GPG_ERROR_CONFIG --modversion`
     else
-      gpg_error_config_version=`$GPG_ERROR_CONFIG --version`
       unset GPGRT_CONFIG
     fi
   elif test "$GPG_ERROR_CONFIG" != "no"; then
     gpg_error_config_version=`$GPG_ERROR_CONFIG --version`
     unset GPGRT_CONFIG
   fi
-])
-
-dnl AM_PATH_GPG_ERROR([MINIMUM-VERSION,
-dnl                   [ACTION-IF-FOUND [, ACTION-IF-NOT-FOUND ]]])
-dnl
-dnl Test for libgpg-error and define GPG_ERROR_CFLAGS, GPG_ERROR_LIBS,
-dnl GPG_ERROR_MT_CFLAGS, and GPG_ERROR_MT_LIBS.  The _MT_ variants are
-dnl used for programs requireing real multi thread support.
-dnl
-dnl If a prefix option is not used, the config script is first
-dnl searched in $SYSROOT/bin and then along $PATH.  If the used
-dnl config script does not match the host specification the script
-dnl is added to the gpg_config_script_warn variable.
-dnl
-AC_DEFUN([AM_PATH_GPG_ERROR],[dnl
-AC_REQUIRE([AC_CANONICAL_HOST])dnl
-AC_REQUIRE([_AM_PATH_POSSIBLE_GPG_ERROR_CONFIG])dnl
-AC_REQUIRE([_AM_PATH_GPGRT_CONFIG])dnl
-  min_gpg_error_version=ifelse([$1], ,1.33,$1)
-  ok=no
   if test "$GPG_ERROR_CONFIG" != "no"; then
     req_major=`echo $min_gpg_error_version | \
                sed 's/\([[0-9]]*\)\.\([[0-9]]*\)/\1/'`

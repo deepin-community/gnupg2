@@ -84,10 +84,9 @@ static struct
                                       modules (eg "xim").  */
   { "INSIDE_EMACS" },            /* Set by Emacs before running a
                                     process.  */
-  { "PINENTRY_USER_DATA", "pinentry-user-data"},
+  { "PINENTRY_USER_DATA", "pinentry-user-data"}
                                  /* Used for communication with
                                     non-standard Pinentries.  */
-  { "PINENTRY_GEOM_HINT" }       /* Used to pass window information. */
 };
 
 
@@ -104,45 +103,13 @@ static size_t lastallocatedarraysize;
 
 /* Return the names of standard environment variables one after the
    other.  The caller needs to set the value at the address of
-   ITERATOR initially to 0 and then call this function until it
-   returns NULL.  If ITERATOR is NULL, a single comma delimited string
-   with the names is returned; NULL is never returned in this case and
-   R_ASSNAME is ignored.  */
+   ITERATOR initially to 0 and then call this function until it returns
+   NULL.  */
 const char *
 session_env_list_stdenvnames (int *iterator, const char **r_assname)
 {
-  int idx;
-  static char *commastring;
+  int idx = *iterator;
 
-  if (!iterator)
-    {
-      if (!commastring)
-        {
-          size_t len = 0;
-          char *p;
-
-          for (idx = 0; idx < DIM (stdenvnames); idx++)
-            len += strlen (stdenvnames[idx].name) + 1;
-          commastring = xtrymalloc (len);
-          if (!commastring)
-            {
-              log_error ("%s: error allocating string: %s\n", __func__,
-                         gpg_strerror (gpg_error_from_syserror ()));
-              return "GPG_TTY,TERM,DISPLAY";
-            }
-          p = commastring;
-          for (idx = 0; idx < DIM (stdenvnames); idx++)
-            {
-              if (idx)
-                *p++ = ',';
-              p = stpcpy (p, stdenvnames[idx].name);
-            }
-          gpgrt_annotate_leaked_object (commastring);
-        }
-      return commastring;
-    }
-
-  idx = *iterator;
   if (idx < 0 || idx >= DIM (stdenvnames))
     return NULL;
   *iterator = idx + 1;
@@ -414,7 +381,7 @@ session_env_getenv_or_default (session_env_t se, const char *name,
    until it returns NULL.  The value is returned at R_VALUE.  If
    R_DEFAULT is not NULL, the default flag is stored on return.  The
    default flag indicates that the value has been taken from the
-   process's environment.  The caller must not change the returned
+   process' environment.  The caller must not change the returned
    name or value.  */
 char *
 session_env_listenv (session_env_t se, int *iterator,

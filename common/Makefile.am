@@ -24,7 +24,9 @@ EXTRA_DIST = mkstrtable.awk exaudit.awk exstatus.awk ChangeLog-2011 \
 	     all-tests.scm
 
 noinst_LIBRARIES = libcommon.a libcommonpth.a libgpgrl.a
+if !HAVE_W32CE_SYSTEM
 noinst_LIBRARIES += libsimple-pwquery.a
+endif
 noinst_PROGRAMS = $(module_tests) $(module_maint_tests)
 if DISABLE_TESTS
 TESTS =
@@ -50,7 +52,8 @@ common_sources = \
 	mapstrings.c stringhelp.c stringhelp.h \
 	strlist.c strlist.h \
 	utf8conv.c utf8conv.h \
-	logging.h  \
+	argparse.c argparse.h \
+	logging.c logging.h  \
 	dotlock.c dotlock.h  \
         mischelp.c mischelp.h \
 	status.c status.h\
@@ -58,7 +61,7 @@ common_sources = \
 	openpgpdefs.h \
 	gc-opt-flags.h \
 	sexp-parse.h \
-	tlv.c tlv.h tlv-builder.c tlv-parser.c \
+	tlv.c tlv.h tlv-builder.c \
 	init.c init.h \
 	sexputil.c \
 	sysutils.c sysutils.h \
@@ -83,7 +86,7 @@ common_sources = \
 	localename.c \
 	session-env.c session-env.h \
 	userids.c userids.h \
-	openpgp-oid.c openpgp-s2k.c \
+	openpgp-oid.c \
 	ssh-utils.c ssh-utils.h \
 	agent-opt.c \
 	helpfile.c \
@@ -95,9 +98,7 @@ common_sources = \
 	recsel.c recsel.h \
 	ksba-io-support.c ksba-io-support.h \
 	openpgp-fpr.c \
-	comopt.c comopt.h \
-	compliance.c compliance.h \
-	pkscreening.c pkscreening.h
+	compliance.c compliance.h
 
 
 if HAVE_W32_SYSTEM
@@ -107,7 +108,11 @@ endif
 # To make the code easier to read we have split home some code into
 # separate source files.
 if HAVE_W32_SYSTEM
+if HAVE_W32CE_SYSTEM
+common_sources += exechelp-w32ce.c
+else
 common_sources += exechelp-w32.c
+endif
 else
 common_sources += exechelp-posix.c
 endif
@@ -126,9 +131,11 @@ libcommon_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) -DWITHOUT_NPTH=1
 libcommonpth_a_SOURCES = $(common_sources) $(with_npth_sources)
 libcommonpth_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS)
 
+if !HAVE_W32CE_SYSTEM
 libsimple_pwquery_a_SOURCES = \
 	simple-pwquery.c simple-pwquery.h asshelp.c asshelp.h
 libsimple_pwquery_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
+endif
 
 libgpgrl_a_SOURCES = \
         gpgrlhelp.c

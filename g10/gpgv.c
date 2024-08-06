@@ -1,6 +1,6 @@
 /* gpgv.c - The GnuPG signature verify utility
  * Copyright (C) 1998-2020 Free Software Foundation, Inc.
- * Copyright (C) 1997-2019 Werner Koch
+ * Copyright (C) 1998-2019 Werner Koch
  * Copyright (C) 2015-2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
@@ -68,12 +68,11 @@ enum cmd_and_opt_values {
   oWeakDigest,
   oEnableSpecialFilenames,
   oDebug,
-  oAssertPubkeyAlgo,
   aTest
 };
 
 
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
   ARGPARSE_group (300, N_("@\nOptions:\n ")),
 
   ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
@@ -92,7 +91,6 @@ static gpgrt_opt_t opts[] = {
                 N_("|ALGO|reject signatures made with ALGO")),
   ARGPARSE_s_n (oEnableSpecialFilenames, "enable-special-filenames", "@"),
   ARGPARSE_s_s (oDebug, "debug", "@"),
-  ARGPARSE_s_s (oAssertPubkeyAlgo,"assert-pubkey-algo", "@"),
 
   ARGPARSE_end ()
 };
@@ -120,8 +118,7 @@ static struct debug_flags_s debug_flags [] =
 
 
 int g10_errors_seen = 0;
-int assert_signer_true = 0;
-int assert_pubkey_algo_false = 0;
+
 
 static char *
 make_libversion (const char *libname, const char *(*getfnc)(const char*))
@@ -175,14 +172,14 @@ my_strusage( int level )
 int
 main( int argc, char **argv )
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   int rc=0;
   strlist_t sl;
   strlist_t nrings = NULL;
   ctrl_t ctrl;
 
   early_system_init ();
-  gpgrt_set_strusage (my_strusage);
+  set_strusage (my_strusage);
   log_set_prefix ("gpgv", GPGRT_LOG_WITH_PREFIX);
 
   /* Make sure that our subsystems are ready.  */
@@ -213,7 +210,7 @@ main( int argc, char **argv )
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gpgrt_argparser (&pargs, opts, NULL))
+  while (gnupg_argparser (&pargs, opts, NULL))
     {
       switch (pargs.r_opt)
         {
@@ -254,24 +251,11 @@ main( int argc, char **argv )
         case oEnableSpecialFilenames:
           enable_special_filenames ();
           break;
-
-        case oAssertPubkeyAlgo:
-          if (!opt.assert_pubkey_algos)
-            opt.assert_pubkey_algos = xstrdup (pargs.r.ret_str);
-          else
-            {
-              char *tmp = opt.assert_pubkey_algos;
-              opt.assert_pubkey_algos = xstrconcat (tmp, ",",
-                                                    pargs.r.ret_str, NULL);
-              xfree (tmp);
-            }
-          break;
-
         default : pargs.err = ARGPARSE_PRINT_ERROR; break;
 	}
     }
 
-  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (log_get_errorcount (0))
     g10_exit(2);
@@ -304,18 +288,10 @@ main( int argc, char **argv )
 
 
 void
-g10_exit (int rc)
+g10_exit( int rc )
 {
-  if (rc)
-    ;
-  else if (log_get_errorcount(0))
-    rc = 2;
-  else if (g10_errors_seen)
-    rc = 1;
-  else if (opt.assert_pubkey_algos && assert_pubkey_algo_false)
-    rc = 1;
-
-  exit (rc);
+  rc = rc? rc : log_get_errorcount(0)? 2 : g10_errors_seen? 1 : 0;
+  exit(rc );
 }
 
 
@@ -323,13 +299,10 @@ g10_exit (int rc)
  * We have to override the trustcheck from pkclist.c because
  * this utility assumes that all keys in the keyring are trustworthy
  */
-gpg_error_t
-check_signatures_trust (ctrl_t ctrl, kbnode_t kblock,
-                        PKT_public_key *pk, PKT_signature *sig)
+int
+check_signatures_trust (ctrl_t ctrl, PKT_signature *sig)
 {
   (void)ctrl;
-  (void)kblock;
-  (void)pk;
   (void)sig;
   return 0;
 }
@@ -484,6 +457,14 @@ keyserver_import_cert (const char *name)
   return -1;
 }
 
+int
+keyserver_import_pka (const char *name,unsigned char *fpr)
+{
+  (void)name;
+  (void)fpr;
+  return -1;
+}
+
 gpg_error_t
 keyserver_import_wkd (ctrl_t ctrl, const char *name, unsigned int flags,
                       unsigned char **fpr, size_t *fpr_len)
@@ -549,7 +530,7 @@ import_included_key_block (ctrl_t ctrl, kbnode_t keyblock)
  * No encryption here but mainproc links to these functions.
  */
 gpg_error_t
-get_session_key (ctrl_t ctrl, struct pubkey_enc_list *k, DEK *dek)
+get_session_key (ctrl_t ctrl, PKT_pubkey_enc *k, DEK *dek)
 {
   (void)ctrl;
   (void)k;
@@ -753,6 +734,22 @@ agent_get_keyinfo (ctrl_t ctrl, const char *hexkeygrip,
 }
 
 gpg_error_t
+gpg_dirmngr_get_pka (ctrl_t ctrl, const char *userid,
+                     unsigned char **r_fpr, size_t *r_fprlen,
+                     char **r_url)
+{
+  (void)ctrl;
+  (void)userid;
+  if (r_fpr)
+    *r_fpr = NULL;
+  if (r_fprlen)
+    *r_fprlen = 0;
+  if (r_url)
+    *r_url = NULL;
+  return gpg_error (GPG_ERR_NOT_FOUND);
+}
+
+gpg_error_t
 export_pubkey_buffer (ctrl_t ctrl, const char *keyspec, unsigned int options,
                       const void *prefix, size_t prefixlen,
                       export_stats_t stats,
@@ -835,12 +832,4 @@ get_revocation_reason (PKT_signature *sig, char **r_reason,
   if (r_comment)
     *r_comment = NULL;
   return 0;
-}
-
-const char *
-impex_filter_getval (void *cookie, const char *propname)
-{
-  (void)cookie;
-  (void)propname;
-  return NULL;
 }

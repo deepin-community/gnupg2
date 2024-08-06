@@ -48,10 +48,6 @@ static struct {
 
   { "Curve25519", "1.3.6.1.4.1.3029.1.5.1", 255, "cv25519", PUBKEY_ALGO_ECDH },
   { "Ed25519",    "1.3.6.1.4.1.11591.15.1", 255, "ed25519", PUBKEY_ALGO_EDDSA },
-  { "Curve25519", "1.3.101.110",            255, "cv25519", PUBKEY_ALGO_ECDH },
-  { "Ed25519",    "1.3.101.112",            255, "ed25519", PUBKEY_ALGO_EDDSA },
-  { "X448",       "1.3.101.111",            448, "cv448",   PUBKEY_ALGO_ECDH },
-  { "Ed448",      "1.3.101.113",            456, "ed448",   PUBKEY_ALGO_EDDSA },
 
   { "NIST P-256",      "1.2.840.10045.3.1.7",    256, "nistp256" },
   { "NIST P-384",      "1.3.132.0.34",           384, "nistp384" },
@@ -67,31 +63,13 @@ static struct {
 };
 
 
-/* The OID for Curve Ed25519 in OpenPGP format.  The shorter v5
- * variant may only be used with v5 keys.  */
+/* The OID for Curve Ed25519 in OpenPGP format.  */
 static const char oid_ed25519[] =
   { 0x09, 0x2b, 0x06, 0x01, 0x04, 0x01, 0xda, 0x47, 0x0f, 0x01 };
-static const char oid_ed25519_v5[] = { 0x03, 0x2b, 0x65, 0x70 };
 
-/* The OID for Curve25519 in OpenPGP format.  The shorter v5
- * variant may only be used with v5 keys.  */
+/* The OID for Curve25519 in OpenPGP format.  */
 static const char oid_cv25519[] =
   { 0x0a, 0x2b, 0x06, 0x01, 0x04, 0x01, 0x97, 0x55, 0x01, 0x05, 0x01 };
-static const char oid_cv25519_v5[] = { 0x03, 0x2b, 0x65, 0x6e };
-
-/* The OID for X448 in OpenPGP format. */
-/*
- * Here, we have a little semantic discrepancy.  X448 is the name of
- * the ECDH computation and the OID is assigned to the algorithm in
- * RFC 8410.  Note that this OID is not the one which is assigned to
- * the curve itself (originally in 8410).  Nevertheless, we use "X448"
- * for the curve in libgcrypt.
- */
-static const char oid_cv448[] = { 0x03, 0x2b, 0x65, 0x6f };
-
-/* The OID for Ed448 in OpenPGP format. */
-static const char oid_ed448[] = { 0x03, 0x2b, 0x65, 0x71 };
-
 
 /* A table to store keyalgo strings like "rsa2048 or "ed25519" so that
  * we do not need to allocate them.  This is currently a simple array
@@ -246,7 +224,7 @@ openpgp_oidbuf_to_str (const unsigned char *buf, size_t len)
 
   /* To calculate the length of the string we can safely assume an
      upper limit of 3 decimal characters per byte.  Two extra bytes
-     account for the special first octet */
+     account for the special first octect */
   string = p = xtrymalloc (len*(1+3)+2+1);
   if (!string)
     return NULL;
@@ -319,6 +297,7 @@ openpgp_oid_to_str (gcry_mpi_t a)
       return NULL;
     }
 
+  buf = gcry_mpi_get_opaque (a, &lengthi);
   return openpgp_oidbuf_to_str (buf, (lengthi+7)/8);
 }
 
@@ -327,12 +306,8 @@ openpgp_oid_to_str (gcry_mpi_t a)
 int
 openpgp_oidbuf_is_ed25519 (const void *buf, size_t len)
 {
-  if (!buf)
-    return 0;
-  return ((len == DIM (oid_ed25519)
-           && !memcmp (buf, oid_ed25519, DIM (oid_ed25519)))
-          || (len == DIM (oid_ed25519_v5)
-              && !memcmp (buf, oid_ed25519_v5, DIM (oid_ed25519_v5))));
+  return (buf && len == DIM (oid_ed25519)
+          && !memcmp (buf, oid_ed25519, DIM (oid_ed25519)));
 }
 
 
@@ -355,30 +330,8 @@ openpgp_oid_is_ed25519 (gcry_mpi_t a)
 int
 openpgp_oidbuf_is_cv25519 (const void *buf, size_t len)
 {
-  if (!buf)
-    return 0;
-  return ((len == DIM (oid_cv25519)
-           && !memcmp (buf, oid_cv25519, DIM (oid_cv25519)))
-          || (len == DIM (oid_cv25519_v5)
-              && !memcmp (buf, oid_cv25519_v5, DIM (oid_cv25519_v5))));
-}
-
-
-/* Return true if (BUF,LEN) represents the OID for Ed448.  */
-static int
-openpgp_oidbuf_is_ed448 (const void *buf, size_t len)
-{
-  return (buf && len == DIM (oid_ed448)
-          && !memcmp (buf, oid_ed448, DIM (oid_ed448)));
-}
-
-
-/* Return true if (BUF,LEN) represents the OID for X448.  */
-static int
-openpgp_oidbuf_is_cv448 (const void *buf, size_t len)
-{
-  return (buf && len == DIM (oid_cv448)
-          && !memcmp (buf, oid_cv448, DIM (oid_cv448)));
+  return (buf && len == DIM (oid_cv25519)
+          && !memcmp (buf, oid_cv25519, DIM (oid_cv25519)));
 }
 
 
@@ -394,36 +347,6 @@ openpgp_oid_is_cv25519 (gcry_mpi_t a)
 
   buf = gcry_mpi_get_opaque (a, &nbits);
   return openpgp_oidbuf_is_cv25519 (buf, (nbits+7)/8);
-}
-
-
-/* Return true if the MPI A represents the OID for Ed448.  */
-int
-openpgp_oid_is_ed448 (gcry_mpi_t a)
-{
-  const unsigned char *buf;
-  unsigned int nbits;
-
-  if (!a || !gcry_mpi_get_flag (a, GCRYMPI_FLAG_OPAQUE))
-    return 0;
-
-  buf = gcry_mpi_get_opaque (a, &nbits);
-  return openpgp_oidbuf_is_ed448 (buf, (nbits+7)/8);
-}
-
-
-/* Return true if the MPI A represents the OID for X448.  */
-int
-openpgp_oid_is_cv448 (gcry_mpi_t a)
-{
-  const unsigned char *buf;
-  unsigned int nbits;
-
-  if (!a || !gcry_mpi_get_flag (a, GCRYMPI_FLAG_OPAQUE))
-    return 0;
-
-  buf = gcry_mpi_get_opaque (a, &nbits);
-  return openpgp_oidbuf_is_cv448 (buf, (nbits+7)/8);
 }
 
 
@@ -444,9 +367,8 @@ openpgp_curve_to_oid (const char *name, unsigned int *r_nbits, int *r_algo)
   if (name)
     {
       for (i=0; oidtable[i].name; i++)
-        if (!ascii_strcasecmp (oidtable[i].name, name)
-            || (oidtable[i].alias
-                && !ascii_strcasecmp (oidtable[i].alias, name)))
+        if (!strcmp (oidtable[i].name, name)
+            || (oidtable[i].alias && !strcmp (oidtable[i].alias, name)))
           {
             oidstr = oidtable[i].oidstr;
             nbits  = oidtable[i].nbits;
@@ -458,7 +380,7 @@ openpgp_curve_to_oid (const char *name, unsigned int *r_nbits, int *r_algo)
           /* If not found assume the input is already an OID and check
              whether we support it.  */
           for (i=0; oidtable[i].name; i++)
-            if (!ascii_strcasecmp (name, oidtable[i].oidstr))
+            if (!strcmp (name, oidtable[i].oidstr))
               {
                 oidstr = oidtable[i].oidstr;
                 nbits  = oidtable[i].nbits;
@@ -507,10 +429,9 @@ openpgp_oid_or_name_to_curve (const char *oidname, int canon)
     return NULL;
 
   for (i=0; oidtable[i].name; i++)
-    if (!ascii_strcasecmp (oidtable[i].oidstr, oidname)
-        || !ascii_strcasecmp (oidtable[i].name, oidname)
-        || (oidtable[i].alias
-            && !ascii_strcasecmp (oidtable[i].alias, oidname)))
+    if (!strcmp (oidtable[i].oidstr, oidname)
+        || !strcmp (oidtable[i].name, oidname)
+        || (oidtable[i].alias &&!strcmp (oidtable[i].alias, oidname)))
       return !canon && oidtable[i].alias? oidtable[i].alias : oidtable[i].name;
 
   return NULL;
@@ -572,9 +493,8 @@ openpgp_is_curve_supported (const char *name, int *r_algo,
     *r_nbits = 0;
   for (idx = 0; idx < DIM (oidtable) && oidtable[idx].name; idx++)
     {
-      if ((!ascii_strcasecmp (name, oidtable[idx].name)
-           || (oidtable[idx].alias
-               && !ascii_strcasecmp (name, (oidtable[idx].alias))))
+      if ((!strcmp (name, oidtable[idx].name)
+           || (oidtable[idx].alias && !strcmp (name, (oidtable[idx].alias))))
           && curve_supported_p (oidtable[idx].name))
         {
           if (r_algo)
@@ -585,21 +505,6 @@ openpgp_is_curve_supported (const char *name, int *r_algo,
         }
     }
   return NULL;
-}
-
-
-/* Map a Gcrypt public key algorithm number to the used by OpenPGP.
- * Returns 0 for unknown gcry algorithm.  */
-pubkey_algo_t
-map_gcry_pk_to_openpgp (enum gcry_pk_algos algo)
-{
-  switch (algo)
-    {
-    case GCRY_PK_EDDSA:  return PUBKEY_ALGO_EDDSA;
-    case GCRY_PK_ECDSA:  return PUBKEY_ALGO_ECDSA;
-    case GCRY_PK_ECDH:   return PUBKEY_ALGO_ECDH;
-    default: return algo < 110 ? (pubkey_algo_t)algo : 0;
-    }
 }
 
 
@@ -621,9 +526,9 @@ map_openpgp_pk_to_gcry (pubkey_algo_t algo)
 /* Return a string describing the public key algorithm and the
  * keysize.  For elliptic curves the function prints the name of the
  * curve because the keysize is a property of the curve.  ALGO is the
- * Gcrypt algorithm number, CURVE is either NULL or gives the OID of
- * the curve, NBITS is either 0 or the size for algorithms like RSA.
- * The returned string is taken from permanent table.  Examples
+ * Gcrypt algorithmj number, curve is either NULL or give the PID of
+ * the curve, NBITS is either 0 or the size of the algorithms for RSA
+ * etc.  The returned string is taken from permanent table.  Examples
  * for the output are:
  *
  * "rsa3072"    - RSA with 3072 bit
@@ -676,7 +581,7 @@ get_keyalgo_string (enum gcry_pk_algos algo,
         {
           if (keyalgo_strings[i].algo == algo
               && keyalgo_strings[i].curve && curve
-              && !ascii_strcasecmp (keyalgo_strings[i].curve, curve))
+              && !strcmp (keyalgo_strings[i].curve, curve))
             return keyalgo_strings[i].name;
         }
 
