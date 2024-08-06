@@ -51,6 +51,7 @@ struct ldap_server_s
   char *user;
   char *pass;
   char *base;
+
   unsigned int starttls:1;       /* Use STARTTLS.  */
   unsigned int ldap_over_tls:1;  /* Use LDAP over an TLS tunnel */
   unsigned int ntds:1;           /* Use Active Directory authentication.  */
@@ -105,7 +106,6 @@ struct
 
   int force;          /* Force loading outdated CRLs. */
 
-  char *fake_crl;     /* Name of a file with faked CRL entries.  */
 
   unsigned int connect_timeout;       /* Timeout for connect.  */
   unsigned int connect_quick_timeout; /* Shorter timeout for connect.  */
@@ -176,7 +176,6 @@ struct
 #define DBG_NETWORK_VALUE 2048  /* debug network I/O.  */
 #define DBG_LOOKUP_VALUE  8192  /* debug lookup details */
 #define DBG_EXTPROG_VALUE 16384 /* debug external program calls */
-#define DBG_KEEPTMP_VALUE 32768 /* keep some temporary files    */
 
 #define DBG_X509    (opt.debug & DBG_X509_VALUE)
 #define DBG_CRYPTO  (opt.debug & DBG_CRYPTO_VALUE)
@@ -188,18 +187,9 @@ struct
 #define DBG_NETWORK (opt.debug & DBG_NETWORK_VALUE)
 #define DBG_LOOKUP  (opt.debug & DBG_LOOKUP_VALUE)
 #define DBG_EXTPROG (opt.debug & DBG_EXTPROG_VALUE)
-#define DBG_KEEPTMP (opt.debug & DBG_KEEPTMP_VALUE)
 
 /* Compatibility flags */
-
-/* Since version 2.2.12 dirmngr restricted HTTP redirection in an
- * attempt to mitigate certain CSRF attacks.  It turned out that this
- * breaks too many WKD deployments and that the attack scenario is not
- * due to gnupg's redirecting but due to insecure configured systems.
- * Thus from 2.4.3 on we disable this restriction but allow to use the
- * old behaviour by using this compatibility flag.  For details see
- * https://dev.gnupg.org/T6477.  */
-#define COMPAT_RESTRICT_HTTP_REDIR   1
+/* None so far.  */
 
 
 /* A simple list of certificate references.  FIXME: Better use
@@ -262,7 +252,7 @@ int dirmngr_never_use_tor_p (void);
 /*-- Various housekeeping functions.  --*/
 void ks_hkp_housekeeping (time_t curtime);
 void ks_hkp_reload (void);
-void ks_hkp_init (void);
+
 
 /*-- server.c --*/
 void release_uri_item_list (uri_item_t list);
@@ -277,6 +267,8 @@ int dirmngr_assuan_log_monitor (assuan_context_t ctx, unsigned int cat,
                                 const char *msg);
 void start_command_handler (gnupg_fd_t fd, unsigned int session_id);
 gpg_error_t dirmngr_tick (ctrl_t ctrl);
+
+/* (See also dirmngr-status.h)  */
 
 /*-- http-ntbtls.c --*/
 /* Note that we don't use a callback for gnutls.  */
@@ -293,7 +285,7 @@ gpg_error_t dirmngr_load_swdb (ctrl_t ctrl, int force);
 
 
 /*-- domaininfo.c --*/
-void domaininfo_print_stats (ctrl_t ctrl);
+void domaininfo_print_stats (void);
 int  domaininfo_is_wkd_not_supported (const char *domain);
 void domaininfo_set_no_name (const char *domain);
 void domaininfo_set_wkd_supported (const char *domain);

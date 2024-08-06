@@ -137,7 +137,7 @@ my_http_tls_verify_cb (void *opaque,
   (void)session;
   (void)http_flags;
 
-  /* Get the peer's certs from ntbtls.  */
+  /* Get the peer's certs fron ntbtls.  */
   for (idx = 0;
        (cert = ntbtls_x509_get_peer_cert (tls_context, idx)); idx++)
     {
@@ -424,9 +424,8 @@ main (int argc, char **argv)
             }
           putchar ('\n');
         }
-      printf ("Flags :%s%s%s%s%s\n",
+      printf ("Flags :%s%s%s%s\n",
               uri->is_http? " http":"",
-              uri->is_ldap? " ldap":"",
               uri->opaque?  " opaque":"",
               uri->v6lit?   " v6lit":"",
               uri->onion?   " onion":"");
@@ -444,7 +443,7 @@ main (int argc, char **argv)
   if (session)
     http_session_set_timeout (session, timeout);
 
-  rc = http_open_document (NULL, &hd, *argv, NULL, my_http_flags,
+  rc = http_open_document (&hd, *argv, NULL, my_http_flags,
                            NULL, session, NULL, NULL);
   if (rc)
     {

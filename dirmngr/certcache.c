@@ -755,7 +755,7 @@ cert_cache_init (strlist_t hkp_cacerts)
   /* Put the special pool certificate into our store.  This is
    * currently only used with ntbtls.  For GnuTLS http_session_new
    * unfortunately loads that certificate directly from the file.  */
-  /* Disabled for 2.3.2 because the service had to be shutdown.  */
+  /* Disabled for 2.2.29 because the service had to be shutdown.  */
   /* fname = make_filename_try (gnupg_datadir (), */
   /*                            "sks-keyservers.netCA.pem", NULL); */
   /* if (fname) */
@@ -768,7 +768,7 @@ cert_cache_init (strlist_t hkp_cacerts)
   initialization_done = 1;
   release_cache_lock ();
 
-  cert_cache_print_stats (NULL);
+  cert_cache_print_stats ();
 }
 
 /* Deinitialize the certificate cache.  With FULL set to true even the
@@ -811,7 +811,7 @@ cert_cache_deinit (int full)
 
 /* Print some statistics to the log file.  */
 void
-cert_cache_print_stats (ctrl_t ctrl)
+cert_cache_print_stats (void)
 {
   cert_item_t ci;
   int idx;
@@ -848,19 +848,16 @@ cert_cache_print_stats (ctrl_t ctrl)
 
   release_cache_lock ();
 
-  dirmngr_status_helpf (ctrl,
-                 _("permanently loaded certificates: %u\n"),
-                        n_permanent);
-  dirmngr_status_helpf (ctrl,
-                 _("    runtime cached certificates: %u\n"),
-                        n_nonperm);
-  dirmngr_status_helpf (ctrl,
-                 _("           trusted certificates: %u (%u,%u,%u,%u)\n"),
-                        n_trusted,
-                        n_trustclass_system,
-                        n_trustclass_config,
-                        n_trustclass_hkp,
-                        n_trustclass_hkpspool);
+  log_info (_("permanently loaded certificates: %u\n"),
+            n_permanent);
+  log_info (_("    runtime cached certificates: %u\n"),
+            n_nonperm);
+  log_info (_("           trusted certificates: %u (%u,%u,%u,%u)\n"),
+            n_trusted,
+            n_trustclass_system,
+            n_trustclass_config,
+            n_trustclass_hkp,
+            n_trustclass_hkpspool);
 }
 
 

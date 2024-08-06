@@ -41,7 +41,7 @@
     (test::scm
      #f
      #f
-     (path-join "tests" "gpgme" "tests" "gpg")
+     (path-join "tests" "gpgme" "setup.scm" "tests" "gpg")
      (in-srcdir "tests" "gpgme" "setup.scm")
      "--" "tests" "gpg")))
  (define setup-py
@@ -49,7 +49,7 @@
     (test::scm
      #f
      #f
-     (path-join "tests" "gpgme" "lang" "python" "tests")
+     (path-join "tests" "gpgme" "setup.scm" "lang" "python" "tests")
      (in-srcdir "tests" "gpgme" "setup.scm")
      "--" "lang" "python" "tests")))
 

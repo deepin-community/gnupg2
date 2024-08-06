@@ -192,9 +192,6 @@
 (define (in-srcdir . names)
   (canonical-path (apply path-join (cons (getenv "abs_top_srcdir") names))))
 
-(define (in-objdir . names)
-  (canonical-path (apply path-join (cons (getenv "objdir") names))))
-
 ;; Split a list of paths.
 (define (pathsep-split s)
   (string-split s *pathsep*))
@@ -291,7 +288,7 @@
 ;; Otherwise this works like mkdtemp.
 (define (mkdtemp-autoremove . components)
   (let ((dir (apply mkdtemp components)))
-    (atexit (lambda () (if (= *exit-status* 0) (unlink-recursively dir))))
+    (atexit (lambda () (unlink-recursively dir)))
     dir))
 
 (define-macro (with-temporary-working-directory . expressions)
@@ -490,12 +487,6 @@
 (define (tr:assert-weak-identity reference)
   (lambda (tmpfiles source)
     (if (not (text-file=? source reference))
-	(fail "mismatch"))
-    (list tmpfiles source #f)))
-
-(define (tr:assert-same reference)
-  (lambda (tmpfiles source)
-    (if (not (string=? (call-with-input-file source read-all) reference))
 	(fail "mismatch"))
     (list tmpfiles source #f)))
 

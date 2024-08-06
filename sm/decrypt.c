@@ -1,7 +1,7 @@
 /* decrypt.c - Decrypt a message
  * Copyright (C) 2001, 2003, 2010 Free Software Foundation, Inc.
  * Copyright (C) 2001-2019 Werner Koch
- * Copyright (C) 2015-2021 g10 Code GmbH
+ * Copyright (C) 2015-2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -27,6 +27,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -34,8 +35,16 @@
 
 #include "keydb.h"
 #include "../common/i18n.h"
-#include "../common/tlv.h"
 #include "../common/compliance.h"
+#include "../common/tlv.h"
+
+/* We can provide an enum value which is only availabale with KSBA
+ * 1.6.0 so that we can compile even against older versions.  Some
+ * calls will of course return an error in this case.  This value is
+ * currently not used because the cipher mode is sufficient here.  */
+/* #if KSBA_VERSION_NUMBER < 0x010600  /\* 1.6.0 *\/ */
+/* # define KSBA_CT_AUTHENVELOPED_DATA 10 */
+/* #endif */
 
 
 struct decrypt_filter_parm_s
@@ -79,7 +88,7 @@ string_from_gcry_buffer (gcry_buffer_t *buffer)
  *      entityUInfo [0] EXPLICIT OCTET STRING OPTIONAL,
  *      suppPubInfo [2] EXPLICIT OCTET STRING  }
  * as described in RFC-5753, 7.2.  */
-static gpg_error_t
+gpg_error_t
 hash_ecc_cms_shared_info (gcry_md_hd_t hash_hd, const char *wrap_algo_str,
                           unsigned int keylen,
                           const void *ukm, unsigned int ukmlen)
@@ -996,7 +1005,7 @@ decrypt_filter (void *arg,
   *inused = inlen + parm->helpblocklen;
   if (inlen)
     {
-      log_assert (inlen >= blklen);
+      assert (inlen >= blklen);
       if (parm->any_data)
         {
           gcry_cipher_decrypt (parm->hd, (char*)outbuf+blklen, inlen,
@@ -1071,7 +1080,7 @@ gpgsm_decrypt (ctrl_t ctrl, int in_fd, estream_t out_fp)
 
   audit_set_type (ctrl->audit, AUDIT_TYPE_DECRYPT);
 
-  kh = keydb_new (ctrl);
+  kh = keydb_new ();
   if (!kh)
     {
       log_error (_("failed to allocate keyDB handle\n"));
@@ -1119,7 +1128,7 @@ gpgsm_decrypt (ctrl_t ctrl, int in_fd, estream_t out_fp)
   rc = ksba_cms_set_reader_writer (cms, reader, writer);
   if (rc)
     {
-      log_error ("ksba_cms_set_reader_writer failed: %s\n",
+      log_debug ("ksba_cms_set_reader_writer failed: %s\n",
                  gpg_strerror (rc));
       goto leave;
     }
@@ -1132,7 +1141,7 @@ gpgsm_decrypt (ctrl_t ctrl, int in_fd, estream_t out_fp)
       rc = ksba_cms_parse (cms, &stopreason);
       if (rc)
         {
-          log_error ("ksba_cms_parse failed: %s\n", gpg_strerror (rc));
+          log_debug ("ksba_cms_parse failed: %s\n", gpg_strerror (rc));
           goto leave;
         }
 
@@ -1242,9 +1251,9 @@ gpgsm_decrypt (ctrl_t ctrl, int in_fd, estream_t out_fp)
                 {
                   if (opt.verbose)
                     {
-                      log_info ("recp %d - issuer: '%s'\n",
+                      log_debug ("recp %d - issuer: '%s'\n",
                                  recp, issuer? issuer:"[NONE]");
-                      log_info ("recp %d - serial: ", recp);
+                      log_debug ("recp %d - serial: ", recp);
                       gpgsm_dump_serial (serial);
                       log_printf ("\n");
                     }
@@ -1421,7 +1430,7 @@ gpgsm_decrypt (ctrl_t ctrl, int in_fd, estream_t out_fp)
                   audit_log_i (ctrl->audit, AUDIT_NEW_RECP, recp);
                   if (tmp_rc)
                     log_error ("recp %d - error getting info: %s\n",
-                               recp, gpg_strerror (tmp_rc));
+                               recp, gpg_strerror (rc));
                   else
                     {
                       char *tmpstr = gpgsm_format_sn_issuer (serial, issuer);

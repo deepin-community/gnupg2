@@ -55,7 +55,7 @@ gnupg_http_tls_verify_cb (void *opaque,
   log_assert (ctrl && ctrl->magic == SERVER_CONTROL_MAGIC);
   log_assert (!ntbtls_check_context (tls));
 
-  /* Get the peer's certs from ntbtls.  */
+  /* Get the peer's certs fron ntbtls.  */
   for (idx = 0;
        (cert = ntbtls_x509_get_peer_cert (tls, idx)); idx++)
     {
@@ -81,7 +81,7 @@ gnupg_http_tls_verify_cb (void *opaque,
    * certificate.  Note that this differes from the GnuTLS
    * implementation which uses this special certificate only if no
    * other certificates are configured. */
-  /* Disabled for 2.3.2 to due problems with the standard hkps pool.  */
+  /* Disabled for 2.2.19 to due problems with the standard hkps pool.  */
   /* hostname = ntbtls_get_hostname (tls); */
   /* if (hostname */
   /*     && !ascii_strcasecmp (hostname, get_default_keyserver (1))) */

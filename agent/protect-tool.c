@@ -26,6 +26,7 @@
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
+#include <assert.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #ifdef HAVE_LOCALE_H
@@ -102,7 +103,7 @@ static char *get_passphrase (int promptno);
 static void release_passphrase (char *pw);
 
 
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
   ARGPARSE_group (300, N_("@Commands:\n ")),
 
   ARGPARSE_c (oProtect,   "protect",   "protect a private key"),
@@ -200,10 +201,10 @@ make_canonical (const char *fname, const char *buf, size_t buflen)
       return NULL;
     }
   len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_CANON, NULL, 0);
-  log_assert (len);
+  assert (len);
   result = xmalloc (len);
   len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_CANON, result, len);
-  log_assert (len);
+  assert (len);
   gcry_sexp_release (sexp);
   return result;
 }
@@ -224,10 +225,10 @@ make_advanced (const unsigned char *buf, size_t buflen)
       return NULL;
     }
   len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_ADVANCED, NULL, 0);
-  log_assert (len);
+  assert (len);
   result = xmalloc (len);
   len = gcry_sexp_sprint (sexp, GCRYSEXP_FMT_ADVANCED, result, len);
-  log_assert (len);
+  assert (len);
   gcry_sexp_release (sexp);
   return result;
 }
@@ -236,7 +237,7 @@ make_advanced (const unsigned char *buf, size_t buflen)
 static char *
 read_file (const char *fname, size_t *r_length)
 {
-  estream_t fp;
+  FILE *fp;
   char *buf;
   size_t buflen;
 
@@ -244,8 +245,10 @@ read_file (const char *fname, size_t *r_length)
     {
       size_t nread, bufsize = 0;
 
-      fp = es_stdin;
-      es_set_binary (fp);
+      fp = stdin;
+#ifdef HAVE_DOSISH_SYSTEM
+      setmode ( fileno(fp) , O_BINARY );
+#endif
       buf = NULL;
       buflen = 0;
 #define NCHUNK 8192
@@ -257,8 +260,8 @@ read_file (const char *fname, size_t *r_length)
           else
             buf = xrealloc (buf, bufsize);
 
-          nread = es_fread (buf+buflen, 1, NCHUNK, fp);
-          if (nread < NCHUNK && es_ferror (fp))
+          nread = fread (buf+buflen, 1, NCHUNK, fp);
+          if (nread < NCHUNK && ferror (fp))
             {
               log_error ("error reading '[stdin]': %s\n", strerror (errno));
               xfree (buf);
@@ -274,30 +277,30 @@ read_file (const char *fname, size_t *r_length)
     {
       struct stat st;
 
-      fp = es_fopen (fname, "rb");
+      fp = gnupg_fopen (fname, "rb");
       if (!fp)
         {
           log_error ("can't open '%s': %s\n", fname, strerror (errno));
           return NULL;
         }
 
-      if (fstat (es_fileno (fp), &st))
+      if (fstat (fileno(fp), &st))
         {
           log_error ("can't stat '%s': %s\n", fname, strerror (errno));
-          es_fclose (fp);
+          fclose (fp);
           return NULL;
         }
 
       buflen = st.st_size;
       buf = xmalloc (buflen+1);
-      if (es_fread (buf, buflen, 1, fp) != 1)
+      if (fread (buf, buflen, 1, fp) != 1)
         {
           log_error ("error reading '%s': %s\n", fname, strerror (errno));
-          es_fclose (fp);
+          fclose (fp);
           xfree (buf);
           return NULL;
         }
-      es_fclose (fp);
+      fclose (fp);
     }
 
   *r_length = buflen;
@@ -318,7 +321,6 @@ read_key (const char *fname)
   if (buflen >= 4 && !memcmp (buf, "Key:", 4))
     {
       log_error ("Extended key format is not supported by this tool\n");
-      xfree (buf);
       return NULL;
     }
   key = make_canonical (fname, buf, buflen);
@@ -369,7 +371,7 @@ read_and_protect (const char *fname)
 static void
 read_and_unprotect (ctrl_t ctrl, const char *fname)
 {
-  gpg_error_t err;
+  int  rc;
   unsigned char *key;
   unsigned char *result;
   size_t resultlen;
@@ -380,15 +382,15 @@ read_and_unprotect (ctrl_t ctrl, const char *fname)
   if (!key)
     return;
 
-  err = agent_unprotect (ctrl, key, (pw=get_passphrase (1)),
-                         protected_at, &result, &resultlen);
+  rc = agent_unprotect (ctrl, key, (pw=get_passphrase (1)),
+                        protected_at, &result, &resultlen);
   release_passphrase (pw);
   xfree (key);
-  if (err)
+  if (rc)
     {
       if (opt_status_msg)
         log_info ("[PROTECT-TOOL:] bad-passphrase\n");
-      log_error ("unprotecting the key failed: %s\n", gpg_strerror (err));
+      log_error ("unprotecting the key failed: %s\n", gpg_strerror (rc));
       return;
     }
   if (opt.verbose)
@@ -401,12 +403,6 @@ read_and_unprotect (ctrl_t ctrl, const char *fname)
         log_info ("key protection done at [unknown]\n");
     }
 
-  err = fixup_when_ecc_private_key (result, &resultlen);
-  if (err)
-    {
-      log_error ("malformed key: %s\n", gpg_strerror (err));
-      return;
-    }
   if (opt_armor)
     {
       char *p = make_advanced (result, resultlen);
@@ -444,7 +440,7 @@ read_and_shadow (const char *fname)
       return;
     }
   resultlen = gcry_sexp_canon_len (result, 0, NULL,NULL);
-  log_assert (resultlen);
+  assert (resultlen);
 
   if (opt_armor)
     {
@@ -480,7 +476,7 @@ show_shadow_info (const char *fname)
       return;
     }
   infolen = gcry_sexp_canon_len (info, 0, NULL,NULL);
-  log_assert (infolen);
+  assert (infolen);
 
   if (opt_armor)
     {
@@ -507,7 +503,7 @@ show_file (const char *fname)
     return;
 
   keylen = gcry_sexp_canon_len (key, 0, NULL,NULL);
-  log_assert (keylen);
+  assert (keylen);
 
   if (opt_canonical)
     {
@@ -556,20 +552,19 @@ show_keygrip (const char *fname)
   putchar ('\n');
 }
 
-
 
 
 
 int
 main (int argc, char **argv )
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   int cmd = 0;
   const char *fname;
   ctrl_t ctrl;
 
   early_system_init ();
-  gpgrt_set_strusage (my_strusage);
+  set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
   log_set_prefix ("gpg-protect-tool", GPGRT_LOG_WITH_PREFIX);
 
@@ -583,7 +578,7 @@ main (int argc, char **argv )
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gpgrt_argparse (NULL, &pargs, opts))
+  while (gnupg_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -613,7 +608,7 @@ main (int argc, char **argv )
         default: pargs.err = ARGPARSE_PRINT_ERROR; break;
 	}
     }
-  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (log_get_errorcount (0))
     exit (2);
@@ -622,7 +617,7 @@ main (int argc, char **argv )
   if (argc == 1)
     fname = *argv;
   else if (argc > 1)
-    gpgrt_usage (1);
+    usage (1);
 
   /* Allocate an CTRL object.  An empty object should be sufficient.  */
   ctrl = xtrycalloc (1, sizeof *ctrl);
@@ -736,7 +731,7 @@ get_passphrase (int promptno)
                    gpg_strerror (err));
       agent_exit (0);
     }
-  log_assert (pw);
+  assert (pw);
 
   return pw;
 }
@@ -755,9 +750,8 @@ release_passphrase (char *pw)
 
 /* Stub function.  */
 int
-agent_key_available (ctrl_t ctrl, const unsigned char *grip)
+agent_key_available (const unsigned char *grip)
 {
-  (void)ctrl;
   (void)grip;
   return -1;  /* Not available.  */
 }
@@ -793,10 +787,7 @@ agent_askpin (ctrl_t ctrl,
   passphrase = get_passphrase (0);
   size = strlen (passphrase);
   if (size >= pininfo->max_length)
-    {
-      xfree (passphrase);
-      return gpg_error (GPG_ERR_TOO_LARGE);
-    }
+    return gpg_error (GPG_ERR_TOO_LARGE);
 
   memcpy (&pininfo->pin, passphrase, size);
   xfree (passphrase);
@@ -814,20 +805,21 @@ agent_askpin (ctrl_t ctrl,
 
 /* Replacement for the function in findkey.c.  Here we write the key
  * to stdout. */
-gpg_error_t
-agent_write_private_key (ctrl_t ctrl, const unsigned char *grip,
-                         const void *buffer, size_t length, int force,
+int
+agent_write_private_key (const unsigned char *grip,
+                         const void *buffer, size_t length,
+                         int force, int reallyforce,
                          const char *serialno, const char *keyref,
                          const char *dispserialno, time_t timestamp)
 {
   char hexgrip[40+4+1];
   char *p;
 
-  (void)ctrl;
+  (void)reallyforce;
   (void)force;
+  (void)timestamp;
   (void)serialno;
   (void)keyref;
-  (void)timestamp;
   (void)dispserialno;
 
   bin2hex (grip, 20, hexgrip);

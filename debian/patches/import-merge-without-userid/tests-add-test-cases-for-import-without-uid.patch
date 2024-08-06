@@ -27,7 +27,7 @@ Signed-Off-By: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  .../openpgp/import-incomplete/primary+uid-sig.asc  | 10 ++++
  tests/openpgp/import-incomplete/primary+uid.asc    | 10 ++++
  7 files changed, 118 insertions(+)
- create mode 100644 tests/openpgp/import-incomplete.scm
+ create mode 100755 tests/openpgp/import-incomplete.scm
  create mode 100644 tests/openpgp/import-incomplete/primary+revocation.asc
  create mode 100644 tests/openpgp/import-incomplete/primary+subkey+sub-revocation.asc
  create mode 100644 tests/openpgp/import-incomplete/primary+subkey+sub-sig.asc
@@ -35,10 +35,10 @@ Signed-Off-By: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  create mode 100644 tests/openpgp/import-incomplete/primary+uid.asc
 
 diff --git a/tests/openpgp/Makefile.am b/tests/openpgp/Makefile.am
-index 7998d2a..ea8207e 100644
+index 59f39e2..3b8b699 100644
 --- a/tests/openpgp/Makefile.am
 +++ b/tests/openpgp/Makefile.am
-@@ -81,6 +81,7 @@ XTESTS = \
+@@ -78,6 +78,7 @@ XTESTS = \
  	gpgv-forged-keyring.scm \
  	armor.scm \
  	import.scm \
@@ -47,7 +47,7 @@ index 7998d2a..ea8207e 100644
  	ecc.scm \
  	4gb-packet.scm \
 diff --git a/tests/openpgp/import-incomplete.scm b/tests/openpgp/import-incomplete.scm
-new file mode 100644
+new file mode 100755
 index 0000000..727a027
 --- /dev/null
 +++ b/tests/openpgp/import-incomplete.scm

@@ -59,6 +59,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -447,7 +448,7 @@ proc_parameters (ctrl_t ctrl, struct para_data_s *para,
   char *cardkeyid = NULL;
 
   /* Check that we have all required parameters; */
-  log_assert (get_parameter (para, pKEYTYPE, 0));
+  assert (get_parameter (para, pKEYTYPE, 0));
 
   /* There is a problem with pkcs-10 on how to use ElGamal because it
      is expected that a PK algorithm can always be used for
@@ -465,14 +466,14 @@ proc_parameters (ctrl_t ctrl, struct para_data_s *para,
     {
       r = get_parameter (para, pKEYTYPE, 0);
       if (r)
-        log_error (_("line %d: invalid algorithm\n"), r?r->lnr:0);
+        log_error (_("line %d: invalid algorithm\n"), r->lnr);
       else
         log_error ("No Key-Type specified\n");
       return gpg_error (GPG_ERR_INV_PARAMETER);
     }
 
   /* Check the keylength.  NOTE: If you change this make sure that it
-     macthes the gpgconflist item in gpgsm.c  */
+     matches the gpgconflist item in gpgsm.c  */
   if (!get_parameter (para, pKEYLENGTH, 0))
     nbits = 3072;
   else
@@ -731,26 +732,27 @@ proc_parameters (ctrl_t ctrl, struct para_data_s *para,
                     "(6:genkey(3:rsa(5:nbits%d:%s)))",
                     (int)strlen (numbuf), numbuf);
         }
-      else if (algo == GCRY_PK_ECC)
+      else if ((opt.compat_flags & COMPAT_ALLOW_ECC_ENCR)
+               && (algo == GCRY_PK_ECC || algo == GCRY_PK_EDDSA))
         {
           const char *curve = get_parameter_value (para, pKEYCURVE, 0);
           const char *flags;
 
-          if (!strcmp (curve, "Ed25519"))
-            flags = "(5:flags5:eddsa)";
+          if (algo == GCRY_PK_EDDSA)
+            flags = "(flags eddsa)";
           else if (!strcmp (curve, "Curve25519"))
-            flags = "(5:flags9:djb-tweak)";
+            flags = "(flags djb-tweak)";
           else
             flags = "";
 
           snprintf ((char*)keyparms, DIM (keyparms),
-                    "(6:genkey(3:ecc(5:curve%zu:%s)%s))",
+                    "(genkey(ecc(curve %zu:%s)%s))",
                     strlen (curve), curve, flags);
         }
       else
         {
           r = get_parameter (para, pKEYTYPE, 0);
-          log_error (_("line %d: invalid algorithm\n"), r?r->lnr:0);
+          log_error (_("line %d: invalid algorithm\n"), r->lnr);
           xfree (sigkey);
           xfree (cardkeyid);
           return gpg_error (GPG_ERR_INV_PARAMETER);
@@ -863,21 +865,22 @@ create_request (ctrl_t ctrl,
     }
   else
     {
-      if ((string = get_parameter_value (para, pHASHALGO, 0)))
+      string = get_parameter_value (para, pHASHALGO, 0);
+      if (string)
         mdalgo = gcry_md_map_name (string);
       else
         mdalgo = GCRY_MD_SHA256;
-      rc = gcry_md_open (&md, mdalgo, 0);
-      if (rc)
-        {
-          log_error ("md_open failed: %s\n", gpg_strerror (rc));
-          goto leave;
-        }
-      if (DBG_HASHING)
-        gcry_md_debug (md, "cr.cri");
-      ksba_certreq_set_hash_function (cr, HASH_FNC, md);
     }
+  rc = gcry_md_open (&md, mdalgo, 0);
+  if (rc)
+    {
+      log_error ("md_open failed: %s\n", gpg_strerror (rc));
+      goto leave;
+    }
+  if (DBG_HASHING)
+    gcry_md_debug (md, "cr.cri");
 
+  ksba_certreq_set_hash_function (cr, HASH_FNC, md);
   ksba_certreq_set_writer (cr, writer);
 
   err = ksba_certreq_add_subject (cr, get_parameter_value (para, pNAMEDN, 0));
@@ -914,7 +917,7 @@ create_request (ctrl_t ctrl,
   for (seq=0; (s = get_parameter_value (para, pNAMEDNS, seq)); seq++)
     {
       len = strlen (s);
-      log_assert (len);
+      assert (len);
       snprintf (numbuf, DIM(numbuf), "%u:", (unsigned int)len);
       buf = p = xtrymalloc (11 + strlen (numbuf) + len + 3);
       if (!buf)
@@ -941,7 +944,7 @@ create_request (ctrl_t ctrl,
   for (seq=0; (s = get_parameter_value (para, pNAMEURI, seq)); seq++)
     {
       len = strlen (s);
-      log_assert (len);
+      assert (len);
       snprintf (numbuf, DIM(numbuf), "%u:", (unsigned int)len);
       buf = p = xtrymalloc (6 + strlen (numbuf) + len + 3);
       if (!buf)
@@ -1321,10 +1324,6 @@ create_request (ctrl_t ctrl,
           size_t qlen, derlen;
           unsigned char *der;
 
-          /* FIXME: This assumes that the to-be-certified key uses the
-           * same algorithm as the certification key - this is not
-           * always the case; in fact it is common that they
-           * differ.  */
           err = get_ecc_q_from_canon_sexp (sigkey, sigkeylen, &q, &qlen);
           if (err)
             {
@@ -1444,8 +1443,6 @@ create_request (ctrl_t ctrl,
           char hexgrip[41];
           unsigned char *sigval, *newsigval;
           size_t siglen;
-          void *tbsdata;
-          size_t tbsdatalen;
 
           rc = gcry_sexp_sscan (&s_pkey, NULL, (const char*)sigkey, sigkeylen);
           if (rc)
@@ -1468,26 +1465,11 @@ create_request (ctrl_t ctrl,
                       certmode? "certificate":"CSR", hexgrip);
 
           if (carddirect && !certmode)
-            {
-              if (tbsmb)
-                {
-                  tbsdata = get_membuf (tbsmb, &tbsdatalen);
-                  tbsmb = NULL;
-                  if (!tbsdata)
-                    rc = gpg_error_from_syserror ();
-                  else
-                    rc = gpgsm_scd_pksign (ctrl, carddirect, NULL,
-                                           tbsdata, tbsdatalen, 0,
-                                           &sigval, &siglen);
-                  xfree (tbsdata);
-                }
-              else
-                rc = gpgsm_scd_pksign (ctrl, carddirect, NULL,
-                                       gcry_md_read (md, mdalgo),
-                                       gcry_md_get_algo_dlen (mdalgo),
-                                       mdalgo,
-                                       &sigval, &siglen);
-            }
+            rc = gpgsm_scd_pksign (ctrl, carddirect, NULL,
+                                   gcry_md_read (md, mdalgo),
+                                   gcry_md_get_algo_dlen (mdalgo),
+                                   mdalgo,
+                                   &sigval, &siglen);
           else
             {
               char *orig_codeset;
@@ -1499,25 +1481,11 @@ create_request (ctrl_t ctrl,
                    " the passphrase for the key you just created once"
                    " more.\n"));
               i18n_switchback (orig_codeset);
-              if (tbsmb)
-                {
-                  tbsdata = get_membuf (tbsmb, &tbsdatalen);
-                  tbsmb = NULL;
-                  if (!tbsdata)
-                    rc = gpg_error_from_syserror ();
-                  else
-                    rc = gpgsm_agent_pksign (ctrl, hexgrip, desc,
-                                             tbsdata, tbsdatalen, 0,
-
-                                             &sigval, &siglen);
-                  xfree (tbsdata);
-                }
-              else
-                rc = gpgsm_agent_pksign (ctrl, hexgrip, desc,
-                                         gcry_md_read(md, mdalgo),
-                                         gcry_md_get_algo_dlen (mdalgo),
-                                         mdalgo,
-                                         &sigval, &siglen);
+              rc = gpgsm_agent_pksign (ctrl, hexgrip, desc,
+                                       gcry_md_read(md, mdalgo),
+                                       gcry_md_get_algo_dlen (mdalgo),
+                                       mdalgo,
+                                       &sigval, &siglen);
               xfree (desc);
             }
           if (rc)
@@ -1546,8 +1514,6 @@ create_request (ctrl_t ctrl,
 
 
  leave:
-  if (tbsmb)
-    xfree (get_membuf (tbsmb, NULL));
   gcry_md_close (md);
   ksba_certreq_release (cr);
   return rc;

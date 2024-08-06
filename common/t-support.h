@@ -31,8 +31,6 @@
 #ifndef GNUPG_COMMON_T_SUPPORT_H
 #define GNUPG_COMMON_T_SUPPORT_H 1
 
-#ifndef LEAN_T_SUPPORT
-
 #ifdef GCRYPT_VERSION
 #error The regression tests should not include with gcrypt.h
 #endif
@@ -45,6 +43,11 @@
 
 #ifndef HAVE_GETENV
 # define getenv(a)  (NULL)
+#endif
+
+#ifndef DIM
+# define DIM(v)		     (sizeof(v)/sizeof((v)[0]))
+# define DIMof(type,member)   DIM(((type *)0)->member)
 #endif
 
 
@@ -62,12 +65,6 @@ void  gcry_free (void *a);
 #define xstrdup(a)    gcry_xstrdup ( (a) )
 #define xfree(a)      gcry_free ( (a) )
 
-#endif /* LEAN_T_SUPPORT */
-
-#ifndef DIM
-# define DIM(v)		     (sizeof(v)/sizeof((v)[0]))
-# define DIMof(type,member)   DIM(((type *)0)->member)
-#endif
 
 /* Macros to print the result of a test.  */
 #define pass()  do { ; } while(0)

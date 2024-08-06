@@ -51,12 +51,11 @@ struct parsed_uri_s
   char *original;       /* Unmodified copy of the parsed URI.  */
   char *scheme;	        /* Pointer to the scheme string (always lowercase). */
   unsigned int is_http:1; /* This is a HTTP style URI.   */
-  unsigned int is_ldap:1; /* This is a LDAP style URI.   */
   unsigned int use_tls:1; /* Whether TLS should be used. */
-  unsigned int opaque:1;  /* Unknown scheme; PATH has the rest.  */
-  unsigned int v6lit:1;   /* Host was given as a literal v6 address.  */
-  unsigned int onion:1;   /* .onion address given.  */
-  unsigned int explicit_port :1; /* The port was explicitly specified.  */
+  unsigned int opaque:1;/* Unknown scheme; PATH has the rest.  */
+  unsigned int v6lit:1; /* Host was given as a literal v6 address.  */
+  unsigned int onion:1; /* .onion address given.  */
+  unsigned int explicit_port:1; /* The port was explicitly specified.  */
   unsigned int ad_current:1;    /* Use Active Directory's current user.  */
   char *auth;           /* username/password for basic auth.  */
   char *host; 	        /* Host (converted to lowercase). */
@@ -117,7 +116,6 @@ struct http_redir_info_s
   unsigned int silent:1;         /* No diagnostics.                        */
   unsigned int allow_downgrade:1;/* Allow a downgrade from https to http.  */
   unsigned int trust_location:1; /* Trust the received Location header.    */
-  unsigned int restrict_redir:1; /* Use legacy restricted redirection.     */
 };
 typedef struct http_redir_info_s http_redir_info_t;
 
@@ -161,12 +159,12 @@ gpg_error_t http_parse_uri (parsed_uri_t *ret_uri, const char *uri,
 
 void http_release_parsed_uri (parsed_uri_t uri);
 
-gpg_error_t http_raw_connect (ctrl_t ctrl, http_t *r_hd,
+gpg_error_t http_raw_connect (http_t *r_hd,
                               const char *server, unsigned short port,
                               unsigned int flags, const char *srvtag,
                               unsigned int timeout);
 
-gpg_error_t http_open (ctrl_t ctrl, http_t *r_hd, http_req_t reqtype,
+gpg_error_t http_open (http_t *r_hd, http_req_t reqtype,
                        const char *url,
                        const char *httphost,
                        const char *auth,
@@ -182,7 +180,7 @@ gpg_error_t http_wait_response (http_t hd);
 
 void http_close (http_t hd, int keep_read_stream);
 
-gpg_error_t http_open_document (ctrl_t ctrl, http_t *r_hd,
+gpg_error_t http_open_document (http_t *r_hd,
                                 const char *document,
                                 const char *auth,
                                 unsigned int flags,

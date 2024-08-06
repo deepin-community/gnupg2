@@ -58,17 +58,11 @@ typedef enum
     /* GPG for S/MIME.  */
     GC_COMPONENT_GPGSM,
 
-    /* The optional public key daermon.  */
-    GC_COMPONENT_KEYBOXD,
-
     /* The GPG Agent.  */
     GC_COMPONENT_GPG_AGENT,
 
     /* The Smardcard Daemon.  */
     GC_COMPONENT_SCDAEMON,
-
-    /* The TPM2 Daemon.  */
-    GC_COMPONENT_TPM2DAEMON,
 
     /* The LDAP Directory Manager for CRLs.  */
     GC_COMPONENT_DIRMNGR,

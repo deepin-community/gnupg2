@@ -73,7 +73,7 @@ register_file_reader (ksba_reader_t reader, struct reader_cb_context_s *cb_ctx)
             return;
           }
       log_info (_("reader to file mapping table full - waiting\n"));
-      gnupg_sleep (2);
+      npth_sleep (2);
     }
 }
 
@@ -147,19 +147,6 @@ my_es_read (void *opaque, char *buffer, size_t nbytes, size_t *nread)
 }
 
 
-/* For now we do not support LDAP over Tor.  */
-static gpg_error_t
-no_crl_due_to_tor (ctrl_t ctrl)
-{
-  gpg_error_t err = gpg_error (GPG_ERR_NOT_SUPPORTED);
-  const char *text = _("CRL access not possible due to Tor mode");
-
-  log_error ("%s", text);
-  dirmngr_status_printf (ctrl, "NOTE", "no_crl_due_to_tor %u %s", err, text);
-  return gpg_error (GPG_ERR_NOT_SUPPORTED);
-}
-
-
 /* Fetch CRL from URL and return the entire CRL using new ksba reader
    object in READER.  Note that this reader object should be closed
    only using ldap_close_reader. */
@@ -174,9 +161,6 @@ crl_fetch (ctrl_t ctrl, const char *url, ksba_reader_t *reader)
 
   if (!url)
     return gpg_error (GPG_ERR_INV_ARG);
-
-  if (opt.verbose)
-    log_info ("fetching CRL from '%s'\n", url);
 
   err = http_parse_uri (&uri, url, 0);
   http_release_parsed_uri (uri);
@@ -249,7 +233,9 @@ crl_fetch (ctrl_t ctrl, const char *url, ksba_reader_t *reader)
         }
       else if (dirmngr_use_tor ())
         {
-          err = no_crl_due_to_tor (ctrl);
+          /* For now we do not support LDAP over Tor.  */
+          log_error (_("CRL access not possible due to Tor mode\n"));
+          err = gpg_error (GPG_ERR_NOT_SUPPORTED);
         }
       else
         {
@@ -273,7 +259,9 @@ crl_fetch_default (ctrl_t ctrl, const char *issuer, ksba_reader_t *reader)
 {
   if (dirmngr_use_tor ())
     {
-      return no_crl_due_to_tor (ctrl);
+      /* For now we do not support LDAP over Tor.  */
+      log_error (_("CRL access not possible due to Tor mode\n"));
+      return gpg_error (GPG_ERR_NOT_SUPPORTED);
     }
   if (opt.disable_ldap)
     {
@@ -303,7 +291,9 @@ ca_cert_fetch (ctrl_t ctrl, cert_fetch_context_t *context, const char *dn)
 {
   if (dirmngr_use_tor ())
     {
-      return no_crl_due_to_tor (ctrl);
+      /* For now we do not support LDAP over Tor.  */
+      log_error (_("CRL access not possible due to Tor mode\n"));
+      return gpg_error (GPG_ERR_NOT_SUPPORTED);
     }
   if (opt.disable_ldap)
     {
@@ -328,7 +318,9 @@ start_cert_fetch (ctrl_t ctrl, cert_fetch_context_t *context,
 {
   if (dirmngr_use_tor ())
     {
-      return no_crl_due_to_tor (ctrl);
+      /* For now we do not support LDAP over Tor.  */
+      log_error (_("CRL access not possible due to Tor mode\n"));
+      return gpg_error (GPG_ERR_NOT_SUPPORTED);
     }
   if (opt.disable_ldap)
     {
@@ -369,8 +361,8 @@ gpg_error_t
 fetch_next_ksba_cert (cert_fetch_context_t context, ksba_cert_t *r_cert)
 {
   gpg_error_t err;
-  unsigned char *value = NULL;
-  size_t valuelen = 0;
+  unsigned char *value;
+  size_t valuelen;
   ksba_cert_t cert;
 
   *r_cert = NULL;

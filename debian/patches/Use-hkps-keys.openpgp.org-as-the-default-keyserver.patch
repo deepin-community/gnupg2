@@ -1,5 +1,5 @@
 From: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
-Date: Sun, 25 Dec 2022 13:14:50 +0100
+Date: Thu, 11 Jul 2019 21:52:11 -0400
 Subject: Use hkps://keys.openpgp.org as the default keyserver
 
 As of 2.2.17, GnuPG will refuse to accept any third-party
@@ -36,14 +36,14 @@ bug.
 Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
 ---
  configure.ac     | 2 +-
- doc/dirmngr.texi | 6 +++++-
- 2 files changed, 6 insertions(+), 2 deletions(-)
+ doc/dirmngr.texi | 9 +++++++--
+ 2 files changed, 8 insertions(+), 3 deletions(-)
 
 diff --git a/configure.ac b/configure.ac
-index cf6308e..334cf9c 100644
+index 1ea8b7a..a3ff5c4 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1940,7 +1940,7 @@ AC_DEFINE_UNQUOTED(TPM2DAEMON_SOCK_NAME, "S.tpm2daemon",
+@@ -1828,7 +1828,7 @@ AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
  AC_DEFINE_UNQUOTED(DIRMNGR_SOCK_NAME, "S.dirmngr",
                     [The name of the dirmngr socket])
  AC_DEFINE_UNQUOTED(DIRMNGR_DEFAULT_KEYSERVER,
@@ -53,21 +53,22 @@ index cf6308e..334cf9c 100644
  
  AC_DEFINE_UNQUOTED(GPGEXT_GPG, "gpg", [The standard binary file suffix])
 diff --git a/doc/dirmngr.texi b/doc/dirmngr.texi
-index 99dcd1b..cd58378 100644
+index 39c0c45..4ac6174 100644
 --- a/doc/dirmngr.texi
 +++ b/doc/dirmngr.texi
-@@ -345,9 +345,13 @@ whether Tor is locally running or not.  The check for a running Tor is
+@@ -339,8 +339,13 @@ whether Tor is locally running or not.  The check for a running Tor is
  done for each new connection.
  
  If no keyserver is explicitly configured, dirmngr will use the
 -built-in default of @code{https://keyserver.ubuntu.com}.  To avoid the
-+built-in default of @code{hkps://keys.openpgp.org}.  To avoid the
- use of a default keyserver the value @code{none} can be used.
- 
+-use of a default keyserver the value @code{none} can be used.
++built-in default of @code{https://keys.openpgp.org}.
++
 +Note that the above default is a Debian-specific choice.  Upstream
-+GnuPG prefers @code{hkps://keys.openpgp.org}.  See
++GnuPG prefers @code{hkps://keyserver.ubuntu.com}.  See
 +/usr/share/doc/gpgconf/NEWS.Debian.gz for more details.
 +
++To avoid the use of a default keyserver the value @code{none} can be used.
+ 
  Windows users with a keyserver running on their Active Directory
  may use the short form @code{ldap:///} for @var{name} to access this directory.
- 

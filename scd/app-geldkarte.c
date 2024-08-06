@@ -31,6 +31,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 #include <time.h>
 #include <ctype.h>
 
@@ -252,7 +253,7 @@ copy_bcd (const unsigned char *string, size_t length)
 }
 
 
-/* Convert the BCD number at STRING of LENGTH into an integer and store
+/* Convert the BCD number at STING of LENGTH into an integer and store
    that at RESULT.  Return 0 on success.  */
 static gpg_error_t
 bcd_to_int (const unsigned char *string, size_t length, int *result)
@@ -275,7 +276,7 @@ app_select_geldkarte (app_t app)
   static char const aid[] =
     { 0xD2, 0x76, 0x00, 0x00, 0x25, 0x45, 0x50, 0x02, 0x00 };
   gpg_error_t err;
-  int slot = app_get_slot (app);
+  int slot = app->slot;
   unsigned char *result = NULL;
   size_t resultlen;
   struct app_local_s *ld;
@@ -312,21 +313,19 @@ app_select_geldkarte (app_t app)
 
   app->apptype = APPTYPE_GELDKARTE;
   app->fnc.deinit = do_deinit;
-  app->fnc.prep_reselect = NULL;
-  app->fnc.reselect = NULL;
 
   /* If we don't have a serialno yet construct it from the EF_ID.  */
-  if (!app->card->serialno)
+  if (!app->serialno)
     {
-      app->card->serialno = xtrymalloc (10);
-      if (!app->card->serialno)
+      app->serialno = xtrymalloc (10);
+      if (!app->serialno)
         {
           err = gpg_error_from_syserror ();
           goto leave;
         }
-      memcpy (app->card->serialno, result, 10);
-      app->card->serialnolen = 10;
-      err = app_munge_serialno (app->card);
+      memcpy (app->serialno, result, 10);
+      app->serialnolen = 10;
+      err = app_munge_serialno (app);
       if (err)
         goto leave;
     }

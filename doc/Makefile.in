@@ -137,12 +137,11 @@ host_triplet = @host@
 @GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
 @GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-@USE_GPG2_HACK_TRUE@am__append_9 = gpg2.1 gpgv2.1
-@USE_GPG2_HACK_FALSE@am__append_10 = gpg.1 gpgv.1
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+@USE_GPG2_HACK_TRUE@am__append_8 = gpg2.1 gpgv2.1
+@USE_GPG2_HACK_FALSE@am__append_9 = gpg.1 gpgv.1
 subdir = doc
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -156,6 +155,7 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
+	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -305,11 +305,9 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
-GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
-GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -318,7 +316,6 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
-HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -346,10 +343,9 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
-LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
-LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
+LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -386,14 +382,13 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
+SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
-SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-TPMSERVER = @TPMSERVER@
-TSSSTARTUP = @TSSSTARTUP@
-TSS_INCLUDE = @TSS_INCLUDE@
+SYS_SOCKET_H = @SYS_SOCKET_H@
+TAR = @TAR@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -461,8 +456,17 @@ top_srcdir = @top_srcdir@
 # platform to create source files.
 AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" $(am__append_1) \
 	$(am__append_2) $(am__append_3) $(am__append_4) \
-	$(am__append_5) $(am__append_6) $(am__append_7) \
-	$(am__append_8)
+	$(am__append_5) $(am__append_6) $(am__append_7)
+@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
+
+# Under Windows we use LockFileEx.  WindowsCE provides this only on
+# the WindowsMobile 6 platform and thus we need to use the coredll6
+# import library.  We also want to use a stacksize of 256k instead of
+# the 2MB which is the default with cegcc.  256k is the largest stack
+# we use with pth.
+@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
+@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
+@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
 resource_objs = 
 
 # Convenience macros
@@ -471,9 +475,17 @@ libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
 examples = examples/README examples/scd-event examples/trustlist.txt	\
-           examples/qualified.txt                                       \
-	   examples/common.conf                                         \
+	   examples/Automatic.prf                                       \
+           examples/debug.prf                                           \
            examples/gpgconf.rnames examples/gpgconf.conf                \
+	   examples/systemd-user/README 				\
+	   examples/systemd-user/dirmngr.service 			\
+	   examples/systemd-user/dirmngr.socket				\
+	   examples/systemd-user/gpg-agent.service 			\
+	   examples/systemd-user/gpg-agent.socket 			\
+	   examples/systemd-user/gpg-agent-ssh.socket 			\
+	   examples/systemd-user/gpg-agent-browser.socket		\
+	   examples/systemd-user/gpg-agent-extra.socket 		\
 	   examples/pwpattern.list
 
 helpfiles = help.txt help.be.txt help.ca.txt help.cs.txt		\
@@ -484,8 +496,9 @@ helpfiles = help.txt help.be.txt help.ca.txt help.cs.txt		\
             help.pt_BR.txt help.ro.txt help.ru.txt help.sk.txt		\
             help.sv.txt help.tr.txt help.zh_CN.txt help.zh_TW.txt
 
-EXTRA_DIST = samplekeys.asc mksamplekeys com-certs.pem \
-	     gnupg-logo.pdf gnupg-logo.png gnupg-logo-tr.png \
+profiles = 
+EXTRA_DIST = samplekeys.asc mksamplekeys com-certs.pem qualified.txt \
+	     gnupg-logo.eps gnupg-logo.pdf gnupg-logo.png gnupg-logo-tr.png \
 	     gnupg-module-overview.png gnupg-module-overview.pdf \
              gnupg-card-architecture.png gnupg-card-architecture.pdf \
              FAQ gnupg7.texi mkdefsinc.c defsincdate \
@@ -498,7 +511,7 @@ BUILT_SOURCES = gnupg-module-overview.png gnupg-module-overview.pdf \
                 defsincdate defs.inc
 
 info_TEXINFOS = gnupg.texi
-dist_pkgdata_DATA = $(helpfiles)
+dist_pkgdata_DATA = $(helpfiles) $(profiles)
 nobase_dist_doc_DATA = FAQ DETAILS HACKING DCO TRANSLATE OpenPGP KEYSERVER \
                        $(examples)
 
@@ -507,7 +520,7 @@ nobase_dist_doc_DATA = FAQ DETAILS HACKING DCO TRANSLATE OpenPGP KEYSERVER \
 gnupg_TEXINFOS = \
 	gpg.texi gpgsm.texi gpg-agent.texi scdaemon.texi instguide.texi \
 	tools.texi debugging.texi glossary.texi contrib.texi gpl.texi \
-	sysnotes.texi dirmngr.texi wks.texi gpg-card.texi \
+	sysnotes.texi dirmngr.texi wks.texi \
         gnupg-module-overview.svg \
         gnupg-card-architecture.fig \
 	howtos.texi howto-create-a-server-cert.texi
@@ -515,24 +528,29 @@ gnupg_TEXINFOS = \
 DVIPS = TEXINPUTS="$(srcdir)$(PATH_SEPARATOR)$$TEXINPUTS" dvips
 AM_MAKEINFOFLAGS = -I $(srcdir) --css-ref=/share/site.css
 YAT2M_OPTIONS = -I $(srcdir) \
-        --release "GnuPG @PACKAGE_VERSION@" --source "GNU Privacy Guard 2.4"
+        --release "GnuPG @PACKAGE_VERSION@" --source "GNU Privacy Guard 2.2"
 
 myman_sources = gnupg7.texi gpg.texi gpgsm.texi gpg-agent.texi \
-	        dirmngr.texi scdaemon.texi tools.texi wks.texi \
-                gpg-card.texi
+	        dirmngr.texi scdaemon.texi tools.texi wks.texi
 
 myman_pages = gpgsm.1 gpg-agent.1 dirmngr.8 scdaemon.1 watchgnupg.1 \
 	gpgconf.1 addgnupghome.8 gpg-preset-passphrase.1 \
 	gpg-connect-agent.1 gpgparsemail.1 gpgtar.1 \
-	applygnupgdefaults.8 gpg-wks-client.1 gpg-wks-server.1 \
-	dirmngr-client.1 gpg-card.1 gpg-check-pattern.1 \
-	$(am__append_9) $(am__append_10)
+	gpg-check-pattern.1 applygnupgdefaults.8 gpg-wks-client.1 \
+	gpg-wks-server.1 dirmngr-client.1 $(am__append_8) \
+	$(am__append_9)
 man_MANS = $(myman_pages) gnupg.7
 watchgnupg_SOURCE = gnupg.texi
 CLEANFILES = yat2m mkdefsinc defs.inc
 DISTCLEANFILES = gnupg.tmp gnupg.ops yat2m-stamp.tmp yat2m-stamp \
+                 gnupg-card-architecture.eps \
+                 gnupg-module-overview.eps \
 		 $(myman_pages) gnupg.7
 
+@HAVE_YAT2M_FALSE@YAT2M_CMD = ./yat2m
+@HAVE_YAT2M_TRUE@YAT2M_CMD = $(YAT2M)
+@HAVE_YAT2M_FALSE@YAT2M_DEP = yat2m
+@HAVE_YAT2M_TRUE@YAT2M_DEP = $(YAT2M)
 all: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) all-am
 
@@ -613,7 +631,6 @@ $(am__aclocal_m4_deps):
 	  rm -rf $(@:.html=.htp); exit 1; \
 	fi
 $(srcdir)/gnupg.info: gnupg.texi $(gnupg_TEXINFOS)
-gnupg.dvi: gnupg.texi $(gnupg_TEXINFOS)
 gnupg.pdf: gnupg.texi $(gnupg_TEXINFOS)
 gnupg.html: gnupg.texi $(gnupg_TEXINFOS)
 .dvi.ps:
@@ -1160,45 +1177,49 @@ uninstall-man: uninstall-man1 uninstall-man7 uninstall-man8
 
 gnupg.texi : defs.inc
 
-yat2m: yat2m.c
-	$(CC_FOR_BUILD) -o $@ $(srcdir)/yat2m.c
+# We need EPS files for "make distcheck" but we do not want to distribute
+# them due to their size.  Let's build them as needed.
+gnupg.dvi : gnupg-module-overview.eps gnupg-card-architecture.eps
+
+@HAVE_YAT2M_FALSE@yat2m: yat2m.c
+@HAVE_YAT2M_FALSE@	$(CC_FOR_BUILD) -o $@ $(srcdir)/yat2m.c
 
 mkdefsinc: mkdefsinc.c Makefile ../config.h
 	$(CC_FOR_BUILD) -I. -I.. -I$(srcdir) $(AM_CPPFLAGS) \
                         -o $@ $(srcdir)/mkdefsinc.c
 
-@MAINTAINER_MODE_TRUE@.svg.eps:
-@MAINTAINER_MODE_TRUE@	convert `test -f '$<' || echo '$(srcdir)/'`$< $@
+.svg.eps:
+	convert `test -f '$<' || echo '$(srcdir)/'`$< $@
 
-@MAINTAINER_MODE_TRUE@.svg.png:
-@MAINTAINER_MODE_TRUE@	convert `test -f '$<' || echo '$(srcdir)/'`$< $@
+.svg.png:
+	convert `test -f '$<' || echo '$(srcdir)/'`$< $@
 
-@MAINTAINER_MODE_TRUE@.svg.pdf:
-@MAINTAINER_MODE_TRUE@	convert `test -f '$<' || echo '$(srcdir)/'`$< $@
+.svg.pdf:
+	convert `test -f '$<' || echo '$(srcdir)/'`$< $@
 
-@MAINTAINER_MODE_TRUE@.fig.png:
-@MAINTAINER_MODE_TRUE@	fig2dev -L png `test -f '$<' || echo '$(srcdir)/'`$< $@
+.fig.png:
+	fig2dev -L png `test -f '$<' || echo '$(srcdir)/'`$< $@
 
-@MAINTAINER_MODE_TRUE@.fig.jpg:
-@MAINTAINER_MODE_TRUE@	fig2dev -L jpeg `test -f '$<' || echo '$(srcdir)/'`$< $@
+.fig.jpg:
+	fig2dev -L jpeg `test -f '$<' || echo '$(srcdir)/'`$< $@
 
-@MAINTAINER_MODE_TRUE@.fig.eps:
-@MAINTAINER_MODE_TRUE@	fig2dev -L eps `test -f '$<' || echo '$(srcdir)/'`$< $@
+.fig.eps:
+	fig2dev -L eps `test -f '$<' || echo '$(srcdir)/'`$< $@
 
-@MAINTAINER_MODE_TRUE@.fig.pdf:
-@MAINTAINER_MODE_TRUE@	fig2dev -L pdf `test -f '$<' || echo '$(srcdir)/'`$< $@
+.fig.pdf:
+	fig2dev -L pdf `test -f '$<' || echo '$(srcdir)/'`$< $@
 
 yat2m-stamp: $(myman_sources) defs.inc
 	@rm -f yat2m-stamp.tmp
 	@touch yat2m-stamp.tmp
 	incd="`test -f defsincdate || echo '$(srcdir)/'`defsincdate"; \
 	for file in $(myman_sources) ; do \
-              $(YAT2M) $(YAT2M_OPTIONS) --store \
+              $(YAT2M_CMD) $(YAT2M_OPTIONS) --store \
                   --date "`cat $$incd 2>/dev/null`" \
 	          `test -f '$$file' || echo '$(srcdir)/'`$$file ; done
 	@mv -f yat2m-stamp.tmp $@
 
-yat2m-stamp: $(YAT2M)
+yat2m-stamp: $(YAT2M_DEP)
 
 $(myman_pages) gnupg.7 : yat2m-stamp defs.inc
 	@if test -f $@; then :; else \
@@ -1240,11 +1261,11 @@ online: gnupg.html gnupg.pdf gnupg-module-overview.png \
         if echo "@PACKAGE_VERSION@" | grep -- "-beta" >/dev/null; then \
 	  dashdevel="-devel" ; \
 	else \
-          rsync -v gnupg.pdf $${user}@$${webhost}:webspace/manuals/ ; \
+          rsync -v gnupg.pdf $${user}@$${webhost}:webspace/manuals/gnupg-2.2.pdf ; \
         fi ; \
 	cd gnupg.html ; \
         rsync -vr --exclude='.git' .  \
-	  $${user}@$${webhost}:webspace/manuals/gnupg$${dashdevel}/
+	  $${user}@$${webhost}:webspace/manuals/gnupg-2.2$${dashdevel}/
 
 # Tell versions [3.59,3.63) of GNU make to not export all variables.
 # Otherwise a system limit (for SysV at least) may be exceeded.

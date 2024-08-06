@@ -23,6 +23,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <assert.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
@@ -33,15 +34,14 @@
    Try to get the key from CTRL and write the decoded stuff back to
    OUTFP.   The padding information is stored at R_PADDING with -1
    for not known.  */
-gpg_error_t
+int
 agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
                  const unsigned char *ciphertext, size_t ciphertextlen,
                  membuf_t *outbuf, int *r_padding)
 {
   gcry_sexp_t s_skey = NULL, s_cipher = NULL, s_plain = NULL;
   unsigned char *shadow_info = NULL;
-  gpg_error_t err = 0;
-  int no_shadow_info = 0;
+  int rc;
   char *buf = NULL;
   size_t len;
 
@@ -50,15 +50,15 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
   if (!ctrl->have_keygrip)
     {
       log_error ("speculative decryption not yet supported\n");
-      err = gpg_error (GPG_ERR_NO_SECKEY);
+      rc = gpg_error (GPG_ERR_NO_SECKEY);
       goto leave;
     }
 
-  err = gcry_sexp_sscan (&s_cipher, NULL, (char*)ciphertext, ciphertextlen);
-  if (err)
+  rc = gcry_sexp_sscan (&s_cipher, NULL, (char*)ciphertext, ciphertextlen);
+  if (rc)
     {
-      log_error ("failed to convert ciphertext: %s\n", gpg_strerror (err));
-      err = gpg_error (GPG_ERR_INV_DATA);
+      log_error ("failed to convert ciphertext: %s\n", gpg_strerror (rc));
+      rc = gpg_error (GPG_ERR_INV_DATA);
       goto leave;
     }
 
@@ -67,43 +67,31 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
       log_printhex (ctrl->keygrip, 20, "keygrip:");
       log_printhex (ciphertext, ciphertextlen, "cipher: ");
     }
-  err = agent_key_from_file (ctrl, NULL, desc_text,
-                             NULL, &shadow_info,
-                             CACHE_MODE_NORMAL, NULL, &s_skey, NULL, NULL);
-  if (gpg_err_code (err) == GPG_ERR_NO_SECKEY)
-    no_shadow_info = 1;
-  else if (err)
+  rc = agent_key_from_file (ctrl, NULL, desc_text,
+                            ctrl->keygrip, &shadow_info,
+                            CACHE_MODE_NORMAL, NULL, &s_skey, NULL, NULL);
+  if (rc)
     {
-      log_error ("failed to read the secret key\n");
+      if (gpg_err_code (rc) != GPG_ERR_NO_SECKEY)
+        log_error ("failed to read the secret key\n");
       goto leave;
     }
 
-  if (shadow_info || no_shadow_info)
+  if (shadow_info)
     { /* divert operation to the smartcard */
 
       if (!gcry_sexp_canon_len (ciphertext, ciphertextlen, NULL, NULL))
         {
-          err = gpg_error (GPG_ERR_INV_SEXP);
+          rc = gpg_error (GPG_ERR_INV_SEXP);
           goto leave;
         }
 
-      if (s_skey && agent_is_tpm2_key (s_skey))
-	err = divert_tpm2_pkdecrypt (ctrl, ciphertext, shadow_info,
-                                     &buf, &len, r_padding);
-      else
-        err = divert_pkdecrypt (ctrl, ctrl->keygrip, ciphertext,
-                                &buf, &len, r_padding);
-      if (err)
+      rc = divert_pkdecrypt (ctrl, desc_text, ciphertext,
+                             ctrl->keygrip, shadow_info,
+                             &buf, &len, r_padding);
+      if (rc)
         {
-          /* We restore the original error (ie. no seckey) is no card
-           * has been found and we have no shadow key.  This avoids a
-           * surprising "card removed" error code.  */
-          if ((gpg_err_code (err) == GPG_ERR_CARD_REMOVED
-               || gpg_err_code (err) == GPG_ERR_CARD_NOT_PRESENT)
-              && no_shadow_info)
-            err = gpg_error (GPG_ERR_NO_SECKEY);
-          else
-            log_error ("smartcard decryption failed: %s\n", gpg_strerror (err));
+          log_error ("smartcard decryption failed: %s\n", gpg_strerror (rc));
           goto leave;
         }
 
@@ -119,10 +107,10 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
 /*           gcry_sexp_dump (s_skey); */
 /*         } */
 
-      err = gcry_pk_decrypt (&s_plain, s_cipher, s_skey);
-      if (err)
+      rc = gcry_pk_decrypt (&s_plain, s_cipher, s_skey);
+      if (rc)
         {
-          log_error ("decryption failed: %s\n", gpg_strerror (err));
+          log_error ("decryption failed: %s\n", gpg_strerror (rc));
           goto leave;
         }
 
@@ -132,10 +120,10 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
           gcry_sexp_dump (s_plain);
         }
       len = gcry_sexp_sprint (s_plain, GCRYSEXP_FMT_CANON, NULL, 0);
-      log_assert (len);
+      assert (len);
       buf = xmalloc (len);
       len = gcry_sexp_sprint (s_plain, GCRYSEXP_FMT_CANON, buf, len);
-      log_assert (len);
+      assert (len);
       if (*buf == '(')
         put_membuf (outbuf, buf, len);
       else
@@ -155,5 +143,5 @@ agent_pkdecrypt (ctrl_t ctrl, const char *desc_text,
   gcry_sexp_release (s_cipher);
   xfree (buf);
   xfree (shadow_info);
-  return err;
+  return rc;
 }

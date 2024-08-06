@@ -55,7 +55,7 @@
       .B whateever you want
       @end ifset
 
-    alternatively a special comment may be used:
+    alternativly a special comment may be used:
 
       @c man:.B whatever you want
 
@@ -120,7 +120,7 @@
 
 #if MY_GCC_VERSION >= 20500
 # define ATTR_PRINTF(f, a) __attribute__ ((format(printf,f,a)))
-# define ATTR_NR_PRINTF(f, a) __attribute__ ((__noreturn__, format(printf,f,a)))
+# define ATTR_NR_PRINTF(f, a) __attribute__ ((noreturn, format(printf,f,a)))
 #else
 # define ATTR_PRINTF(f, a)
 # define ATTR_NR_PRINTF(f, a)
@@ -704,7 +704,7 @@ write_th (FILE *fp)
 
 
 /* Process the texinfo command COMMAND (without the leading @) and
-   write output if needed to FP. REST is the remainder of the line
+   write output if needed to FP. REST is the remainer of the line
    which should either point to an opening brace or to a white space.
    The function returns the number of characters already processed
    from REST.  LEN is the usable length of REST.  TABLE_LEVEL is used to
@@ -724,8 +724,7 @@ proc_texi_cmd (FILE *fp, const char *command, const char *rest, size_t len,
     { "url",     0, "\\fB", "\\fR" },
     { "sc",      0, "\\fB", "\\fR" },
     { "var",     0, "\\fI", "\\fR" },
-    { "samp",    0, "\\(oq", "\\(cq"  },
-    { "kbd",     0, "\\(oq", "\\(cq"  },
+    { "samp",    0, "\\(aq", "\\(aq"  },
     { "file",    0, "\\(oq\\fI","\\fR\\(cq" },
     { "env",     0, "\\(oq\\fI","\\fR\\(cq" },
     { "acronym", 0 },
@@ -1198,7 +1197,7 @@ parse_file (const char *fname, FILE *fp, char **section_name, int in_pause)
           if (*p == '@' && !strncmp (p+1, "item", 4))
             item_indent = p - line;  /* Set a new indent level.  */
           else if (p - line < item_indent)
-            item_indent = 0;         /* Switch off indentation.  */
+            item_indent = 0;         /* Switch off indention.  */
 
           if (item_indent)
             {

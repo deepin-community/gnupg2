@@ -20,6 +20,7 @@
  */
 
 #include <config.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,6 @@
 #include <unistd.h>
 #include <assert.h>
 
-#define INCLUDED_BY_MAIN_MODULE 1
 #include "../common/i18n.h"
 #include "../common/util.h"
 #include "../common/asshelp.h"
@@ -40,14 +40,10 @@
 #  include "../common/exechelp.h"
 #endif
 #include "../common/init.h"
-#include "../common/comopt.h"
 
 
 #define CONTROL_D ('D' - 'A' + 1)
 #define octdigitp(p) (*(p) >= '0' && *(p) <= '7')
-
-#define HISTORYNAME ".gpg-connect_history"
-
 
 /* Constants to identify the commands and options. */
 enum cmd_and_opt_values
@@ -60,29 +56,23 @@ enum cmd_and_opt_values
     oExec       = 'E',
     oRun        = 'r',
     oSubst      = 's',
-    oUnBuffered = 'u',
 
     oNoVerbose	= 500,
     oHomedir,
     oAgentProgram,
     oDirmngrProgram,
-    oKeyboxdProgram,
     oHex,
     oDecode,
     oNoExtConnect,
     oDirmngr,
-    oKeyboxd,
     oUIServer,
-    oNoHistory,
     oNoAutostart,
-    oChUid,
 
-    oNoop
   };
 
 
 /* The list of commands and options. */
-static gpgrt_opt_t opts[] = {
+static ARGPARSE_OPTS opts[] = {
   ARGPARSE_group (301, N_("@\nOptions:\n ")),
 
   ARGPARSE_s_n (oVerbose, "verbose", N_("verbose")),
@@ -90,7 +80,6 @@ static gpgrt_opt_t opts[] = {
   ARGPARSE_s_n (oHex,   "hex",       N_("print data out hex encoded")),
   ARGPARSE_s_n (oDecode,"decode",    N_("decode received data lines")),
   ARGPARSE_s_n (oDirmngr,"dirmngr",  N_("connect to the dirmngr")),
-  ARGPARSE_s_n (oKeyboxd,"keyboxd",  N_("connect to the keyboxd")),
   ARGPARSE_s_n (oUIServer, "uiserver", "@"),
   ARGPARSE_s_s (oRawSocket, "raw-socket",
                 N_("|NAME|connect to Assuan socket NAME")),
@@ -106,14 +95,9 @@ static gpgrt_opt_t opts[] = {
 
   ARGPARSE_s_n (oNoAutostart, "no-autostart", "@"),
   ARGPARSE_s_n (oNoVerbose, "no-verbose", "@"),
-  ARGPARSE_s_n (oNoHistory,"no-history",
-                "do not use the command history file"),
   ARGPARSE_s_s (oHomedir, "homedir", "@" ),
   ARGPARSE_s_s (oAgentProgram, "agent-program", "@"),
   ARGPARSE_s_s (oDirmngrProgram, "dirmngr-program", "@"),
-  ARGPARSE_s_s (oKeyboxdProgram, "keyboxd-program", "@"),
-  ARGPARSE_s_s (oChUid,          "chuid",           "@"),
-  ARGPARSE_s_n (oUnBuffered,     "unbuffered", "@"),
 
   ARGPARSE_end ()
 };
@@ -126,13 +110,11 @@ struct
   int quiet;		/* Be extra quiet.  */
   int autostart;        /* Start the server if not running.  */
   const char *homedir;  /* Configuration directory name */
-  char *agent_program;    /* Value of --agent-program.    */
-  char *dirmngr_program;  /* Value of --dirmngr-program.  */
-  char *keyboxd_program;  /* Value of --keyboxd-program.  */
+  const char *agent_program;  /* Value of --agent-program.  */
+  const char *dirmngr_program;  /* Value of --dirmngr-program.  */
   int hex;              /* Print data lines in hex format. */
   int decode;           /* Decode received data lines.  */
   int use_dirmngr;      /* Use the dirmngr and not gpg-agent.  */
-  int use_keyboxd;      /* Use the keyboxd and not gpg-agent.  */
   int use_uiserver;     /* Use the standard UI server.  */
   const char *raw_socket; /* Name of socket to connect in raw mode. */
   const char *tcp_socket; /* Name of server to connect in tcp mode. */
@@ -140,8 +122,6 @@ struct
   unsigned int connect_flags;    /* Flags used for connecting. */
   int enable_varsubst;  /* Set if variable substitution is enabled.  */
   int trim_leading_spaces;
-  int no_history;
-  int unbuffered; /* Set if unbuffered mode for stdin/out is preferred.  */
 } opt;
 
 
@@ -509,7 +489,7 @@ arithmetic_op (int operator, const char *operands)
 
      unescape ARGS
            Remove C-style escapes from string.  Note that "\0" and
-           "\x00" terminate the string implicitly.  Use "\x7d" to
+           "\x00" terminate the string implictly.  Use "\x7d" to
            represent the closing brace.  The args start right after
            the first space after the function name.
 
@@ -1010,7 +990,10 @@ do_open (char *line)
   if (fd >= 0 && fd < DIM (open_fd_table))
     {
       open_fd_table[fd].inuse = 1;
-#if defined(HAVE_W32_SYSTEM)
+#ifdef HAVE_W32CE_SYSTEM
+# warning fixme: implement our pipe emulation.
+#endif
+#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
       {
         HANDLE prochandle, handle, newhandle;
 
@@ -1040,12 +1023,12 @@ do_open (char *line)
         log_info ("file '%s' opened in \"%s\" mode, fd=%d  (libc=%d)\n",
                    name, mode, (int)open_fd_table[fd].handle, fd);
       set_int_var (varname, (int)open_fd_table[fd].handle);
-#else /* Unix */
+#else
       if (opt.verbose)
         log_info ("file '%s' opened in \"%s\" mode, fd=%d\n",
                    name, mode, fd);
       set_int_var (varname, fd);
-#endif /* Unix */
+#endif
     }
   else
     {
@@ -1168,7 +1151,7 @@ help_cmd_p (const char *line)
 int
 main (int argc, char **argv)
 {
-  gpgrt_argparse_t pargs;
+  ARGPARSE_ARGS pargs;
   int no_more_options = 0;
   assuan_context_t ctx;
   char *line, *p;
@@ -1190,16 +1173,11 @@ main (int argc, char **argv)
   } loopstack[20];
   int        loopidx;
   char **cmdline_commands = NULL;
-  char *historyname = NULL;
-
-  static const char *changeuser;
-
 
   early_system_init ();
   gnupg_rl_initialize ();
-  gpgrt_set_strusage (my_strusage);
-  log_set_prefix ("gpg-connect-agent",
-                  GPGRT_LOG_WITH_PREFIX|GPGRT_LOG_NO_REGISTRY);
+  set_strusage (my_strusage);
+  log_set_prefix ("gpg-connect-agent", GPGRT_LOG_WITH_PREFIX|GPGRT_LOG_NO_REGISTRY);
 
   /* Make sure that our subsystems are ready.  */
   i18n_init();
@@ -1216,7 +1194,7 @@ main (int argc, char **argv)
   pargs.argc  = &argc;
   pargs.argv  = &argv;
   pargs.flags = ARGPARSE_FLAG_KEEP;
-  while (!no_more_options && gpgrt_argparse (NULL, &pargs, opts))
+  while (!no_more_options && gnupg_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -1224,21 +1202,12 @@ main (int argc, char **argv)
         case oVerbose:   opt.verbose++; break;
         case oNoVerbose: opt.verbose = 0; break;
         case oHomedir:   gnupg_set_homedir (pargs.r.ret_str); break;
-        case oAgentProgram:
-          opt.agent_program = make_filename (pargs.r.ret_str, NULL);
-          break;
-        case oDirmngrProgram:
-          opt.dirmngr_program = make_filename (pargs.r.ret_str, NULL);
-          break;
-        case oKeyboxdProgram:
-          opt.keyboxd_program = make_filename (pargs.r.ret_str, NULL);
-          break;
+        case oAgentProgram: opt.agent_program = pargs.r.ret_str;  break;
+        case oDirmngrProgram: opt.dirmngr_program = pargs.r.ret_str;  break;
         case oNoAutostart:    opt.autostart = 0; break;
-        case oNoHistory: opt.no_history = 1; break;
         case oHex:       opt.hex = 1; break;
         case oDecode:    opt.decode = 1; break;
         case oDirmngr:   opt.use_dirmngr = 1; break;
-        case oKeyboxd:   opt.use_keyboxd = 1; break;
         case oUIServer:  opt.use_uiserver = 1; break;
         case oRawSocket: opt.raw_socket = pargs.r.ret_str; break;
         case oTcpSocket: opt.tcp_socket = pargs.r.ret_str; break;
@@ -1249,29 +1218,14 @@ main (int argc, char **argv)
           opt.enable_varsubst = 1;
           opt.trim_leading_spaces = 1;
           break;
-        case oChUid:     changeuser = pargs.r.ret_str; break;
-        case oUnBuffered: opt.unbuffered = 1; break;
 
         default: pargs.err = 2; break;
 	}
     }
-  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
-
-  if (changeuser && gnupg_chuid (changeuser, 0))
-    log_inc_errorcount (); /* Force later termination.  */
+  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (log_get_errorcount (0))
     exit (2);
-
-  /* Process common component options.  Note that we set the config
-   * dir only here so that --homedir will have an effect.  */
-  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
-  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
-  if (parse_comopt (GNUPG_MODULE_NAME_CONNECT_AGENT, opt.verbose > 1))
-    exit(2);
-
-  if (comopt.no_autostart)
-     opt.autostart = 0;
 
   /* --uiserver is a shortcut for a specific raw socket.  This comes
        in particular handy on Windows. */
@@ -1337,7 +1291,8 @@ main (int argc, char **argv)
       assuan_fd_t no_close[3];
 
       no_close[0] = assuan_fd_from_posix_fd (es_fileno (es_stderr));
-      no_close[1] = ASSUAN_INVALID_FD;
+      no_close[1] = assuan_fd_from_posix_fd (log_get_fd ());
+      no_close[2] = ASSUAN_INVALID_FD;
 
       rc = assuan_new (&ctx);
       if (rc)
@@ -1420,11 +1375,6 @@ main (int argc, char **argv)
         log_info (_("receiving line failed: %s\n"), gpg_strerror (rc) );
     }
 
-  if (!script_fp && opt.unbuffered)
-    {
-      gpgrt_setvbuf (gpgrt_stdin, NULL, _IONBF, 0);
-      setvbuf (stdout, NULL, _IONBF, 0);
-    }
 
   for (loopidx=0; loopidx < DIM (loopstack); loopidx++)
     loopstack[loopidx].collecting = 0;
@@ -1466,15 +1416,6 @@ main (int argc, char **argv)
         {
           keep_line = 0;
           xfree (line);
-          if (!historyname && !opt.no_history)
-            {
-              historyname = make_filename (gnupg_homedir (), HISTORYNAME, NULL);
-              if (tty_read_history (historyname, 500))
-                log_info ("error reading '%s': %s\n",
-                          historyname,
-                          gpg_strerror (gpg_error_from_syserror ()));
-            }
-
           line = tty_get ("> ");
           n = strlen (line);
           if (n==1 && *line == CONTROL_D)
@@ -1862,22 +1803,13 @@ main (int argc, char **argv)
                     }
                 }
             }
-          else if (!strcmp (cmd, "bye") || !strcmp (cmd, "quit"))
+          else if (!strcmp (cmd, "bye"))
             {
               break;
             }
           else if (!strcmp (cmd, "sleep"))
             {
               gnupg_sleep (1);
-            }
-          else if (!strcmp (cmd, "history"))
-            {
-              if (!strcmp (p, "--clear"))
-                {
-                  tty_read_history (NULL, 0);
-                }
-              else
-                log_error ("Only \"/history --clear\" is supported\n");
             }
           else if (!strcmp (cmd, "help"))
             {
@@ -1905,7 +1837,6 @@ main (int argc, char **argv)
 "/if VAR                Begin conditional block controlled by VAR.\n"
 "/while VAR             Begin loop controlled by VAR.\n"
 "/end                   End loop or condition\n"
-"/history               Manage the history\n"
 "/bye                   Terminate gpg-connect-agent.\n"
 "/help                  Print this help.");
             }
@@ -1953,16 +1884,7 @@ main (int argc, char **argv)
     }
 
   if (opt.verbose)
-    log_info ("closing connection to %s\n",
-              opt.use_dirmngr? "dirmngr" :
-              opt.use_keyboxd? "keyboxd" :
-              "agent");
-
-
-  if (historyname && tty_write_history (historyname))
-    log_info ("error writing '%s': %s\n",
-              historyname, gpg_strerror (gpg_error_from_syserror ()));
-
+    log_info ("closing connection to agent\n");
 
   /* XXX: We would like to release the context here, but libassuan
      nicely says good bye to the server, which results in a SIGPIPE if
@@ -1973,7 +1895,6 @@ main (int argc, char **argv)
     assuan_release (ctx);
   else
     gpgrt_annotate_leaked_object (ctx);
-  xfree (historyname);
   xfree (line);
   return 0;
 }
@@ -1992,7 +1913,6 @@ handle_inquire (assuan_context_t ctx, char *line)
   FILE *fp = NULL;
   char buffer[1024];
   int rc, n;
-  int cancelled = 0;
 
   /* Skip the command and trailing spaces. */
   for (; *line && !spacep (line); line++)
@@ -2037,7 +1957,11 @@ handle_inquire (assuan_context_t ctx, char *line)
     {
       if (d->is_prog)
         {
+#ifdef HAVE_W32CE_SYSTEM
+          fp = NULL;
+#else
           fp = popen (d->file, "r");
+#endif
           if (!fp)
             log_error ("error executing '%s': %s\n",
                        d->file, strerror (errno));
@@ -2047,7 +1971,7 @@ handle_inquire (assuan_context_t ctx, char *line)
         }
       else
         {
-          fp = fopen (d->file, "rb");
+          fp = gnupg_fopen (d->file, "rb");
           if (!fp)
             log_error ("error opening '%s': %s\n", d->file, strerror (errno));
           else if (opt.verbose)
@@ -2070,20 +1994,21 @@ handle_inquire (assuan_context_t ctx, char *line)
         log_error ("error reading from '%s': %s\n", d->file, strerror (errno));
     }
 
+  rc = assuan_send_data (ctx, NULL, 0);
+  if (rc)
+    log_error ("sending data back failed: %s\n", gpg_strerror (rc) );
+
   if (d->is_var)
     ;
   else if (d->is_prog)
     {
+#ifndef HAVE_W32CE_SYSTEM
       if (pclose (fp))
-        cancelled = 1;
+        log_error ("error running '%s': %s\n", d->file, strerror (errno));
+#endif
     }
   else
     fclose (fp);
-
-  rc = assuan_send_data (ctx, NULL, cancelled);
-  if (rc)
-    log_error ("sending data back failed: %s\n", gpg_strerror (rc) );
-
   return 1;
 }
 
@@ -2305,13 +2230,6 @@ start_agent (void)
                              opt.autostart,
                              !opt.quiet, 0,
                              NULL, NULL);
-  else if (opt.use_keyboxd)
-    err = start_new_keyboxd (&ctx,
-                             GPG_ERR_SOURCE_DEFAULT,
-                             opt.keyboxd_program,
-                             opt.autostart,
-                             !opt.quiet, 0,
-                             NULL, NULL);
   else
     err = start_new_gpg_agent (&ctx,
                                GPG_ERR_SOURCE_DEFAULT,
@@ -2327,15 +2245,12 @@ start_agent (void)
     {
       if (!opt.autostart
           && (gpg_err_code (err)
-              == (opt.use_dirmngr? GPG_ERR_NO_DIRMNGR :
-                  opt.use_keyboxd? GPG_ERR_NO_KEYBOXD : GPG_ERR_NO_AGENT)))
+              == (opt.use_dirmngr? GPG_ERR_NO_DIRMNGR : GPG_ERR_NO_AGENT)))
         {
           /* In the no-autostart case we don't make gpg-connect-agent
              fail on a missing server.  */
           log_info (opt.use_dirmngr?
                     _("no dirmngr running in this session\n"):
-                    opt.use_keyboxd?
-                    _("no keybox daemon running in this session\n"):
                     _("no gpg-agent running in this session\n"));
           exit (0);
         }

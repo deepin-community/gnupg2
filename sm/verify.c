@@ -28,6 +28,7 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
+#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -112,11 +113,11 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
   audit_set_type (ctrl->audit, AUDIT_TYPE_VERIFY);
 
   /* Although we detect detached signatures during the parsing phase,
-   * we need to know it earlier and thus accept the caller idea of
+   * we need to know it earlier and thus accept the caller's idea of
    * what to verify.  */
   maybe_detached = (data_fd != -1);
 
-  kh = keydb_new (ctrl);
+  kh = keydb_new ();
   if (!kh)
     {
       log_error (_("failed to allocate keyDB handle\n"));
@@ -373,7 +374,7 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
         }
       else if (gpg_err_code (rc) == GPG_ERR_NO_DATA)
         {
-          log_assert (!msgdigest);
+          assert (!msgdigest);
           rc = 0;
           algoid = NULL;
           algo = 0;
@@ -439,7 +440,7 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
       rc = keydb_search_issuer_sn (ctrl, kh, issuer, serial);
       if (rc)
         {
-          if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
+          if (rc == -1)
             {
               log_error ("certificate not found\n");
               rc = gpg_error (GPG_ERR_NO_PUBKEY);
@@ -474,7 +475,6 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
       if (pkalgo == GCRY_PK_ECC)
         pkalgo = GCRY_PK_ECDSA;
 
-      /* Print infos about the signature.  */
       log_info (_("Signature made "));
       if (*sigtime)
         {
@@ -517,7 +517,7 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
           goto next_signer;
         }
 
-      if (! gnupg_digest_is_allowed (opt.compliance, 0, sigval_hash_algo))
+      if (!gnupg_digest_is_allowed (opt.compliance, 0, sigval_hash_algo))
         {
           log_error (_("digest algorithm '%s' may not be used in %s mode\n"),
                      gcry_md_algo_name (sigval_hash_algo),
@@ -653,11 +653,6 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
 
         xfree (fpr);
 
-        /* FIXME: INFO_PKALGO correctly shows ECDSA but PKALGO is then
-         * ECC.  We should use the ECDSA here and need to find a way to
-         * figure this out without using the bogus assumption in
-         * gpgsm_check_cms_signature that ECC is always ECDSA.  */
-
         fpr = gpgsm_get_fingerprint_hexstring (cert, GCRY_MD_SHA1);
         tstr = strtimestamp_r (sigtime);
         buf = xasprintf ("%s %s %s %s 0 0 %d %d 00", fpr, tstr,
@@ -698,7 +693,6 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
           log_printf ("\"\n");
           ksba_free (p);
         }
-
 
       /* Print a note if this is a qualified signature.  */
       {
@@ -756,12 +750,7 @@ gpgsm_verify (ctrl_t ctrl, int in_fd, int data_fd, estream_t out_fp)
       char numbuf[50];
       sprintf (numbuf, "%d", rc );
       gpgsm_status2 (ctrl, STATUS_ERROR, "verify.leave",
-                     numbuf,
-                     gpg_err_code (rc) == GPG_ERR_EPIPE?
-                     "-- (Broken pipe on input or output)":
-                     gpg_err_code (rc) == GPG_ERR_EOF?
-                     "-- (End of file)" : NULL,
-                     NULL);
+                     numbuf, NULL);
     }
 
   return rc;

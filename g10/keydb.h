@@ -29,17 +29,11 @@
 /* What qualifies as a certification (key-signature in contrast to a
  * data signature)?  Note that a back signature is special and can be
  * made by key and data signatures capable subkeys.) */
-#define IS_CERT(s)       (IS_KEY_SIG(s)       \
-                          || IS_UID_SIG(s)    \
-                          || IS_SUBKEY_SIG(s) \
-                          || IS_KEY_REV(s)    \
-                          || IS_UID_REV(s)    \
-                          || IS_SUBKEY_REV(s) \
-                          || IS_ATTST_SIGS(s) )
+#define IS_CERT(s)       (IS_KEY_SIG(s) || IS_UID_SIG(s) || IS_SUBKEY_SIG(s) \
+                         || IS_KEY_REV(s) || IS_UID_REV(s) || IS_SUBKEY_REV(s))
 #define IS_SIG(s)        (!IS_CERT(s))
 #define IS_KEY_SIG(s)    ((s)->sig_class == 0x1f)
 #define IS_UID_SIG(s)    (((s)->sig_class & ~3) == 0x10)
-#define IS_ATTST_SIGS(s) ((s)->sig_class == 0x16)
 #define IS_SUBKEY_SIG(s) ((s)->sig_class == 0x18)
 #define IS_BACK_SIG(s)   ((s)->sig_class == 0x19)
 #define IS_KEY_REV(s)    ((s)->sig_class == 0x20)
@@ -170,41 +164,6 @@ is_in_klist (struct key_item *k, PKT_signature *sig)
 }
 
 
-/*-- call-keyboxd.c --*/
-
-/* Release all open contexts to the keyboxd.  */
-void gpg_keyboxd_deinit_session_data (ctrl_t ctrl);
-
-/* Create a new database handle.  Returns NULL on error, sets ERRNO,
- * and prints an error diagnostic. */
-KEYDB_HANDLE keydb_new (ctrl_t ctrl);
-
-/* Release a keydb handle.  */
-void keydb_release (KEYDB_HANDLE hd);
-
-/* Take a lock if we are not using the keyboxd.  */
-gpg_error_t keydb_lock (KEYDB_HANDLE hd);
-
-/* Return the keyblock last found by keydb_search.  */
-gpg_error_t keydb_get_keyblock (KEYDB_HANDLE hd, kbnode_t *ret_kb);
-
-/* Update the keyblock KB.  */
-gpg_error_t keydb_update_keyblock (ctrl_t ctrl, KEYDB_HANDLE hd, kbnode_t kb);
-
-/* Insert a keyblock into one of the storage system.  */
-gpg_error_t keydb_insert_keyblock (KEYDB_HANDLE hd, kbnode_t kb);
-
-/* Delete the currently selected keyblock.  */
-gpg_error_t keydb_delete_keyblock (KEYDB_HANDLE hd);
-
-/* Clears the current search result and resets the handle's position.  */
-gpg_error_t keydb_search_reset (KEYDB_HANDLE hd);
-
-/* Search the database for keys matching the search description.  */
-gpg_error_t keydb_search (KEYDB_HANDLE hd, KEYDB_SEARCH_DESC *desc,
-                          size_t ndesc, size_t *descindex);
-
-
 
 /*-- keydb.c --*/
 
@@ -223,6 +182,17 @@ gpg_error_t keydb_add_resource (const char *url, unsigned int flags);
 /* Dump some statistics to the log.  */
 void keydb_dump_stats (void);
 
+/* Create a new database handle.  Returns NULL on error, sets ERRNO,
+   and prints an error diagnostic. */
+KEYDB_HANDLE keydb_new (void);
+
+/* Free all resources owned by the database handle.  */
+void keydb_release (KEYDB_HANDLE hd);
+
+/* Take a lock on the files immediately and not only during insert or
+ * update.  This lock is released with keydb_release.  */
+gpg_error_t keydb_lock (KEYDB_HANDLE hd);
+
 /* Set a flag on the handle to suppress use of cached results.  This
    is required for updating a keyring and for key listings.  Fixme:
    Using a new parameter for keydb_new might be a better solution.  */
@@ -237,6 +207,18 @@ void keydb_pop_found_state (KEYDB_HANDLE hd);
 /* Return the file name of the resource.  */
 const char *keydb_get_resource_name (KEYDB_HANDLE hd);
 
+/* Return the keyblock last found by keydb_search.  */
+gpg_error_t keydb_get_keyblock (KEYDB_HANDLE hd, KBNODE *ret_kb);
+
+/* Update the keyblock KB.  */
+gpg_error_t keydb_update_keyblock (ctrl_t ctrl, KEYDB_HANDLE hd, kbnode_t kb);
+
+/* Insert a keyblock into one of the underlying keyrings or keyboxes.  */
+gpg_error_t keydb_insert_keyblock (KEYDB_HANDLE hd, kbnode_t kb);
+
+/* Delete the currently selected keyblock.  */
+gpg_error_t keydb_delete_keyblock (KEYDB_HANDLE hd);
+
 /* Find the first writable resource.  */
 gpg_error_t keydb_locate_writable (KEYDB_HANDLE hd);
 
@@ -246,6 +228,13 @@ void keydb_rebuild_caches (ctrl_t ctrl, int noisy);
 /* Return the number of skipped blocks (because they were to large to
    read from a keybox) since the last search reset.  */
 unsigned long keydb_get_skipped_counter (KEYDB_HANDLE hd);
+
+/* Clears the current search result and resets the handle's position.  */
+gpg_error_t keydb_search_reset (KEYDB_HANDLE hd);
+
+/* Search the database for keys matching the search description.  */
+gpg_error_t keydb_search (KEYDB_HANDLE hd, KEYDB_SEARCH_DESC *desc,
+                          size_t ndesc, size_t *descindex);
 
 /* Return the first non-legacy key in the database.  */
 gpg_error_t keydb_search_first (KEYDB_HANDLE hd);
@@ -257,19 +246,16 @@ gpg_error_t keydb_search_next (KEYDB_HANDLE hd);
    key id.  */
 gpg_error_t keydb_search_kid (KEYDB_HANDLE hd, u32 *kid);
 
-/* This is a convenience function for searching for keys by
- * fingerprint.  */
-gpg_error_t keydb_search_fpr (KEYDB_HANDLE hd, const byte *fpr, size_t fprlen);
+/* This is a convenience function for searching for keys with a long
+   (20 byte) fingerprint.  */
+gpg_error_t keydb_search_fpr (KEYDB_HANDLE hd, const byte *fpr);
 
 
 /*-- pkclist.c --*/
 void show_revocation_reason (ctrl_t ctrl, PKT_public_key *pk, int mode );
-gpg_error_t check_signatures_trust (ctrl_t ctrl, kbnode_t keyblock,
-                                    PKT_public_key *pk, PKT_signature *sig);
+int  check_signatures_trust (ctrl_t ctrl, PKT_signature *sig);
 
 void release_pk_list (PK_LIST pk_list);
-int expand_id (const char *id, strlist_t *into, unsigned int flags);
-strlist_t expand_group (strlist_t input, int prepend_input);
 int  build_pk_list (ctrl_t ctrl, strlist_t rcpts, PK_LIST *ret_pk_list);
 gpg_error_t find_and_check_key (ctrl_t ctrl,
                                 const char *name, unsigned int use,
@@ -280,8 +266,7 @@ int  algo_available( preftype_t preftype, int algo,
 		     const struct pref_hint *hint );
 int  select_algo_from_prefs( PK_LIST pk_list, int preftype,
 			     int request, const struct pref_hint *hint);
-int  select_mdc_from_pklist (PK_LIST pk_list);
-aead_algo_t select_aead_from_pklist (pk_list_t pk_list);
+aead_algo_t select_aead_from_pklist (PK_LIST pk_list);
 void warn_missing_aead_from_pklist (PK_LIST pk_list);
 void warn_missing_aes_from_pklist (PK_LIST pk_list);
 
@@ -296,6 +281,8 @@ gpg_error_t build_sk_list (ctrl_t ctrl, strlist_t locusr,
 /* Flags for passphrase_to_dek */
 #define GETPASSWORD_FLAG_SYMDECRYPT  1
 
+
+unsigned char encode_s2k_iterations (int iterations);
 int  have_static_passphrase(void);
 const char *get_static_passphrase (void);
 void set_passphrase_from_string(const char *pass);
@@ -316,7 +303,6 @@ void emit_status_need_passphrase (ctrl_t ctrl, u32 *keyid,
 #define FORMAT_KEYDESC_IMPORT  1
 #define FORMAT_KEYDESC_EXPORT  2
 #define FORMAT_KEYDESC_DELKEY  3
-#define FORMAT_KEYDESC_KEYGRIP 4
 char *gpg_format_keydesc (ctrl_t ctrl,
                           PKT_public_key *pk, int mode, int escaped);
 
@@ -344,7 +330,7 @@ gpg_error_t get_pubkey_with_ldap_fallback (ctrl_t ctrl,
 /* Similar to get_pubkey, but it does not take PK->REQ_USAGE into
    account nor does it merge in the self-signed data.  This function
    also only considers primary keys.  */
-int get_pubkey_fast (ctrl_t ctrl, PKT_public_key *pk, u32 *keyid);
+int get_pubkey_fast (PKT_public_key *pk, u32 *keyid);
 
 /* Return the entire keyblock used to create SIG.  This is a
  * specialized version of get_pubkeyblock.  */
@@ -410,14 +396,13 @@ int get_pubkey_byfprint (ctrl_t ctrl, PKT_public_key *pk, kbnode_t *r_keyblock,
 /* This function is similar to get_pubkey_byfprint, but it doesn't
    merge the self-signed data into the public key and subkeys or into
    the user ids.  */
-gpg_error_t get_pubkey_byfprint_fast (ctrl_t ctrl, PKT_public_key *pk,
+gpg_error_t get_pubkey_byfprint_fast (PKT_public_key *pk,
                                       const byte *fprint, size_t fprint_len);
 
 /* This function is similar to get_pubkey_byfprint, but it doesn't
    merge the self-signed data into the public key and subkeys or into
    the user ids.  */
-gpg_error_t get_keyblock_byfprint_fast (ctrl_t ctrl,
-                                        kbnode_t *r_keyblock,
+gpg_error_t get_keyblock_byfprint_fast (kbnode_t *r_keyblock,
                                         KEYDB_HANDLE *r_hd,
                                         const byte *fprint, size_t fprint_len,
                                         int lock);
@@ -425,7 +410,7 @@ gpg_error_t get_keyblock_byfprint_fast (ctrl_t ctrl,
 
 /* Returns true if a secret key is available for the public key with
    key id KEYID.  */
-int have_secret_key_with_kid (ctrl_t ctrl, u32 *keyid);
+int have_secret_key_with_kid (u32 *keyid);
 
 /* Parse the --default-key parameter.  Returns the last key (in terms
    of when the option is given) that is available.  */
@@ -476,7 +461,8 @@ char *get_user_id_string_native (ctrl_t ctrl, u32 *keyid);
 char *get_long_user_id_string (ctrl_t ctrl, u32 *keyid);
 char *get_user_id (ctrl_t ctrl, u32 *keyid, size_t *rn, int *r_nouid);
 char *get_user_id_native (ctrl_t ctrl, u32 *keyid);
-char *get_user_id_byfpr_native (ctrl_t ctrl, const byte *fpr, size_t fprlen);
+char *get_user_id_byfpr (ctrl_t ctrl, const byte *fpr, size_t *rn);
+char *get_user_id_byfpr_native (ctrl_t ctrl, const byte *fpr);
 
 void release_akl(void);
 int akl_empty_or_only_local (void);
@@ -487,7 +473,6 @@ const char *key_origin_string (int origin);
 /*-- keyid.c --*/
 int pubkey_letter( int algo );
 char *pubkey_string (PKT_public_key *pk, char *buffer, size_t bufsize);
-int compare_pubkey_string (const char *astr, const char *bstr);
 #define PUBKEY_STRING_SIZE 32
 u32 v3_keyid (gcry_mpi_t a, u32 *ki);
 void hash_public_key( gcry_md_hd_t md, PKT_public_key *pk );
@@ -516,18 +501,11 @@ keyid_cmp (const u32 *a, const u32 *b)
   return 0;
 }
 
-/* Return true if both keyids are equal. */
-static int GPGRT_ATTR_UNUSED
-keyid_eq (const u32 *a, const u32 *b)
-{
-  return a[0] == b[0] && a[1] == b[1];
-}
-
 /* Return whether PK is a primary key.  */
 static int GPGRT_ATTR_UNUSED
 pk_is_primary (PKT_public_key *pk)
 {
-  return keyid_eq (pk_keyid (pk), pk_main_keyid (pk));
+  return keyid_cmp (pk_keyid (pk), pk_main_keyid (pk)) == 0;
 }
 
 /* Copy the keyid in SRC to DEST and return DEST.  */
@@ -558,9 +536,7 @@ unsigned nbits_from_pk( PKT_public_key *pk );
 char *mk_datestr (char *buffer, size_t bufsize, u32 timestamp);
 #define MK_DATESTR_SIZE 11
 
-const char *dateonlystr_from_pk (PKT_public_key *pk);
 const char *datestr_from_pk( PKT_public_key *pk );
-const char *dateonlystr_from_sig( PKT_signature *sig );
 const char *datestr_from_sig( PKT_signature *sig );
 const char *expirestr_from_pk( PKT_public_key *pk );
 const char *expirestr_from_sig( PKT_signature *sig );
@@ -571,11 +547,7 @@ const char *colon_datestr_from_pk (PKT_public_key *pk);
 const char *colon_datestr_from_sig (PKT_signature *sig);
 const char *colon_expirestr_from_sig (PKT_signature *sig);
 byte *fingerprint_from_pk( PKT_public_key *pk, byte *buf, size_t *ret_len );
-byte *v5_fingerprint_from_pk (PKT_public_key *pk, byte *array, size_t *ret_len);
-void fpr20_from_pk (PKT_public_key *pk, byte array[20]);
-void fpr20_from_fpr (const byte *fpr, unsigned int fprlen, byte array[20]);
 char *hexfingerprint (PKT_public_key *pk, char *buffer, size_t buflen);
-char *v5hexfingerprint (PKT_public_key *pk, char *buffer, size_t buflen);
 char *format_hexfingerprint (const char *fingerprint,
                              char *buffer, size_t buflen);
 gpg_error_t keygrip_from_pk (PKT_public_key *pk, unsigned char *array);

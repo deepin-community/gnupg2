@@ -1,5 +1,5 @@
 From: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
-Date: Sun, 25 Dec 2022 12:08:27 +0100
+Date: Thu, 7 Sep 2017 18:49:35 -0400
 Subject: gpg: Default to SHA-512 for all signature types on RSA keys.
 
 * g10/main.h (DEFAULT_DIGEST_ALGO): Use SHA512 instead of SHA256 in
@@ -20,10 +20,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  3 files changed, 3 insertions(+), 6 deletions(-)
 
 diff --git a/configure.ac b/configure.ac
-index b9bc809..f920a03 100644
+index 6e44af2..0a4ae1e 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -339,7 +339,7 @@ GNUPG_GPG_DISABLE_ALGO([rmd160],[RIPE-MD160 hash])
+@@ -317,7 +317,7 @@ GNUPG_GPG_DISABLE_ALGO([rmd160],[RIPE-MD160 hash])
  GNUPG_GPG_DISABLE_ALGO([sha224],[SHA-224 hash])
  # SHA256 is a MUST algorithm for GnuPG.
  GNUPG_GPG_DISABLE_ALGO([sha384],[SHA-384 hash])
@@ -33,7 +33,7 @@ index b9bc809..f920a03 100644
  
  # Allow disabling of zip support.
 diff --git a/g10/main.h b/g10/main.h
-index b29e23e..0a64a21 100644
+index d1a54db..50ebad0 100644
 --- a/g10/main.h
 +++ b/g10/main.h
 @@ -41,7 +41,7 @@
@@ -42,14 +42,14 @@ index b29e23e..0a64a21 100644
  
 -#define DEFAULT_DIGEST_ALGO     ((GNUPG)? DIGEST_ALGO_SHA256:DIGEST_ALGO_SHA1)
 +#define DEFAULT_DIGEST_ALGO     ((GNUPG)? DIGEST_ALGO_SHA512:DIGEST_ALGO_SHA1)
- #define DEFAULT_S2K_DIGEST_ALGO  DEFAULT_DIGEST_ALGO
+ #define DEFAULT_S2K_DIGEST_ALGO DIGEST_ALGO_SHA1
  #ifdef HAVE_ZIP
  # define DEFAULT_COMPRESS_ALGO   COMPRESS_ALGO_ZIP
 diff --git a/g10/misc.c b/g10/misc.c
-index 2f4b452..0e6d9d5 100644
+index 0b19e1a..79c285c 100644
 --- a/g10/misc.c
 +++ b/g10/misc.c
-@@ -862,11 +862,8 @@ map_md_openpgp_to_gcry (digest_algo_t algo)
+@@ -867,11 +867,8 @@ map_md_openpgp_to_gcry (digest_algo_t algo)
      case DIGEST_ALGO_SHA384: return 0;
  #endif
  

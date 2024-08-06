@@ -73,7 +73,6 @@
 #include "./dirmngr-err.h"
 #include "../common/util.h"
 #include "../common/host2net.h"
-#include "dirmngr-status.h"
 #include "dns-stuff.h"
 
 #ifdef USE_NPTH
@@ -160,7 +159,7 @@ static struct
 
 
 #ifdef USE_LIBDNS
-/* Libdns global data.  */
+/* Libdns gobal data.  */
 struct libdns_s
 {
   struct dns_resolv_conf *resolv_conf;
@@ -443,13 +442,12 @@ resolv_conf_changed_p (void)
 /* Initialize libdns.  Returns 0 on success; prints a diagnostic and
  * returns an error code on failure.  */
 static gpg_error_t
-libdns_init (ctrl_t ctrl)
+libdns_init (void)
 {
   gpg_error_t err;
   struct libdns_s ld;
   int derr;
   char *cfgstr = NULL;
-  const char *fname = NULL;
 
   if (libdns.resolv_conf)
     return 0; /* Already initialized.  */
@@ -543,6 +541,7 @@ libdns_init (ctrl_t ctrl)
       xfree (ninfo);
 
 #else /* Unix */
+      const char *fname;
 
       fname = RESOLV_CONF_NAME;
       resolv_conf_changed_p (); /* Reset timestamp.  */
@@ -632,7 +631,6 @@ libdns_init (ctrl_t ctrl)
     {
       err = libdns_error_to_gpg_error (derr);
       log_error ("failed to load DNS hints: %s\n", gpg_strerror (err));
-      fname = "[dns hints]";
       goto leave;
     }
 
@@ -643,14 +641,6 @@ libdns_init (ctrl_t ctrl)
     log_debug ("dns: libdns initialized%s\n", tor_mode?" (tor mode)":"");
 
  leave:
-  if (!fname)
-    fname = cfgstr;
-  if (err && fname)
-    dirmngr_status_printf (ctrl, "WARNING",
-                           "dns_config_problem %u"
-                           " error accessing '%s': %s <%s>",
-                           err, fname, gpg_strerror (err), gpg_strsource (err));
-
   xfree (cfgstr);
   return err;
 }
@@ -720,7 +710,7 @@ dns_stuff_housekeeping (void)
  * failure an error code is returned and NULL stored at R_RES.
  */
 static gpg_error_t
-libdns_res_open (ctrl_t ctrl, struct dns_resolver **r_res)
+libdns_res_open (struct dns_resolver **r_res)
 {
   gpg_error_t err;
   struct dns_resolver *res;
@@ -747,7 +737,7 @@ libdns_res_open (ctrl_t ctrl, struct dns_resolver **r_res)
       libdns_deinit ();
     }
 
-  err = libdns_init (ctrl);
+  err = libdns_init ();
   if (err)
     return err;
 
@@ -826,7 +816,7 @@ libdns_res_wait (struct dns_resolver *res)
 
 #ifdef USE_LIBDNS
 static gpg_error_t
-resolve_name_libdns (ctrl_t ctrl, const char *name, unsigned short port,
+resolve_name_libdns (const char *name, unsigned short port,
                      int want_family, int want_socktype,
                      dns_addrinfo_t *r_dai, char **r_canonname)
 {
@@ -859,7 +849,7 @@ resolve_name_libdns (ctrl_t ctrl, const char *name, unsigned short port,
       portstr = portstr_;
     }
 
-  err = libdns_res_open (ctrl, &res);
+  err = libdns_res_open (&res);
   if (err)
     goto leave;
 
@@ -971,7 +961,7 @@ resolve_name_libdns (ctrl_t ctrl, const char *name, unsigned short port,
 
 /* Resolve a name using the standard system function.  */
 static gpg_error_t
-resolve_name_standard (ctrl_t ctrl, const char *name, unsigned short port,
+resolve_name_standard (const char *name, unsigned short port,
                        int want_family, int want_socktype,
                        dns_addrinfo_t *r_dai, char **r_canonname)
 {
@@ -1017,7 +1007,7 @@ resolve_name_standard (ctrl_t ctrl, const char *name, unsigned short port,
              CNAME redirection again.  */
           char *cname;
 
-          if (get_dns_cname (ctrl, name, &cname))
+          if (get_dns_cname (name, &cname))
             goto leave; /* Still no success.  */
 
           ret = getaddrinfo (cname, *portstr? portstr : NULL, &hints, &aibuf);
@@ -1082,19 +1072,18 @@ resolve_name_standard (ctrl_t ctrl, const char *name, unsigned short port,
 
 
 /* This a wrapper around getaddrinfo with slightly different semantics.
- * NAME is the name to resolve.
- * PORT is the requested port or 0.
- * WANT_FAMILY is either 0 (AF_UNSPEC), AF_INET6, or AF_INET4.
- * WANT_SOCKETTYPE is either 0 for any socket type
- *                 or SOCK_STREAM or SOCK_DGRAM.
- *
- * On success the result is stored in a linked list with the head
- * stored at the address R_AI; the caller must call free_dns_addrinfo
- * on this.  If R_CANONNAME is not NULL the official name of the host
- * is stored there as a malloced string; if that name is not available
- * NULL is stored.  */
+   NAME is the name to resolve.
+   PORT is the requested port or 0.
+   WANT_FAMILY is either 0 (AF_UNSPEC), AF_INET6, or AF_INET4.
+   WANT_SOCKETTYPE is either SOCK_STREAM or SOCK_DGRAM.
+
+   On success the result is stored in a linked list with the head
+   stored at the address R_AI; the caller must call gpg_addrinfo_free
+   on this.  If R_CANONNAME is not NULL the official name of the host
+   is stored there as a malloced string; if that name is not available
+   NULL is stored.  */
 gpg_error_t
-resolve_dns_name (ctrl_t ctrl, const char *name, unsigned short port,
+resolve_dns_name (const char *name, unsigned short port,
                   int want_family, int want_socktype,
                   dns_addrinfo_t *r_ai, char **r_canonname)
 {
@@ -1103,15 +1092,15 @@ resolve_dns_name (ctrl_t ctrl, const char *name, unsigned short port,
 #ifdef USE_LIBDNS
   if (!standard_resolver)
     {
-      err = resolve_name_libdns (ctrl, name, port, want_family, want_socktype,
+      err = resolve_name_libdns (name, port, want_family, want_socktype,
                                   r_ai, r_canonname);
       if (err && libdns_switch_port_p (err))
-        err = resolve_name_libdns (ctrl, name, port, want_family, want_socktype,
+        err = resolve_name_libdns (name, port, want_family, want_socktype,
                                    r_ai, r_canonname);
     }
   else
 #endif /*USE_LIBDNS*/
-    err = resolve_name_standard (ctrl, name, port, want_family, want_socktype,
+    err = resolve_name_standard (name, port, want_family, want_socktype,
                                  r_ai, r_canonname);
   if (opt_debug)
     log_debug ("dns: resolve_dns_name(%s): %s\n", name, gpg_strerror (err));
@@ -1122,8 +1111,7 @@ resolve_dns_name (ctrl_t ctrl, const char *name, unsigned short port,
 #ifdef USE_LIBDNS
 /* Resolve an address using libdns.  */
 static gpg_error_t
-resolve_addr_libdns (ctrl_t ctrl,
-                     const struct sockaddr_storage *addr, int addrlen,
+resolve_addr_libdns (const struct sockaddr_storage *addr, int addrlen,
                      unsigned int flags, char **r_name)
 {
   gpg_error_t err;
@@ -1155,7 +1143,7 @@ resolve_addr_libdns (ctrl_t ctrl,
     goto leave;
 
 
-  err = libdns_res_open (ctrl, &res);
+  err = libdns_res_open (&res);
   if (err)
     goto leave;
 
@@ -1319,8 +1307,7 @@ resolve_addr_standard (const struct sockaddr_storage *addr, int addrlen,
 
 /* A wrapper around getnameinfo.  */
 gpg_error_t
-resolve_dns_addr (ctrl_t ctrl,
-                  const struct sockaddr_storage *addr, int addrlen,
+resolve_dns_addr (const struct sockaddr_storage *addr, int addrlen,
                   unsigned int flags, char **r_name)
 {
   gpg_error_t err;
@@ -1329,9 +1316,9 @@ resolve_dns_addr (ctrl_t ctrl,
   /* Note that we divert to the standard resolver for NUMERICHOST.  */
   if (!standard_resolver && !(flags & DNS_NUMERICHOST))
     {
-      err = resolve_addr_libdns (ctrl, addr, addrlen, flags, r_name);
+      err = resolve_addr_libdns (addr, addrlen, flags, r_name);
       if (err && libdns_switch_port_p (err))
-        err = resolve_addr_libdns (ctrl, addr, addrlen, flags, r_name);
+        err = resolve_addr_libdns (addr, addrlen, flags, r_name);
     }
   else
 #endif /*USE_LIBDNS*/
@@ -1429,7 +1416,7 @@ is_onion_address (const char *name)
 /* libdns version of get_dns_cert.  */
 #ifdef USE_LIBDNS
 static gpg_error_t
-get_dns_cert_libdns (ctrl_t ctrl, const char *name, int want_certtype,
+get_dns_cert_libdns (const char *name, int want_certtype,
                      void **r_key, size_t *r_keylen,
                      unsigned char **r_fpr, size_t *r_fprlen, char **r_url)
 {
@@ -1449,7 +1436,7 @@ get_dns_cert_libdns (ctrl_t ctrl, const char *name, int want_certtype,
            : (want_certtype - DNS_CERTTYPE_RRBASE));
 
 
-  err = libdns_res_open (ctrl, &res);
+  err = libdns_res_open (&res);
   if (err)
     goto leave;
 
@@ -1815,7 +1802,7 @@ get_dns_cert_standard (const char *name, int want_certtype,
    supported certtypes only records with this certtype are considered
    and the first found is returned.  (R_KEY,R_KEYLEN) are optional. */
 gpg_error_t
-get_dns_cert (ctrl_t ctrl, const char *name, int want_certtype,
+get_dns_cert (const char *name, int want_certtype,
               void **r_key, size_t *r_keylen,
               unsigned char **r_fpr, size_t *r_fprlen, char **r_url)
 {
@@ -1832,10 +1819,10 @@ get_dns_cert (ctrl_t ctrl, const char *name, int want_certtype,
 #ifdef USE_LIBDNS
   if (!standard_resolver)
     {
-      err = get_dns_cert_libdns (ctrl, name, want_certtype, r_key, r_keylen,
+      err = get_dns_cert_libdns (name, want_certtype, r_key, r_keylen,
                                  r_fpr, r_fprlen, r_url);
       if (err && libdns_switch_port_p (err))
-        err = get_dns_cert_libdns (ctrl, name, want_certtype, r_key, r_keylen,
+        err = get_dns_cert_libdns (name, want_certtype, r_key, r_keylen,
                                    r_fpr, r_fprlen, r_url);
     }
   else
@@ -1867,8 +1854,7 @@ priosort(const void *a,const void *b)
  * R_COUNT.  */
 #ifdef USE_LIBDNS
 static gpg_error_t
-getsrv_libdns (ctrl_t ctrl,
-               const char *name, struct srventry **list, unsigned int *r_count)
+getsrv_libdns (const char *name, struct srventry **list, unsigned int *r_count)
 {
   gpg_error_t err;
   struct dns_resolver *res = NULL;
@@ -1879,7 +1865,7 @@ getsrv_libdns (ctrl_t ctrl,
   int derr;
   unsigned int srvcount = 0;
 
-  err = libdns_res_open (ctrl, &res);
+  err = libdns_res_open (&res);
   if (err)
     goto leave;
 
@@ -2098,8 +2084,7 @@ getsrv_standard (const char *name,
  * we do not return NONAME but simply store 0 at R_COUNT.  On error an
  * error code is returned and 0 stored at R_COUNT.  */
 gpg_error_t
-get_dns_srv (ctrl_t ctrl,
-             const char *name, const char *service, const char *proto,
+get_dns_srv (const char *name, const char *service, const char *proto,
              struct srventry **list, unsigned int *r_count)
 {
   gpg_error_t err;
@@ -2128,9 +2113,9 @@ get_dns_srv (ctrl_t ctrl,
 #ifdef USE_LIBDNS
   if (!standard_resolver)
     {
-      err = getsrv_libdns (ctrl, name, list, &srvcount);
+      err = getsrv_libdns (name, list, &srvcount);
       if (err && libdns_switch_port_p (err))
-        err = getsrv_libdns (ctrl, name, list, &srvcount);
+        err = getsrv_libdns (name, list, &srvcount);
     }
   else
 #endif /*USE_LIBDNS*/
@@ -2196,7 +2181,7 @@ get_dns_srv (ctrl_t ctrl,
           (*list)[j].run_count=prio_count;
         }
 
-      chose=prio_count*rand()/(float)RAND_MAX;
+      chose=prio_count*rand()/RAND_MAX;
 
       for (j=i;j<srvcount && (*list)[i].priority==(*list)[j].priority;j++)
         {
@@ -2235,7 +2220,7 @@ get_dns_srv (ctrl_t ctrl,
 #ifdef USE_LIBDNS
 /* libdns version of get_dns_cname.  */
 gpg_error_t
-get_dns_cname_libdns (ctrl_t ctrl, const char *name, char **r_cname)
+get_dns_cname_libdns (const char *name, char **r_cname)
 {
   gpg_error_t err;
   struct dns_resolver *res;
@@ -2243,7 +2228,7 @@ get_dns_cname_libdns (ctrl_t ctrl, const char *name, char **r_cname)
   struct dns_cname cname;
   int derr;
 
-  err = libdns_res_open (ctrl, &res);
+  err = libdns_res_open (&res);
   if (err)
     goto leave;
 
@@ -2388,7 +2373,7 @@ get_dns_cname_standard (const char *name, char **r_cname)
 
 
 gpg_error_t
-get_dns_cname (ctrl_t ctrl, const char *name, char **r_cname)
+get_dns_cname (const char *name, char **r_cname)
 {
   gpg_error_t err;
 
@@ -2397,9 +2382,9 @@ get_dns_cname (ctrl_t ctrl, const char *name, char **r_cname)
 #ifdef USE_LIBDNS
   if (!standard_resolver)
     {
-      err = get_dns_cname_libdns (ctrl, name, r_cname);
+      err = get_dns_cname_libdns (name, r_cname);
       if (err && libdns_switch_port_p (err))
-        err = get_dns_cname_libdns (ctrl, name, r_cname);
+        err = get_dns_cname_libdns (name, r_cname);
       return err;
     }
 #endif /*USE_LIBDNS*/
@@ -2461,27 +2446,15 @@ check_inet_support (int *r_v4, int *r_v6)
                   log_debug ("%s:     addr: %s\n", __func__, buffer);
               }
           }
-      }
-
-    for (ai = aibuf; ai; ai = ai->ai_next)
-      {
-        if (ai->ai_family == AF_INET)
-          *r_v4 = 1;
-      }
-    for (ai = aibuf; ai; ai = ai->ai_next)
-      {
         if (ai->ai_family == AF_INET6)
           {
             struct sockaddr_in6 *v6addr = (struct sockaddr_in6 *)ai->ai_addr;
-            if (!IN6_IS_ADDR_LINKLOCAL (&v6addr->sin6_addr)
-                && (!*r_v4 || !IN6_IS_ADDR_LOOPBACK (&v6addr->sin6_addr)))
-              {
-                /* We only assume v6 if we do not have a v4 address or
-                 * if the address is not ::1.  Linklocal never
-                 * indicates v6 support.  */
-                *r_v6 = 1;
-                break;
-              }
+            if (!IN6_IS_ADDR_LINKLOCAL (&v6addr->sin6_addr))
+              *r_v6 = 1;
+          }
+        else if (ai->ai_family == AF_INET)
+          {
+            *r_v4 = 1;
           }
       }
 

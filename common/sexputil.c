@@ -113,7 +113,7 @@ log_printcanon (const char *text, const unsigned char *sexp, size_t sexplen)
 }
 
 
-/* Print the gcrypt S-expression SEXP in advanced format.  With TEXT
+/* Print the gcryp S-expression in SEXP in advanced format.  With TEXT
    of NULL print just the raw S-expression, with TEXT just an empty
    string, print a trailing linefeed, otherwise print an entire debug
    line. */
@@ -199,7 +199,7 @@ make_canon_sexp_pad (gcry_sexp_t sexp, int secure,
 }
 
 /* Return the so called "keygrip" which is the SHA-1 hash of the
-   public key parameters expressed in a way dependend on the algorithm.
+   public key parameters expressed in a way depended on the algorithm.
 
    KEY is expected to be an canonical encoded S-expression with a
    public or private key. KEYLEN is the length of that buffer.
@@ -393,7 +393,7 @@ make_simple_sexp_from_hexstr (const char *line, size_t *nscanned)
   for (; n > 1; n -=2, s += 2)
     *p++ = xtoi_2 (s);
   *p++ = ')';
-  *p = 0; /* (Not really needed.) */
+  *p = 0; /* (Not really neaded.) */
 
   return buf;
 }
@@ -1009,10 +1009,9 @@ get_pk_algo_from_key (gcry_sexp_t key)
   algo = gcry_pk_map_name (algoname);
   if (algo == GCRY_PK_ECC)
     {
-      gcry_sexp_t l1;
+      gcry_sexp_t l1 = gcry_sexp_find_token (list, "flags", 0);
       int i;
 
-      l1 = gcry_sexp_find_token (list, "flags", 0);
       for (i = l1 ? gcry_sexp_length (l1)-1 : 0; i > 0; i--)
 	{
 	  s = gcry_sexp_nth_data (l1, i, &n);
@@ -1025,12 +1024,6 @@ get_pk_algo_from_key (gcry_sexp_t key)
 	      break;
 	    }
 	}
-      gcry_sexp_release (l1);
-
-      l1 = gcry_sexp_find_token (list, "curve", 0);
-      s = gcry_sexp_nth_data (l1, 1, &n);
-      if (n == 5 && !memcmp (s, "Ed448", 5))
-        algo = GCRY_PK_EDDSA;
       gcry_sexp_release (l1);
     }
 
@@ -1168,7 +1161,9 @@ hash_algo_to_string (int algo)
        { "md4",       GCRY_MD_MD4 },
        { "tiger",     GCRY_MD_TIGER },
        { "haval",     GCRY_MD_HAVAL },
+#if GCRYPT_VERSION_NUMBER >= 0x010900
        { "sm3",       GCRY_MD_SM3 },
+#endif
        { "md5",       GCRY_MD_MD5 }
       };
   int i;
