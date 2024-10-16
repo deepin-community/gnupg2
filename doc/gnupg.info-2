@@ -1,6 +1,7 @@
 This is gnupg.info, produced by makeinfo version 6.7 from gnupg.texi.
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.44, August
+2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -969,9 +970,8 @@ This application is currently only used by 'gpg' but may in future also
 be useful with 'gpgsm'.  Version 1 and version 2 of the card is
 supported.
 
-The specifications for these cards are available at
-<http://g10code.com/docs/openpgp-card-1.0.pdf> and
-<http://g10code.com/docs/openpgp-card-2.0.pdf>.
+The specification for this card is available at
+<https://gnupg.org/ftp/specs/> .
 
 
 File: gnupg.info,  Node: NKS Card,  Next: DINSIG Card,  Prev: OpenPGP Card,  Up: Card applications
@@ -5096,7 +5096,7 @@ Option Index
 * add-revocs:                            gpg-wks-client.      (line 133)
 * add-servers:                           Dirmngr Options.     (line 323)
 * agent-program:                         GPG Configuration Options.
-                                                              (line 781)
+                                                              (line 784)
 * agent-program <1>:                     Configuration Options.
                                                               (line  53)
 * agent-program <2>:                     Invoking gpg-connect-agent.
@@ -5138,7 +5138,7 @@ Option Index
 * attribute-file:                        GPG Esoteric Options.
                                                               (line 106)
 * auto-check-trustdb:                    GPG Configuration Options.
-                                                              (line 768)
+                                                              (line 771)
 * auto-expand-secmem:                    Agent Options.       (line 449)
 * auto-issuer-key-retrieve:              Certificate Options. (line  62)
 * auto-key-import:                       GPG Configuration Options.
@@ -5210,7 +5210,7 @@ Option Index
 * compliance:                            Compliance Options.  (line  67)
 * compliance <1>:                        Esoteric Options.    (line  18)
 * compliant-needed:                      GPG Configuration Options.
-                                                              (line 743)
+                                                              (line 746)
 * compress-algo:                         GPG Esoteric Options.
                                                               (line 223)
 * compress-level:                        GPG Configuration Options.
@@ -5311,7 +5311,7 @@ Option Index
 * dirmngr:                               Invoking gpg-connect-agent.
                                                               (line  54)
 * dirmngr-program:                       GPG Configuration Options.
-                                                              (line 788)
+                                                              (line 791)
 * dirmngr-program <1>:                   Configuration Options.
                                                               (line  59)
 * dirmngr-program <2>:                   Invoking gpg-connect-agent.
@@ -5418,9 +5418,9 @@ Option Index
 * exec-path:                             GPG Configuration Options.
                                                               (line 225)
 * exit-on-status-write-error:            GPG Configuration Options.
-                                                              (line 817)
+                                                              (line 820)
 * expert:                                GPG Configuration Options.
-                                                              (line 872)
+                                                              (line 875)
 * export:                                Operational GPG Commands.
                                                               (line 250)
 * export <1>:                            Certificate Management.
@@ -5500,7 +5500,7 @@ Option Index
 * gnupg:                                 Compliance Options.  (line  12)
 * gpg:                                   gpgtar.              (line 143)
 * gpg-agent-info:                        GPG Configuration Options.
-                                                              (line 778)
+                                                              (line 781)
 * gpg-args:                              gpgtar.              (line 146)
 * gpgconf-list:                          GPG Esoteric Options.
                                                               (line 608)
@@ -5688,7 +5688,7 @@ Option Index
 * legacy-list-mode:                      GPG Input and Output.
                                                               (line 295)
 * limit-card-insert-tries:               GPG Configuration Options.
-                                                              (line 826)
+                                                              (line 829)
 * list-archive:                          gpgtar.              (line  41)
 * list-chain:                            Certificate Management.
                                                               (line  32)
@@ -5759,11 +5759,11 @@ Option Index
 * locate-keys:                           Operational GPG Commands.
                                                               (line 170)
 * lock-multiple:                         GPG Configuration Options.
-                                                              (line 806)
+                                                              (line 809)
 * lock-never:                            GPG Configuration Options.
-                                                              (line 810)
+                                                              (line 813)
 * lock-once:                             GPG Configuration Options.
-                                                              (line 802)
+                                                              (line 805)
 * log-file:                              Agent Options.       (line 159)
 * log-file <1>:                          Dirmngr Options.     (line  30)
 * log-file <2>:                          GPG Esoteric Options.
@@ -5781,11 +5781,11 @@ Option Index
 * mangle-dos-filenames:                  GPG Configuration Options.
                                                               (line 364)
 * marginals-needed:                      GPG Configuration Options.
-                                                              (line 747)
+                                                              (line 750)
 * max-cache-ttl:                         Agent Options.       (line 232)
 * max-cache-ttl-ssh:                     Agent Options.       (line 238)
 * max-cert-depth:                        GPG Configuration Options.
-                                                              (line 755)
+                                                              (line 758)
 * max-output:                            GPG Input and Output.
                                                               (line  19)
 * max-passphrase-days:                   Agent Options.       (line 278)
@@ -5814,7 +5814,7 @@ Option Index
 * no-auto-key-retrieve:                  GPG Configuration Options.
                                                               (line 616)
 * no-autostart:                          GPG Configuration Options.
-                                                              (line 795)
+                                                              (line 798)
 * no-autostart <1>:                      Configuration Options.
                                                               (line  69)
 * no-autostart <2>:                      Invoking gpg-connect-agent.
@@ -5839,7 +5839,7 @@ Option Index
                                                               (line  72)
 * no-grab:                               Agent Options.       (line 153)
 * no-greeting:                           GPG Configuration Options.
-                                                              (line 840)
+                                                              (line 843)
 * no-groups:                             GPG Key related Options.
                                                               (line  73)
 * no-keyring:                            GPG Esoteric Options.
@@ -5851,13 +5851,13 @@ Option Index
 * no-options:                            GPG Configuration Options.
                                                               (line 327)
 * no-random-seed-file:                   GPG Configuration Options.
-                                                              (line 834)
+                                                              (line 837)
 * no-secmem-warning:                     GPG Configuration Options.
-                                                              (line 843)
+                                                              (line 846)
 * no-secmem-warning <1>:                 Configuration Options.
                                                               (line  76)
 * no-sig-cache:                          GPG Configuration Options.
-                                                              (line 758)
+                                                              (line 761)
 * no-skip-hidden-recipients:             GPG Key related Options.
                                                               (line 108)
 * no-symkey-cache:                       GPG Esoteric Options.
@@ -5919,7 +5919,7 @@ Option Index
 * pcsc-shared:                           Scdaemon Options.    (line 144)
 * pem:                                   dirmngr-client.      (line  58)
 * permission-warning:                    GPG Configuration Options.
-                                                              (line 846)
+                                                              (line 849)
 * personal-cipher-preferences:           OpenPGP Options.     (line  53)
 * personal-compress-preferences:         OpenPGP Options.     (line  71)
 * personal-digest-preferences:           OpenPGP Options.     (line  62)
@@ -6011,9 +6011,9 @@ Option Index
 * require-compliance <1>:                Esoteric Options.    (line  27)
 * require-compliance <2>:                gpgtar.              (line 120)
 * require-cross-certification:           GPG Configuration Options.
-                                                              (line 865)
+                                                              (line 868)
 * require-secmem:                        GPG Configuration Options.
-                                                              (line 860)
+                                                              (line 863)
 * resolver-timeout:                      Dirmngr Options.     (line 127)
 * rfc2440:                               Compliance Options.  (line  37)
 * rfc4880:                               Compliance Options.  (line  25)
@@ -6108,7 +6108,7 @@ Option Index
 * time-only:                             watchgnupg.          (line  30)
 * tls-debug:                             Dirmngr Options.     (line  76)
 * tofu-default-policy:                   GPG Configuration Options.
-                                                              (line 751)
+                                                              (line 754)
 * tofu-policy:                           Operational GPG Commands.
                                                               (line 409)
 * trust-model:                           GPG Configuration Options.
@@ -6144,7 +6144,7 @@ Option Index
 * url:                                   dirmngr-client.      (line  94)
 * url <1>:                               dirmngr-client.      (line  98)
 * use-agent:                             GPG Configuration Options.
-                                                              (line 775)
+                                                              (line 778)
 * use-embedded-filename:                 GPG Esoteric Options.
                                                               (line 202)
 * use-standard-socket:                   Agent Options.       (line 350)

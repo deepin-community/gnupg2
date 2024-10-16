@@ -20,10 +20,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  3 files changed, 3 insertions(+), 6 deletions(-)
 
 diff --git a/configure.ac b/configure.ac
-index 6e44af2..0a4ae1e 100644
+index f217025..b5a1300 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -317,7 +317,7 @@ GNUPG_GPG_DISABLE_ALGO([rmd160],[RIPE-MD160 hash])
+@@ -319,7 +319,7 @@ GNUPG_GPG_DISABLE_ALGO([rmd160],[RIPE-MD160 hash])
  GNUPG_GPG_DISABLE_ALGO([sha224],[SHA-224 hash])
  # SHA256 is a MUST algorithm for GnuPG.
  GNUPG_GPG_DISABLE_ALGO([sha384],[SHA-384 hash])
@@ -33,7 +33,7 @@ index 6e44af2..0a4ae1e 100644
  
  # Allow disabling of zip support.
 diff --git a/g10/main.h b/g10/main.h
-index d1a54db..50ebad0 100644
+index a0f29e4..7865632 100644
 --- a/g10/main.h
 +++ b/g10/main.h
 @@ -41,7 +41,7 @@
@@ -46,7 +46,7 @@ index d1a54db..50ebad0 100644
  #ifdef HAVE_ZIP
  # define DEFAULT_COMPRESS_ALGO   COMPRESS_ALGO_ZIP
 diff --git a/g10/misc.c b/g10/misc.c
-index 0b19e1a..79c285c 100644
+index 768e02d..040633e 100644
 --- a/g10/misc.c
 +++ b/g10/misc.c
 @@ -867,11 +867,8 @@ map_md_openpgp_to_gcry (digest_algo_t algo)

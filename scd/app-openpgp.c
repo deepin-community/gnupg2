@@ -279,8 +279,8 @@ static gpg_error_t change_keyattr_from_string
 
 
 /* Return the OpenPGP card manufacturer name. */
-static const char *
-get_manufacturer (unsigned int no)
+const char *
+app_openpgp_manufacturer (unsigned int no)
 {
   /* Note:  Make sure that there is no colon or linefeed in the string. */
   switch (no)
@@ -1207,7 +1207,7 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
       return send_status_printf
         (ctrl, table[idx].name, "%u %s",
          app->app_local->manufacturer,
-         get_manufacturer (app->app_local->manufacturer));
+         app_openpgp_manufacturer (app->app_local->manufacturer));
     }
   if (table[idx].special == -9)
     {
@@ -2534,7 +2534,7 @@ pin2hash_if_kdf (app_t app, int chvno, const char *pin,
       err = gcry_kdf_derive (pin, pinlen,
                              GCRY_KDF_ITERSALTED_S2K,
                              DIGEST_ALGO_SHA256, salt, 8,
-                             s2k_count, sizeof (dek), dek);
+                             s2k_count, deklen, dek);
       if (!err)
         {
           *r_pinlen = deklen;

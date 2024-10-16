@@ -1,3 +1,171 @@
+2024-08-12  Werner Koch  <wk@gnupg.org>
+
+	Release 2.2.44.
+	+ commit 148a25f3de8faed9b7fd692cfc358ff08caed300
+
+
+	gpgconf: Print the full commit id.
+	+ commit cf21e473a54466b12f34b35ad6d40dad8d74de93
+	* autogen.sh: Update to version 2024-07-04 from libgpg-error.
+	* configure.ac (BUILD_REVISION): Rename the ac_define by
+	BUILD_COMMITID.
+	* tools/gpgconf.c (show_version_gnupg): Use it here.
+
+	gpg: Improve decryption diagnostic for an ADSK key.
+	+ commit 861dc01994b01b5700d2a5ae9eb7e0299181d390
+	* g10/keydb.h (GET_PUBKEYBLOCK_FLAG_ADSK): New constant.
+	* g10/packet.h (PUBKEY_USAGE_XENC_MASK): New constant.
+	* g10/pubkey-enc.c (get_it): Print a note if an ADSK key was used.
+	Use the new get_pubkeyblock flag.
+	* g10/getkey.c (struct getkey_ctx_s): Add field allow_adsk.
+	(get_pubkeyblock): Factor all code out to ...
+	(get_pubkeyblock_ext): new.
+	(finish_lookup): Add new arg allow_adsk and make use of it.
+
+2024-08-12  Andre Heinecke  <aheinecke@gnupg.org>
+
+	speedo,w32: Update libassuan dll name in wxs.
+	+ commit 6f78219d0f4f8e10484ced3d46f19aa088fe64e5
+	* build-aux/speedo/w32/wixlib.wxs: Update name and UID for
+	libassuan
+
+2024-08-08  Werner Koch  <wk@gnupg.org>
+
+	agent: Fix an unitialized variable in an error path.
+	+ commit 80f25fab900b2b5a8efe93a39c3f46e915b51374
+	* agent/findkey.c (agent_write_private_key): Init FP.
+
+	common: Allow building with libgpg-error < 1.47.
+	+ commit 62bd291dcc6d3120a28a2a2ce1bf1bd7c2b750dd
+	* common/util.h (GPG_ERR_BAD_RESET_CODE): New replacement.
+	(GPG_ERR_NO_RESET_CODE): New.
+	(GPG_ERR_BAD_PUK): New.
+
+2024-08-07  Werner Koch  <wk@gnupg.org>
+
+	sm: More improvements for PKCS#12 parsing for latest IVBB changes.
+	+ commit 0dcd1504babb4b98898f7bd738d7aaa1e4a73a05
+	* common/tlv.h (TLV_PARSER_FLAG_T5793): New.
+	(tlv_parser_new): New macro.  Rename function with an underscore.
+	(tlv_next_with_flag): New.
+	* common/tlv-parser.c (struct tlv_parser_s): Remove const from buffer.
+	Add fields crammed, lasttlv, and origoff.  Remove bufferlist ands ist
+	definition.
+	(dump_to_file): New but disabled debug helper.
+	(parse_tag): Print more info on error.
+	(_tlv_parser_new): Add args lasttlv and LNO.  Take a copy of the data.
+	(_tlv_parser_release): Free the copy of the buffer and return the
+	recorded TLV object from tlv_parser_new.
+	(_tlv_peek, tlv_parser_peek, _tlv_parser_peek_null): Remove.
+	(_tlv_push): Record crammed length.
+	(_tlv_pop): Restore crammed length.
+	(_tlv_parser_next): Add arg flags.  More debug output.  Handle cramming
+	here.  Take care of cramming here.
+	(tlv_expect_object): Simplify to adjust for changes in _tlv_parser_next.
+	(tlv_expect_octet_string): Remove arg encapsulates.  Adjust for
+	changes in _tlv_parser_next.  Change all allers.
+	(tlv_expect_null): New.
+	(cram_octet_string): Rewrite.
+	(need_octet_string_cramming): Remove.
+
+	* sm/minip12.c (dump_to_file): New.  Enable in debug mode and if an
+	envvar ist set.  Replace all explict but disabled dumping to call this
+	function.
+	(parse_bag_encrypted_data): Replace tlv_peek_null and a peeking for an
+	optional SET by non-peeking code.
+	(parse_cert_bag): Ditto.
+	(parse_shrouded_key_bag): Replace tlv_peek_null by non-peeking code.
+	(parse_bag_encrypted_data): Use the new TLV_PARSER_FLAG_T5793 to
+	enable the Mozilla workaround.
+	(parse_bag_encrypted_data): Replace the 'renewed_tlv' code by the new
+	tlv_parser_release semantics.
+	(parse_shrouded_key_bag): Ditto.
+	(parse_shrouded_key_bag): Create a new context instead of using the
+	former encapsulated mechanism for tlv_expect_octet_string.
+	(parse_bag_data): Ditto.
+	(p12_parse): Ditto.
+
+	* common/tlv-parser.c: New
+	* common/Makefile.am: Add new file.
+
+	scd: New getinfo subcommand "manufacturer"
+	+ commit 1d0874c3d2c964edc4803f26b665343e0feb0d88
+	* scd/command.c (cmd_getinfo): Add subcommand "manufacturer".
+	* scd/app-openpgp.c (get_manufacturer): Rename to ...
+	(app_openpgp_manufacturer): this and make global.
+
+2024-06-24  Werner Koch  <wk@gnupg.org>
+
+	gpg: Rename recently added import option no-seckeys to only-pubkeys.
+	+ commit e208ccc66c3432183eaa38e9d70ac288d7ba492c
+	* g10/import.c (parse_import_options): Rename option.
+	* g10/options.h (IMPORT_NO_SECKEY): Rename to IMPORT_ONLY_PUBKEYS.
+	Change all users.
+
+2024-06-11  Werner Koch  <wk@gnupg.org>
+
+	gpg: Add --import-option "no-seckeys".
+	+ commit 7788aba7d86493c42617445f6d2344afdc332af5
+	* g10/import.c (parse_import_options): Add "no-seckeys".
+
+	gpg: Do not bail out on secret keys with an unknown algo.
+	+ commit c489bf7e7e9fa96db46544edc2ae8bb59f0d340f
+	* g10/getkey.c (lookup): Skip keys with unknown algos.
+
+2024-06-05  Werner Koch  <wk@gnupg.org>
+
+	gpg: Do not show RENC if no key capabilities are found for a key.
+	+ commit 1d91252205a21fc1a42e7a55a49421e50bb70f05
+	* g10/packet.h (PUBKEY_USAGE_BASIC_MASK): New.
+	* g10/getkey.c (merge_selfsigs_subkey): Mask the default.
+	(merge_selfsigs_main): Ditto.
+
+2024-05-29  Jakub Jelen  <jjelen@redhat.com>
+
+	gpgsm: Avoid double free when checking rsaPSS signatures.
+	+ commit bc43812358ede31e2ef089e97740af6ae9754f62
+	* sm/certcheck.c (gpgsm_check_cms_signature): Do not free s_sig on
+	error. Its owned and freed by the caller.
+
+	agent: Avoid uninitialized access in GENKEY command on parameter error.
+	+ commit a1f85fdc40e4ebb0bc59fa72104a2297ad427c10
+	* agent/command.c (cmd_genkey): Moved init_membuf to the top.
+
+2024-05-29  Werner Koch  <wk@gnupg.org>
+	    Jakub Jelen  <jjelen@redhat.com>
+
+	wks: Make sure that ERR is always initialized.
+	+ commit ebf9e3b824f8a024f5b9c56caca60bb4ee9ff361
+	* tools/wks-util.c (install_key_from_spec_file): Initialize ERR in case
+	the loop is never run.
+
+2024-05-16  NIIBE Yutaka  <gniibe@fsij.org>
+
+	scd:openpgp: Fix PIN pin2hash_if_kdf.
+	+ commit bb57c808b2ad2d064ef9dd5a69ca94f6e6f7a763
+	* scd/app-openpgp.c (pin2hash_if_kdf): DEK had been changed to pointer
+	to allocated memory, so, we need to use DEKLEN for the length.
+
+2024-05-06  Werner Koch  <wk@gnupg.org>
+
+	gpg,gpgsm: Remove compatibility_flags allow-ecc-encr and vsd-allow-encr.
+	+ commit 97b37db144da6c9278786d51a233716e78c1f12c
+	* g10/options.h (COMPAT_VSD_ALLOW_OCB): Remove.
+	* g10/gpg.c (compatibility_flags): Remove "vsd-allow_ocb".
+	(main): Alwas set CO_EXTRA_INFO_VSD_ALLOW_OCB.
+	* g10/keygen.c (keygen_set_std_prefs): Always set OCB feature flag.
+	* g10/encrypt.c (use_aead): Always OCB also in de-vs mode.
+	* sm/gpgsm.h (COMPAT_ALLOW_ECC_ENCR): Remove.
+	* sm/gpgsm.c (compatibility_flags): Remove "allow-ecc-encr".
+	* sm/encrypt.c (encrypt_dek): Always allow ecc encryption.
+	* sm/certreqgen.c (proc_parameters): Likewise.
+
+2024-04-22  Werner Koch  <wk@gnupg.org>
+
+	tests: Avoid new C23 keyword true.
+	+ commit 6228bb0012572d4cd44cd1a1237cf236607c8c04
+	* tests/asschk.c (eval_boolean): s/true/tru/
+
 2024-04-16  Werner Koch  <wk@gnupg.org>
 
 	Release 2.2.43.

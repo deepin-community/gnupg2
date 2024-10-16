@@ -1,3 +1,11 @@
+gnupg2 (2.2.44-1) unstable; urgency=medium
+
+  * New upstream version.
+    + Refresh patches, drop cherry-picked one.
+    + Drop outdated libassuan.m4. Closes: #1081866
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 15 Sep 2024 13:45:10 +0200
+
 gnupg2 (2.2.43-8) unstable; urgency=medium
 
   * Team upload.

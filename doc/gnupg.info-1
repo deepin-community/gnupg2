@@ -1,6 +1,7 @@
 This is gnupg.info, produced by makeinfo version 6.7 from gnupg.texi.
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.44, August
+2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -26,7 +27,8 @@ File: gnupg.info,  Node: Top,  Next: Installation,  Up: (dir)
 Using the GNU Privacy Guard
 ***************************
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.44, August
+2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -4116,6 +4118,9 @@ usually found in the option file.
           When receiving a key, include subkeys as potential targets.
           Note that this option is not used with HKP keyservers, as they
           do not support retrieving keys by subkey id.
+
+     only-pubkeys
+          Do now allow to import secret keys.
 
      timeout
      http-proxy=VALUE

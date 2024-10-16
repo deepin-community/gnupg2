@@ -21,10 +21,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  2 files changed, 2 insertions(+), 3 deletions(-)
 
 diff --git a/doc/gpg.texi b/doc/gpg.texi
-index d1142a3..b658253 100644
+index 5c3bcf7..851e492 100644
 --- a/doc/gpg.texi
 +++ b/doc/gpg.texi
-@@ -2048,7 +2048,7 @@ are available for all keyserver types, some common options are:
+@@ -2051,7 +2051,7 @@ are available for all keyserver types, some common options are:
  
  @end table
  
@@ -34,10 +34,10 @@ index d1142a3..b658253 100644
  honor-pka-record". However, if
  the actual used source is an LDAP server "no-self-sigs-only" is
 diff --git a/g10/gpg.c b/g10/gpg.c
-index 2296351..a75d0b8 100644
+index f431a26..2b30fdb 100644
 --- a/g10/gpg.c
 +++ b/g10/gpg.c
-@@ -2414,8 +2414,7 @@ main (int argc, char **argv)
+@@ -2413,8 +2413,7 @@ main (int argc, char **argv)
      opt.export_options = EXPORT_ATTRIBUTES;
      opt.keyserver_options.import_options = (IMPORT_REPAIR_KEYS
  					    | IMPORT_REPAIR_PKS_SUBKEY_BUG

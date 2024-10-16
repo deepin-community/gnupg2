@@ -294,10 +294,10 @@ index bda3184..46ae86e 100644
  int
  match_multistr (const char *multistr,const char *match)
 diff --git a/common/util.h b/common/util.h
-index ca38122..bc6ff3b 100644
+index 6584471..3790dc8 100644
 --- a/common/util.h
 +++ b/common/util.h
-@@ -345,8 +345,6 @@ char *try_make_printable_string (const void *p, size_t n, int delim);
+@@ -350,8 +350,6 @@ char *try_make_printable_string (const void *p, size_t n, int delim);
  char *make_printable_string (const void *p, size_t n, int delim);
  char *decode_c_string (const char *src);
  
@@ -355,10 +355,10 @@ index 7509915..f0cfa3c 100644
    return rc;
  }
 diff --git a/g10/encrypt.c b/g10/encrypt.c
-index d2ad3fe..be348b9 100644
+index d14ac91..a731d28 100644
 --- a/g10/encrypt.c
 +++ b/g10/encrypt.c
-@@ -337,8 +337,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
+@@ -333,8 +333,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
    text_filter_context_t tfx;
    progress_filter_context_t *pfx;
    int do_compress = !!default_compress_algo();
@@ -367,7 +367,7 @@ index d2ad3fe..be348b9 100644
  
    if (!gnupg_rng_is_compliant (opt.compliance))
      {
-@@ -375,14 +373,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
+@@ -371,14 +369,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
        return rc;
      }
  
@@ -382,7 +382,7 @@ index d2ad3fe..be348b9 100644
    handle_progress (pfx, inp, filename);
  
    if (opt.textmode)
-@@ -444,17 +434,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
+@@ -440,17 +430,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
                   /**/             : "CFB");
      }
  
@@ -400,7 +400,7 @@ index d2ad3fe..be348b9 100644
    if ( rc || (rc = open_outfile (-1, filename, opt.armor? 1:0, 0, &out )))
      {
        iobuf_cancel (inp);
-@@ -524,6 +503,24 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
+@@ -520,6 +499,24 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
    else
      filesize = opt.set_filesize ? opt.set_filesize : 0; /* stdin */
  
@@ -425,7 +425,7 @@ index d2ad3fe..be348b9 100644
    if (!opt.no_literal)
      {
        /* Note that PT has been initialized above in !no_literal mode.  */
-@@ -543,13 +540,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
+@@ -539,13 +536,6 @@ encrypt_simple (const char *filename, int mode, int use_seskey)
        pkt.pkt.generic = NULL;
      }
  
@@ -439,7 +439,7 @@ index d2ad3fe..be348b9 100644
    /* Register the compress filter. */
    if ( do_compress )
      {
-@@ -781,7 +771,7 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
+@@ -777,7 +767,7 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
    PKT_plaintext *pt = NULL;
    DEK *symkey_dek = NULL;
    STRING2KEY *symkey_s2k = NULL;
@@ -448,7 +448,7 @@ index d2ad3fe..be348b9 100644
    u32 filesize;
    cipher_filter_context_t cfx;
    armor_filter_context_t *afx = NULL;
-@@ -790,8 +780,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
+@@ -786,8 +776,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
    progress_filter_context_t *pfx;
    PK_LIST pk_list;
    int do_compress;
@@ -457,7 +457,7 @@ index d2ad3fe..be348b9 100644
  
    if (filefd != -1 && filename)
      return gpg_error (GPG_ERR_INV_ARG);  /* Both given.  */
-@@ -864,14 +852,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
+@@ -860,14 +848,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
    if (opt.verbose)
      log_info (_("reading from '%s'\n"), iobuf_get_fname_nonnull (inp));
  
@@ -472,7 +472,7 @@ index d2ad3fe..be348b9 100644
    handle_progress (pfx, inp, filename);
  
    if (opt.textmode)
-@@ -899,26 +879,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
+@@ -895,26 +875,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
    if (!cfx.dek->use_aead)
      cfx.dek->use_mdc = !!use_mdc (pk_list, cfx.dek->algo);
  
@@ -499,7 +499,7 @@ index d2ad3fe..be348b9 100644
    make_session_key (cfx.dek);
    if (DBG_CRYPTO)
      log_printhex (cfx.dek->key, cfx.dek->keylen, "DEK is: ");
-@@ -959,6 +919,26 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
+@@ -955,6 +915,26 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
    else
      filesize = opt.set_filesize ? opt.set_filesize : 0; /* stdin */
  
@@ -526,7 +526,7 @@ index d2ad3fe..be348b9 100644
    if (!opt.no_literal)
      {
        pt->timestamp = make_timestamp();
-@@ -973,12 +953,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
+@@ -969,12 +949,6 @@ encrypt_crypt (ctrl_t ctrl, int filefd, const char *filename,
    else
      cfx.datalen = filesize && !do_compress ? filesize : 0;
  

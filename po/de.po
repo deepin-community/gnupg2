@@ -9,8 +9,8 @@ msgid ""
 msgstr ""
 "Project-Id-Version: gnupg-2.1.0\n"
 "Report-Msgid-Bugs-To: translations@gnupg.org\n"
-"POT-Creation-Date: 2024-04-16 10:11+0200\n"
-"PO-Revision-Date: 2024-04-09 13:33+0200\n"
+"POT-Creation-Date: 2024-08-12 17:16+0200\n"
+"PO-Revision-Date: 2024-08-12 16:45+0200\n"
 "Last-Translator: Werner Koch <wk@gnupg.org>\n"
 "Language-Team: German <de@li.org>\n"
 "Language: de\n"
@@ -233,7 +233,7 @@ msgid "ssh keys greater than %d bits are not supported\n"
 msgstr "SSH Schlüssel von mehr als %d Bits werden nicht unterstützt\n"
 
 #: agent/command-ssh.c:862 common/dotlock.c:856 g10/card-util.c:946
-#: g10/exec.c:554 g10/export.c:1335 g10/gpg.c:1420 g10/keygen.c:5279
+#: g10/exec.c:554 g10/export.c:1335 g10/gpg.c:1419 g10/keygen.c:5275
 #: g10/keyring.c:1322 g10/keyring.c:1637 g10/openfile.c:291 g10/sign.c:1025
 #: g10/sign.c:1353 g10/tdbio.c:753
 #, c-format
@@ -242,13 +242,13 @@ msgstr "'%s' kann nicht erzeugt werden: %s\n"
 
 #: agent/command-ssh.c:874 common/helpfile.c:57 g10/card-util.c:903
 #: g10/dearmor.c:59 g10/dearmor.c:106 g10/decrypt.c:65 g10/decrypt.c:136
-#: g10/decrypt.c:153 g10/encrypt.c:366 g10/encrypt.c:853 g10/gpg.c:1421
-#: g10/import.c:365 g10/import.c:549 g10/import.c:777 g10/keygen.c:4290
+#: g10/decrypt.c:153 g10/encrypt.c:362 g10/encrypt.c:849 g10/gpg.c:1420
+#: g10/import.c:367 g10/import.c:551 g10/import.c:779 g10/keygen.c:4286
 #: g10/keyring.c:1663 g10/openfile.c:195 g10/openfile.c:209 g10/plaintext.c:128
 #: g10/plaintext.c:654 g10/sign.c:997 g10/sign.c:1230 g10/sign.c:1337
 #: g10/sign.c:1482 g10/tdbdump.c:145 g10/tdbdump.c:153 g10/tdbio.c:758
-#: g10/tdbio.c:829 g10/verify.c:96 g10/verify.c:160 sm/gpgsm.c:2194
-#: sm/gpgsm.c:2224 sm/gpgsm.c:2262 sm/qualified.c:66 dirmngr/certcache.c:420
+#: g10/tdbio.c:829 g10/verify.c:96 g10/verify.c:160 sm/gpgsm.c:2193
+#: sm/gpgsm.c:2223 sm/gpgsm.c:2261 sm/qualified.c:66 dirmngr/certcache.c:420
 #: dirmngr/certcache.c:502 dirmngr/certcache.c:504 dirmngr/crlcache.c:2661
 #: dirmngr/dirmngr.c:1851
 #, c-format
@@ -631,8 +631,8 @@ msgstr "Erlaube die Eingabe eines Passwortes über Emacs"
 #. reporting address.  This is so that we can change the
 #. reporting address without breaking the translations.
 #: agent/gpg-agent.c:560 agent/preset-passphrase.c:100 agent/protect-tool.c:154
-#: g10/gpg.c:1128 g10/gpgv.c:149 kbx/kbxutil.c:113 scd/scdaemon.c:313
-#: sm/gpgsm.c:608 dirmngr/dirmngr-client.c:168 dirmngr/dirmngr.c:469
+#: g10/gpg.c:1127 g10/gpgv.c:149 kbx/kbxutil.c:113 scd/scdaemon.c:313
+#: sm/gpgsm.c:607 dirmngr/dirmngr-client.c:168 dirmngr/dirmngr.c:469
 #: tools/gpg-connect-agent.c:205 tools/gpgconf.c:158
 #: tools/gpg-check-pattern.c:143
 msgid "Please report bugs to <@EMAIL@>.\n"
@@ -652,26 +652,26 @@ msgstr ""
 "Syntax: @GPG_AGENT@ [Optionen] [Befehl [Argumente]]\n"
 "Verwaltung von geheimen Schlüsseln für @GNUPG@\n"
 
-#: agent/gpg-agent.c:616 g10/gpg.c:1324 scd/scdaemon.c:385 sm/gpgsm.c:756
+#: agent/gpg-agent.c:616 g10/gpg.c:1323 scd/scdaemon.c:385 sm/gpgsm.c:755
 #: dirmngr/dirmngr.c:553
 #, c-format
 msgid "invalid debug-level '%s' given\n"
 msgstr "ungültige Debugebene `%s' angegeben\n"
 
-#: agent/gpg-agent.c:976 g10/gpg.c:3865 g10/gpg.c:3889 sm/gpgsm.c:1611
-#: sm/gpgsm.c:1617
+#: agent/gpg-agent.c:976 g10/gpg.c:3863 g10/gpg.c:3887 sm/gpgsm.c:1610
+#: sm/gpgsm.c:1616
 #, c-format
 msgid "selected digest algorithm is invalid\n"
 msgstr "Das ausgewählte Hashverfahren ist ungültig\n"
 
 #: agent/gpg-agent.c:1204 agent/gpg-agent.c:2017 common/argparse.c:1766
-#: common/argparse.c:1858 g10/gpg.c:2548 scd/scdaemon.c:547 sm/gpgsm.c:1015
+#: common/argparse.c:1858 g10/gpg.c:2547 scd/scdaemon.c:547 sm/gpgsm.c:1014
 #: dirmngr/dirmngr.c:1118 dirmngr/dirmngr.c:1976
 #, c-format
 msgid "reading options from '%s'\n"
 msgstr "Optionen werden aus '%s' gelesen\n"
 
-#: agent/gpg-agent.c:1320 g10/gpg.c:3809 scd/scdaemon.c:671 sm/gpgsm.c:1548
+#: agent/gpg-agent.c:1320 g10/gpg.c:3808 scd/scdaemon.c:671 sm/gpgsm.c:1547
 #: dirmngr/dirmngr.c:1227 tools/gpg-connect-agent.c:1244 tools/gpgconf.c:709
 #, c-format
 msgid "Note: '%s' is not considered an option\n"
@@ -1513,7 +1513,7 @@ msgstr "Ungültige Option"
 msgid "missing argument for option \"%.50s\"\n"
 msgstr "Fehlendes Argument für Option \"%.50s\"\n"
 
-#: common/argparse.c:558 g10/gpg.c:3580
+#: common/argparse.c:558 g10/gpg.c:3579
 #, c-format
 msgid "invalid argument for option \"%.50s\"\n"
 msgstr "Ungültiges Argument für Option \"%.50s\"\n"
@@ -1608,7 +1608,7 @@ msgstr "Dateisperre %s konnte nicht eingerichtet werden: %s\n"
 msgid "waiting for lock %s...\n"
 msgstr "Warten auf die Freigabe der Dateisperre `%s' ...\n"
 
-#: common/init.c:194 sm/gpgsm.c:901 dirmngr/dirmngr.c:1024
+#: common/init.c:194 sm/gpgsm.c:900 dirmngr/dirmngr.c:1024
 #: dirmngr/dirmngr.c:1033
 #, c-format
 msgid "%s is too old (need %s, have %s)\n"
@@ -1793,8 +1793,8 @@ msgstr ""
 msgid "Note: Use the command \"%s\" to restart them.\n"
 msgstr "Hinweis: Der Befehl \"%s\" startet diese Server neu.\n"
 
-#: g10/call-agent.c:320 g10/encrypt.c:340 g10/encrypt.c:704 g10/sign.c:414
-#: sm/call-agent.c:205 sm/encrypt.c:717 sm/sign.c:561
+#: g10/call-agent.c:320 g10/encrypt.c:336 g10/encrypt.c:700 g10/sign.c:414
+#: sm/call-agent.c:205 sm/encrypt.c:714 sm/sign.c:561
 #, c-format
 msgid "%s is not compliant with %s mode\n"
 msgstr "%s is nicht konform mit dem %s Modus\n"
@@ -1837,7 +1837,7 @@ msgstr "HTTP Weiterleitung wurde gesäubert"
 msgid "server uses an invalid certificate"
 msgstr "Der Server benutzt eine ungültiges Zertifikat"
 
-#: g10/call-dirmngr.c:462 g10/gpg.c:4514
+#: g10/call-dirmngr.c:462 g10/gpg.c:4512
 #, c-format
 msgid "Note: %s\n"
 msgstr "Hinweis: %s\n"
@@ -1853,7 +1853,7 @@ msgid "OpenPGP card no. %s detected\n"
 msgstr "OpenPGP Karte Nr. %s erkannt\n"
 
 #: g10/card-util.c:97 g10/card-util.c:2268 g10/delkey.c:160 g10/keyedit.c:1426
-#: g10/keygen.c:4723 g10/revoke.c:214 g10/revoke.c:635
+#: g10/keygen.c:4719 g10/revoke.c:214 g10/revoke.c:635
 #, c-format
 msgid "can't do this in batch mode\n"
 msgstr "Dies kann im Batchmodus nicht durchgeführt werden.\n"
@@ -1870,7 +1870,7 @@ msgstr "Der Rückstellcode ist nicht vorhanden\n"
 
 #: g10/card-util.c:140 g10/card-util.c:1441 g10/card-util.c:1703
 #: g10/card-util.c:1797 g10/keyedit.c:395 g10/keyedit.c:416 g10/keyedit.c:430
-#: g10/keygen.c:1943 g10/keygen.c:2121 g10/keygen.c:2327 g10/keygen.c:2618
+#: g10/keygen.c:1939 g10/keygen.c:2117 g10/keygen.c:2323 g10/keygen.c:2614
 #: sm/certreqgen-ui.c:167 sm/certreqgen-ui.c:293 sm/certreqgen-ui.c:327
 msgid "Your selection? "
 msgstr "Ihre Auswahl? "
@@ -1925,8 +1925,8 @@ msgstr ""
 msgid "URL to retrieve public key: "
 msgstr "URL um den öffentlichen Schlüssel zu holen: "
 
-#: g10/card-util.c:919 g10/decrypt-data.c:510 g10/import.c:400 g10/import.c:747
-#: g10/import.c:799 dirmngr/crlcache.c:655 dirmngr/crlcache.c:660
+#: g10/card-util.c:919 g10/decrypt-data.c:510 g10/import.c:402 g10/import.c:749
+#: g10/import.c:801 dirmngr/crlcache.c:655 dirmngr/crlcache.c:660
 #: dirmngr/crlcache.c:914 dirmngr/crlcache.c:920 dirmngr/dirmngr.c:1787
 #: tools/gpgconf.c:515 tools/gpgconf.c:561
 #, c-format
@@ -1984,7 +1984,7 @@ msgstr "Schlüsseloperation nicht möglich: %s\n"
 msgid "not an OpenPGP card"
 msgstr "Keine gültige OpenPGP-Karte"
 
-#: g10/card-util.c:1265 g10/keygen.c:4743 g10/keygen.c:5846
+#: g10/card-util.c:1265 g10/keygen.c:4739 g10/keygen.c:5842
 #, c-format
 msgid "error getting current key info: %s\n"
 msgstr "Fehler beim Holen der aktuellen Schlüsselinfo: %s\n"
@@ -2005,18 +2005,18 @@ msgstr ""
 "         fehlschlagen, so ziehen Sie bitte die Dokumentation Ihrer Karte\n"
 "         zu Rate.\n"
 
-#: g10/card-util.c:1389 g10/keygen.c:2504 sm/certreqgen-ui.c:181
+#: g10/card-util.c:1389 g10/keygen.c:2500 sm/certreqgen-ui.c:181
 #, c-format
 msgid "What keysize do you want? (%u) "
 msgstr "Welche Schlüssellänge wünschen Sie? (%u) "
 
-#: g10/card-util.c:1399 g10/keygen.c:2427 g10/keygen.c:2459
+#: g10/card-util.c:1399 g10/keygen.c:2423 g10/keygen.c:2455
 #: sm/certreqgen-ui.c:196
 #, c-format
 msgid "rounded up to %u bits\n"
 msgstr "aufgerundet auf %u Bit\n"
 
-#: g10/card-util.c:1407 g10/keygen.c:2512 sm/certreqgen-ui.c:186
+#: g10/card-util.c:1407 g10/keygen.c:2508 sm/certreqgen-ui.c:186
 #, c-format
 msgid "%s keysizes must be in the range %u-%u\n"
 msgstr "%s-Schlüssellängen müssen im Bereich %u-%u sein\n"
@@ -2037,7 +2037,7 @@ msgstr "Verschlüsselungs-Schlüssel\n"
 msgid "Authentication key\n"
 msgstr "Authentisierungs-Schlüssel\n"
 
-#: g10/card-util.c:1434 g10/keygen.c:2067 sm/certreqgen-ui.c:159
+#: g10/card-util.c:1434 g10/keygen.c:2063 sm/certreqgen-ui.c:159
 msgid "Please select what kind of key you want:\n"
 msgstr "Bitte wählen Sie, welche Art von Schlüssel Sie möchten:\n"
 
@@ -2052,8 +2052,8 @@ msgid "   (%d) ECC\n"
 msgstr "   (%d) ECC\n"
 
 #: g10/card-util.c:1448 g10/card-util.c:1715 g10/card-util.c:1817
-#: g10/keyedit.c:901 g10/keygen.c:1975 g10/keygen.c:2003 g10/keygen.c:2128
-#: g10/keygen.c:2363 g10/keygen.c:2646 g10/revoke.c:837
+#: g10/keyedit.c:901 g10/keygen.c:1971 g10/keygen.c:1999 g10/keygen.c:2124
+#: g10/keygen.c:2359 g10/keygen.c:2642 g10/revoke.c:837
 msgid "Invalid selection.\n"
 msgstr "Ungültige Auswahl.\n"
 
@@ -2250,26 +2250,26 @@ msgstr "Admin-Befehle sind nicht erlaubt\n"
 msgid "Invalid command  (try \"help\")\n"
 msgstr "Ungültiger Befehl (versuchen Sie's mal mit \"help\")\n"
 
-#: g10/decrypt.c:191 g10/encrypt.c:1227
+#: g10/decrypt.c:191 g10/encrypt.c:1223
 #, c-format
 msgid "--output doesn't work for this command\n"
 msgstr "--output funktioniert nicht bei diesem Befehl\n"
 
-#: g10/decrypt.c:247 g10/gpg.c:5251 g10/keyring.c:399 g10/keyring.c:750
+#: g10/decrypt.c:247 g10/gpg.c:5249 g10/keyring.c:399 g10/keyring.c:750
 #, c-format
 msgid "can't open '%s'\n"
 msgstr "'%s' kann nicht geöffnet werden\n"
 
 #: g10/delkey.c:83 g10/export.c:2044 g10/export.c:2358 g10/export.c:2479
-#: g10/getkey.c:2118 g10/gpg.c:5196 g10/keyedit.c:1448 g10/keyedit.c:2371
+#: g10/getkey.c:2129 g10/gpg.c:5194 g10/keyedit.c:1448 g10/keyedit.c:2371
 #: g10/keyedit.c:2712 g10/keyedit.c:4535 g10/keylist.c:860 g10/keyserver.c:1092
 #: g10/revoke.c:230 g10/tofu.c:2165
 #, c-format
 msgid "key \"%s\" not found: %s\n"
 msgstr "Schlüssel \"%s\" nicht gefunden: %s\n"
 
-#: g10/delkey.c:92 g10/export.c:2112 g10/getkey.c:2126 g10/getkey.c:4558
-#: g10/gpg.c:5205 g10/keyedit.c:2343 g10/keyserver.c:1110 g10/revoke.c:236
+#: g10/delkey.c:92 g10/export.c:2112 g10/getkey.c:2137 g10/getkey.c:4578
+#: g10/gpg.c:5203 g10/keyedit.c:2343 g10/keyserver.c:1110 g10/revoke.c:236
 #: g10/revoke.c:662 g10/tofu.c:2173
 #, c-format
 msgid "error reading keyblock: %s\n"
@@ -2371,56 +2371,56 @@ msgstr ""
 "WARNUNG: Erzwungene Verwendung des symmetrischen Verschlüsselungsverfahren "
 "%s (%d) verletzt die Empfängervoreinstellungen\n"
 
-#: g10/encrypt.c:398 g10/sign.c:1501
+#: g10/encrypt.c:394 g10/sign.c:1501
 #, c-format
 msgid "error creating passphrase: %s\n"
 msgstr "Fehler beim Erzeugen des Passwortes: %s\n"
 
-#: g10/encrypt.c:405
+#: g10/encrypt.c:401
 #, c-format
 msgid "can't use a SKESK packet due to the S2K mode\n"
 msgstr "Aufgrund des S2K-Modus kann ein SKESK Paket nicht benutzt werden\n"
 
-#: g10/encrypt.c:435
+#: g10/encrypt.c:431
 #, c-format
 msgid "using cipher %s.%s\n"
 msgstr "benutze Cipher %s.%s\n"
 
-#: g10/encrypt.c:448 g10/encrypt.c:907 g10/sign.c:1165
+#: g10/encrypt.c:444 g10/encrypt.c:903 g10/sign.c:1165
 #, c-format
 msgid "'%s' already compressed\n"
 msgstr "`%s' ist bereits komprimiert\n"
 
-#: g10/encrypt.c:507 g10/encrypt.c:943 g10/sign.c:761
+#: g10/encrypt.c:503 g10/encrypt.c:939 g10/sign.c:761
 #, c-format
 msgid "WARNING: '%s' is an empty file\n"
 msgstr "WARNUNG: '%s' ist eine leere Datei.\n"
 
-#: g10/encrypt.c:609 g10/encrypt.c:694 g10/decrypt-data.c:267 g10/gpg.c:4014
-#: g10/gpg.c:4054 sm/decrypt.c:1188 sm/encrypt.c:707 sm/gpgsm.c:1635
+#: g10/encrypt.c:605 g10/encrypt.c:690 g10/decrypt-data.c:267 g10/gpg.c:4012
+#: g10/gpg.c:4052 sm/decrypt.c:1188 sm/encrypt.c:704 sm/gpgsm.c:1634
 #, c-format
 msgid "cipher algorithm '%s' may not be used in %s mode\n"
 msgstr ""
 "Das Verschlüsselungsverfahren %s darf im %s Modus nicht verwendet werden.\n"
 
-#: g10/encrypt.c:618 g10/gpg.c:4020 g10/gpg.c:4066 g10/sig-check.c:168
-#: g10/sign.c:392 sm/gpgsm.c:1645 sm/gpgsm.c:1655 sm/sign.c:728 sm/verify.c:522
+#: g10/encrypt.c:614 g10/gpg.c:4018 g10/gpg.c:4064 g10/sig-check.c:168
+#: g10/sign.c:392 sm/gpgsm.c:1644 sm/gpgsm.c:1654 sm/sign.c:728 sm/verify.c:522
 #, c-format
 msgid "digest algorithm '%s' may not be used in %s mode\n"
 msgstr "Die Benutzung der Hashmethode %s ist im %s Modus nicht erlaubt.\n"
 
-#: g10/encrypt.c:726 sm/encrypt.c:782
+#: g10/encrypt.c:722 sm/encrypt.c:779
 #, c-format
 msgid "WARNING: key %s is not suitable for encryption in %s mode\n"
 msgstr ""
 "WARNUNG: Schlüssel %s ist zur Verschlüsselung im %s Modus nicht geeignet.\n"
 
-#: g10/encrypt.c:859
+#: g10/encrypt.c:855
 #, c-format
 msgid "reading from '%s'\n"
 msgstr "Lesen von '%s'\n"
 
-#: g10/encrypt.c:993 g10/sign.c:1186
+#: g10/encrypt.c:989 g10/sign.c:1186
 #, c-format
 msgid ""
 "WARNING: forcing compression algorithm %s (%d) violates recipient "
@@ -2429,12 +2429,12 @@ msgstr ""
 "WARNUNG: Erzwungenes Kompressionsverfahren %s (%d) verletzt die "
 "Empfängervoreinstellungen.\n"
 
-#: g10/encrypt.c:1172
+#: g10/encrypt.c:1168
 #, c-format
 msgid "%s/%s.%s encrypted for: \"%s\"\n"
 msgstr "%s/%s.%s verschlüsselt für:\"%s\n"
 
-#: g10/encrypt.c:1202 g10/pkclist.c:1044 g10/pkclist.c:1095
+#: g10/encrypt.c:1198 g10/pkclist.c:1044 g10/pkclist.c:1095
 #, c-format
 msgid "option '%s' may not be used in %s mode\n"
 msgstr "Die Benutzung der Option \"%s\" ist im %s-Modus nicht erlaubt.\n"
@@ -2554,7 +2554,7 @@ msgstr "Das GnuPG Datensicherungsformat für Schlüssel benutzen"
 msgid " - skipped"
 msgstr " - übersprungen"
 
-#: g10/export.c:1339 g10/import.c:2089 g10/openfile.c:200 g10/openfile.c:294
+#: g10/export.c:1339 g10/import.c:2091 g10/openfile.c:200 g10/openfile.c:294
 #: g10/sign.c:1029 g10/sign.c:1357
 #, c-format
 msgid "writing to '%s'\n"
@@ -2586,69 +2586,69 @@ msgstr "WARNUNG: Nichts exportiert\n"
 msgid "error creating '%s': %s\n"
 msgstr "Fehler beim Erstellen von `%s': %s\n"
 
-#: g10/getkey.c:259
+#: g10/getkey.c:263
 msgid "[User ID not found]"
 msgstr "[User-ID nicht gefunden]"
 
-#: g10/getkey.c:1443
+#: g10/getkey.c:1454
 #, c-format
 msgid "automatically retrieved '%s' via %s\n"
 msgstr "`%s' automatisch via %s geholt\n"
 
-#: g10/getkey.c:1449
+#: g10/getkey.c:1460
 #, c-format
 msgid "error retrieving '%s' via %s: %s\n"
 msgstr "Fehler beim automatischen holen von `%s' über `%s': %s\n"
 
-#: g10/getkey.c:1451
+#: g10/getkey.c:1462
 msgid "No fingerprint"
 msgstr "Kein Fingerabdruck vorhanden"
 
-#: g10/getkey.c:1672
+#: g10/getkey.c:1683
 #, c-format
 msgid "checking for a fresh copy of an expired key via %s\n"
 msgstr ""
 "Prüfe auf eine aktuellere Kopie eines abgelaufenen Schlüssels über %s\n"
 
-#: g10/getkey.c:2095 g10/revoke.c:654 g10/revoke.c:719
+#: g10/getkey.c:2106 g10/revoke.c:654 g10/revoke.c:719
 #, c-format
 msgid "secret key \"%s\" not found: %s\n"
 msgstr "Geheimer Schlüssel \"%s\" nicht gefunden: %s\n"
 
-#: g10/getkey.c:2098 g10/pkclist.c:1004
+#: g10/getkey.c:2109 g10/pkclist.c:1004
 #, c-format
 msgid "(check argument of option '%s')\n"
 msgstr "(Prüfe das Argument der Option '%s')\n"
 
-#: g10/getkey.c:2176
+#: g10/getkey.c:2187
 #, c-format
 msgid "Warning: not using '%s' as default key: %s\n"
 msgstr ""
 "WARNUNG: \"%s\" wird nicht als voreingestellter geheimer Schlüssel benutzt: "
 "%s\n"
 
-#: g10/getkey.c:2184
+#: g10/getkey.c:2195
 #, c-format
 msgid "using \"%s\" as default secret key for signing\n"
 msgstr "\"%s\" wird als voreingestellter geheimer Signaturschlüssel benutzt\n"
 
-#: g10/getkey.c:2191
+#: g10/getkey.c:2202
 #, c-format
 msgid "all values passed to '%s' ignored\n"
 msgstr "Alle für '%s' angegebenen Werte wurden ignoriert\n"
 
-#: g10/getkey.c:3055
+#: g10/getkey.c:3066
 #, c-format
 msgid "Invalid key %s made valid by --allow-non-selfsigned-uid\n"
 msgstr ""
 "Ungültiger Schlüssel %s, gültig gemacht per --allow-non-selfsigned-uid\n"
 
-#: g10/getkey.c:3915
+#: g10/getkey.c:3932
 #, c-format
 msgid "using subkey %s instead of primary key %s\n"
 msgstr "der Unterschlüssel %s wird anstelle des Hauptschlüssels %s verwendet\n"
 
-#: g10/getkey.c:4487 g10/gpg.c:2168
+#: g10/getkey.c:4507 g10/gpg.c:2167
 #, c-format
 msgid "valid values for option '%s':\n"
 msgstr "Gültige Argumente für Option '%s':\n"
@@ -2940,11 +2940,11 @@ msgstr ""
 " --list-keys [Namen]        Schlüssel anzeigen\n"
 " --fingerprint [Namen]      \"Fingerabdrücke\" anzeigen\n"
 
-#: g10/gpg.c:1150
+#: g10/gpg.c:1149
 msgid "Usage: @GPG@ [options] [files] (-h for help)"
 msgstr "Aufruf: @GPG@ [Optionen] [Dateien] (-h für Hilfe)"
 
-#: g10/gpg.c:1153
+#: g10/gpg.c:1152
 msgid ""
 "Syntax: @GPG@ [options] [files]\n"
 "Sign, check, encrypt or decrypt\n"
@@ -2954,7 +2954,7 @@ msgstr ""
 "Signieren, prüfen, verschlüsseln, entschlüsseln.\n"
 "Die voreingestellte Operation ist abhängig von den Eingabedaten\n"
 
-#: g10/gpg.c:1164 sm/gpgsm.c:632
+#: g10/gpg.c:1163 sm/gpgsm.c:631
 msgid ""
 "\n"
 "Supported algorithms:\n"
@@ -2962,75 +2962,75 @@ msgstr ""
 "\n"
 "Unterstützte Verfahren:\n"
 
-#: g10/gpg.c:1167
+#: g10/gpg.c:1166
 msgid "Pubkey: "
 msgstr "Öff. Schlüssel: "
 
-#: g10/gpg.c:1174 g10/keylist.c:317
+#: g10/gpg.c:1173 g10/keylist.c:317
 msgid "Cipher: "
 msgstr "Verschlü.: "
 
-#: g10/gpg.c:1181
+#: g10/gpg.c:1180
 msgid "Hash: "
 msgstr "Hash: "
 
-#: g10/gpg.c:1188 g10/keylist.c:380
+#: g10/gpg.c:1187 g10/keylist.c:380
 msgid "Compression: "
 msgstr "Komprimierung: "
 
-#: g10/gpg.c:1261 sm/gpgsm.c:706
+#: g10/gpg.c:1260 sm/gpgsm.c:705
 #, c-format
 msgid "usage: %s [options] %s\n"
 msgstr "Aufruf: %s [Optionen] %s\n"
 
-#: g10/gpg.c:1456 sm/gpgsm.c:799
+#: g10/gpg.c:1455 sm/gpgsm.c:798
 #, c-format
 msgid "conflicting commands\n"
 msgstr "Widersprüchliche Befehle\n"
 
-#: g10/gpg.c:1474
+#: g10/gpg.c:1473
 #, c-format
 msgid "no = sign found in group definition '%s'\n"
 msgstr "Kein '='-Zeichen in der Gruppendefinition gefunden `%s'\n"
 
-#: g10/gpg.c:1672
+#: g10/gpg.c:1671
 #, c-format
 msgid "WARNING: unsafe ownership on homedir '%s'\n"
 msgstr "WARNUNG: Unsicheres Besitzverhältnis des Home-Verzeichnis `%s'\n"
 
-#: g10/gpg.c:1675
+#: g10/gpg.c:1674
 #, c-format
 msgid "WARNING: unsafe ownership on configuration file '%s'\n"
 msgstr "WARNUNG: Unsicheres Besitzverhältnis der Konfigurationsdatei `%s'\n"
 
-#: g10/gpg.c:1678
+#: g10/gpg.c:1677
 #, c-format
 msgid "WARNING: unsafe ownership on extension '%s'\n"
 msgstr "WARNUNG: Unsicheres Besitzverhältnis auf die Erweiterung `%s'\n"
 
-#: g10/gpg.c:1684
+#: g10/gpg.c:1683
 #, c-format
 msgid "WARNING: unsafe permissions on homedir '%s'\n"
 msgstr "WARNUNG: Unsichere Zugriffsrechte des Home-Verzeichnis `%s'\n"
 
-#: g10/gpg.c:1687
+#: g10/gpg.c:1686
 #, c-format
 msgid "WARNING: unsafe permissions on configuration file '%s'\n"
 msgstr "WARNUNG: Unsichere Zugriffsrechte der Konfigurationsdatei `%s'\n"
 
-#: g10/gpg.c:1690
+#: g10/gpg.c:1689
 #, c-format
 msgid "WARNING: unsafe permissions on extension '%s'\n"
 msgstr "WARNUNG: Unsichere Zugriffsrechte auf die Erweiterung `%s'\n"
 
-#: g10/gpg.c:1696
+#: g10/gpg.c:1695
 #, c-format
 msgid "WARNING: unsafe enclosing directory ownership on homedir '%s'\n"
 msgstr ""
 "WARNUNG: Unsicheres Besitzverhältnis des umgebenden Verzeichnisses für Home-"
 "Verzeichnis `%s'\n"
 
-#: g10/gpg.c:1699
+#: g10/gpg.c:1698
 #, c-format
 msgid ""
 "WARNING: unsafe enclosing directory ownership on configuration file '%s'\n"
@@ -3038,20 +3038,20 @@ msgstr ""
 "WARNUNG: Unsicheres Besitzverhältnis des umgebenden Verzeichnisses der "
 "Konfigurationsdatei '%s'\n"
 
-#: g10/gpg.c:1702
+#: g10/gpg.c:1701
 #, c-format
 msgid "WARNING: unsafe enclosing directory ownership on extension '%s'\n"
 msgstr ""
 "WARNUNG: Unsicheres Besitzverhältnis des umgebenden Verzeichnisses `%s'\n"
 
-#: g10/gpg.c:1708
+#: g10/gpg.c:1707
 #, c-format
 msgid "WARNING: unsafe enclosing directory permissions on homedir '%s'\n"
 msgstr ""
 "WARNUNG: Unsichere Zugriffsrechte des umgebenden Verzeichnisses des Home-"
 "Verzeichnisses `%s'\n"
 
-#: g10/gpg.c:1711
+#: g10/gpg.c:1710
 #, c-format
 msgid ""
 "WARNING: unsafe enclosing directory permissions on configuration file '%s'\n"
@@ -3059,466 +3059,466 @@ msgstr ""
 "WARNUNG: Unsichere Zugriffsrechte des umgebenden Verzeichnisses der "
 "Konfigurationsdatei '%s'\n"
 
-#: g10/gpg.c:1714
+#: g10/gpg.c:1713
 #, c-format
 msgid "WARNING: unsafe enclosing directory permissions on extension '%s'\n"
 msgstr ""
 "WARNUNG: Unsichere Zugriffsrechte des umgebenden Verzeichnisses auf "
 "Erweiterung `%s'\n"
 
-#: g10/gpg.c:1930
+#: g10/gpg.c:1929
 #, c-format
 msgid "unknown configuration item '%s'\n"
 msgstr "Unbekanntes Konfigurationselement `%s'\n"
 
-#: g10/gpg.c:2031
+#: g10/gpg.c:2030
 msgid "display photo IDs during key listings"
 msgstr "Anzeigen der Foto-ID in den Schlüssellisten"
 
-#: g10/gpg.c:2033
+#: g10/gpg.c:2032
 msgid "show key usage information during key listings"
 msgstr "Schlüsselverwendungszwecke mit den Schlüsseln anlisten"
 
-#: g10/gpg.c:2035
+#: g10/gpg.c:2034
 msgid "show policy URLs during signature listings"
 msgstr "Richtlinien-URL mit den Signaturen anlisten"
 
-#: g10/gpg.c:2037
+#: g10/gpg.c:2036
 msgid "show all notations during signature listings"
 msgstr "Alle Notationen mit den Signaturen anlisten"
 
-#: g10/gpg.c:2039
+#: g10/gpg.c:2038
 msgid "show IETF standard notations during signature listings"
 msgstr "Standard Notationen mit den Signaturen anlisten"
 
-#: g10/gpg.c:2043
+#: g10/gpg.c:2042
 msgid "show user-supplied notations during signature listings"
 msgstr "Benutzer-Notationen mit den Signaturen anlisten"
 
-#: g10/gpg.c:2045
+#: g10/gpg.c:2044
 msgid "show preferred keyserver URLs during signature listings"
 msgstr "Bevorzugten Schlüsselserver mit den Signaturen anlisten"
 
-#: g10/gpg.c:2047
+#: g10/gpg.c:2046
 msgid "show user ID validity during key listings"
 msgstr "Zeige Gültigkeit der User-ID in den Schlüssellisten"
 
-#: g10/gpg.c:2049
+#: g10/gpg.c:2048
 msgid "show revoked and expired user IDs in key listings"
 msgstr "Zeige widerrufene und verfallene User-ID in den Schlüssellisten"
 
-#: g10/gpg.c:2051
+#: g10/gpg.c:2050
 msgid "show revoked and expired subkeys in key listings"
 msgstr "Zeige widerrufene und verfallene Unterschlüssel in den Schlüssellisten"
 
-#: g10/gpg.c:2053
+#: g10/gpg.c:2052
 msgid "show the keyring name in key listings"
 msgstr "Anzeigen des Schlüsselbundes, in dem ein Schlüssel drin ist"
 
-#: g10/gpg.c:2055
+#: g10/gpg.c:2054
 msgid "show expiration dates during signature listings"
 msgstr "Das Ablaufdatum mit den Signaturen anlisten"
 
-#: g10/gpg.c:2057 g10/gpg.c:2059
+#: g10/gpg.c:2056 g10/gpg.c:2058
 msgid "show preferences"
 msgstr "Voreinstellungen anzeigen"
 
-#: g10/gpg.c:2179
+#: g10/gpg.c:2178
 #, c-format
 msgid "unknown TOFU policy '%s'\n"
 msgstr "Unbekannte TOFU Regel '%s'\n"
 
-#: g10/gpg.c:2181
+#: g10/gpg.c:2180
 #, c-format
 msgid "(use \"help\" to list choices)\n"
 msgstr "(\"help\" um mögliche Werte anzuzeigen)\n"
 
-#: g10/gpg.c:2271 g10/keyedit.c:1730
+#: g10/gpg.c:2270 g10/keyedit.c:1730
 #, c-format
 msgid "This command is not allowed while in %s mode.\n"
 msgstr "Dieser Befehl ist im %s-Modus nicht erlaubt.\n"
 
-#: g10/gpg.c:2919 g10/gpg.c:3776 g10/gpg.c:3788
+#: g10/gpg.c:2918 g10/gpg.c:3775 g10/gpg.c:3787
 #, c-format
 msgid "Note: %s is not for normal use!\n"
 msgstr "Hinweis: %s ist nicht für den üblichen Gebrauch gedacht!\n"
 
-#: g10/gpg.c:3096 g10/gpg.c:3108
+#: g10/gpg.c:3095 g10/gpg.c:3107
 #, c-format
 msgid "'%s' is not a valid signature expiration\n"
 msgstr "`%s' ist kein gültiges Signaturablaufdatum\n"
 
-#: g10/gpg.c:3130
+#: g10/gpg.c:3129
 #, c-format
 msgid "\"%s\" is not a proper mail address\n"
 msgstr "\"%s\" ist keine gültige E-Mailadresse\n"
 
-#: g10/gpg.c:3168 sm/gpgsm.c:1129
+#: g10/gpg.c:3167 sm/gpgsm.c:1128
 #, c-format
 msgid "invalid pinentry mode '%s'\n"
 msgstr "Ungültiger Subjekt-Name '%s'\n"
 
-#: g10/gpg.c:3174 sm/gpgsm.c:1135
+#: g10/gpg.c:3173 sm/gpgsm.c:1134
 #, c-format
 msgid "invalid request origin '%s'\n"
 msgstr "Ungültiges \"Herkunft\"-Argument '%s'\n"
 
-#: g10/gpg.c:3228
+#: g10/gpg.c:3227
 #, c-format
 msgid "'%s' is not a valid character set\n"
 msgstr "`%s' ist kein gültiger Zeichensatz\n"
 
-#: g10/gpg.c:3250 g10/gpg.c:3470 g10/keyedit.c:5275
+#: g10/gpg.c:3249 g10/gpg.c:3469 g10/keyedit.c:5275
 #, c-format
 msgid "could not parse keyserver URL\n"
 msgstr "Schlüsselserver-URL konnte nicht analysiert werden\n"
 
-#: g10/gpg.c:3268
+#: g10/gpg.c:3267
 #, c-format
 msgid "%s:%d: invalid keyserver options\n"
 msgstr "%s:%d: ungültige Schlüsselserver-Option\n"
 
-#: g10/gpg.c:3271
+#: g10/gpg.c:3270
 #, c-format
 msgid "invalid keyserver options\n"
 msgstr "Ungültige Schlüsselserver-Option\n"
 
-#: g10/gpg.c:3278
+#: g10/gpg.c:3277
 #, c-format
 msgid "%s:%d: invalid import options\n"
 msgstr "%s:%d: ungültige Import-Option\n"
 
-#: g10/gpg.c:3281
+#: g10/gpg.c:3280
 #, c-format
 msgid "invalid import options\n"
 msgstr "Ungültige Import-Option\n"
 
-#: g10/gpg.c:3287 g10/gpg.c:3302
+#: g10/gpg.c:3286 g10/gpg.c:3301
 #, c-format
 msgid "invalid filter option: %s\n"
 msgstr "Ungültige Filter-Option: %s\n"
 
-#: g10/gpg.c:3293
+#: g10/gpg.c:3292
 #, c-format
 msgid "%s:%d: invalid export options\n"
 msgstr "%s:%d: ungültige Export-Option.\n"
 
-#: g10/gpg.c:3296
+#: g10/gpg.c:3295
 #, c-format
 msgid "invalid export options\n"
 msgstr "Ungültige Export-Option\n"
 
-#: g10/gpg.c:3308
+#: g10/gpg.c:3307
 #, c-format
 msgid "%s:%d: invalid list options\n"
 msgstr "%s:%d: ungültige Listen-Option.\n"
 
-#: g10/gpg.c:3311
+#: g10/gpg.c:3310
 #, c-format
 msgid "invalid list options\n"
 msgstr "Ungültige Listen-Option\n"
 
-#: g10/gpg.c:3319
+#: g10/gpg.c:3318
 msgid "display photo IDs during signature verification"
 msgstr "Foto-ID während der Signaturprüfung anzeigen"
 
-#: g10/gpg.c:3321
+#: g10/gpg.c:3320
 msgid "show policy URLs during signature verification"
 msgstr "Richtlinien-URLs während der Signaturprüfung anzeigen"
 
-#: g10/gpg.c:3323
+#: g10/gpg.c:3322
 msgid "show all notations during signature verification"
 msgstr "Alle Notationen während der Signaturprüfung anzeigen"
 
-#: g10/gpg.c:3325
+#: g10/gpg.c:3324
 msgid "show IETF standard notations during signature verification"
 msgstr "Standard-Notationen während der Signaturprüfung anzeigen"
 
-#: g10/gpg.c:3329
+#: g10/gpg.c:3328
 msgid "show user-supplied notations during signature verification"
 msgstr "Benutzer-Notationen während der Signaturprüfung anzeigen"
 
-#: g10/gpg.c:3331
+#: g10/gpg.c:3330
 msgid "show preferred keyserver URLs during signature verification"
 msgstr ""
 "Die URL für den bevorzugten Schlüsselserver während der Signaturprüfung "
 "anzeigen"
 
-#: g10/gpg.c:3333
+#: g10/gpg.c:3332
 msgid "show user ID validity during signature verification"
 msgstr "Die Gültigkeit der User-ID während der Signaturprüfung anzeigen"
 
-#: g10/gpg.c:3335
+#: g10/gpg.c:3334
 msgid "show revoked and expired user IDs in signature verification"
 msgstr "Zeige widerrufene und verfallene User-IDs während der Signaturprüfung"
 
-#: g10/gpg.c:3337
+#: g10/gpg.c:3336
 msgid "show only the primary user ID in signature verification"
 msgstr "Zeige nur die Haupt-User-ID während der Signaturprüfung"
 
-#: g10/gpg.c:3339
+#: g10/gpg.c:3338
 msgid "validate signatures with PKA data"
 msgstr "Prüfe Signaturgültigkeit mittels PKA-Daten"
 
-#: g10/gpg.c:3341
+#: g10/gpg.c:3340
 msgid "elevate the trust of signatures with valid PKA data"
 msgstr "Werte das Vertrauen zu Signaturen durch gültige PKA-Daten auf"
 
-#: g10/gpg.c:3348
+#: g10/gpg.c:3347
 #, c-format
 msgid "%s:%d: invalid verify options\n"
 msgstr "%s:%d: ungültige Überprüfungs-Option.\n"
 
-#: g10/gpg.c:3351
+#: g10/gpg.c:3350
 #, c-format
 msgid "invalid verify options\n"
 msgstr "Ungültige Überprüfungs-Option\n"
 
-#: g10/gpg.c:3358
+#: g10/gpg.c:3357
 #, c-format
 msgid "unable to set exec-path to %s\n"
 msgstr "Der Ausführungspfad konnte nicht auf %s gesetzt werden.\n"
 
-#: g10/gpg.c:3568
+#: g10/gpg.c:3567
 #, c-format
 msgid "%s:%d: invalid auto-key-locate list\n"
 msgstr "%s:%d: ungültige \"auto-key-locate\"-Liste\n"
 
-#: g10/gpg.c:3571
+#: g10/gpg.c:3570
 #, c-format
 msgid "invalid auto-key-locate list\n"
 msgstr "ungültige \"auto-key-locate\"-Liste\n"
 
-#: g10/gpg.c:3758 sm/gpgsm.c:1509
+#: g10/gpg.c:3757 sm/gpgsm.c:1508
 #, c-format
 msgid "WARNING: program may create a core file!\n"
 msgstr "WARNUNG: Programm könnte eine core-dump-Datei schreiben!\n"
 
-#: g10/gpg.c:3769 sm/gpgsm.c:1515
+#: g10/gpg.c:3768 sm/gpgsm.c:1514
 #, c-format
 msgid "WARNING: %s overrides %s\n"
 msgstr "WARNUNG: %s ersetzt %s\n"
 
-#: g10/gpg.c:3778
+#: g10/gpg.c:3777
 #, c-format
 msgid "%s not allowed with %s!\n"
 msgstr "%s zusammen mit %s ist nicht erlaubt!\n"
 
-#: g10/gpg.c:3781
+#: g10/gpg.c:3780
 #, c-format
 msgid "%s makes no sense with %s!\n"
 msgstr "%s zusammen mit %s ist nicht sinnvoll!\n"
 
-#: g10/gpg.c:3796 sm/gpgsm.c:1535 dirmngr/dirmngr.c:1242
+#: g10/gpg.c:3795 sm/gpgsm.c:1534 dirmngr/dirmngr.c:1242
 #, c-format
 msgid "WARNING: running with faked system time: "
 msgstr "WARNUNG: Ausführung mit gefälschter Systemzeit: "
 
-#: g10/gpg.c:3817
+#: g10/gpg.c:3816
 #, c-format
 msgid "will not run with insecure memory due to %s\n"
 msgstr "Startet nicht mit unsicherem Speicher, wegen Option %s\n"
 
-#: g10/gpg.c:3859 g10/gpg.c:3883 sm/gpgsm.c:1605
+#: g10/gpg.c:3857 g10/gpg.c:3881 sm/gpgsm.c:1604
 #, c-format
 msgid "selected cipher algorithm is invalid\n"
 msgstr "Das ausgewählte Verschlüsselungsverfahren ist ungültig\n"
 
-#: g10/gpg.c:3871
+#: g10/gpg.c:3869
 #, c-format
 msgid "selected compression algorithm is invalid\n"
 msgstr "Das ausgewählte Komprimierungsverfahren ist ungültig\n"
 
-#: g10/gpg.c:3877
+#: g10/gpg.c:3875
 #, c-format
 msgid "selected certification digest algorithm is invalid\n"
 msgstr "Das ausgewählte Hashverfahren ist ungültig\n"
 
-#: g10/gpg.c:3892
+#: g10/gpg.c:3890
 #, c-format
 msgid "completes-needed must be greater than 0\n"
 msgstr "completes-needed müssen größer als 0 sein\n"
 
-#: g10/gpg.c:3894
+#: g10/gpg.c:3892
 #, c-format
 msgid "marginals-needed must be greater than 1\n"
 msgstr "marginals-needed müssen größer als 1 sein\n"
 
-#: g10/gpg.c:3896
+#: g10/gpg.c:3894
 #, c-format
 msgid "max-cert-depth must be in the range from 1 to 255\n"
 msgstr "max-cert-depth muß im Bereich 1 bis 255 liegen\n"
 
-#: g10/gpg.c:3898
+#: g10/gpg.c:3896
 #, c-format
 msgid "invalid default-cert-level; must be 0, 1, 2, or 3\n"
 msgstr "ungültiger \"default-cert-level\"; Wert muß 0, 1, 2 oder 3 sein\n"
 
-#: g10/gpg.c:3900
+#: g10/gpg.c:3898
 #, c-format
 msgid "invalid min-cert-level; must be 1, 2, or 3\n"
 msgstr "ungültiger \"min-cert-level\"; Wert muß 0, 1, 2 oder 3 sein\n"
 
-#: g10/gpg.c:3904
+#: g10/gpg.c:3902
 #, c-format
 msgid "Note: simple S2K mode (0) is strongly discouraged\n"
 msgstr "Hinweis: Vom \"simple S2K\"-Modus (0) ist strikt abzuraten\n"
 
-#: g10/gpg.c:3908
+#: g10/gpg.c:3906
 #, c-format
 msgid "invalid S2K mode; must be 0, 1 or 3\n"
 msgstr "ungültiger \"simple S2K\"-Modus; Wert muß 0, 1 oder 3 sein\n"
 
-#: g10/gpg.c:3915
+#: g10/gpg.c:3913
 #, c-format
 msgid "invalid default preferences\n"
 msgstr "ungültige Standard-Voreinstellungen\n"
 
-#: g10/gpg.c:3919
+#: g10/gpg.c:3917
 #, c-format
 msgid "invalid personal cipher preferences\n"
 msgstr "ungültige private Verschlüsselungsvoreinstellungen\n"
 
-#: g10/gpg.c:3923
+#: g10/gpg.c:3921
 #, c-format
 msgid "invalid personal digest preferences\n"
 msgstr "ungültige private Hashvoreinstellungen\n"
 
-#: g10/gpg.c:3927
+#: g10/gpg.c:3925
 #, c-format
 msgid "invalid personal compress preferences\n"
 msgstr "ungültige private Komprimierungsvoreinstellungen\n"
 
-#: g10/gpg.c:3963
+#: g10/gpg.c:3961
 #, c-format
 msgid "%s does not yet work with %s\n"
 msgstr "%s arbeitet noch nicht mit %s zusammen\n"
 
-#: g10/gpg.c:4026
+#: g10/gpg.c:4024
 #, c-format
 msgid "compression algorithm '%s' may not be used in %s mode\n"
 msgstr ""
 "Die Benutzung des Komprimierverfahren %s ist im %s Modus nicht erlaubt.\n"
 
-#: g10/gpg.c:4170
+#: g10/gpg.c:4168
 #, c-format
 msgid "failed to initialize the TrustDB: %s\n"
 msgstr "Die Trust-DB kann nicht initialisiert werden: %s\n"
 
-#: g10/gpg.c:4182
+#: g10/gpg.c:4180
 #, c-format
 msgid "WARNING: recipients (-r) given without using public key encryption\n"
 msgstr ""
 "WARNUNG: Empfänger (-r) angegeben ohne Verwendung von Public-Key-Verfahren\n"
 
-#: g10/gpg.c:4255
+#: g10/gpg.c:4253
 #, c-format
 msgid "symmetric encryption of '%s' failed: %s\n"
 msgstr "Symmetrische Entschlüsselung von `%s' fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4284
+#: g10/gpg.c:4282
 #, c-format
 msgid "you cannot use --symmetric --encrypt with --s2k-mode 0\n"
 msgstr ""
 "--symmetric --encrypt kann nicht zusammen mit --s2k-mode 0 verwendet werden\n"
 
-#: g10/gpg.c:4287
+#: g10/gpg.c:4285
 #, c-format
 msgid "you cannot use --symmetric --encrypt in %s mode\n"
 msgstr "Im %s Modus kann --symmetric --encrypt nicht verwendet werden.\n"
 
-#: g10/gpg.c:4345
+#: g10/gpg.c:4343
 #, c-format
 msgid "you cannot use --symmetric --sign --encrypt with --s2k-mode 0\n"
 msgstr ""
 "--symmetric --sign --encrypt kann nicht zusammen mit --s2k-mode 0 verwendet "
 "werden\n"
 
-#: g10/gpg.c:4348
+#: g10/gpg.c:4346
 #, c-format
 msgid "you cannot use --symmetric --sign --encrypt in %s mode\n"
 msgstr ""
 "Im %s Modus kann --symmetric --sign --encrypt nicht verwendet werden.\n"
 
-#: g10/gpg.c:4756 g10/keyserver.c:1650
+#: g10/gpg.c:4754 g10/keyserver.c:1650
 #, c-format
 msgid "keyserver send failed: %s\n"
 msgstr "Senden an Schlüsselserver fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4761
+#: g10/gpg.c:4759
 #, c-format
 msgid "keyserver receive failed: %s\n"
 msgstr "Empfangen vom Schlüsselserver fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4767
+#: g10/gpg.c:4765
 #, c-format
 msgid "key export failed: %s\n"
 msgstr "Schlüsselexport fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4780
+#: g10/gpg.c:4778
 #, c-format
 msgid "export as ssh key failed: %s\n"
 msgstr "Schlüsselexport im SSH Format fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4792
+#: g10/gpg.c:4790
 #, c-format
 msgid "keyserver search failed: %s\n"
 msgstr "Suche auf dem Schlüsselserver fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4805
+#: g10/gpg.c:4803
 #, c-format
 msgid "keyserver refresh failed: %s\n"
 msgstr "Refresh vom Schlüsselserver fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4874
+#: g10/gpg.c:4872
 #, c-format
 msgid "dearmoring failed: %s\n"
 msgstr "Entfernen der ASCII-Hülle ist fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:4885
+#: g10/gpg.c:4883
 #, c-format
 msgid "enarmoring failed: %s\n"
 msgstr "Anbringen der ASCII-Hülle ist fehlgeschlagen: %s\n"
 
-#: g10/gpg.c:5009
+#: g10/gpg.c:5007
 #, c-format
 msgid "invalid hash algorithm '%s'\n"
 msgstr "Ungültiges Hashverfahren '%s'\n"
 
-#: g10/gpg.c:5161 g10/tofu.c:2153
+#: g10/gpg.c:5159 g10/tofu.c:2153
 #, c-format
 msgid "error parsing key specification '%s': %s\n"
 msgstr "Fehler in der Schlüsselangabe '%s': %s\n"
 
-#: g10/gpg.c:5174
+#: g10/gpg.c:5172
 #, c-format
 msgid "'%s' does not appear to be a valid key ID, fingerprint or keygrip\n"
 msgstr ""
 "'%s\" sieht nicht nach einer gültigen Schlüssel-ID, einem Fingerabdruck oder "
 "einem \"Keygrip\" aus\n"
 
-#: g10/gpg.c:5230
+#: g10/gpg.c:5228
 #, c-format
 msgid "WARNING: no command supplied.  Trying to guess what you mean ...\n"
 msgstr ""
 "WARNING:  Kein Kommando angegeben.  Versuche zu raten was gemeint ist ...\n"
 
-#: g10/gpg.c:5241
+#: g10/gpg.c:5239
 #, c-format
 msgid "Go ahead and type your message ...\n"
 msgstr "Auf geht's - Botschaft eintippen ...\n"
 
-#: g10/gpg.c:5586
+#: g10/gpg.c:5584
 #, c-format
 msgid "the given certification policy URL is invalid\n"
 msgstr "Die angegebene Zertifikat-Richtlinien-URL ist ungültig\n"
 
-#: g10/gpg.c:5588
+#: g10/gpg.c:5586
 #, c-format
 msgid "the given signature policy URL is invalid\n"
 msgstr "Die angegebene Signatur-Richtlinien-URL ist ungültig\n"
 
-#: g10/gpg.c:5621
+#: g10/gpg.c:5619
 #, c-format
 msgid "the given preferred keyserver URL is invalid\n"
 msgstr "Die angegebene URL des bevorzugten Schlüsselserver ist ungültig\n"
@@ -3608,97 +3608,97 @@ msgstr "Eingabedaten sind im GnuPG Datensicherungsformat für Schlüssel"
 msgid "repair keys on import"
 msgstr "Schlüssel beim Import reparieren"
 
-#: g10/import.c:393 g10/import.c:712
+#: g10/import.c:395 g10/import.c:714
 #, c-format
 msgid "skipping block of type %d\n"
 msgstr "überspringe den Block vom Typ %d\n"
 
-#: g10/import.c:729
+#: g10/import.c:731
 #, c-format
 msgid "%lu keys processed so far\n"
 msgstr "%lu Schlüssel bislang bearbeitet\n"
 
-#: g10/import.c:815
+#: g10/import.c:817
 #, c-format
 msgid "Total number processed: %lu\n"
 msgstr "Anzahl insgesamt bearbeiteter Schlüssel: %lu\n"
 
-#: g10/import.c:818
+#: g10/import.c:820
 #, c-format
 msgid "    skipped PGP-2 keys: %lu\n"
 msgstr "             ignorierte PGP-2 Schlüssel: %lu\n"
 
-#: g10/import.c:820
+#: g10/import.c:822
 #, c-format
 msgid "      skipped new keys: %lu\n"
 msgstr "              ignorierte neue Schlüssel: %lu\n"
 
-#: g10/import.c:823
+#: g10/import.c:825
 #, c-format
 msgid "          w/o user IDs: %lu\n"
 msgstr "                           ohne User-ID: %lu\n"
 
-#: g10/import.c:826 sm/import.c:130
+#: g10/import.c:828 sm/import.c:130
 #, c-format
 msgid "              imported: %lu"
 msgstr "                             importiert: %lu"
 
-#: g10/import.c:830 sm/import.c:134
+#: g10/import.c:832 sm/import.c:134
 #, c-format
 msgid "             unchanged: %lu\n"
 msgstr "                            unverändert: %lu\n"
 
-#: g10/import.c:832
+#: g10/import.c:834
 #, c-format
 msgid "          new user IDs: %lu\n"
 msgstr "                          neue User-IDs: %lu\n"
 
-#: g10/import.c:834
+#: g10/import.c:836
 #, c-format
 msgid "           new subkeys: %lu\n"
 msgstr "                    neue Unterschlüssel: %lu\n"
 
-#: g10/import.c:836
+#: g10/import.c:838
 #, c-format
 msgid "        new signatures: %lu\n"
 msgstr "                        neue Signaturen: %lu\n"
 
-#: g10/import.c:838
+#: g10/import.c:840
 #, c-format
 msgid "   new key revocations: %lu\n"
 msgstr "                neue Schlüsselwiderrufe: %lu\n"
 
-#: g10/import.c:840 sm/import.c:136
+#: g10/import.c:842 sm/import.c:136
 #, c-format
 msgid "      secret keys read: %lu\n"
 msgstr "             gelesene geheime Schlüssel: %lu\n"
 
-#: g10/import.c:842 sm/import.c:138
+#: g10/import.c:844 sm/import.c:138
 #, c-format
 msgid "  secret keys imported: %lu\n"
 msgstr "           geheime Schlüssel importiert: %lu\n"
 
-#: g10/import.c:844 sm/import.c:140
+#: g10/import.c:846 sm/import.c:140
 #, c-format
 msgid " secret keys unchanged: %lu\n"
 msgstr "                unveränderte geh. Schl.: %lu\n"
 
-#: g10/import.c:846 sm/import.c:142
+#: g10/import.c:848 sm/import.c:142
 #, c-format
 msgid "          not imported: %lu\n"
 msgstr "                       nicht importiert: %lu\n"
 
-#: g10/import.c:848
+#: g10/import.c:850
 #, c-format
 msgid "    signatures cleaned: %lu\n"
 msgstr "    Signaturen bereinigt: %lu\n"
 
-#: g10/import.c:850
+#: g10/import.c:852
 #, c-format
 msgid "      user IDs cleaned: %lu\n"
 msgstr "      User-IDs bereinigt: %lu\n"
 
-#: g10/import.c:1277
+#: g10/import.c:1279
 #, c-format
 msgid ""
 "WARNING: key %s contains preferences for unavailable\n"
@@ -3707,175 +3707,175 @@ msgstr ""
 "WARNUNG: Schlüssel %s hat Einstellungen zu nicht verfügbaren\n"
 "Verfahren für folgende User-ID:\n"
 
-#: g10/import.c:1319
+#: g10/import.c:1321
 #, c-format
 msgid "         \"%s\": preference for cipher algorithm %s\n"
 msgstr "         \"%s\": Einstellungen des Verschlüsselungsverfahren %s\n"
 
-#: g10/import.c:1334
+#: g10/import.c:1336
 #, c-format
 msgid "         \"%s\": preference for digest algorithm %s\n"
 msgstr "         \"%s\": Einstellungen der Hashmethode %s\n"
 
-#: g10/import.c:1346
+#: g10/import.c:1348
 #, c-format
 msgid "         \"%s\": preference for compression algorithm %s\n"
 msgstr "         \"%s\": Einstellungen der Komprimierungsverfahren %s\n"
 
-#: g10/import.c:1359
+#: g10/import.c:1361
 #, c-format
 msgid "it is strongly suggested that you update your preferences and\n"
 msgstr "es ist extrem empfehlenswert Ihre Einstellungen zu ändern und\n"
 
-#: g10/import.c:1361
+#: g10/import.c:1363
 #, c-format
 msgid "re-distribute this key to avoid potential algorithm mismatch problems\n"
 msgstr ""
 "diesen Schlüssel wieder zu verteilen, um mögliche Probleme durch unpassende "
 "Verfahrenskombinationen zu vermeiden\n"
 
-#: g10/import.c:1386
+#: g10/import.c:1388
 #, c-format
 msgid "you can update your preferences with: gpg --edit-key %s updpref save\n"
 msgstr ""
 "Sie können Ihren Einstellungen mittels \"gpg --edit-key %s updpref save\" "
 "ändern\n"
 
-#: g10/import.c:1902 g10/import.c:3038
+#: g10/import.c:1904 g10/import.c:3040
 #, c-format
 msgid "key %s: no user ID\n"
 msgstr "Schlüssel %s: Keine User-ID\n"
 
-#: g10/import.c:1908
+#: g10/import.c:1910
 #, c-format
 msgid "key %s: %s\n"
 msgstr "Schlüssel %s: %s\n"
 
-#: g10/import.c:1909 g10/import.c:3010
+#: g10/import.c:1911 g10/import.c:3012
 msgid "rejected by import screener"
 msgstr "vom Import-Aufpasser zurückgewiesen"
 
-#: g10/import.c:1953
+#: g10/import.c:1955
 #, c-format
 msgid "key %s: PKS subkey corruption repaired\n"
 msgstr "Schlüssel %s: PKS Unterschlüsseldefekt repariert\n"
 
-#: g10/import.c:1974
+#: g10/import.c:1976
 #, c-format
 msgid "key %s: accepted non self-signed user ID \"%s\"\n"
 msgstr "Schlüssel %s: Nicht eigenbeglaubigte User-ID `%s' übernommen\n"
 
-#: g10/import.c:1985 g10/import.c:2016
+#: g10/import.c:1987 g10/import.c:2018
 #, c-format
 msgid "key %s: no valid user IDs\n"
 msgstr "Schlüssel %s: Keine gültigen User-IDs\n"
 
-#: g10/import.c:1987
+#: g10/import.c:1989
 #, c-format
 msgid "this may be caused by a missing self-signature\n"
 msgstr "dies könnte durch fehlende Eigenbeglaubigung verursacht worden sein\n"
 
-#: g10/import.c:2066 g10/import.c:3425
+#: g10/import.c:2068 g10/import.c:3427
 #, c-format
 msgid "key %s: public key not found: %s\n"
 msgstr "Schlüssel %s: Öffentlicher Schlüssel nicht gefunden: %s\n"
 
-#: g10/import.c:2072
+#: g10/import.c:2074
 #, c-format
 msgid "key %s: new key - skipped\n"
 msgstr "Schlüssel %s: neuer Schlüssel - übersprungen\n"
 
-#: g10/import.c:2084
+#: g10/import.c:2086
 #, c-format
 msgid "no writable keyring found: %s\n"
 msgstr "kein schreibbarer Schlüsselbund gefunden: %s\n"
 
-#: g10/import.c:2116 g10/import.c:2218 g10/import.c:3502
+#: g10/import.c:2118 g10/import.c:2220 g10/import.c:3504
 #, c-format
 msgid "error writing keyring '%s': %s\n"
 msgstr "Fehler beim Schreiben des Schlüsselbundes `%s': %s\n"
 
-#: g10/import.c:2139
+#: g10/import.c:2141
 #, c-format
 msgid "key %s: public key \"%s\" imported\n"
 msgstr "Schlüssel %s: Öffentlicher Schlüssel \"%s\" importiert\n"
 
-#: g10/import.c:2166
+#: g10/import.c:2168
 #, c-format
 msgid "key %s: doesn't match our copy\n"
 msgstr "Schlüssel %s: Stimmt nicht mit unserer Kopie überein\n"
 
-#: g10/import.c:2234
+#: g10/import.c:2236
 #, c-format
 msgid "key %s: \"%s\" 1 new user ID\n"
 msgstr "Schlüssel %s: \"%s\" 1 neue User-ID\n"
 
-#: g10/import.c:2237
+#: g10/import.c:2239
 #, c-format
 msgid "key %s: \"%s\" %d new user IDs\n"
 msgstr "Schlüssel %s: \"%s\" %d neue User-IDs\n"
 
-#: g10/import.c:2240
+#: g10/import.c:2242
 #, c-format
 msgid "key %s: \"%s\" 1 new signature\n"
 msgstr "Schlüssel %s: \"%s\" 1 neue Signatur\n"
 
-#: g10/import.c:2243
+#: g10/import.c:2245
 #, c-format
 msgid "key %s: \"%s\" %d new signatures\n"
 msgstr "Schlüssel %s: \"%s\" %d neue Signaturen\n"
 
-#: g10/import.c:2246
+#: g10/import.c:2248
 #, c-format
 msgid "key %s: \"%s\" 1 new subkey\n"
 msgstr "Schlüssel %s: \"%s\" 1 neuer Unterschlüssel\n"
 
-#: g10/import.c:2249
+#: g10/import.c:2251
 #, c-format
 msgid "key %s: \"%s\" %d new subkeys\n"
 msgstr "Schlüssel %s: \"%s\" %d neue Unterschlüssel\n"
 
-#: g10/import.c:2252
+#: g10/import.c:2254
 #, c-format
 msgid "key %s: \"%s\" %d signature cleaned\n"
 msgstr "Schlüssel %s: \"%s\" %d Signaturen bereinigt\n"
 
-#: g10/import.c:2255
+#: g10/import.c:2257
 #, c-format
 msgid "key %s: \"%s\" %d signatures cleaned\n"
 msgstr "Schlüssel %s: \"%s\" %d Signaturen bereinigt\n"
 
-#: g10/import.c:2258
+#: g10/import.c:2260
 #, c-format
 msgid "key %s: \"%s\" %d user ID cleaned\n"
 msgstr "Schlüssel %s: \"%s\" %d User-ID bereinigt\n"
 
-#: g10/import.c:2261
+#: g10/import.c:2263
 #, c-format
 msgid "key %s: \"%s\" %d user IDs cleaned\n"
 msgstr "Schlüssel %s: \"%s\" %d User-IDs bereinigt\n"
 
-#: g10/import.c:2297
+#: g10/import.c:2299
 #, c-format
 msgid "key %s: \"%s\" not changed\n"
 msgstr "Schlüssel %s: \"%s\" nicht geändert\n"
 
-#: g10/import.c:2667 g10/import.c:2872
+#: g10/import.c:2669 g10/import.c:2874
 #, c-format
 msgid "key %s: secret key imported\n"
 msgstr "Schlüssel %s: geheimer Schlüssel importiert\n"
 
-#: g10/import.c:2675
+#: g10/import.c:2677
 #, c-format
 msgid "key %s: secret key already exists\n"
 msgstr "Schlüssel %s: geheimer Schlüssel bereits vorhanden\n"
 
-#: g10/import.c:2683
+#: g10/import.c:2685
 #, c-format
 msgid "key %s: error sending to agent: %s\n"
 msgstr "Schlüssel %s: Fehler beim Senden zum gpg-agent: %s\n"
 
-#: g10/import.c:2845
+#: g10/import.c:2847
 #, c-format
 msgid "key %s: card reference is overridden by key material\n"
 msgstr ""
@@ -3889,203 +3889,203 @@ msgstr ""
 #. * Instead, user should be suggested to run 'gpg --card-status',
 #. * then, references to a card will be automatically created
 #. * again.
-#: g10/import.c:2862
+#: g10/import.c:2864
 #, c-format
 msgid "To migrate '%s', with each smartcard, run: %s\n"
 msgstr ""
 "Um '%s' zu migrieren sollte für jede Smartcard \"%s\" aufgerufen werden.\n"
 
-#: g10/import.c:3009
+#: g10/import.c:3011
 #, c-format
 msgid "secret key %s: %s\n"
 msgstr "Geheimer Schlüssel %s: %s\n"
 
-#: g10/import.c:3030 g10/import.c:3069
+#: g10/import.c:3032 g10/import.c:3071
 #, c-format
 msgid "importing secret keys not allowed\n"
 msgstr "Importieren geheimer Schlüssel ist nicht erlaubt\n"
 
-#: g10/import.c:3057
+#: g10/import.c:3059
 #, c-format
 msgid "key %s: secret key with invalid cipher %d - skipped\n"
 msgstr ""
 "Schlüssel %s: geheimer Schlüssel mit ungültiger Verschlüsselung %d - "
 "übersprungen\n"
 
-#: g10/import.c:3219 g10/pkclist.c:72 g10/revoke.c:775
+#: g10/import.c:3221 g10/pkclist.c:72 g10/revoke.c:775
 msgid "No reason specified"
 msgstr "Kein Grund angegeben"
 
-#: g10/import.c:3220 g10/pkclist.c:74 g10/revoke.c:777
+#: g10/import.c:3222 g10/pkclist.c:74 g10/revoke.c:777
 msgid "Key is superseded"
 msgstr "Schlüssel ist überholt"
 
-#: g10/import.c:3221 g10/pkclist.c:76 g10/revoke.c:776
+#: g10/import.c:3223 g10/pkclist.c:76 g10/revoke.c:776
 msgid "Key has been compromised"
 msgstr "Hinweis: Dieser Schlüssel ist nicht mehr sicher"
 
-#: g10/import.c:3222 g10/pkclist.c:78 g10/revoke.c:778
+#: g10/import.c:3224 g10/pkclist.c:78 g10/revoke.c:778
 msgid "Key is no longer used"
 msgstr "Schlüssel wird nicht mehr benutzt"
 
-#: g10/import.c:3223 g10/pkclist.c:80 g10/revoke.c:779
+#: g10/import.c:3225 g10/pkclist.c:80 g10/revoke.c:779
 msgid "User ID is no longer valid"
 msgstr "User-ID ist nicht mehr gültig"
 
-#: g10/import.c:3348 g10/keylist.c:1437 g10/pkclist.c:84
+#: g10/import.c:3350 g10/keylist.c:1437 g10/pkclist.c:84
 #, c-format
 msgid "reason for revocation: "
 msgstr "Grund für Widerruf: "
 
-#: g10/import.c:3367 g10/keylist.c:1456 g10/pkclist.c:100
+#: g10/import.c:3369 g10/keylist.c:1456 g10/pkclist.c:100
 #, c-format
 msgid "revocation comment: "
 msgstr "Widerruf-Bemerkung: "
 
-#: g10/import.c:3418
+#: g10/import.c:3420
 #, c-format
 msgid "key %s: no public key - can't apply revocation certificate\n"
 msgstr ""
 "Schlüssel %s: Kein öffentlicher Schlüssel - der Schlüsselwiderruf kann nicht "
 "angebracht werden\n"
 
-#: g10/import.c:3449
+#: g10/import.c:3451
 #, c-format
 msgid "key %s: can't locate original keyblock: %s\n"
 msgstr "Schlüssel %s: der originale Schlüsselblock wurde nicht gefunden: %s\n"
 
-#: g10/import.c:3456
+#: g10/import.c:3458
 #, c-format
 msgid "key %s: can't read original keyblock: %s\n"
 msgstr "Schlüssel %s: Lesefehler im originalen Schlüsselblock: %s\n"
 
-#: g10/import.c:3476
+#: g10/import.c:3478
 #, c-format
 msgid "key %s: invalid revocation certificate: %s - rejected\n"
 msgstr "Schlüssel %s: Ungültiges Widerrufzertifikat: %s - zurückgewiesen\n"
 
-#: g10/import.c:3511
+#: g10/import.c:3513
 #, c-format
 msgid "key %s: \"%s\" revocation certificate imported\n"
 msgstr "Schlüssel %s: \"%s\" Widerrufzertifikat importiert\n"
 
-#: g10/import.c:3597
+#: g10/import.c:3599
 #, c-format
 msgid "key %s: no user ID for signature\n"
 msgstr "Schlüssel %s: Keine User-ID für Signatur\n"
 
-#: g10/import.c:3614
+#: g10/import.c:3616
 #, c-format
 msgid "key %s: unsupported public key algorithm on user ID \"%s\"\n"
 msgstr ""
 "Schlüssel %s: Nicht unterstütztes Public-Key-Verfahren für User-ID \"%s\"\n"
 
-#: g10/import.c:3616
+#: g10/import.c:3618
 #, c-format
 msgid "key %s: invalid self-signature on user ID \"%s\"\n"
 msgstr "Schlüssel %s: Ungültige Eigenbeglaubigung für User-ID \"%s\"\n"
 
-#: g10/import.c:3633 g10/import.c:3661 g10/import.c:3717
+#: g10/import.c:3635 g10/import.c:3663 g10/import.c:3719
 #, c-format
 msgid "key %s: unsupported public key algorithm\n"
 msgstr "Schlüssel %s: Nicht unterstütztes Public-Key-Verfahren\n"
 
-#: g10/import.c:3634
+#: g10/import.c:3636
 #, c-format
 msgid "key %s: invalid direct key signature\n"
 msgstr "Schlüssel %s: Ungültige \"direct-key\"-Signatur\n"
 
-#: g10/import.c:3648
+#: g10/import.c:3650
 #, c-format
 msgid "key %s: no subkey for key binding\n"
 msgstr "Schlüssel %s: Kein Unterschlüssel für die Unterschlüsselanbindung\n"
 
-#: g10/import.c:3663
+#: g10/import.c:3665
 #, c-format
 msgid "key %s: invalid subkey binding\n"
 msgstr "Schlüssel %s: Ungültige Unterschlüssel-Anbindung\n"
 
-#: g10/import.c:3682
+#: g10/import.c:3684
 #, c-format
 msgid "key %s: removed multiple subkey binding\n"
 msgstr "Schlüssel %s: Mehrfache Unterschlüssel-Anbindung entfernt\n"
 
-#: g10/import.c:3706
+#: g10/import.c:3708
 #, c-format
 msgid "key %s: no subkey for key revocation\n"
 msgstr "Schlüssel %s: Kein Unterschlüssel für Schlüsselwiderruf\n"
 
-#: g10/import.c:3719
+#: g10/import.c:3721
 #, c-format
 msgid "key %s: invalid subkey revocation\n"
 msgstr "Schlüssel %s: Ungültiger Unterschlüsselwiderruf\n"
 
-#: g10/import.c:3734
+#: g10/import.c:3736
 #, c-format
 msgid "key %s: removed multiple subkey revocation\n"
 msgstr "Schlüssel %s: Mehrfacher Unterschlüsselwiderruf entfernt\n"
 
-#: g10/import.c:3781
+#: g10/import.c:3783
 #, c-format
 msgid "key %s: skipped user ID \"%s\"\n"
 msgstr "Schlüssel %s: User-ID übersprungen \"%s\"\n"
 
-#: g10/import.c:3808
+#: g10/import.c:3810
 #, c-format
 msgid "key %s: skipped subkey\n"
 msgstr "Schlüssel %s: Unterschlüssel übersprungen\n"
 
-#: g10/import.c:3839
+#: g10/import.c:3841
 #, c-format
 msgid "key %s: non exportable signature (class 0x%02X) - skipped\n"
 msgstr ""
 "Schlüssel %s: Nicht exportfähige Signatur (Klasse %02x) - übersprungen\n"
 
-#: g10/import.c:3850
+#: g10/import.c:3852
 #, c-format
 msgid "key %s: revocation certificate at wrong place - skipped\n"
 msgstr "Schlüssel %s: Widerrufzertifikat an falschem Platz - übersprungen\n"
 
-#: g10/import.c:3878
+#: g10/import.c:3880
 #, c-format
 msgid "key %s: invalid revocation certificate: %s - skipped\n"
 msgstr "Schlüssel %s: Ungültiges Widerrufzertifikat: %s - übersprungen\n"
 
-#: g10/import.c:3902
+#: g10/import.c:3904
 #, c-format
 msgid "key %s: subkey signature in wrong place - skipped\n"
 msgstr ""
 "Schlüssel %s: Unterschlüssel-Widerrufzertifikat an falschem Platz - "
 "übersprungen\n"
 
-#: g10/import.c:3910
+#: g10/import.c:3912
 #, c-format
 msgid "key %s: unexpected signature class (0x%02X) - skipped\n"
 msgstr "Schlüssel %s: unerwartete Signaturklasse (0x%02x) - übersprungen\n"
 
-#: g10/import.c:4083
+#: g10/import.c:4085
 #, c-format
 msgid "key %s: duplicated user ID detected - merged\n"
 msgstr "Schlüssel %s: Doppelte User-ID entdeckt - zusammengeführt\n"
 
-#: g10/import.c:4148
+#: g10/import.c:4150
 #, c-format
 msgid "WARNING: key %s may be revoked: fetching revocation key %s\n"
 msgstr "WARNUNG: Schlüssel %s ist u.U. widerrufen: hole Widerrufschlüssel %s\n"
 
-#: g10/import.c:4164
+#: g10/import.c:4166
 #, c-format
 msgid "WARNING: key %s may be revoked: revocation key %s not present.\n"
 msgstr ""
 "WARNUNG: Schlüssel %s ist u.U. widerrufen: Widerrufschlüssel %s ist nicht "
 "vorhanden\n"
 
-#: g10/import.c:4230
+#: g10/import.c:4232
 #, c-format
 msgid "key %s: \"%s\" revocation certificate added\n"
 msgstr "Schlüssel %s: \"%s\" Widerrufzertifikat hinzugefügt\n"
 
-#: g10/import.c:4268
+#: g10/import.c:4270
 #, c-format
 msgid "key %s: direct key signature added\n"
 msgstr "Schlüssel %s: \"direct-key\"-Signaturen hinzugefügt\n"
@@ -4791,7 +4791,7 @@ msgstr "Fehler beim Widerrufen der User-ID: %s\n"
 msgid "setting the primary user ID failed: %s\n"
 msgstr "Fehler beim Setzen der Haupt-User-ID: %s\n"
 
-#: g10/keyedit.c:2704 g10/keygen.c:3898
+#: g10/keyedit.c:2704 g10/keygen.c:3894
 #, c-format
 msgid "\"%s\" is not a fingerprint\n"
 msgstr "\"%s\" ist kein Fingerabdruck\n"
@@ -4965,7 +4965,7 @@ msgstr "Wollen Sie ihn immer noch hinzufügen? (j/N) "
 msgid "You may not add a photo ID to a PGP2-style key.\n"
 msgstr "Sie können einem PGP2-artigen Schlüssel keine Foto-ID hinzufügen.\n"
 
-#: g10/keyedit.c:4228 g10/keygen.c:3058
+#: g10/keyedit.c:4228 g10/keygen.c:3054
 msgid "Such a user ID already exists on this key!\n"
 msgstr "Solch eine User-ID ist bereits für den Schlüssel vorhanden!\n"
 
@@ -5042,7 +5042,7 @@ msgstr ""
 msgid "Enter the user ID of the designated revoker: "
 msgstr "Geben sie die User-ID des designierten Widerrufers ein: "
 
-#: g10/keyedit.c:4546 g10/keygen.c:3913
+#: g10/keyedit.c:4546 g10/keygen.c:3909
 #, c-format
 msgid "cannot appoint a PGP 2.x style key as a designated revoker\n"
 msgstr ""
@@ -5281,33 +5281,33 @@ msgstr "zu viele Komprimierungsvoreinstellungen\n"
 msgid "invalid item '%s' in preference string\n"
 msgstr "Ungültiges Feld `%s' in der Voreinstellungszeichenkette\n"
 
-#: g10/keygen.c:1095
+#: g10/keygen.c:1091
 #, c-format
 msgid "writing direct signature\n"
 msgstr "Die \"Direct Key Signature\" wird geschrieben\n"
 
-#: g10/keygen.c:1141
+#: g10/keygen.c:1137
 #, c-format
 msgid "writing self signature\n"
 msgstr "Die Eigenbeglaubigung wird geschrieben\n"
 
-#: g10/keygen.c:1198
+#: g10/keygen.c:1194
 #, c-format
 msgid "writing key binding signature\n"
 msgstr "Schreiben der \"key-binding\" Signatur\n"
 
-#: g10/keygen.c:1569 g10/keygen.c:1574 g10/keygen.c:1626 g10/keygen.c:1631
-#: g10/keygen.c:1785 g10/keygen.c:1790
+#: g10/keygen.c:1565 g10/keygen.c:1570 g10/keygen.c:1622 g10/keygen.c:1627
+#: g10/keygen.c:1781 g10/keygen.c:1786
 #, c-format
 msgid "keysize invalid; using %u bits\n"
 msgstr "Ungültige Schlüssellänge; %u Bit werden verwendet\n"
 
-#: g10/keygen.c:1580 g10/keygen.c:1637 g10/keygen.c:1645 g10/keygen.c:1796
+#: g10/keygen.c:1576 g10/keygen.c:1633 g10/keygen.c:1641 g10/keygen.c:1792
 #, c-format
 msgid "keysize rounded up to %u bits\n"
 msgstr "Schlüssellänge auf %u Bit aufgerundet\n"
 
-#: g10/keygen.c:1671
+#: g10/keygen.c:1667
 #, c-format
 msgid ""
 "WARNING: some OpenPGP programs can't handle a DSA key with this digest size\n"
@@ -5315,19 +5315,19 @@ msgstr ""
 "WARNUNG: Einige OpenPGP-Programme können einen DSA-Schlüssel dieser "
 "Digestlänge nicht verwenden\n"
 
-#: g10/keygen.c:1852
+#: g10/keygen.c:1848
 msgid "Sign"
 msgstr "Signieren"
 
-#: g10/keygen.c:1855
+#: g10/keygen.c:1851
 msgid "Certify"
 msgstr "Zertif."
 
-#: g10/keygen.c:1858
+#: g10/keygen.c:1854
 msgid "Encrypt"
 msgstr "Verschl."
 
-#: g10/keygen.c:1861
+#: g10/keygen.c:1857
 msgid "Authenticate"
 msgstr "Authentisierung"
 
@@ -5341,161 +5341,161 @@ msgstr "Authentisierung"
 #. *   a = Toggle authentication capability
 #. *   q = Finish
 #.
-#: g10/keygen.c:1885
+#: g10/keygen.c:1881
 msgid "SsEeAaQq"
 msgstr "SsVvAaQq"
 
-#: g10/keygen.c:1919
+#: g10/keygen.c:1915
 #, c-format
 msgid "Possible actions for a %s key: "
 msgstr "Mögliche Vorgänge eines %s-Schlüssels: "
 
-#: g10/keygen.c:1925
+#: g10/keygen.c:1921
 msgid "Current allowed actions: "
 msgstr "Derzeit erlaubte Vorgänge: "
 
-#: g10/keygen.c:1930
+#: g10/keygen.c:1926
 #, c-format
 msgid "   (%c) Toggle the sign capability\n"
 msgstr "   (%c) Umschalten der Signaturnutzbarkeit\n"
 
-#: g10/keygen.c:1933
+#: g10/keygen.c:1929
 #, c-format
 msgid "   (%c) Toggle the encrypt capability\n"
 msgstr "   (%c) Umschalten der Verschlüsselungsnutzbarkeit\n"
 
-#: g10/keygen.c:1936
+#: g10/keygen.c:1932
 #, c-format
 msgid "   (%c) Toggle the authenticate capability\n"
 msgstr "   (%c) Umschalten der Authentisierungsnutzbarkeit\n"
 
-#: g10/keygen.c:1939
+#: g10/keygen.c:1935
 #, c-format
 msgid "   (%c) Finished\n"
 msgstr "   (%c) Beenden\n"
 
-#: g10/keygen.c:2071
+#: g10/keygen.c:2067
 #, c-format
 msgid "   (%d) RSA and RSA (default)\n"
 msgstr "   (%d) RSA und RSA (voreingestellt)\n"
 
-#: g10/keygen.c:2075
+#: g10/keygen.c:2071
 #, c-format
 msgid "   (%d) DSA and Elgamal\n"
 msgstr "   (%d) DSA und Elgamal\n"
 
-#: g10/keygen.c:2078
+#: g10/keygen.c:2074
 #, c-format
 msgid "   (%d) DSA (sign only)\n"
 msgstr "   (%d) DSA (nur signieren/beglaubigen)\n"
 
-#: g10/keygen.c:2080
+#: g10/keygen.c:2076
 #, c-format
 msgid "   (%d) RSA (sign only)\n"
 msgstr "   (%d) RSA (nur signieren/beglaubigen)\n"
 
-#: g10/keygen.c:2086
+#: g10/keygen.c:2082
 #, c-format
 msgid "   (%d) Elgamal (encrypt only)\n"
 msgstr "   (%d) Elgamal (nur verschlüsseln)\n"
 
-#: g10/keygen.c:2088
+#: g10/keygen.c:2084
 #, c-format
 msgid "   (%d) RSA (encrypt only)\n"
 msgstr "   (%d) RSA (nur verschlüsseln)\n"
 
-#: g10/keygen.c:2094
+#: g10/keygen.c:2090
 #, c-format
 msgid "   (%d) DSA (set your own capabilities)\n"
 msgstr "   (%d) DSA (Nutzung selber einstellbar)\n"
 
-#: g10/keygen.c:2096
+#: g10/keygen.c:2092
 #, c-format
 msgid "   (%d) RSA (set your own capabilities)\n"
 msgstr "   (%d) RSA (Nutzung selber einstellbar)\n"
 
-#: g10/keygen.c:2102
+#: g10/keygen.c:2098
 #, c-format
 msgid "   (%d) ECC and ECC\n"
 msgstr "  (%d) ECC und ECC\n"
 
-#: g10/keygen.c:2104
+#: g10/keygen.c:2100
 #, c-format
 msgid "  (%d) ECC (sign only)\n"
 msgstr "  (%d) ECC (nur signieren)\n"
 
-#: g10/keygen.c:2106
+#: g10/keygen.c:2102
 #, c-format
 msgid "  (%d) ECC (set your own capabilities)\n"
 msgstr "  (%d) ECC (Nutzung selber einstellbar)\n"
 
-#: g10/keygen.c:2108
+#: g10/keygen.c:2104
 #, c-format
 msgid "  (%d) ECC (encrypt only)\n"
 msgstr "  (%d) ECC (nur verschlüsseln)\n"
 
-#: g10/keygen.c:2112
+#: g10/keygen.c:2108
 #, c-format
 msgid "  (%d) Existing key\n"
 msgstr "   (%d) Vorhandener Schlüssel\n"
 
-#: g10/keygen.c:2114
+#: g10/keygen.c:2110
 #, c-format
 msgid "  (%d) Existing key from card\n"
 msgstr "   (%d) Vorhandener Schlüssel auf der Karte\n"
 
-#: g10/keygen.c:2210 sm/certreqgen-ui.c:204
+#: g10/keygen.c:2206 sm/certreqgen-ui.c:204
 msgid "Enter the keygrip: "
 msgstr "Geben Sie den \"Keygrip\" ein: "
 
-#: g10/keygen.c:2223 sm/certreqgen-ui.c:212
+#: g10/keygen.c:2219 sm/certreqgen-ui.c:212
 msgid "Not a valid keygrip (expecting 40 hex digits)\n"
 msgstr "Kein gültiger \"Keygrip\" (40 Hex-Ziffern werden erwartet)\n"
 
-#: g10/keygen.c:2225 sm/certreqgen-ui.c:214
+#: g10/keygen.c:2221 sm/certreqgen-ui.c:214
 msgid "No key with this keygrip\n"
 msgstr "Kein Schlüssel mit diesem \"Keygrip\"\n"
 
-#: g10/keygen.c:2244 g10/keygen.c:2254 g10/keygen.c:3375 g10/keygen.c:3386
+#: g10/keygen.c:2240 g10/keygen.c:2250 g10/keygen.c:3371 g10/keygen.c:3382
 #: sm/certreqgen-ui.c:232 sm/certreqgen-ui.c:241
 #, c-format
 msgid "error reading the card: %s\n"
 msgstr "Fehler beim Lesen von der Karte: %s\n"
 
-#: g10/keygen.c:2248 g10/keygen.c:3379 sm/certreqgen-ui.c:235
+#: g10/keygen.c:2244 g10/keygen.c:3375 sm/certreqgen-ui.c:235
 #, c-format
 msgid "Serial number of the card: %s\n"
 msgstr "Karten-Seriennummer: %s\n"
 
-#: g10/keygen.c:2261 sm/certreqgen-ui.c:247
+#: g10/keygen.c:2257 sm/certreqgen-ui.c:247
 msgid "Available keys:\n"
 msgstr "Vorhandene Schlüssel:\n"
 
-#: g10/keygen.c:2438 g10/keygen.c:2452
+#: g10/keygen.c:2434 g10/keygen.c:2448
 #, c-format
 msgid "rounded to %u bits\n"
 msgstr "gerundet auf %u Bit\n"
 
-#: g10/keygen.c:2493
+#: g10/keygen.c:2489
 #, c-format
 msgid "%s keys may be between %u and %u bits long.\n"
 msgstr "%s-Schlüssel können zwischen %u und %u Bit lang sein.\n"
 
-#: g10/keygen.c:2501
+#: g10/keygen.c:2497
 #, c-format
 msgid "What keysize do you want for the subkey? (%u) "
 msgstr "Welche Schlüssellänge wünschen Sie für den Unterschlüssel? (%u) "
 
-#: g10/keygen.c:2518 sm/certreqgen-ui.c:191
+#: g10/keygen.c:2514 sm/certreqgen-ui.c:191
 #, c-format
 msgid "Requested keysize is %u bits\n"
 msgstr "Die verlangte Schlüssellänge beträgt %u Bit\n"
 
-#: g10/keygen.c:2564
+#: g10/keygen.c:2560
 msgid "Please select which elliptic curve you want:\n"
 msgstr "Bitte wählen Sie, welche elliptische Kurve Sie möchten:\n"
 
-#: g10/keygen.c:2770
+#: g10/keygen.c:2766
 msgid ""
 "Please specify how long the key should be valid.\n"
 "         0 = key does not expire\n"
@@ -5511,7 +5511,7 @@ msgstr ""
 "      <n>m = Schlüssel verfällt nach n Monaten\n"
 "      <n>y = Schlüssel verfällt nach n Jahren\n"
 
-#: g10/keygen.c:2781
+#: g10/keygen.c:2777
 msgid ""
 "Please specify how long the signature should be valid.\n"
 "         0 = signature does not expire\n"
@@ -5527,38 +5527,38 @@ msgstr ""
 "      <n>m = Schlüssel verfällt nach n Monaten\n"
 "      <n>y = Schlüssel verfällt nach n Jahren\n"
 
-#: g10/keygen.c:2804
+#: g10/keygen.c:2800
 msgid "Key is valid for? (0) "
 msgstr "Wie lange bleibt der Schlüssel gültig? (0) "
 
-#: g10/keygen.c:2809
+#: g10/keygen.c:2805
 #, c-format
 msgid "Signature is valid for? (%s) "
 msgstr "Wie lange bleibt die Beglaubigung gültig? (%s) "
 
-#: g10/keygen.c:2822 g10/keygen.c:2847
+#: g10/keygen.c:2818 g10/keygen.c:2843
 msgid "invalid value\n"
 msgstr "Ungültiger Wert.\n"
 
-#: g10/keygen.c:2829
+#: g10/keygen.c:2825
 msgid "Key does not expire at all\n"
 msgstr "Schlüssel verfällt nie\n"
 
-#: g10/keygen.c:2830
+#: g10/keygen.c:2826
 msgid "Signature does not expire at all\n"
 msgstr "Signature verfällt nie\n"
 
-#: g10/keygen.c:2835
+#: g10/keygen.c:2831
 #, c-format
 msgid "Key expires at %s\n"
 msgstr "Key verfällt am %s\n"
 
-#: g10/keygen.c:2836
+#: g10/keygen.c:2832
 #, c-format
 msgid "Signature expires at %s\n"
 msgstr "Signatur verfällt am %s\n"
 
-#: g10/keygen.c:2840
+#: g10/keygen.c:2836
 msgid ""
 "Your system can't display dates beyond 2038.\n"
 "However, it will be correctly handled up to 2106.\n"
@@ -5566,11 +5566,11 @@ msgstr ""
 "Ihr Rechner kann Daten jenseits des Jahres 2038 nicht anzeigen.\n"
 "Trotzdem werden Daten bis 2106 korrekt verarbeitet.\n"
 
-#: g10/keygen.c:2853
+#: g10/keygen.c:2849
 msgid "Is this correct? (y/N) "
 msgstr "Ist dies richtig? (j/N) "
 
-#: g10/keygen.c:2921
+#: g10/keygen.c:2917
 msgid ""
 "\n"
 "GnuPG needs to construct a user ID to identify your key.\n"
@@ -5584,7 +5584,7 @@ msgstr ""
 #. but you should keep your existing translation.  In case
 #. the new string is not translated this old string will
 #. be used.
-#: g10/keygen.c:2936
+#: g10/keygen.c:2932
 msgid ""
 "\n"
 "You need a user ID to identify your key; the software constructs the user "
@@ -5600,49 +5600,49 @@ msgstr ""
 "    \"Heinrich Heine (Der Dichter) <heinrichh@duesseldorf.de>\"\n"
 "\n"
 
-#: g10/keygen.c:2955
+#: g10/keygen.c:2951
 msgid "Real name: "
 msgstr "Ihr Name (\"Vorname Nachname\"): "
 
-#: g10/keygen.c:2964
+#: g10/keygen.c:2960
 msgid "Invalid character in name\n"
 msgstr "Ungültiges Zeichen im Namen\n"
 
-#: g10/keygen.c:2965
+#: g10/keygen.c:2961
 #, c-format
 msgid "The characters '%s' and '%s' may not appear in name\n"
 msgstr "Die Zeichen '%s' und '%s' dürfen in einem Namen nicht vorkommen\n"
 
-#: g10/keygen.c:2969
+#: g10/keygen.c:2965
 msgid "Name may not start with a digit\n"
 msgstr "Der Name darf nicht mit einer Ziffer beginnen.\n"
 
-#: g10/keygen.c:2972
+#: g10/keygen.c:2968
 msgid "Name must be at least 5 characters long\n"
 msgstr "Der Name muß min. 5 Zeichen lang sein.\n"
 
-#: g10/keygen.c:2982
+#: g10/keygen.c:2978
 msgid "Email address: "
 msgstr "Email-Adresse: "
 
-#: g10/keygen.c:2988
+#: g10/keygen.c:2984
 msgid "Not a valid email address\n"
 msgstr "Diese Email-Adresse ist ungültig\n"
 
-#: g10/keygen.c:2997
+#: g10/keygen.c:2993
 msgid "Comment: "
 msgstr "Kommentar: "
 
-#: g10/keygen.c:3003
+#: g10/keygen.c:2999
 msgid "Invalid character in comment\n"
 msgstr "Ungültiges Zeichen im Kommentar.\n"
 
-#: g10/keygen.c:3039
+#: g10/keygen.c:3035
 #, c-format
 msgid "You are using the '%s' character set.\n"
 msgstr "Sie benutzen den Zeichensatz `%s'\n"
 
-#: g10/keygen.c:3045
+#: g10/keygen.c:3041
 #, c-format
 msgid ""
 "You selected this USER-ID:\n"
@@ -5653,7 +5653,7 @@ msgstr ""
 "    \"%s\"\n"
 "\n"
 
-#: g10/keygen.c:3050
+#: g10/keygen.c:3046
 msgid "Please don't put the email address into the real name or the comment\n"
 msgstr "Bitte keine Emailadressen als Namen oder Kommentar verwenden\n"
 
@@ -5668,31 +5668,31 @@ msgstr "Bitte keine Emailadressen als Namen oder Kommentar verwenden\n"
 #. o = Okay (ready, continue)
 #. q = Quit
 #.
-#: g10/keygen.c:3075
+#: g10/keygen.c:3071
 msgid "NnCcEeOoQq"
 msgstr "NnKkEeFfAa"
 
-#: g10/keygen.c:3085
+#: g10/keygen.c:3081
 msgid "Change (N)ame, (C)omment, (E)mail or (Q)uit? "
 msgstr "Ändern: (N)ame, (K)ommentar, (E)-Mail oder (A)bbrechen? "
 
-#: g10/keygen.c:3086
+#: g10/keygen.c:3082
 msgid "Change (N)ame, (C)omment, (E)mail or (O)kay/(Q)uit? "
 msgstr "Ändern: (N)ame, (K)ommentar, (E)-Mail oder (F)ertig/(A)bbrechen? "
 
-#: g10/keygen.c:3091
+#: g10/keygen.c:3087
 msgid "Change (N)ame, (E)mail, or (Q)uit? "
 msgstr "Ändern: (N)ame, (E)-Mail oder (A)bbrechen? "
 
-#: g10/keygen.c:3092
+#: g10/keygen.c:3088
 msgid "Change (N)ame, (E)mail, or (O)kay/(Q)uit? "
 msgstr "Ändern: (N)ame, (E)-Mail oder (F)ertig/(A)bbrechen? "
 
-#: g10/keygen.c:3111
+#: g10/keygen.c:3107
 msgid "Please correct the error first\n"
 msgstr "Bitte beseitigen Sie zuerst den Fehler\n"
 
-#: g10/keygen.c:3157
+#: g10/keygen.c:3153
 msgid ""
 "We need to generate a lot of random bytes. It is a good idea to perform\n"
 "some other action (type on the keyboard, move the mouse, utilize the\n"
@@ -5703,13 +5703,13 @@ msgstr ""
 "unterstützen, indem Sie z.B. in einem anderen Fenster/Konsole irgendetwas\n"
 "tippen, die Maus verwenden oder irgendwelche anderen Programme benutzen.\n"
 
-#: g10/keygen.c:4535 g10/keygen.c:4606 g10/keygen.c:4624 g10/keygen.c:4652
-#: g10/keygen.c:4996 g10/keygen.c:5523 g10/keygen.c:5818 g10/keygen.c:5923
+#: g10/keygen.c:4531 g10/keygen.c:4602 g10/keygen.c:4620 g10/keygen.c:4648
+#: g10/keygen.c:4992 g10/keygen.c:5519 g10/keygen.c:5814 g10/keygen.c:5919
 #, c-format
 msgid "Key generation failed: %s\n"
 msgstr "Schlüsselerzeugung fehlgeschlagen: %s\n"
 
-#: g10/keygen.c:4544
+#: g10/keygen.c:4540
 #, c-format
 msgid ""
 "About to create a key for:\n"
@@ -5720,64 +5720,64 @@ msgstr ""
 "    \"%s\"\n"
 "\n"
 
-#: g10/keygen.c:4546
+#: g10/keygen.c:4542
 msgid "Continue? (Y/n) "
 msgstr "Fortsetzen? (J/n) "
 
-#: g10/keygen.c:4567
+#: g10/keygen.c:4563
 #, c-format
 msgid "A key for \"%s\" already exists\n"
 msgstr "Ein Schlüssel für \"%s\" existiert bereits\n"
 
-#: g10/keygen.c:4572
+#: g10/keygen.c:4568
 msgid "Create anyway? (y/N) "
 msgstr "Trotzdem erzeugen? (j/N) "
 
-#: g10/keygen.c:4578
+#: g10/keygen.c:4574
 #, c-format
 msgid "creating anyway\n"
 msgstr "wird trotzdem erzeugt\n"
 
-#: g10/keygen.c:4979
+#: g10/keygen.c:4975
 #, c-format
 msgid "Note: Use \"%s %s\" for a full featured key generation dialog.\n"
 msgstr "Hinweis: \"%s %s\" ruft den erweiterten Dialog auf.\n"
 
-#: g10/keygen.c:5028
+#: g10/keygen.c:5024
 #, c-format
 msgid "Key generation canceled.\n"
 msgstr "Schlüsselerzeugung abgebrochen.\n"
 
-#: g10/keygen.c:5088
+#: g10/keygen.c:5084
 #, c-format
 msgid "can't create backup file '%s': %s\n"
 msgstr "Sicherungsdatei '%s' kann nicht erzeugt werden: %s\n"
 
-#: g10/keygen.c:5108
+#: g10/keygen.c:5104
 #, c-format
 msgid "Note: backup of card key saved to '%s'\n"
 msgstr "Hinweis: Sicherung des Kartenschlüssels wurde auf `%s' gespeichert\n"
 
-#: g10/keygen.c:5291 g10/keygen.c:5456
+#: g10/keygen.c:5287 g10/keygen.c:5452
 #, c-format
 msgid "writing public key to '%s'\n"
 msgstr "schreiben des öffentlichen Schlüssels nach '%s'\n"
 
-#: g10/keygen.c:5450
+#: g10/keygen.c:5446
 #, c-format
 msgid "no writable public keyring found: %s\n"
 msgstr "kein schreibbarer öffentlicher Schlüsselbund gefunden: %s\n"
 
-#: g10/keygen.c:5464
+#: g10/keygen.c:5460
 #, c-format
 msgid "error writing public keyring '%s': %s\n"
 msgstr "Fehler beim Schreiben des öff. Schlüsselbundes `%s': %s\n"
 
-#: g10/keygen.c:5494
+#: g10/keygen.c:5490
 msgid "public and secret key created and signed.\n"
 msgstr "Öffentlichen und geheimen Schlüssel erzeugt und signiert.\n"
 
-#: g10/keygen.c:5510
+#: g10/keygen.c:5506
 msgid ""
 "Note that this key cannot be used for encryption.  You may want to use\n"
 "the command \"--edit-key\" to generate a subkey for this purpose.\n"
@@ -5786,7 +5786,7 @@ msgstr ""
 "werden kann.  Sie können aber mit dem Befehl \"--edit-key\" einen\n"
 "Unterschlüssel für diesem Zweck erzeugen.\n"
 
-#: g10/keygen.c:5685 g10/keygen.c:5874
+#: g10/keygen.c:5681 g10/keygen.c:5870
 #, c-format
 msgid ""
 "key has been created %lu second in future (time warp or clock problem)\n"
@@ -5794,7 +5794,7 @@ msgstr ""
 "Der Schlüssel wurde %lu Sekunde in der Zukunft erzeugt (Zeitreise oder Uhren "
 "stimmen nicht überein)\n"
 
-#: g10/keygen.c:5687 g10/keygen.c:5876
+#: g10/keygen.c:5683 g10/keygen.c:5872
 #, c-format
 msgid ""
 "key has been created %lu seconds in future (time warp or clock problem)\n"
@@ -5802,22 +5802,22 @@ msgstr ""
 "Der Schlüssel wurde %lu Sekunden in der Zukunft erzeugt (Zeitreise oder "
 "Uhren stimmen nicht überein)\n"
 
-#: g10/keygen.c:5698 g10/keygen.c:5887
+#: g10/keygen.c:5694 g10/keygen.c:5883
 #, c-format
 msgid "Note: creating subkeys for v3 keys is not OpenPGP compliant\n"
 msgstr "Hinweis: Unterschlüssel für v3-Schlüssel sind nicht OpenPGP-konform\n"
 
-#: g10/keygen.c:5710 g10/keygen.c:5712
+#: g10/keygen.c:5706 g10/keygen.c:5708
 #, c-format
 msgid "Secret parts of primary key are not available.\n"
 msgstr "Geheime Teile des Hauptschlüssels sind nicht vorhanden.\n"
 
-#: g10/keygen.c:5719 g10/keygen.c:5721
+#: g10/keygen.c:5715 g10/keygen.c:5717
 #, c-format
 msgid "Secret parts of primary key are stored on-card.\n"
 msgstr "Geheime Teile des Hauptschlüssels sind auf der Karte gespeichert.\n"
 
-#: g10/keygen.c:5740 g10/keygen.c:5901
+#: g10/keygen.c:5736 g10/keygen.c:5897
 msgid "Really create? (y/N) "
 msgstr "Wirklich erzeugen? (j/N) "
 
@@ -6420,7 +6420,7 @@ msgstr "nicht komprimiert"
 msgid "uncompressed|none"
 msgstr "unkomprimiert|kein|keine"
 
-#: g10/misc.c:1410 sm/decrypt.c:1403 sm/encrypt.c:833 sm/verify.c:548
+#: g10/misc.c:1410 sm/decrypt.c:1403 sm/encrypt.c:830 sm/verify.c:548
 #, c-format
 msgid "operation forced to fail due to unfulfilled compliance rules\n"
 msgstr "Operation abgebrochen wegen nicht erfüllter Compliance.\n"
@@ -7012,7 +7012,12 @@ msgstr ""
 msgid "Note: secret key %s expired at %s\n"
 msgstr "Hinweis: geheimer Schlüssel %s verfällt am %s\n"
 
-#: g10/pubkey-enc.c:423
+#: g10/pubkey-enc.c:424
+#, c-format
+msgid "Note: ADSK key has been used for decryption"
+msgstr "Hinweis: Ein ADSK Schlüssel wurde zum Entschlüsseln benutzt"
+
+#: g10/pubkey-enc.c:430
 #, c-format
 msgid "Note: key has been revoked"
 msgstr "Hinweis: Schlüssel wurde widerrufen"
@@ -8699,7 +8704,7 @@ msgid "dirmngr cache-only key lookup failed: %s\n"
 msgstr "Schlüsselsuche im Cache des Dirmngr schlug fehl: %s\n"
 
 #: sm/certchain.c:1059 sm/certchain.c:1574 sm/certchain.c:2229
-#: sm/decrypt.c:1086 sm/encrypt.c:639 sm/import.c:416 sm/keydb.c:1098
+#: sm/decrypt.c:1086 sm/encrypt.c:636 sm/import.c:416 sm/keydb.c:1098
 #: sm/keydb.c:1185 sm/sign.c:553 sm/verify.c:123
 #, c-format
 msgid "failed to allocate keyDB handle\n"
@@ -8989,7 +8994,7 @@ msgstr "Das Zertifikat kann nicht zum Verschlüsseln benutzt werden\n"
 msgid "certificate is not usable for signing\n"
 msgstr "Das Zertifikat kann nicht zum Signieren benutzt werden\n"
 
-#: sm/certreqgen.c:469 sm/certreqgen.c:755
+#: sm/certreqgen.c:469 sm/certreqgen.c:754
 #, c-format
 msgid "line %d: invalid algorithm\n"
 msgstr "Zeile %d: Ungültiges Verfahren\n"
@@ -9075,12 +9080,12 @@ msgstr "Zeile %d: Fehler beim Lesen des Schlüssels `%s' von der Karte: %s\n"
 msgid "line %d: error getting key by keygrip '%s': %s\n"
 msgstr "Zeile %d: Fehler beim Holen des Schlüssels per \"Keygrip\" `%s': %s\n"
 
-#: sm/certreqgen.c:764
+#: sm/certreqgen.c:763
 #, c-format
 msgid "line %d: key generation failed: %s <%s>\n"
 msgstr "Zeile %d: Schlüsselerzeugung schlug fehl: %s <%s>\n"
 
-#: sm/certreqgen.c:1480
+#: sm/certreqgen.c:1479
 msgid ""
 "To complete this certificate request please enter the passphrase for the key "
 "you just created once more.\n"
@@ -9250,7 +9255,7 @@ msgstr "Zertifikat `%s' gelöscht\n"
 msgid "deleting certificate \"%s\" failed: %s\n"
 msgstr "Fehler beim Löschen des Zertifikats \"%s\": %s\n"
 
-#: sm/encrypt.c:625
+#: sm/encrypt.c:622
 #, c-format
 msgid "no valid recipients given\n"
 msgstr "Keine gültigen Empfänger angegeben\n"
@@ -9367,11 +9372,11 @@ msgstr "\"Nein\" als Standardantwort annehmen"
 msgid "|FILE|write an audit log to FILE"
 msgstr "|DATEI|Schreibe ein Audit-Log auf DATEI"
 
-#: sm/gpgsm.c:611
+#: sm/gpgsm.c:610
 msgid "Usage: @GPGSM@ [options] [files] (-h for help)"
 msgstr "Aufruf: @GPGSM@ [Optionen] [Dateien] (-h für Hilfe)"
 
-#: sm/gpgsm.c:614
+#: sm/gpgsm.c:613
 msgid ""
 "Syntax: @GPGSM@ [options] [files]\n"
 "Sign, check, encrypt or decrypt using the S/MIME protocol\n"
@@ -9380,27 +9385,27 @@ msgstr ""
 "Syntax: @GPGSM@ [Optionen] [Dateien]\n"
 "Signieren, prüfen, ver- und entschlüsseln mittels S/MIME Protokoll\n"
 
-#: sm/gpgsm.c:822
+#: sm/gpgsm.c:821
 #, c-format
 msgid "Note: won't be able to encrypt to '%s': %s\n"
 msgstr "Hinweis: Verschlüsselung für `%s' wird nicht möglich sein: %s\n"
 
-#: sm/gpgsm.c:833
+#: sm/gpgsm.c:832
 #, c-format
 msgid "unknown validation model '%s'\n"
 msgstr "Unbekanntes Gültigkeitsmodell '%s'\n"
 
-#: sm/gpgsm.c:1692
+#: sm/gpgsm.c:1691
 #, c-format
 msgid "importing common certificates '%s'\n"
 msgstr "Importiere allgemeine Zertifikate: %s\n"
 
-#: sm/gpgsm.c:1735
+#: sm/gpgsm.c:1734
 #, c-format
 msgid "can't sign using '%s': %s\n"
 msgstr "Signieren mit `%s' nicht möglich: %s\n"
 
-#: sm/gpgsm.c:2095
+#: sm/gpgsm.c:2094
 #, c-format
 msgid "invalid command (there is no implicit command)\n"
 msgstr "Ungültiger Befehl (Es gibt keinen implizierten Befehl)\n"
