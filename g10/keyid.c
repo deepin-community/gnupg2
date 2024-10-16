@@ -2,7 +2,7 @@
  * Copyright (C) 1998, 1999, 2000, 2001, 2003,
  *               2004, 2006, 2010 Free Software Foundation, Inc.
  * Copyright (C) 2014 Werner Koch
- * Copyright (C) 2016 g10 Code GmbH
+ * Copyright (C) 2016, 2023 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -18,6 +18,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include <config.h>
@@ -68,12 +69,12 @@ pubkey_letter( int algo )
 }
 
 /* Return a string describing the public key algorithm and the
-   keysize.  For elliptic curves the functions prints the name of the
+   keysize.  For elliptic curves the function prints the name of the
    curve because the keysize is a property of the curve.  The string
    is copied to the supplied buffer up a length of BUFSIZE-1.
    Examples for the output are:
 
-   "rsa2048"  - RSA with 2048 bit
+   "rsa3072"  - RSA with 3072 bit
    "elg1024"  - Elgamal with 1024 bit
    "ed25519"  - ECC using the curve Ed25519.
    "E_1.2.3.4"  - ECC using the unsupported curve with OID "1.2.3.4".
@@ -83,7 +84,7 @@ pubkey_letter( int algo )
    If the option --legacy-list-mode is active, the output use the
    legacy format:
 
-   "2048R" - RSA with 2048 bit
+   "3072R" - RSA with 3072 bit
    "1024g" - Elgamal with 1024 bit
    "256E"  - ECDSA using a curve with 256 bit
 
@@ -139,12 +140,137 @@ pubkey_string (PKT_public_key *pk, char *buffer, size_t bufsize)
 }
 
 
-/* Hash a public key.  This function is useful for v4 fingerprints and
-   for v3 or v4 key signing. */
-void
-hash_public_key (gcry_md_hd_t md, PKT_public_key *pk)
+/* Helper for compare_pubkey_string.  This skips leading spaces,
+ * commas and optional condition operators and returns a pointer to
+ * the first non-space character or NULL in case of an error.  The
+ * length of a prefix consisting of letters is then returned ar PFXLEN
+ * and the value of the number (e.g. 384 for "brainpoolP384r1") at
+ * NUMBER.  R_LENGTH receives the entire length of the algorithm name
+ * which is terminated by a space, nul, or a comma.  If R_CONDITION is
+ * not NULL, 0 is stored for a leading "=", 1 for a ">", 2 for a ">=",
+ * -1 for a "<", and -2 for a "<=".  If R_CONDITION is NULL no
+ * condition prefix is allowed.  */
+static const char *
+parse_one_algo_string (const char *str, size_t *pfxlen, unsigned int *number,
+                       size_t *r_length, int *r_condition)
 {
-  unsigned int n = 6;
+  int condition = 0;
+  const char *result;
+
+  while (spacep (str) || *str ==',')
+    str++;
+  if (!r_condition)
+    ;
+  else if (*str == '>' && str[1] == '=')
+    condition = 2, str += 2;
+  else if (*str == '>' )
+    condition = 1, str += 1;
+  else if (*str == '<' && str[1] == '=')
+    condition = -2, str += 2;
+  else if (*str == '<')
+    condition = -1, str += 1;
+  else if (*str == '=')  /* Default.  */
+    str += 1;
+
+  if (!alphap (str))
+    return NULL;  /* Error.  */
+
+  *pfxlen = 1;
+  for (result = str++; alphap (str); str++)
+    ++*pfxlen;
+  while (*str == '-' || *str == '+')
+    str++;
+  *number = atoi (str);
+  while (*str && !spacep (str) && *str != ',')
+    str++;
+
+  *r_length = str - result;
+  if (r_condition)
+    *r_condition = condition;
+  return result;
+}
+
+/* Helper for compare_pubkey_string.  If BPARSED is set to 0 on
+ * return, an error in ASTR or BSTR was found and further checks are
+ * not possible.  */
+static int
+compare_pubkey_string_part (const char *astr, const char *bstr_arg,
+                            size_t *bparsed)
+{
+  const char *bstr = bstr_arg;
+  size_t alen, apfxlen, blen, bpfxlen;
+  unsigned int anumber, bnumber;
+  int condition;
+
+  *bparsed = 0;
+  astr = parse_one_algo_string (astr, &apfxlen, &anumber, &alen, &condition);
+  if (!astr)
+    return 0;  /* Invalid algorithm name.  */
+  bstr = parse_one_algo_string (bstr, &bpfxlen, &bnumber, &blen, &condition);
+  if (!bstr)
+    return 0;  /* Invalid algorithm name.  */
+  *bparsed = blen + (bstr - bstr_arg);
+  if (apfxlen != bpfxlen || ascii_strncasecmp (astr, bstr, apfxlen))
+    return 0;  /* false.  */
+  switch (condition)
+    {
+    case 2: return anumber >= bnumber;
+    case 1: return anumber > bnumber;
+    case -1: return anumber < bnumber;
+    case -2: return anumber <= bnumber;
+    }
+
+  return alen == blen && !ascii_strncasecmp (astr, bstr, alen);
+}
+
+
+/* Check whether ASTR matches the constraints given by BSTR.  ASTR may
+ * be any algo string like "rsa2048", "ed25519" and BSTR may be a
+ * constraint which is in the simplest case just another algo string.
+ * BSTR may have more that one string in which case they are comma
+ * separated and any match will return true.  It is possible to prefix
+ * BSTR with ">", ">=", "<=", or "<".  That prefix operator is applied
+ * to the number part of the algorithm, i.e. the first sequence of
+ * digits found before end-of-string or a comma.  Examples:
+ *
+ * | ASTR     | BSTR                 | result |
+ * |----------+----------------------+--------|
+ * | rsa2048  | rsa2048              | true   |
+ * | rsa2048  | >=rsa2048            | true   |
+ * | rsa2048  | >rsa2048             | false  |
+ * | ed25519  | >rsa1024             | false  |
+ * | ed25519  | ed25519              | true   |
+ * | nistp384 | >nistp256            | true   |
+ * | nistp521 | >=rsa3072, >nistp384 | true   |
+ */
+int
+compare_pubkey_string (const char *astr, const char *bstr)
+{
+  size_t bparsed;
+  int result;
+
+  while (*bstr)
+    {
+      result = compare_pubkey_string_part (astr, bstr, &bparsed);
+      if (result)
+        return 1;
+      if (!bparsed)
+        return 0; /* Syntax error in ASTR or BSTR.  */
+      bstr += bparsed;
+    }
+
+  return 0;
+}
+
+
+
+/* Hash a public key and allow to specify the to be used format.
+ * Note that if the v5 format is requested for a v4 key, a 0x04 as
+ * version is hashed instead of the 0x05. */
+static void
+do_hash_public_key (gcry_md_hd_t md, PKT_public_key *pk, int use_v5)
+{
+  unsigned int n;
   unsigned int nn[PUBKEY_MAX_NPKEY];
   byte *pp[PUBKEY_MAX_NPKEY];
   int i;
@@ -152,6 +278,7 @@ hash_public_key (gcry_md_hd_t md, PKT_public_key *pk)
   size_t nbytes;
   int npkey = pubkey_get_npkey (pk->pubkey_algo);
 
+  n = use_v5? 10 : 6;
   /* FIXME: We can avoid the extra malloc by calling only the first
      mpi_print here which computes the required length and calling the
      real mpi_print only at the end.  The speed advantage would only be
@@ -178,15 +305,39 @@ hash_public_key (gcry_md_hd_t md, PKT_public_key *pk)
             }
           else if (gcry_mpi_get_flag (pk->pkey[i], GCRYMPI_FLAG_OPAQUE))
             {
-              const void *p;
+              const char *p;
+              int is_sos = 0;
+
+              if (gcry_mpi_get_flag (pk->pkey[i], GCRYMPI_FLAG_USER2))
+                is_sos = 2;
 
               p = gcry_mpi_get_opaque (pk->pkey[i], &nbits);
-              pp[i] = xmalloc ((nbits+7)/8);
+              pp[i] = xmalloc ((nbits+7)/8 + is_sos);
               if (p)
-                memcpy (pp[i], p, (nbits+7)/8);
+                memcpy (pp[i] + is_sos, p, (nbits+7)/8);
               else
                 pp[i] = NULL;
-              nn[i] = (nbits+7)/8;
+              if (is_sos)
+                {
+                  if (*p)
+                    {
+                      nbits = ((nbits + 7) / 8) * 8;
+
+                      if (nbits >= 8 && !(*p & 0x80))
+                        if (--nbits >= 7 && !(*p & 0x40))
+                          if (--nbits >= 6 && !(*p & 0x20))
+                            if (--nbits >= 5 && !(*p & 0x10))
+                              if (--nbits >= 4 && !(*p & 0x08))
+                                if (--nbits >= 3 && !(*p & 0x04))
+                                  if (--nbits >= 2 && !(*p & 0x02))
+                                    if (--nbits >= 1 && !(*p & 0x01))
+                                      --nbits;
+                    }
+
+                  pp[i][0] = (nbits >> 8);
+                  pp[i][1] = nbits;
+                }
+              nn[i] = (nbits+7)/8 + is_sos;
               n += nn[i];
             }
           else
@@ -204,18 +355,34 @@ hash_public_key (gcry_md_hd_t md, PKT_public_key *pk)
         }
     }
 
-  gcry_md_putc ( md, 0x99 );     /* ctb */
-  /* What does it mean if n is greater than 0xFFFF ? */
-  gcry_md_putc ( md, n >> 8 );   /* 2 byte length header */
+  if (use_v5)
+    {
+      gcry_md_putc ( md, 0x9a );     /* ctb */
+      gcry_md_putc ( md, n >> 24 );  /* 4 byte length header (upper bits) */
+      gcry_md_putc ( md, n >> 16 );
+    }
+  else
+    {
+      gcry_md_putc ( md, 0x99 );     /* ctb */
+    }
+  gcry_md_putc ( md, n >> 8 );       /* lower bits of the length header.  */
   gcry_md_putc ( md, n );
   gcry_md_putc ( md, pk->version );
-
   gcry_md_putc ( md, pk->timestamp >> 24 );
   gcry_md_putc ( md, pk->timestamp >> 16 );
   gcry_md_putc ( md, pk->timestamp >>  8 );
   gcry_md_putc ( md, pk->timestamp       );
 
   gcry_md_putc ( md, pk->pubkey_algo );
+
+  if (use_v5) /* Hash the 32 bit length */
+    {
+      n -= 10;
+      gcry_md_putc ( md, n >> 24 );
+      gcry_md_putc ( md, n >> 16 );
+      gcry_md_putc ( md, n >>  8 );
+      gcry_md_putc ( md, n       );
+    }
 
   if(npkey==0 && pk->pkey[0]
      && gcry_mpi_get_flag (pk->pkey[0], GCRYMPI_FLAG_OPAQUE))
@@ -235,17 +402,12 @@ hash_public_key (gcry_md_hd_t md, PKT_public_key *pk)
 }
 
 
-static gcry_md_hd_t
-do_fingerprint_md( PKT_public_key *pk )
+/* Hash a public key.  This function is useful for v4 and v5
+ * fingerprints and for v3 or v4 key signing. */
+void
+hash_public_key (gcry_md_hd_t md, PKT_public_key *pk)
 {
-  gcry_md_hd_t md;
-
-  if (gcry_md_open (&md, DIGEST_ALGO_SHA1, 0))
-    BUG ();
-  hash_public_key(md,pk);
-  gcry_md_final( md );
-
-  return md;
+  do_hash_public_key (md, pk, (pk->version == 5));
 }
 
 
@@ -474,17 +636,26 @@ keystr_from_desc(KEYDB_SEARCH_DESC *desc)
     case KEYDB_SEARCH_MODE_SHORT_KID:
       return keystr(desc->u.kid);
 
-    case KEYDB_SEARCH_MODE_FPR20:
+    case KEYDB_SEARCH_MODE_FPR:
       {
 	u32 keyid[2];
 
-	keyid[0] = buf32_to_u32 (desc->u.fpr+12);
-	keyid[1] = buf32_to_u32 (desc->u.fpr+16);
+        if (desc->fprlen == 32)
+          {
+            keyid[0] = buf32_to_u32 (desc->u.fpr);
+            keyid[1] = buf32_to_u32 (desc->u.fpr+4);
+          }
+        else if (desc->fprlen == 20)
+          {
+            keyid[0] = buf32_to_u32 (desc->u.fpr+12);
+            keyid[1] = buf32_to_u32 (desc->u.fpr+16);
+          }
+        else if (desc->fprlen == 16)
+          return "?v3 fpr?";
+        else /* oops */
+          return "?vx fpr?";
 	return keystr(keyid);
       }
-
-    case KEYDB_SEARCH_MODE_FPR16:
-      return "?v3 fpr?";
 
     default:
       BUG();
@@ -492,52 +663,66 @@ keystr_from_desc(KEYDB_SEARCH_DESC *desc)
 }
 
 
+/* Compute the fingerprint and keyid and store it in PK.  */
+static void
+compute_fingerprint (PKT_public_key *pk)
+{
+  const byte *dp;
+  gcry_md_hd_t md;
+  size_t len;
+
+  if (gcry_md_open (&md, pk->version == 5 ? GCRY_MD_SHA256 : GCRY_MD_SHA1, 0))
+    BUG ();
+  hash_public_key (md, pk);
+  gcry_md_final (md);
+  dp = gcry_md_read (md, 0);
+  len = gcry_md_get_algo_dlen (gcry_md_get_algo (md));
+  log_assert (len <= MAX_FINGERPRINT_LEN);
+  memcpy (pk->fpr, dp, len);
+  pk->fprlen = len;
+  if (pk->version == 5)
+    {
+      pk->keyid[0] = buf32_to_u32 (dp);
+      pk->keyid[1] = buf32_to_u32 (dp+4);
+    }
+  else
+    {
+      pk->keyid[0] = buf32_to_u32 (dp+12);
+      pk->keyid[1] = buf32_to_u32 (dp+16);
+    }
+  gcry_md_close( md);
+}
+
+
 /*
- * Get the keyid from the public key and put it into keyid
- * if this is not NULL. Return the 32 low bits of the keyid.
+ * Get the keyid from the public key PK and store it at KEYID unless
+ * this is NULL.  Returns the 32 bit short keyid.
  */
 u32
 keyid_from_pk (PKT_public_key *pk, u32 *keyid)
 {
-  u32 lowbits;
   u32 dummy_keyid[2];
 
   if (!keyid)
     keyid = dummy_keyid;
 
-  if( pk->keyid[0] || pk->keyid[1] )
-    {
-      keyid[0] = pk->keyid[0];
-      keyid[1] = pk->keyid[1];
-      lowbits = keyid[1];
-    }
+  if (!pk->fprlen)
+    compute_fingerprint (pk);
+
+  keyid[0] = pk->keyid[0];
+  keyid[1] = pk->keyid[1];
+
+  if (pk->fprlen == 32)
+    return keyid[0];
   else
-    {
-      const byte *dp;
-      gcry_md_hd_t md;
-
-      md = do_fingerprint_md(pk);
-      if(md)
-	{
-	  dp = gcry_md_read ( md, 0 );
-	  keyid[0] = buf32_to_u32 (dp+12);
-	  keyid[1] = buf32_to_u32 (dp+16);
-	  lowbits = keyid[1];
-	  gcry_md_close (md);
-	  pk->keyid[0] = keyid[0];
-	  pk->keyid[1] = keyid[1];
-	}
-      else
-	pk->keyid[0]=pk->keyid[1]=keyid[0]=keyid[1]=lowbits=0xFFFFFFFF;
-    }
-
-  return lowbits;
+    return keyid[1];
 }
 
 
 /*
- * Get the keyid from the fingerprint.	This function is simple for most
- * keys, but has to do a keylookup for old stayle keys.
+ * Get the keyid from the fingerprint.  This function is simple for
+ * most keys, but has to do a key lookup for old v3 keys where the
+ * keyid is not part of the fingerprint.
  */
 u32
 keyid_from_fingerprint (ctrl_t ctrl, const byte *fprint,
@@ -548,7 +733,7 @@ keyid_from_fingerprint (ctrl_t ctrl, const byte *fprint,
   if( !keyid )
     keyid = dummy_keyid;
 
-  if (fprint_len != 20)
+  if (fprint_len != 20 && fprint_len != 32)
     {
       /* This is special as we have to lookup the key first.  */
       PKT_public_key pk;
@@ -558,7 +743,8 @@ keyid_from_fingerprint (ctrl_t ctrl, const byte *fprint,
       rc = get_pubkey_byfprint (ctrl, &pk, NULL, fprint, fprint_len);
       if( rc )
         {
-          log_error("Oops: keyid_from_fingerprint: no pubkey\n");
+          log_printhex (fprint, fprint_len,
+                        "Oops: keyid_from_fingerprint: no pubkey; fpr:");
           keyid[0] = 0;
           keyid[1] = 0;
         }
@@ -568,8 +754,16 @@ keyid_from_fingerprint (ctrl_t ctrl, const byte *fprint,
   else
     {
       const byte *dp = fprint;
-      keyid[0] = buf32_to_u32 (dp+12);
-      keyid[1] = buf32_to_u32 (dp+16);
+      if (fprint_len == 20)  /* v4 key */
+        {
+          keyid[0] = buf32_to_u32 (dp+12);
+          keyid[1] = buf32_to_u32 (dp+16);
+        }
+      else  /* v5 key */
+        {
+          keyid[0] = buf32_to_u32 (dp);
+          keyid[1] = buf32_to_u32 (dp+4);
+        }
     }
 
   return keyid[1];
@@ -584,7 +778,7 @@ keyid_from_sig (PKT_signature *sig, u32 *keyid)
       keyid[0] = sig->keyid[0];
       keyid[1] = sig->keyid[1];
     }
-  return sig->keyid[1];
+  return sig->keyid[1];  /*FIXME:shortkeyid*/
 }
 
 
@@ -642,7 +836,7 @@ mk_datestr (char *buffer, size_t bufsize, u32 timestamp)
  *    Format is: yyyy-mm-dd
  */
 const char *
-datestr_from_pk (PKT_public_key *pk)
+dateonlystr_from_pk (PKT_public_key *pk)
 {
   static char buffer[MK_DATESTR_SIZE];
 
@@ -650,12 +844,34 @@ datestr_from_pk (PKT_public_key *pk)
 }
 
 
+/* Same as dateonlystr_from_pk but with a global option a full iso
+ * timestamp is returned.  In this case it shares a static buffer with
+ * isotimestamp(). */
 const char *
-datestr_from_sig (PKT_signature *sig )
+datestr_from_pk (PKT_public_key *pk)
+{
+  if (opt.flags.full_timestrings)
+    return isotimestamp (pk->timestamp);
+  else
+    return dateonlystr_from_pk (pk);
+}
+
+
+const char *
+dateonlystr_from_sig (PKT_signature *sig )
 {
   static char buffer[MK_DATESTR_SIZE];
 
   return mk_datestr (buffer, sizeof buffer, sig->timestamp);
+}
+
+const char *
+datestr_from_sig (PKT_signature *sig )
+{
+  if (opt.flags.full_timestrings)
+    return isotimestamp (sig->timestamp);
+  else
+    return dateonlystr_from_sig (sig);
 }
 
 
@@ -666,6 +882,10 @@ expirestr_from_pk (PKT_public_key *pk)
 
   if (!pk->expiredate)
     return _("never     ");
+
+  if (opt.flags.full_timestrings)
+    return isotimestamp (pk->expiredate);
+
   return mk_datestr (buffer, sizeof buffer, pk->expiredate);
 }
 
@@ -677,6 +897,10 @@ expirestr_from_sig (PKT_signature *sig)
 
   if (!sig->expiredate)
     return _("never     ");
+
+  if (opt.flags.full_timestrings)
+    return isotimestamp (sig->expiredate);
+
   return mk_datestr (buffer, sizeof buffer, sig->expiredate);
 }
 
@@ -688,6 +912,10 @@ revokestr_from_pk( PKT_public_key *pk )
 
   if(!pk->revoked.date)
     return _("never     ");
+
+  if (opt.flags.full_timestrings)
+    return isotimestamp (pk->revoked.date);
+
   return mk_datestr (buffer, sizeof buffer, pk->revoked.date);
 }
 
@@ -769,6 +997,7 @@ colon_expirestr_from_sig (PKT_signature *sig)
 }
 
 
+
 /*
  * Return a byte array with the fingerprint for the given PK/SK
  * The length of the array is returned in ret_len. Caller must free
@@ -777,24 +1006,93 @@ colon_expirestr_from_sig (PKT_signature *sig)
 byte *
 fingerprint_from_pk (PKT_public_key *pk, byte *array, size_t *ret_len)
 {
-  const byte *dp;
-  size_t len;
-  gcry_md_hd_t md;
+  if (!pk->fprlen)
+    compute_fingerprint (pk);
 
-  md = do_fingerprint_md(pk);
-  dp = gcry_md_read( md, 0 );
-  len = gcry_md_get_algo_dlen (gcry_md_get_algo (md));
-  log_assert( len <= MAX_FINGERPRINT_LEN );
   if (!array)
-    array = xmalloc ( len );
-  memcpy (array, dp, len );
-  pk->keyid[0] = buf32_to_u32 (dp+12);
-  pk->keyid[1] = buf32_to_u32 (dp+16);
-  gcry_md_close( md);
+    array = xmalloc (pk->fprlen);
+  memcpy (array, pk->fpr, pk->fprlen);
 
   if (ret_len)
-    *ret_len = len;
+    *ret_len = pk->fprlen;
   return array;
+}
+
+
+/*
+ * Return a byte array with the fingerprint for the given PK/SK The
+ * length of the array is returned in ret_len. Caller must free the
+ * array or provide an array of length MAX_FINGERPRINT_LEN.  This
+ * version creates a v5 fingerprint even vor v4 keys.
+ */
+byte *
+v5_fingerprint_from_pk (PKT_public_key *pk, byte *array, size_t *ret_len)
+{
+  const byte *dp;
+  gcry_md_hd_t md;
+
+  if (pk->version == 5)
+    return fingerprint_from_pk (pk, array, ret_len);
+
+  if (gcry_md_open (&md, GCRY_MD_SHA256, 0))
+    BUG ();
+  do_hash_public_key (md, pk, 1);
+  gcry_md_final (md);
+  dp = gcry_md_read (md, 0);
+  if (!array)
+    array = xmalloc (32);
+  memcpy (array, dp, 32);
+  gcry_md_close (md);
+
+  if (ret_len)
+    *ret_len = 32;
+  return array;
+}
+
+
+/*
+ * This is the core of fpr20_from_pk which directly takes a
+ * fingerprint and its length instead of the public key.  See below
+ * for details.
+ */
+void
+fpr20_from_fpr (const byte *fpr, unsigned int fprlen, byte array[20])
+{
+  if (fprlen >= 32)            /* v5 fingerprint (or larger) */
+    {
+      memcpy (array +  0, fpr + 20, 4);
+      memcpy (array +  4, fpr + 24, 4);
+      memcpy (array +  8, fpr + 28, 4);
+      memcpy (array + 12, fpr +  0, 4); /* kid[0] */
+      memcpy (array + 16, fpr +  4, 4); /* kid[1] */
+    }
+  else if (fprlen == 20)       /* v4 fingerprint */
+    memcpy (array, fpr, 20);
+  else                         /* v3 or too short: fill up with zeroes.  */
+    {
+      memset (array, 0, 20);
+      memcpy (array, fpr, fprlen);
+    }
+}
+
+
+/*
+ * Get FPR20 for the given PK/SK into ARRAY.
+ *
+ * FPR20 is special form of fingerprint of length 20 for the record of
+ * trustdb.  For v4key, having fingerprint with SHA-1, FPR20 is the
+ * same one.  For v5key, FPR20 is constructed from its fingerprint
+ * with SHA-2, so that its kid of last 8-byte can be as same as
+ * kid of v5key fingerprint.
+ *
+ */
+void
+fpr20_from_pk (PKT_public_key *pk, byte array[20])
+{
+  if (!pk->fprlen)
+    compute_fingerprint (pk);
+
+  fpr20_from_fpr (pk->fpr, pk->fprlen, array);
 }
 
 
@@ -808,20 +1106,44 @@ fingerprint_from_pk (PKT_public_key *pk, byte *array, size_t *ret_len)
 char *
 hexfingerprint (PKT_public_key *pk, char *buffer, size_t buflen)
 {
-  unsigned char fpr[MAX_FINGERPRINT_LEN];
-  size_t len;
+  if (!pk->fprlen)
+    compute_fingerprint (pk);
 
-  fingerprint_from_pk (pk, fpr, &len);
   if (!buffer)
     {
-      buffer = xtrymalloc (2 * len + 1);
+      buffer = xtrymalloc (2 * pk->fprlen + 1);
       if (!buffer)
         return NULL;
     }
-  else if (buflen < 2*len+1)
+  else if (buflen < 2 * pk->fprlen + 1)
     log_fatal ("%s: buffer too short (%zu)\n", __func__, buflen);
-  bin2hex (fpr, len, buffer);
+
+  bin2hex (pk->fpr, pk->fprlen, buffer);
   return buffer;
+}
+
+
+/* Same as hexfingerprint but returns a v5 fingerprint also for a v4
+ * key.  */
+char *
+v5hexfingerprint (PKT_public_key *pk, char *buffer, size_t buflen)
+{
+  char fprbuf[32];
+
+  if (pk->version == 5)
+    return hexfingerprint (pk, buffer, buflen);
+
+  if (!buffer)
+    {
+      buffer = xtrymalloc (2 * 32 + 1);
+      if (!buffer)
+        return NULL;
+    }
+  else if (buflen < 2 * 32 + 1)
+    log_fatal ("%s: buffer too short (%zu)\n", __func__, buflen);
+
+  v5_fingerprint_from_pk (pk, fprbuf, NULL);
+  return bin2hex (fprbuf, 32, buffer);
 }
 
 
@@ -848,8 +1170,22 @@ format_hexfingerprint (const char *fingerprint, char *buffer, size_t buflen)
 	       /* Half way through we add a second space.  */
 	       + 1);
     }
+  else if (hexlen == 64 || hexlen == 50)  /* v5 fingerprint */
+    {
+      /* The v5 fingerprint is commonly printed truncated to 25
+       * octets.  We accept the truncated as well as the full hex
+       * version here and format it like this:
+       * 19347 BC987 24640 25F99 DF3EC 2E000 0ED98 84892 E1F7B 3EA4C
+       */
+      hexlen = 50;
+      space = 10 * 5 + 9 + 1;
+    }
   else  /* Other fingerprint versions - print as is.  */
     {
+      /* We truncated here so that we do not need to provide a buffer
+       * of a length which is in reality never used.  */
+      if (hexlen > MAX_FORMATTED_FINGERPRINT_LEN - 1)
+        hexlen = MAX_FORMATTED_FINGERPRINT_LEN - 1;
       space = hexlen + 1;
     }
 
@@ -862,7 +1198,7 @@ format_hexfingerprint (const char *fingerprint, char *buffer, size_t buflen)
     {
       for (i = 0, j = 0; i < 40; i ++)
         {
-          if (i && i % 4 == 0)
+          if (i && !(i % 4))
             buffer[j ++] = ' ';
           if (i == 40 / 2)
             buffer[j ++] = ' ';
@@ -872,9 +1208,20 @@ format_hexfingerprint (const char *fingerprint, char *buffer, size_t buflen)
       buffer[j ++] = 0;
       log_assert (j == space);
     }
+  else if (hexlen == 50)  /* v5 fingerprint */
+    {
+      for (i=j=0; i < 50; i++)
+        {
+          if (i && !(i % 5))
+            buffer[j++] = ' ';
+          buffer[j++] = fingerprint[i];
+        }
+      buffer[j++] = 0;
+      log_assert (j == space);
+    }
   else
     {
-      strcpy (buffer, fingerprint);
+      mem2str (buffer, fingerprint, space);
     }
 
   return buffer;
@@ -883,7 +1230,7 @@ format_hexfingerprint (const char *fingerprint, char *buffer, size_t buflen)
 
 
 /* Return the so called KEYGRIP which is the SHA-1 hash of the public
-   key parameters expressed as an canoncial encoded S-Exp.  ARRAY must
+   key parameters expressed as an canonical encoded S-Exp.  ARRAY must
    be 20 bytes long.  Returns 0 on success or an error code.  */
 gpg_error_t
 keygrip_from_pk (PKT_public_key *pk, unsigned char *array)
@@ -977,18 +1324,18 @@ gpg_error_t
 hexkeygrip_from_pk (PKT_public_key *pk, char **r_grip)
 {
   gpg_error_t err;
-  unsigned char grip[20];
+  unsigned char grip[KEYGRIP_LEN];
 
   *r_grip = NULL;
   err = keygrip_from_pk (pk, grip);
   if (!err)
     {
-      char * buf = xtrymalloc (20*2+1);
+      char * buf = xtrymalloc (KEYGRIP_LEN * 2 + 1);
       if (!buf)
         err = gpg_error_from_syserror ();
       else
         {
-          bin2hex (grip, 20, buf);
+          bin2hex (grip, KEYGRIP_LEN, buf);
           *r_grip = buf;
         }
     }

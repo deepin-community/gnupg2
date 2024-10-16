@@ -41,7 +41,6 @@
 #include <errno.h>
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <assert.h>
 #ifndef HAVE_W32_SYSTEM
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -71,16 +70,20 @@
 #define SSH_REQUEST_LOCK                  22
 #define SSH_REQUEST_UNLOCK                23
 #define SSH_REQUEST_ADD_ID_CONSTRAINED    25
+#define SSH_REQUEST_EXTENSION             27
 
 /* Options. */
 #define	SSH_OPT_CONSTRAIN_LIFETIME	   1
 #define	SSH_OPT_CONSTRAIN_CONFIRM	   2
+#define	SSH_OPT_CONSTRAIN_MAXSIGN	   3
+#define	SSH_OPT_CONSTRAIN_EXTENSION	 255
 
 /* Response types. */
 #define SSH_RESPONSE_SUCCESS               6
 #define SSH_RESPONSE_FAILURE               5
 #define SSH_RESPONSE_IDENTITIES_ANSWER    12
 #define SSH_RESPONSE_SIGN_RESPONSE        14
+#define SSH_RESPONSE_EXTENSION_FAILURE    28
 
 /* Other constants.  */
 #define SSH_DSA_SIGNATURE_PADDING 20
@@ -157,7 +160,7 @@ typedef gpg_error_t (*ssh_signature_encoder_t) (ssh_key_type_spec_t *spec,
                                                 estream_t signature_blob,
 						gcry_sexp_t sig);
 
-/* Type, which is used for boundling all the algorithm specific
+/* Type, which is used for bundling all the algorithm specific
    information together in a single object.  */
 struct ssh_key_type_spec
 {
@@ -228,6 +231,22 @@ struct ssh_control_file_s
 };
 
 
+/* Two objects definition to hold keys for later sorting.  */
+struct key_collection_item_s
+{
+  gcry_sexp_t key;  /* Public key. (owned by us)                        */
+  char *cardsn;     /* Serial number of a card or NULL. (owned by us)   */
+  int order;        /* Computed ordinal                                 */
+};
+
+struct key_collection_s
+{
+  struct key_collection_item_s *items;
+  size_t allocated;
+  size_t nitems;
+};
+
+
 /* Prototypes.  */
 static gpg_error_t ssh_handler_request_identities (ctrl_t ctrl,
 						   estream_t request,
@@ -250,6 +269,9 @@ static gpg_error_t ssh_handler_lock (ctrl_t ctrl,
 static gpg_error_t ssh_handler_unlock (ctrl_t ctrl,
 				       estream_t request,
 				       estream_t response);
+static gpg_error_t ssh_handler_extension (ctrl_t ctrl,
+                                          estream_t request,
+                                          estream_t response);
 
 static gpg_error_t ssh_key_modifier_rsa (const char *elems, gcry_mpi_t *mpis);
 static gpg_error_t ssh_signature_encoder_rsa (ssh_key_type_spec_t *spec,
@@ -267,6 +289,11 @@ static gpg_error_t ssh_signature_encoder_eddsa (ssh_key_type_spec_t *spec,
 static gpg_error_t ssh_key_extract_comment (gcry_sexp_t key, char **comment);
 
 
+struct peer_info_s
+{
+  unsigned long pid;
+  int uid;
+};
 
 /* Global variables.  */
 
@@ -286,7 +313,8 @@ static const ssh_request_spec_t request_specs[] =
     REQUEST_SPEC_DEFINE (REMOVE_IDENTITY,       remove_identity,       0),
     REQUEST_SPEC_DEFINE (REMOVE_ALL_IDENTITIES, remove_all_identities, 0),
     REQUEST_SPEC_DEFINE (LOCK,                  lock,                  0),
-    REQUEST_SPEC_DEFINE (UNLOCK,                unlock,                0)
+    REQUEST_SPEC_DEFINE (UNLOCK,                unlock,                0),
+    REQUEST_SPEC_DEFINE (EXTENSION,             extension,             0)
 #undef REQUEST_SPEC_DEFINE
   };
 
@@ -1018,14 +1046,15 @@ read_control_file_item (ssh_control_file_t cf)
    HEXGRIP is found; return success in this case and store true at
    DISABLED if the found key has been disabled.  If R_TTL is not NULL
    a specified TTL for that key is stored there.  If R_CONFIRM is not
-   NULL it is set to 1 if the key has the confirm flag set. */
+   NULL it is set to 1 if the key has the confirm flag set.  The line
+   number where the item was found is stored at R_LNR.  */
 static gpg_error_t
 search_control_file (ssh_control_file_t cf, const char *hexgrip,
-                     int *r_disabled, int *r_ttl, int *r_confirm)
+                     int *r_disabled, int *r_ttl, int *r_confirm, int *r_lnr)
 {
   gpg_error_t err;
 
-  assert (strlen (hexgrip) == 40 );
+  log_assert (strlen (hexgrip) == 40 );
 
   if (r_disabled)
     *r_disabled = 0;
@@ -1033,6 +1062,8 @@ search_control_file (ssh_control_file_t cf, const char *hexgrip,
     *r_ttl = 0;
   if (r_confirm)
     *r_confirm = 0;
+  if (r_lnr)
+    *r_lnr = -1;
 
   rewind_control_file (cf);
   while (!(err=read_control_file_item (cf)))
@@ -1050,6 +1081,8 @@ search_control_file (ssh_control_file_t cf, const char *hexgrip,
         *r_ttl = cf->item.ttl;
       if (r_confirm)
         *r_confirm = cf->item.confirm;
+      if (r_lnr)
+        *r_lnr = cf->lnr;
     }
   return err;
 }
@@ -1078,15 +1111,16 @@ add_control_entry (ctrl_t ctrl, ssh_key_type_spec_t *spec,
   if (err)
     return err;
 
-  err = search_control_file (cf, hexgrip, &disabled, NULL, NULL);
+  err = search_control_file (cf, hexgrip, &disabled, NULL, NULL, NULL);
   if (err && gpg_err_code(err) == GPG_ERR_EOF)
     {
       struct tm *tp;
       time_t atime = time (NULL);
 
       err = ssh_get_fingerprint_string (key, GCRY_MD_MD5, &fpr_md5);
+      /* ignore the errors as MD5 is not available in FIPS mode */
       if (err)
-        goto out;
+        fpr_md5 = NULL;
 
       err = ssh_get_fingerprint_string (key, GCRY_MD_SHA256, &fpr_sha256);
       if (err)
@@ -1103,7 +1137,8 @@ add_control_entry (ctrl_t ctrl, ssh_key_type_spec_t *spec,
                spec->name,
                1900+tp->tm_year, tp->tm_mon+1, tp->tm_mday,
                tp->tm_hour, tp->tm_min, tp->tm_sec,
-               fpr_md5, fpr_sha256, hexgrip, ttl, confirm? " confirm":"");
+               fpr_md5? fpr_md5:"", fpr_sha256, hexgrip, ttl,
+               confirm? " confirm":"");
 
     }
  out:
@@ -1127,7 +1162,7 @@ ttl_from_sshcontrol (const char *hexgrip)
   if (open_control_file (&cf, 0))
     return 0; /* Error: Use the global default TTL.  */
 
-  if (search_control_file (cf, hexgrip, &disabled, &ttl, NULL)
+  if (search_control_file (cf, hexgrip, &disabled, &ttl, NULL, NULL)
       || disabled)
     ttl = 0;  /* Use the global default if not found or disabled.  */
 
@@ -1150,7 +1185,7 @@ confirm_flag_from_sshcontrol (const char *hexgrip)
   if (open_control_file (&cf, 0))
     return 1; /* Error: Better ask for confirmation.  */
 
-  if (search_control_file (cf, hexgrip, &disabled, NULL, &confirm)
+  if (search_control_file (cf, hexgrip, &disabled, NULL, &confirm, NULL)
       || disabled)
     confirm = 0;  /* If not found or disabled, there is no reason to
                      ask for confirmation.  */
@@ -1236,7 +1271,8 @@ ssh_search_control_file (ssh_control_file_t cf,
   if (i != 40)
     err = gpg_error (GPG_ERR_INV_LENGTH);
   else
-    err = search_control_file (cf, uphexgrip, r_disabled, r_ttl, r_confirm);
+    err = search_control_file (cf, uphexgrip, r_disabled, r_ttl, r_confirm,
+                               NULL);
   if (gpg_err_code (err) == GPG_ERR_EOF)
     err = gpg_error (GPG_ERR_NOT_FOUND);
   return err;
@@ -1504,7 +1540,7 @@ ssh_signature_encoder_dsa (ssh_key_type_spec_t *spec,
 
   /* DSA specific code.  */
 
-  /* FIXME: Why this complicated code?  Why collecting boths mpis in a
+  /* FIXME: Why this complicated code?  Why collecting both mpis in a
      buffer instead of writing them out one after the other?  */
   for (i = 0; i < 2; i++)
     {
@@ -1957,14 +1993,13 @@ ssh_key_to_blob (gcry_sexp_t sexp, int with_secret,
 	}
       if ((key_spec.flags & SPEC_FLAG_IS_EdDSA))
         {
-
           data = gcry_sexp_nth_data (value_pair, 1, &datalen);
           if (!data)
             {
               err = gpg_error (GPG_ERR_INV_SEXP);
               goto out;
             }
-          if (*p_elems == 'q' && datalen)
+          if (*p_elems == 'q' && (datalen & 1) && *data == 0x40)
             { /* Remove the prefix 0x40.  */
               data++;
               datalen--;
@@ -2125,6 +2160,10 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
        * we only want the real 32 byte private key - Libgcrypt expects
        * this.
        */
+
+      /* For now, it's only Ed25519.  In future, Ed448 will come.  */
+      curve_name = "Ed25519";
+
       mpi_list = xtrycalloc (3, sizeof *mpi_list);
       if (!mpi_list)
         {
@@ -2231,38 +2270,14 @@ ssh_receive_key (estream_t stream, gcry_sexp_t *key_new, int secret,
 	goto out;
     }
 
-  if ((spec.flags & SPEC_FLAG_IS_EdDSA))
+  err = sexp_key_construct (&key, spec, secret, curve_name, mpi_list,
+                            comment? comment:"");
+  if (!err)
     {
-      if (secret)
-        {
-          err = gcry_sexp_build (&key, NULL,
-                                 "(private-key(ecc(curve \"Ed25519\")"
-                                 "(flags eddsa)(q %m)(d %m))"
-                                 "(comment%s))",
-                                 mpi_list[0], mpi_list[1],
-                                 comment? comment:"");
-        }
-      else
-        {
-          err = gcry_sexp_build (&key, NULL,
-                                 "(public-key(ecc(curve \"Ed25519\")"
-                                 "(flags eddsa)(q %m))"
-                                 "(comment%s))",
-                                 mpi_list[0],
-                                 comment? comment:"");
-        }
+      if (key_spec)
+        *key_spec = spec;
+      *key_new = key;
     }
-  else
-    {
-      err = sexp_key_construct (&key, spec, secret, curve_name, mpi_list,
-                                comment? comment:"");
-      if (err)
-        goto out;
-    }
-
-  if (key_spec)
-    *key_spec = spec;
-  *key_new = key;
 
  out:
   es_fclose (cert);
@@ -2376,45 +2391,16 @@ ssh_key_grip (gcry_sexp_t key, unsigned char *buffer)
 }
 
 
+/* Check whether a key of KEYGRIP on smartcard is available and
+   whether it has a usable key.  Store a copy of that key at R_PK and
+   return 0.  If no key is available store NULL at R_PK and return an
+   error code.  If CARDSN is not NULL, a string with the serial number
+   of the card will be a malloced and stored there. */
 static gpg_error_t
-card_key_list (ctrl_t ctrl, char **r_serialno, strlist_t *result)
+card_key_available (ctrl_t ctrl, const struct card_key_info_s *keyinfo,
+                    gcry_sexp_t *r_pk, char **cardsn)
 {
   gpg_error_t err;
-
-  *r_serialno = NULL;
-  *result = NULL;
-
-  err = agent_card_serialno (ctrl, r_serialno, NULL);
-  if (err)
-    {
-      if (gpg_err_code (err) != GPG_ERR_ENODEV && opt.verbose)
-        log_info (_("error getting serial number of card: %s\n"),
-                  gpg_strerror (err));
-
-      /* Nothing available.  */
-      return 0;
-    }
-
-  err = agent_card_cardlist (ctrl, result);
-  if (err)
-    {
-      xfree (*r_serialno);
-      *r_serialno = NULL;
-    }
-  return err;
-}
-
-/* Check whether a smartcard is available and whether it has a usable
-   key.  Store a copy of that key at R_PK and return 0.  If no key is
-   available store NULL at R_PK and return an error code.  If CARDSN
-   is not NULL, a string with the serial number of the card will be
-   a malloced and stored there. */
-static gpg_error_t
-card_key_available (ctrl_t ctrl, gcry_sexp_t *r_pk, char **cardsn)
-{
-  gpg_error_t err;
-  char *authkeyid;
-  char *serialno = NULL;
   unsigned char *pkbuf;
   size_t pkbuflen;
   gcry_sexp_t s_pk;
@@ -2424,48 +2410,12 @@ card_key_available (ctrl_t ctrl, gcry_sexp_t *r_pk, char **cardsn)
   if (cardsn)
     *cardsn = NULL;
 
-  /* First see whether a card is available and whether the application
-     is supported.  */
-  err = agent_card_getattr (ctrl, "$AUTHKEYID", &authkeyid);
-  if ( gpg_err_code (err) == GPG_ERR_CARD_REMOVED )
-    {
-      /* Ask for the serial number to reset the card.  */
-      err = agent_card_serialno (ctrl, &serialno, NULL);
-      if (err)
-        {
-          if (opt.verbose)
-            log_info (_("error getting serial number of card: %s\n"),
-                      gpg_strerror (err));
-          return err;
-        }
-      log_info (_("detected card with S/N: %s\n"), serialno);
-      err = agent_card_getattr (ctrl, "$AUTHKEYID", &authkeyid);
-    }
-  if (err)
-    {
-      log_error (_("no authentication key for ssh on card: %s\n"),
-                 gpg_strerror (err));
-      xfree (serialno);
-      return err;
-    }
-
-  /* Get the S/N if we don't have it yet.  Use the fast getattr method.  */
-  if (!serialno && (err = agent_card_getattr (ctrl, "SERIALNO", &serialno)) )
-    {
-      log_error (_("error getting serial number of card: %s\n"),
-                 gpg_strerror (err));
-      xfree (authkeyid);
-      return err;
-    }
-
   /* Read the public key.  */
-  err = agent_card_readkey (ctrl, authkeyid, &pkbuf);
+  err = agent_card_readkey (ctrl, keyinfo->keygrip, &pkbuf, NULL);
   if (err)
     {
       if (opt.verbose)
         log_info (_("no suitable card key found: %s\n"), gpg_strerror (err));
-      xfree (serialno);
-      xfree (authkeyid);
       return err;
     }
 
@@ -2476,38 +2426,24 @@ card_key_available (ctrl_t ctrl, gcry_sexp_t *r_pk, char **cardsn)
       log_error ("failed to build S-Exp from received card key: %s\n",
                  gpg_strerror (err));
       xfree (pkbuf);
-      xfree (serialno);
-      xfree (authkeyid);
       return err;
     }
 
-  err = ssh_key_grip (s_pk, grip);
-  if (err)
-    {
-      log_debug ("error computing keygrip from received card key: %s\n",
-		 gcry_strerror (err));
-      xfree (pkbuf);
-      gcry_sexp_release (s_pk);
-      xfree (serialno);
-      xfree (authkeyid);
-      return err;
-    }
-
-  if ( agent_key_available (grip) )
+  hex2bin (keyinfo->keygrip, grip, sizeof (grip));
+  if (!ctrl->ephemeral_mode && agent_key_available (ctrl, grip) )
     {
       char *dispserialno;
 
       /* (Shadow)-key is not available in our key storage.  */
-      agent_card_getattr (ctrl, "$DISPSERIALNO", &dispserialno);
-      err = agent_write_shadow_key (grip, serialno, authkeyid, pkbuf, 0, 0,
-                                    dispserialno);
+      agent_card_getattr (ctrl, "$DISPSERIALNO", &dispserialno,
+                          keyinfo->keygrip);
+      err = agent_write_shadow_key (ctrl, grip, keyinfo->serialno,
+                                    keyinfo->idstr, pkbuf, 0, dispserialno);
       xfree (dispserialno);
       if (err)
         {
           xfree (pkbuf);
           gcry_sexp_release (s_pk);
-          xfree (serialno);
-          xfree (authkeyid);
           return err;
         }
     }
@@ -2515,35 +2451,330 @@ card_key_available (ctrl_t ctrl, gcry_sexp_t *r_pk, char **cardsn)
   if (cardsn)
     {
       char *dispsn;
+      char *p;
 
       /* If the card handler is able to return a short serialnumber,
          use that one, else use the complete serialno. */
-      if (!agent_card_getattr (ctrl, "$DISPSERIALNO", &dispsn))
+      if (!agent_card_getattr (ctrl, "$DISPSERIALNO", &dispsn,
+                               keyinfo->keygrip))
         {
           *cardsn = xtryasprintf ("cardno:%s", dispsn);
           xfree (dispsn);
         }
       else
-        *cardsn = xtryasprintf ("cardno:%s", serialno);
+        *cardsn = xtryasprintf ("cardno:%s", keyinfo->serialno);
       if (!*cardsn)
         {
           err = gpg_error_from_syserror ();
           xfree (pkbuf);
           gcry_sexp_release (s_pk);
-          xfree (serialno);
-          xfree (authkeyid);
           return err;
         }
+      /* Let's avoid blanks in the comment.  */
+      for (p=*cardsn; *p; p++)
+        if (spacep (p))
+          *p = '_';
     }
 
   xfree (pkbuf);
-  xfree (serialno);
-  xfree (authkeyid);
   *r_pk = s_pk;
   return 0;
 }
 
+static struct card_key_info_s *
+get_ssh_keyinfo_on_cards (ctrl_t ctrl)
+{
+  struct card_key_info_s *keyinfo_on_cards = NULL;
+  gpg_error_t err;
+  char *serialno;
 
+  if (opt.disable_daemon[DAEMON_SCD])
+    return NULL;
+
+  /* Scan for new device(s).  */
+  err = agent_card_serialno (ctrl, &serialno, NULL);
+  if (err)
+    {
+      if (opt.verbose)
+        log_info (_("error getting list of cards: %s\n"),
+                  gpg_strerror (err));
+      return NULL;
+    }
+
+  xfree (serialno);
+
+  err = agent_card_keyinfo (ctrl, NULL, GCRY_PK_USAGE_AUTH, &keyinfo_on_cards);
+  if (err)
+    return NULL;
+
+  return keyinfo_on_cards;
+}
+
+
+/* Append (KEY,CARDSN,LNR,ORDER) to ARRAY.  The array must initially
+ * be passed as a cleared struct.  ARRAY takes ownership of KEY and
+ * CARDSN.  */
+static gpg_error_t
+add_to_key_array (struct key_collection_s *array, gcry_sexp_t key,
+                  char *cardsn, int order)
+{
+  if (array->nitems == array->allocated)
+    {
+      struct key_collection_item_s *newitems;
+      size_t newsize = ((array->allocated + 63)/64 + 1) * 64;
+
+      newitems = xtryreallocarray (array->items, array->allocated, newsize+1,
+                                   sizeof *newitems);
+      if (!newitems)
+        return gpg_error_from_syserror ();
+      array->allocated = newsize;
+      array->items = newitems;
+    }
+  array->items[array->nitems].key = key;
+  array->items[array->nitems].cardsn = cardsn;
+  array->items[array->nitems].order = order;
+  array->nitems++;
+  return 0;
+}
+
+/* Release the content of ARRAY.  */
+static void
+free_key_array (struct key_collection_s *array)
+{
+  if (array && array->items)
+    {
+      unsigned int n;
+
+      for (n = 0; n < array->nitems; n++)
+        {
+          gcry_sexp_release (array->items[n].key);
+          xfree (array->items[n].cardsn);
+        }
+      xfree (array->items);
+    }
+}
+
+
+/* Helper for the qsort in ssh_send_available_keys.  */
+static int
+compare_key_collection_items (const void *arg_a, const void *arg_b)
+{
+  const struct key_collection_item_s *a
+    = (const struct key_collection_item_s *)arg_a;
+  const struct key_collection_item_s *b
+    = (const struct key_collection_item_s *)arg_b;
+  int res;
+
+  res = a->order - b->order;
+  /* If we are comparing two cards we sort by serial number.  */
+  if (!res && a->order == 1)
+    res = strcmp (a->cardsn?a->cardsn:"", b->cardsn?b->cardsn:"");
+  return res;
+}
+
+
+static gpg_error_t
+ssh_send_available_keys (ctrl_t ctrl, estream_t key_blobs, u32 *r_key_counter)
+{
+  gpg_error_t err;
+  char *dirname;
+  gnupg_dir_t dir = NULL;
+  gnupg_dirent_t dir_entry;
+  char hexgrip[41];
+  ssh_control_file_t cf = NULL;
+  struct card_key_info_s *keyinfo_on_cards, *l;
+  char *cardsn;
+  gcry_sexp_t key_public = NULL;
+  int count;
+  struct key_collection_s keyarray = { NULL };
+
+  err = open_control_file (&cf, 0);
+  if (err)
+    return err;
+
+  /* First, get information keys available on cards on-line. */
+  keyinfo_on_cards = get_ssh_keyinfo_on_cards (ctrl);
+
+  /* Look at all the registered and non-disabled keys, in sshcontrol.  */
+  /* And, look at all keys with "Use-for-ssh:" flag.  */
+  dirname = make_filename_try (gnupg_homedir (),
+                               GNUPG_PRIVATE_KEYS_DIR, NULL);
+  if (!dirname)
+    {
+      err = gpg_error_from_syserror ();
+      agent_card_free_keyinfo (keyinfo_on_cards);
+      return err;
+    }
+  dir = gnupg_opendir (dirname);
+  if (!dir)
+    {
+      err = gpg_error_from_syserror ();
+      xfree (dirname);
+      agent_card_free_keyinfo (keyinfo_on_cards);
+      return err;
+    }
+  xfree (dirname);
+
+  while ( (dir_entry = gnupg_readdir (dir)) )
+    {
+      struct card_key_info_s *l_prev = NULL;
+      int disabled, is_ssh, lnr, order;
+      unsigned char grip[20];
+
+      cardsn = NULL;
+      if (strlen (dir_entry->d_name) != 44
+          || strcmp (dir_entry->d_name + 40, ".key"))
+        continue;
+      strncpy (hexgrip, dir_entry->d_name, 40);
+      hexgrip[40] = 0;
+
+      if ( hex2bin (hexgrip, grip, 20) < 0 )
+        continue; /* Bad hex string.  */
+
+      /* Check if it's a key on card.  */
+      for (l = keyinfo_on_cards; l; l = l->next)
+        if (!memcmp (l->keygrip, hexgrip, 40))
+          break;
+        else
+          l_prev = l;
+
+      /* Check if it's listed in "ssh_control" file.  */
+      disabled = is_ssh = 0;
+      err = search_control_file (cf, hexgrip, &disabled, NULL, NULL, &lnr);
+      if (!err)
+        {
+          if (!disabled)
+            {
+              is_ssh = 1;
+            }
+        }
+      else if (gpg_err_code (err) != GPG_ERR_EOF)
+        break;
+
+      /* Clamp LNR value and set the ordinal.
+       * Current use of ordinals:
+       *      1..999    - low value Use-for-ssh.
+       *   1000..99999  - inserted cards (right now only 1000)
+       * 100000..199999 - listed in sshcontrol
+       * 200000..299999 - order taken from Use-for-ssh
+       */
+      if (is_ssh)
+        {
+          if (lnr < 1)
+            lnr = 0;
+          else if (lnr > 99999)
+            lnr = 99999;
+          order = lnr + 100000;
+        }
+
+      if (l)
+        {
+          err = card_key_available (ctrl, l, &key_public, &cardsn);
+          /* Remove the entry from the list of KEYINFO_ON_CARD */
+          if (l_prev)
+            l_prev->next = l->next;
+          else
+            keyinfo_on_cards = l->next;
+          xfree (l->serialno);
+          xfree (l->idstr);
+          xfree (l->usage);
+          xfree (l);
+          l = NULL;
+          /* If we want to allow that the user to change the sorting
+           * order of card keys (which are sorted by their s/n), we
+           * would need to get the use-for-ssh: value from the stub
+           * file and set an appropriate ordinal.  */
+          order = 1000;
+        }
+      else if (is_ssh)
+        err = agent_public_key_from_file (ctrl, grip, &key_public);
+      else /* Examine the file if it's suitable for SSH.  */
+        {
+          err = agent_ssh_key_from_file (ctrl, grip, &key_public, &order);
+          if (err)
+            order = 0;
+          else if (order < 0)
+            {
+              order = -order;
+              if (order > 999)
+                order = 999;
+            }
+          else if (order > 99999)
+            order =  299999;
+          else
+            order += 200000;
+        }
+      if (err)
+        {
+          /* Clear ERR, skipping the key in question.  */
+          err = 0;
+          continue;
+        }
+
+      err = add_to_key_array (&keyarray, key_public, cardsn, order);
+      if (err)
+        {
+          gcry_sexp_release (key_public);
+          xfree (cardsn);
+          goto leave;
+        }
+    }
+
+  gnupg_closedir (dir);
+  ssh_close_control_file (cf);
+
+  /* Lastly, handle remaining keys which don't have the stub files.  */
+  for (l = keyinfo_on_cards, count=0; l; l = l->next, count++)
+     {
+       cardsn = NULL;
+       if (card_key_available (ctrl, l, &key_public, &cardsn))
+         continue;
+
+       err = add_to_key_array (&keyarray, key_public, cardsn, 300000+count);
+       if (err)
+         {
+           gcry_sexp_release (key_public);
+           xfree (cardsn);
+           goto leave;
+         }
+     }
+
+  /* Sort the array.  */
+  qsort (keyarray.items, keyarray.nitems, sizeof *keyarray.items,
+         compare_key_collection_items);
+  if (opt.debug)
+    for (count=0; count < keyarray.nitems; count++)
+      log_debug ("sshkeys[%d]: order=%d, pubkey=%p sn=%s\n",
+                 count, keyarray.items[count].order,
+                 keyarray.items[count].key, keyarray.items[count].cardsn);
+
+  /* And print the keys.  */
+  for (count=0; count < keyarray.nitems; count++)
+    {
+      err = ssh_send_key_public (key_blobs, keyarray.items[count].key,
+                                 keyarray.items[count].cardsn);
+      if (err)
+        {
+          if (opt.debug)
+            gcry_log_debugsxp ("pubkey", keyarray.items[count].key);
+          if (gpg_err_code (err) == GPG_ERR_UNKNOWN_CURVE
+              || gpg_err_code (err) == GPG_ERR_INV_CURVE)
+            {
+              /* For example a Brainpool curve or a curve we don't
+               * support at all but a smartcard lists that curve.
+               * We ignore them.  */
+            }
+          else
+            goto leave;
+        }
+    }
+  *r_key_counter = count;
+
+ leave:
+  agent_card_free_keyinfo (keyinfo_on_cards);
+  free_key_array (&keyarray);
+  return err;
+}
 
 
 /*
@@ -2562,17 +2793,14 @@ ssh_handler_request_identities (ctrl_t ctrl,
 {
   u32 key_counter;
   estream_t key_blobs;
-  gcry_sexp_t key_public;
   gpg_error_t err;
   int ret;
-  ssh_control_file_t cf = NULL;
   gpg_error_t ret_err;
 
   (void)request;
 
   /* Prepare buffer stream.  */
 
-  key_public = NULL;
   key_counter = 0;
 
   key_blobs = es_fopenmem (0, "r+b");
@@ -2582,119 +2810,16 @@ ssh_handler_request_identities (ctrl_t ctrl,
       goto out;
     }
 
-  /* First check whether a key is currently available in the card
-     reader - this should be allowed even without being listed in
-     sshcontrol. */
-
-  if (!opt.disable_scdaemon)
+  err = ssh_send_available_keys (ctrl, key_blobs, &key_counter);
+  if (!err)
     {
-      char *serialno;
-      strlist_t card_list, sl;
-
-      err = card_key_list (ctrl, &serialno, &card_list);
-      if (err)
-        {
-          if (opt.verbose)
-            log_info (_("error getting list of cards: %s\n"),
-                      gpg_strerror (err));
-          goto scd_out;
-        }
-
-      for (sl = card_list; sl; sl = sl->next)
-        {
-          char *serialno0;
-          char *cardsn;
-
-          err = agent_card_serialno (ctrl, &serialno0, sl->d);
-          if (err)
-            {
-              if (opt.verbose)
-                log_info (_("error getting serial number of card: %s\n"),
-                          gpg_strerror (err));
-              continue;
-            }
-
-          xfree (serialno0);
-          if (card_key_available (ctrl, &key_public, &cardsn))
-            continue;
-
-          err = ssh_send_key_public (key_blobs, key_public, cardsn);
-          gcry_sexp_release (key_public);
-          key_public = NULL;
-          xfree (cardsn);
-          if (err)
-            {
-              if (opt.verbose)
-                gcry_log_debugsxp ("pubkey", key_public);
-              if (gpg_err_code (err) == GPG_ERR_UNKNOWN_CURVE
-                  || gpg_err_code (err) == GPG_ERR_INV_CURVE)
-                {
-                  /* For example a Brainpool curve or a curve we don't
-                   * support at all but a smartcard lists that curve.
-                   * We ignore them.  */
-                }
-              else
-                {
-                  xfree (serialno);
-                  free_strlist (card_list);
-                  goto out;
-                }
-            }
-          else
-            key_counter++;
-        }
-
-      xfree (serialno);
-      free_strlist (card_list);
-    }
-
- scd_out:
-  /* Then look at all the registered and non-disabled keys. */
-  err = open_control_file (&cf, 0);
-  if (err)
-    goto out;
-
-  while (!read_control_file_item (cf))
-    {
-      unsigned char grip[20];
-
-      if (!cf->item.valid)
-        continue; /* Should not happen.  */
-      if (cf->item.disabled)
-        continue;
-      assert (strlen (cf->item.hexgrip) == 40);
-      hex2bin (cf->item.hexgrip, grip, sizeof (grip));
-
-      err = agent_public_key_from_file (ctrl, grip, &key_public);
-      if (err)
-        {
-          log_error ("%s:%d: key '%s' skipped: %s\n",
-                     cf->fname, cf->lnr, cf->item.hexgrip,
-                     gpg_strerror (err));
-          continue;
-        }
-
-      err = ssh_send_key_public (key_blobs, key_public, NULL);
-      if (err)
-        goto out;
-      gcry_sexp_release (key_public);
-      key_public = NULL;
-
-      key_counter++;
-    }
-  err = 0;
-
-  ret = es_fseek (key_blobs, 0, SEEK_SET);
-  if (ret)
-    {
-      err = gpg_error_from_syserror ();
-      goto out;
+      ret = es_fseek (key_blobs, 0, SEEK_SET);
+      if (ret)
+        err = gpg_error_from_syserror ();
     }
 
  out:
   /* Send response.  */
-
-  gcry_sexp_release (key_public);
 
   if (!err)
     {
@@ -2712,7 +2837,6 @@ ssh_handler_request_identities (ctrl_t ctrl,
     }
 
   es_fclose (key_blobs);
-  close_control_file (cf);
 
   return ret_err;
 }
@@ -2737,7 +2861,7 @@ data_hash (unsigned char *data, size_t data_n,
    allow the use of signature algorithms that implement the hashing
    internally (e.g. Ed25519).  On success the created signature is
    stored in ssh format at R_SIG and it's size at R_SIGLEN; the caller
-   must use es_free to releaase this memory.  */
+   must use es_free to release this memory.  */
 static gpg_error_t
 data_sign (ctrl_t ctrl, ssh_key_type_spec_t *spec,
            const void *hash, size_t hashlen,
@@ -2769,7 +2893,7 @@ data_sign (ctrl_t ctrl, ssh_key_type_spec_t *spec,
       char *fpr, *prompt;
       char *comment = NULL;
 
-      err = agent_raw_key_from_file (ctrl, ctrl->keygrip, &key);
+      err = agent_raw_key_from_file (ctrl, ctrl->keygrip, &key, NULL);
       if (err)
         goto out;
       err = ssh_get_fingerprint_string (key, opt.ssh_fingerprint_digest, &fpr);
@@ -2912,6 +3036,9 @@ ssh_handler_sign_request (ctrl_t ctrl, estream_t request, estream_t response)
   if (!hash_algo)
     hash_algo = GCRY_MD_SHA1;  /* Use the default.  */
   ctrl->digest.algo = hash_algo;
+  xfree (ctrl->digest.data);
+  ctrl->digest.data = NULL;
+  ctrl->digest.is_pss = 0;
   if ((spec.flags & SPEC_FLAG_USE_PKCS1V2))
     ctrl->digest.raw_value = 0;
   else
@@ -3095,7 +3222,7 @@ ssh_identity_register (ctrl_t ctrl, ssh_key_type_spec_t *spec,
 
   /* Check whether the key is already in our key storage.  Don't do
      anything then besides (re-)adding it to sshcontrol.  */
-  if ( !agent_key_available (key_grip_raw) )
+  if ( !agent_key_available (ctrl, key_grip_raw) )
     goto key_exists; /* Yes, key is available.  */
 
   err = ssh_key_extract_comment (key, &comment);
@@ -3159,7 +3286,7 @@ ssh_identity_register (ctrl_t ctrl, ssh_key_type_spec_t *spec,
 
   /* Store this key to our key storage.  We do not store a creation
    * timestamp because we simply do not know.  */
-  err = agent_write_private_key (key_grip_raw, buffer, buffer_n, 0, 0,
+  err = agent_write_private_key (ctrl, key_grip_raw, buffer, buffer_n, 0,
                                  NULL, NULL, NULL, 0);
   if (err)
     goto out;
@@ -3261,6 +3388,11 @@ ssh_handler_add_identity (ctrl_t ctrl, estream_t request, estream_t response)
 	    confirm = 1;
 	    break;
 	  }
+
+	case SSH_OPT_CONSTRAIN_MAXSIGN:
+	case SSH_OPT_CONSTRAIN_EXTENSION:
+          /* Not yet implemented.  */
+          break;
 
 	default:
 	  /* FIXME: log/bad?  */
@@ -3422,6 +3554,91 @@ ssh_handler_unlock (ctrl_t ctrl, estream_t request, estream_t response)
   else
     ret_err = stream_write_byte (response, SSH_RESPONSE_FAILURE);
 
+  return ret_err;
+}
+
+/* Handler for the "extension" command.  */
+static gpg_error_t
+ssh_handler_extension (ctrl_t ctrl, estream_t request, estream_t response)
+{
+  gpg_error_t ret_err;
+  gpg_error_t err;
+  char *exttype = NULL;
+  char *name = NULL;
+  char *value = NULL;
+
+  err = stream_read_cstring (request, &exttype);
+  if (err)
+    goto leave;
+
+  if (opt.verbose)
+    log_info ("ssh-agent extension '%s' received\n", exttype);
+  if (!strcmp (exttype, "ssh-env@gnupg.org"))
+    {
+      for (;;)
+        {
+          xfree (name); name = NULL;
+          err = stream_read_cstring (request, &name);
+          if (gpg_err_code (err) == GPG_ERR_EOF)
+            break;  /* ready.  */
+          if (err)
+            {
+              if (opt.verbose)
+                log_error ("error reading ssh-agent env name\n");
+              goto leave;
+            }
+          xfree (value); value = NULL;
+          err = stream_read_cstring (request, &value);
+          if (err)
+            {
+              if (opt.verbose)
+                log_error ("error reading ssh-agent env value\n");
+              goto leave;
+            }
+          if (opt.debug)
+            log_debug ("ssh-agent env '%s'='%s'\n", name, value);
+          err = session_env_setenv (ctrl->session_env, name,
+                                    *value? value : NULL);
+          if (err)
+            {
+              log_error ("error setting ssh-agent env value: %s\n",
+                         gpg_strerror (err));
+              goto leave;
+            }
+        }
+      err = 0;
+    }
+  else if (!strcmp (exttype, "ssh-envnames@gnupg.org"))
+    {
+      ret_err = stream_write_byte (response, SSH_RESPONSE_SUCCESS);
+      if (!ret_err)
+        ret_err = stream_write_cstring
+          (response, session_env_list_stdenvnames (NULL, NULL));
+      goto finalleave;
+    }
+  else if (!strcmp (exttype, "session-bind@openssh.org"))
+    {
+      ret_err = stream_write_byte (response, SSH_RESPONSE_SUCCESS);
+      log_info ("ssh-agent extension '%s' ignored - returning success anyway\n",
+                exttype);
+      goto finalleave;
+    }
+  else
+    {
+      if (opt.verbose)
+        log_info ("ssh-agent extension '%s' not supported\n", exttype);
+      err = gpg_error (GPG_ERR_NOT_SUPPORTED);
+    }
+
+ leave:
+  if (!err)
+    ret_err = stream_write_byte (response, SSH_RESPONSE_SUCCESS);
+  else
+    ret_err = stream_write_byte (response, SSH_RESPONSE_FAILURE);
+ finalleave:
+  xfree (exttype);
+  xfree (name);
+  xfree (value);
   return ret_err;
 }
 
@@ -3610,10 +3827,11 @@ ssh_request_process (ctrl_t ctrl, estream_t stream_sock)
 
 
 /* Return the peer's pid.  */
-static unsigned long
-get_client_pid (int fd)
+static void
+get_client_info (gnupg_fd_t fd, struct peer_info_s *out)
 {
-  pid_t client_pid = (pid_t)0;
+  pid_t client_pid = (pid_t)(-1);
+  int client_uid = -1;
 
 #ifdef SO_PEERCRED
   {
@@ -3624,12 +3842,14 @@ get_client_pid (int fd)
 #endif
     socklen_t cl = sizeof cr;
 
-    if (!getsockopt (fd, SOL_SOCKET, SO_PEERCRED, &cr, &cl))
+    if (!getsockopt (FD2INT (fd), SOL_SOCKET, SO_PEERCRED, &cr, &cl))
       {
 #if defined (HAVE_STRUCT_SOCKPEERCRED_PID) || defined (HAVE_STRUCT_UCRED_PID)
         client_pid = cr.pid;
+        client_uid = (int)cr.uid;
 #elif defined (HAVE_STRUCT_UCRED_CR_PID)
         client_pid = cr.cr_pid;
+        client_uid = (int)cr.cr_uid;
 #else
 #error "Unknown SO_PEERCRED struct"
 #endif
@@ -3639,23 +3859,36 @@ get_client_pid (int fd)
   {
     socklen_t len = sizeof (pid_t);
 
-    getsockopt (fd, SOL_LOCAL, LOCAL_PEERPID, &client_pid, &len);
+    getsockopt (FD2INT (fd), SOL_LOCAL, LOCAL_PEERPID, &client_pid, &len);
+#if defined (LOCAL_PEERCRED)
+    {
+      struct xucred cr;
+      len = sizeof (struct xucred);
+
+      if (!getsockopt (FD2INT (fd), SOL_LOCAL, LOCAL_PEERCRED, &cr, &len))
+	client_uid = (int)cr.cr_uid;
+    }
+#endif
   }
 #elif defined (LOCAL_PEEREID)
   {
     struct unpcbid unp;
     socklen_t unpl = sizeof unp;
 
-    if (getsockopt (fd, 0, LOCAL_PEEREID, &unp, &unpl) != -1)
-      client_pid = unp.unp_pid;
+    if (getsockopt (FD2INT (fd), 0, LOCAL_PEEREID, &unp, &unpl) != -1)
+      {
+        client_pid = unp.unp_pid;
+        client_uid = (int)unp.unp_euid;
+      }
   }
 #elif defined (HAVE_GETPEERUCRED)
   {
     ucred_t *ucred = NULL;
 
-    if (getpeerucred (fd, &ucred) != -1)
+    if (getpeerucred (FD2INT (fd), &ucred) != -1)
       {
-        client_pid= ucred_getpid (ucred);
+        client_pid = ucred_getpid (ucred);
+	client_uid = (int)ucred_geteuid (ucred);
         ucred_free (ucred);
       }
   }
@@ -3663,15 +3896,15 @@ get_client_pid (int fd)
   (void)fd;
 #endif
 
-  return (unsigned long)client_pid;
+  out->pid = (client_pid == (pid_t)(-1)? 0 : (unsigned long)client_pid);
+  out->uid = client_uid;
 }
 
 
-/* Start serving client on SOCK_CLIENT.  */
+/* Start serving client on STREAM.  */
 void
-start_command_handler_ssh (ctrl_t ctrl, gnupg_fd_t sock_client)
+start_command_handler_ssh_stream (ctrl_t ctrl, estream_t stream)
 {
-  estream_t stream_sock = NULL;
   gpg_error_t err;
   int ret;
 
@@ -3679,48 +3912,62 @@ start_command_handler_ssh (ctrl_t ctrl, gnupg_fd_t sock_client)
   if (err)
     goto out;
 
-  ctrl->client_pid = get_client_pid (FD2INT(sock_client));
-
-  /* Create stream from socket.  */
-  stream_sock = es_fdopen (FD2INT(sock_client), "r+");
-  if (!stream_sock)
-    {
-      err = gpg_error_from_syserror ();
-      log_error (_("failed to create stream from socket: %s\n"),
-		 gpg_strerror (err));
-      goto out;
-    }
   /* We have to disable the estream buffering, because the estream
      core doesn't know about secure memory.  */
-  ret = es_setvbuf (stream_sock, NULL, _IONBF, 0);
+  ret = es_setvbuf (stream, NULL, _IONBF, 0);
   if (ret)
     {
-      err = gpg_error_from_syserror ();
-      log_error ("failed to disable buffering "
-                 "on socket stream: %s\n", gpg_strerror (err));
+      log_error ("failed to disable buffering on socket stream: %s\n",
+                 strerror (errno));
       goto out;
     }
 
   /* Main processing loop. */
-  while ( !ssh_request_process (ctrl, stream_sock) )
+  while ( !ssh_request_process (ctrl, stream) )
     {
       /* Check whether we have reached EOF before trying to read
-	 another request.  */
+         another request.  */
       int c;
 
-      c = es_fgetc (stream_sock);
+      c = es_fgetc (stream);
       if (c == EOF)
         break;
-      es_ungetc (c, stream_sock);
+      es_ungetc (c, stream);
     }
 
-  /* Reset the SCD in case it has been used. */
-  agent_reset_scd (ctrl);
-
+  /* Reset the daemon in case it has been used. */
+  agent_reset_daemon (ctrl);
 
  out:
-  if (stream_sock)
-    es_fclose (stream_sock);
+  es_fclose (stream);
+}
+
+
+/* Start serving client on SOCK_CLIENT.  */
+void
+start_command_handler_ssh (ctrl_t ctrl, gnupg_fd_t sock_client)
+{
+  estream_t stream_sock;
+  struct peer_info_s peer_info;
+  es_syshd_t syshd;
+
+  syshd.type = ES_SYSHD_SOCK;
+  syshd.u.sock = sock_client;
+
+  get_client_info (sock_client, &peer_info);
+  ctrl->client_pid = peer_info.pid;
+  ctrl->client_uid = peer_info.uid;
+
+  /* Create stream from socket.  */
+  stream_sock = es_sysopen (&syshd, "r+");
+  if (!stream_sock)
+    {
+      log_error (_("failed to create stream from socket: %s\n"),
+                 strerror (errno));
+      return;
+    }
+
+  start_command_handler_ssh_stream (ctrl, stream_sock);
 }
 
 
@@ -3862,8 +4109,8 @@ serve_mmapped_ssh_request (ctrl_t ctrl,
       valid_response = 1;
     }
 
-  /* Reset the SCD in case it has been used. */
-  agent_reset_scd (ctrl);
+  /* Reset the daemon in case it has been used. */
+  agent_reset_daemon (ctrl);
 
   return valid_response? 0 : -1;
 }

@@ -1,0 +1,32 @@
+From c884e22140ec9c33f89651743fb13f8d54e6e6d2 Mon Sep 17 00:00:00 2001
+From: Werner Koch <wk@gnupg.org>
+Date: Mon, 19 Aug 2024 10:31:35 +0200
+Subject: [PATCH] gpg: Minor fix when building with --disable-exec
+
+* g10/photoid.c (show_photo): No return for a void function.
+--
+
+GnuPG-bug-id: 7256
+---
+ g10/photoid.c | 1 -
+ 1 file changed, 1 deletion(-)
+
+diff --git a/g10/photoid.c b/g10/photoid.c
+index fc8866121..7616466c6 100644
+--- a/g10/photoid.c
++++ b/g10/photoid.c
+@@ -423,11 +423,10 @@ struct spawn_info
+ #ifdef NO_EXEC
+ static void
+ show_photo (const char *command, const char *name, const void *image, u32 len)
+ {
+   log_error(_("no remote program execution supported\n"));
+-  return GPG_ERR_GENERAL;
+ }
+ #else /* ! NO_EXEC */
+ #include "../common/membuf.h"
+ #include "../common/exechelp.h"
+ 
+-- 
+2.45.2
+

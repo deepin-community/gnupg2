@@ -140,9 +140,11 @@ noinst_PROGRAMS = $(am__EXEEXT_1) $(am__EXEEXT_2)
 @GNUPG_AGENT_PGM_TRUE@am__append_2 = -DGNUPG_DEFAULT_AGENT="\"@GNUPG_AGENT_PGM@\""
 @GNUPG_PINENTRY_PGM_TRUE@am__append_3 = -DGNUPG_DEFAULT_PINENTRY="\"@GNUPG_PINENTRY_PGM@\""
 @GNUPG_SCDAEMON_PGM_TRUE@am__append_4 = -DGNUPG_DEFAULT_SCDAEMON="\"@GNUPG_SCDAEMON_PGM@\""
-@GNUPG_DIRMNGR_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
-@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
-@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+@GNUPG_TPM2DAEMON_PGM_TRUE@am__append_5 = -DGNUPG_DEFAULT_TPM2DAEMON="\"@GNUPG_TPM2DAEMON_PGM@\""
+@GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
+@GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
+@GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
+@HAVE_W32_SYSTEM_TRUE@am__append_9 = gpgsm-w32info.o
 subdir = sm
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -156,7 +158,6 @@ am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
 	$(top_srcdir)/m4/ntbtls.m4 $(top_srcdir)/m4/pkg.m4 \
 	$(top_srcdir)/m4/po.m4 $(top_srcdir)/m4/progtest.m4 \
 	$(top_srcdir)/m4/readline.m4 $(top_srcdir)/m4/socklen.m4 \
-	$(top_srcdir)/m4/sys_socket_h.m4 $(top_srcdir)/m4/tar-ustar.m4 \
 	$(top_srcdir)/acinclude.m4 $(top_srcdir)/configure.ac
 am__configure_deps = $(am__aclocal_m4_deps) $(CONFIGURE_DEPENDENCIES) \
 	$(ACLOCAL_M4)
@@ -179,18 +180,16 @@ am_gpgsm_OBJECTS = gpgsm.$(OBJEXT) misc.$(OBJEXT) keydb.$(OBJEXT) \
 	minip12.$(OBJEXT) qualified.$(OBJEXT) passphrase.$(OBJEXT)
 gpgsm_OBJECTS = $(am_gpgsm_OBJECTS)
 am__DEPENDENCIES_1 =
-@HAVE_W32_SYSTEM_TRUE@am__DEPENDENCIES_2 = $(am__DEPENDENCIES_1) \
-@HAVE_W32_SYSTEM_TRUE@	gpgsm-w32info.o
 gpgsm_LINK = $(CCLD) $(AM_CFLAGS) $(CFLAGS) $(gpgsm_LDFLAGS) \
 	$(LDFLAGS) -o $@
 am__objects_1 =
 am_t_minip12_OBJECTS = $(am__objects_1) t_minip12-t-minip12.$(OBJEXT) \
 	t_minip12-minip12.$(OBJEXT)
 t_minip12_OBJECTS = $(am_t_minip12_OBJECTS)
-am__DEPENDENCIES_3 = $(libcommon) $(am__DEPENDENCIES_1) \
+am__DEPENDENCIES_2 = $(libcommon) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1)
-t_minip12_DEPENDENCIES = $(am__DEPENDENCIES_3) $(am__DEPENDENCIES_1)
+t_minip12_DEPENDENCIES = $(am__DEPENDENCIES_2) $(am__DEPENDENCIES_1)
 t_minip12_LINK = $(CCLD) $(t_minip12_CFLAGS) $(CFLAGS) $(AM_LDFLAGS) \
 	$(LDFLAGS) -o $@
 AM_V_P = $(am__v_P_@AM_V@)
@@ -331,9 +330,11 @@ GMSGFMT_015 = @GMSGFMT_015@
 GNUPG_AGENT_PGM = @GNUPG_AGENT_PGM@
 GNUPG_DIRMNGR_LDAP_PGM = @GNUPG_DIRMNGR_LDAP_PGM@
 GNUPG_DIRMNGR_PGM = @GNUPG_DIRMNGR_PGM@
+GNUPG_KEYBOXD_PGM = @GNUPG_KEYBOXD_PGM@
 GNUPG_PINENTRY_PGM = @GNUPG_PINENTRY_PGM@
 GNUPG_PROTECT_TOOL_PGM = @GNUPG_PROTECT_TOOL_PGM@
 GNUPG_SCDAEMON_PGM = @GNUPG_SCDAEMON_PGM@
+GNUPG_TPM2DAEMON_PGM = @GNUPG_TPM2DAEMON_PGM@
 GPGKEYS_LDAP = @GPGKEYS_LDAP@
 GPGRT_CONFIG = @GPGRT_CONFIG@
 GPG_ERROR_CFLAGS = @GPG_ERROR_CFLAGS@
@@ -342,6 +343,7 @@ GPG_ERROR_LIBS = @GPG_ERROR_LIBS@
 GPG_ERROR_MT_CFLAGS = @GPG_ERROR_MT_CFLAGS@
 GPG_ERROR_MT_LIBS = @GPG_ERROR_MT_LIBS@
 GREP = @GREP@
+HAVE_LIBTSS = @HAVE_LIBTSS@
 INSTALL = @INSTALL@
 INSTALL_DATA = @INSTALL_DATA@
 INSTALL_PROGRAM = @INSTALL_PROGRAM@
@@ -369,9 +371,10 @@ LIBINTL = @LIBINTL@
 LIBOBJS = @LIBOBJS@
 LIBREADLINE = @LIBREADLINE@
 LIBS = @LIBS@
+LIBTSS_CFLAGS = @LIBTSS_CFLAGS@
+LIBTSS_LIBS = @LIBTSS_LIBS@
 LIBUSB_CPPFLAGS = @LIBUSB_CPPFLAGS@
 LIBUSB_LIBS = @LIBUSB_LIBS@
-LIBUTIL_LIBS = @LIBUTIL_LIBS@
 LN_S = @LN_S@
 LTLIBICONV = @LTLIBICONV@
 LTLIBINTL = @LTLIBINTL@
@@ -408,13 +411,14 @@ RANLIB = @RANLIB@
 SENDMAIL = @SENDMAIL@
 SET_MAKE = @SET_MAKE@
 SHELL = @SHELL@
-SHRED = @SHRED@
 SQLITE3_CFLAGS = @SQLITE3_CFLAGS@
 SQLITE3_LIBS = @SQLITE3_LIBS@
 STRIP = @STRIP@
+SWTPM = @SWTPM@
 SYSROOT = @SYSROOT@
-SYS_SOCKET_H = @SYS_SOCKET_H@
-TAR = @TAR@
+TPMSERVER = @TPMSERVER@
+TSSSTARTUP = @TSSSTARTUP@
+TSS_INCLUDE = @TSS_INCLUDE@
 USE_C99_CFLAGS = @USE_C99_CFLAGS@
 USE_INCLUDED_LIBINTL = @USE_INCLUDED_LIBINTL@
 USE_NLS = @USE_NLS@
@@ -480,32 +484,23 @@ top_srcdir = @top_srcdir@
 EXTRA_DIST = ChangeLog-2011 \
              gpgsm-w32info.rc gpgsm.w32-manifest.in
 
-AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS)
+AM_CFLAGS = $(LIBGCRYPT_CFLAGS) $(KSBA_CFLAGS) $(LIBASSUAN_CFLAGS) \
+            $(NPTH_CFLAGS) $(GPG_ERROR_CFLAGS)
+
 
 # NB: AM_CFLAGS may also be used by tools running on the build
 # platform to create source files.
 AM_CPPFLAGS = -DKEYBOX_WITH_X509=1 -DLOCALEDIR=\"$(localedir)\" \
 	$(am__append_1) $(am__append_2) $(am__append_3) \
 	$(am__append_4) $(am__append_5) $(am__append_6) \
-	$(am__append_7)
-@HAVE_W32CE_SYSTEM_FALSE@extra_sys_libs = 
-
-# Under Windows we use LockFileEx.  WindowsCE provides this only on
-# the WindowsMobile 6 platform and thus we need to use the coredll6
-# import library.  We also want to use a stacksize of 256k instead of
-# the 2MB which is the default with cegcc.  256k is the largest stack
-# we use with pth.
-@HAVE_W32CE_SYSTEM_TRUE@extra_sys_libs = -lcoredll6
-@HAVE_W32CE_SYSTEM_FALSE@extra_bin_ldflags = 
-@HAVE_W32CE_SYSTEM_TRUE@extra_bin_ldflags = -Wl,--stack=0x40000
-resource_objs = 
+	$(am__append_7) $(am__append_8)
+resource_objs = $(am__append_9)
 
 # Convenience macros
 libcommon = ../common/libcommon.a
 libcommonpth = ../common/libcommonpth.a
 libcommontls = ../common/libcommontls.a
 libcommontlsnpth = ../common/libcommontlsnpth.a
-@HAVE_W32_SYSTEM_TRUE@gpgsm_rc_objs = $(resource_objs) gpgsm-w32info.o
 gpgsm_SOURCES = \
 	gpgsm.c	gpgsm.h \
 	misc.c \
@@ -532,14 +527,14 @@ gpgsm_SOURCES = \
 	qualified.c \
 	passphrase.c passphrase.h
 
-common_libs = ../kbx/libkeybox509.a $(libcommon)
+common_libs = ../kbx/libkeybox509.a $(libcommonpth)
 gpgsm_LDADD = $(common_libs) ../common/libgpgrl.a \
               $(LIBGCRYPT_LIBS) $(KSBA_LIBS) $(LIBASSUAN_LIBS) \
-              $(GPG_ERROR_LIBS) $(LIBREADLINE) $(LIBINTL) \
-	      $(LIBICONV) $(gpgsm_rc_objs) $(extra_sys_libs) $(NETLIBS)
+              $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(LIBREADLINE) $(LIBINTL) \
+	      $(LIBICONV) $(resource_objs) $(NETLIBS)
 
-gpgsm_LDFLAGS = $(extra_bin_ldflags)
-gpgsm_DEPENDENCIES = $(gpgsm_rc_objs)
+gpgsm_LDFLAGS = 
+gpgsm_DEPENDENCIES = $(resource_objs)
 module_tests = t-minip12
 module_maint_tests = 
 t_common_src = 

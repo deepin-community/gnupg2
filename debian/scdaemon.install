@@ -1,2 +1,4 @@
 debian/org.gnupg.scdaemon.metainfo.xml usr/share/metainfo
+debian/tmp/usr/bin/gpg-card
+debian/tmp/usr/lib/gnupg/gpg-auth
 debian/tmp/usr/lib/gnupg/scdaemon

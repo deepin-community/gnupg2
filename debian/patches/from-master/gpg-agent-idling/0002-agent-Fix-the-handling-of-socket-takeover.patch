@@ -1,0 +1,65 @@
+From b2826924eeca2c4d824bc6ddba27f4db8b2175e3 Mon Sep 17 00:00:00 2001
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Wed, 30 Aug 2023 11:26:07 +0900
+Subject: [PATCH 2/9] agent: Fix the handling of socket takeover.
+
+* agent/gpg-agent.c (handle_connections): Check the takeover when
+interrupted.
+(check_own_socket_thread): Kick the loop when detected.
+
+--
+
+GnuPG-bug-id: 6692
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+---
+ agent/gpg-agent.c | 20 +++++++++++---------
+ 1 file changed, 11 insertions(+), 9 deletions(-)
+
+diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
+index a493e2a98..c379851b3 100644
+--- a/agent/gpg-agent.c
++++ b/agent/gpg-agent.c
+@@ -3238,6 +3238,16 @@ handle_connections (gnupg_fd_t listen_fd,
+           gnupg_sleep (1);
+           continue;
+ 	}
++
++      if (socket_takeover_detected)
++        {
++          /* We may not remove the socket as it is now in use by another
++             server. */
++          inhibit_socket_removal = 1;
++          shutdown_pending = 2;
++          log_info ("this process is useless - shutting down\n");
++        }
++
+       if (ret <= 0)
+ 	/* Interrupt or timeout.  Will be handled when calculating the
+ 	   next timeout.  */
+@@ -3274,15 +3284,6 @@ handle_connections (gnupg_fd_t listen_fd,
+           log_info ("homedir has been removed - shutting down\n");
+         }
+ 
+-      if (socket_takeover_detected)
+-        {
+-          /* We may not remove the socket as it is now in use by another
+-             server. */
+-          inhibit_socket_removal = 1;
+-          shutdown_pending = 2;
+-          log_info ("this process is useless - shutting down\n");
+-        }
+-
+       if (!shutdown_pending)
+         {
+           int idx;
+@@ -3440,6 +3441,7 @@ check_own_socket_thread (void *arg)
+ 
+   xfree (sockname);
+   socket_takeover_detected = 1;
++  agent_kick_the_loop ();
+ 
+   return NULL;
+ }
+-- 
+2.39.2
+

@@ -61,6 +61,12 @@ and then manually edited:
       <Component Id="cmp74961776CCC7B203F500FE261DC12F92" Directory="dirAA72FFDDFA224FB221D53750596B0142" Guid="FBA2569C-554D-4C06-88FC-0FD6541B5B4B">
         <File Id="filB82A767EB9971018C006215A9FDE77EF" KeyPath="yes" Source="$(var.SourceDir)\bin\gpg-connect-agent.exe"/>
       </Component>
+      <Component Id="cmp74961776CCC7B203F500FE261DC12F94" Directory="dirAA72FFDDFA224FB221D53750596B0142" Guid="FBA2569C-554D-4C06-88FC-0FD6541B5B4C">
+        <File Id="filB82A767EB9971018C006215A9FDE77F1" KeyPath="yes" Source="$(var.SourceDir)\bin\gpg-card.exe"/>
+      </Component>
+      <Component Id="cmp74961776CCC7B203F500FE261DC12F95" Directory="dirAA72FFDDFA224FB221D53750596B0142" Guid="3134BF55-46AF-4B76-A535-DC1EDDB0DBFD">
+        <File Id="filB82A767EB9971018C006215A9FDE77F2" KeyPath="yes" Source="$(var.SourceDir)\libexec\keyboxd.exe"/>
+      </Component>
       <Component Id="cmp6C1FB70721B208E33DB24296B93AB93F" Directory="dirAA72FFDDFA224FB221D53750596B0142" Guid="FE29D2AA-3151-4421-B8C0-355F69F267A1">
         <File Id="fil563D2C0464DCE7ECADE6E15C0FC65821" KeyPath="yes" Source="$(var.SourceDir)\libexec\gpg-preset-passphrase.exe"/>
       </Component>
@@ -68,7 +74,7 @@ and then manually edited:
         <File Id="fil563D2C0464DCE7ECADE6E15C0FC65822" KeyPath="yes" Source="$(var.SourceDir)\libexec\gpg-check-pattern.exe"/>
       </Component>
       <Component Id="cmpB87CCF9DDCB6D9B36B92B0F9FA24FDC9" Directory="dirAA72FFDDFA224FB221D53750596B0142" Guid="9BB809F3-C09B-4A1E-B52D-B68CBE59AE3B">
-        <File Id="fil8A3F9D3F6E36120B183DDF4981D84C1B" KeyPath="yes" Source="$(var.SourceDir)\libexec\gpg-wks-client.exe"/>
+        <File Id="fil8A3F9D3F6E36120B183DDF4981D84C1B" KeyPath="yes" Source="$(var.SourceDir)\bin\gpg-wks-client.exe"/>
       </Component>
       <Component Id="cmpEC270B071977C15E14328A04D3BBC3E8" Directory="dirAA72FFDDFA224FB221D53750596B0142" Guid="4BE9D7E7-6054-4D78-9292-4D58DBA81684">
         <File Id="fil822B20E83B1A966BABB0574CE6611B02" KeyPath="yes" Source="$(var.SourceDir)\bin\gpg.exe"/>
@@ -156,9 +162,6 @@ and then manually edited:
       </Component>
       <Component Id="cmpB5509E83C14EE3080355A3EAF09D1C8D" Directory="dir6694D0A4AAD84EF827096DD86D1B4FA2" Guid="FEC81836-944E-4613-A498-E620B981EB04">
         <File Id="fil0615847C26E386E0B892124531F2ABBC" KeyPath="yes" Source="$(var.SourceDir)\lib\libnpth.dll.a" Name="libnpth.imp"/>
-      </Component>
-      <Component Id="cmp909B0412FDFCFD5092D93932AF982A73" Directory="dirC2E6BF1CC65903EA3A1AD83349586122" Guid="D30E7138-0D1C-48F4-8F53-E1EC6333F611">
-        <File Id="fil322067E40CE41C36574A7CC520D75877" KeyPath="yes" Source="$(var.SourceDir)\share\doc\gnupg\examples\Automatic.prf" Name="Automatic.prf"/>
       </Component>
       <Component Id="cmp909B0412FDFCFD5092D93932AF982A74" Directory="dirC2E6BF1CC65903EA3A1AD83349586122" Guid="D30E7138-0D1C-48F4-8F53-E1EC6333F612">
         <File Id="fil322067E40CE41C36574A7CC520D75878" KeyPath="yes" Source="$(var.SourceDir)\share\doc\gnupg\examples\pwpattern.list" Name="pwpattern.list"/>

@@ -145,8 +145,11 @@ do_ocsp_request (ctrl_t ctrl, ksba_ocsp_t ocsp,
     {
       /* For now we do not allow OCSP via Tor due to possible privacy
          concerns.  Needs further research.  */
-      log_error (_("OCSP request not possible due to Tor mode\n"));
-      return gpg_error (GPG_ERR_NOT_SUPPORTED);
+      const char *msg = _("OCSP request not possible due to Tor mode");
+      err = gpg_error (GPG_ERR_NOT_SUPPORTED);
+      log_error ("%s", msg);
+      dirmngr_status_printf (ctrl, "NOTE", "no_ocsp_due_to_tor %u %s", err,msg);
+      return err;
     }
 
   if (opt.disable_http)
@@ -181,7 +184,7 @@ do_ocsp_request (ctrl_t ctrl, ksba_ocsp_t ocsp,
     }
 
  once_more:
-  err = http_open (&http, HTTP_REQ_POST, url, NULL, NULL,
+  err = http_open (ctrl, &http, HTTP_REQ_POST, url, NULL, NULL,
                    ((opt.honor_http_proxy? HTTP_FLAG_TRY_PROXY:0)
                     | (dirmngr_use_tor ()? HTTP_FLAG_FORCE_TOR:0)
                     | (opt.disable_ipv4? HTTP_FLAG_IGNORE_IPv4 : 0)
@@ -389,7 +392,7 @@ validate_responder_cert (ctrl_t ctrl, ksba_cert_t cert,
 
          Note, that in theory we could simply ask the client via an
          inquire to validate a certificate but this might involve
-         calling DirMngr again recursivly - we can't do that as of now
+         calling DirMngr again recursively - we can't do that as of now
          (neither DirMngr nor gpgsm have the ability for concurrent
          access to DirMngr.   */
 
@@ -520,7 +523,7 @@ check_signature_core (ctrl_t ctrl, ksba_cert_t cert, gcry_sexp_t s_sig,
 }
 
 
-/* Check the signature of an OCSP repsonse.  OCSP is the context,
+/* Check the signature of an OCSP response.  OCSP is the context,
    S_SIG the signature value and MD the handle of the hash we used for
    the response.  This function automagically finds the correct public
    key.  If SIGNER_FPR_LIST is not NULL, the default OCSP reponder has been
@@ -647,10 +650,13 @@ check_signature (ctrl_t ctrl,
 /* Check whether the certificate either given by fingerprint CERT_FPR
    or directly through the CERT object is valid by running an OCSP
    transaction.  With FORCE_DEFAULT_RESPONDER set only the configured
-   default responder is used. */
+   default responder is used.  If R_REVOKED_AT or R_REASON are not
+   NULL and the certificat has been revoked the revocation time and
+   the reasons are stored there. */
 gpg_error_t
 ocsp_isvalid (ctrl_t ctrl, ksba_cert_t cert, const char *cert_fpr,
-              int force_default_responder)
+              int force_default_responder, ksba_isotime_t r_revoked_at,
+              const char **r_reason)
 {
   gpg_error_t err;
   ksba_ocsp_t ocsp = NULL;
@@ -669,6 +675,12 @@ ocsp_isvalid (ctrl_t ctrl, ksba_cert_t cert, const char *cert_fpr,
   char *oid;
   ksba_name_t name;
   fingerprint_list_t default_signer = NULL;
+  const char *sreason;
+
+  if (r_revoked_at)
+    *r_revoked_at = 0;
+  if (r_reason)
+    *r_reason = NULL;
 
   /* Get the certificate.  */
   if (cert)
@@ -839,8 +851,36 @@ ocsp_isvalid (ctrl_t ctrl, ksba_cert_t cert, const char *cert_fpr,
                       more important message than the failure of our
                       cache. */
         }
-    }
 
+      switch (reason)
+        {
+        case KSBA_CRLREASON_UNSPECIFIED:
+          sreason = "unspecified"; break;
+        case KSBA_CRLREASON_KEY_COMPROMISE:
+          sreason = "key compromise"; break;
+        case KSBA_CRLREASON_CA_COMPROMISE:
+          sreason = "CA compromise"; break;
+        case KSBA_CRLREASON_AFFILIATION_CHANGED:
+          sreason = "affiliation changed"; break;
+        case KSBA_CRLREASON_SUPERSEDED:
+          sreason = "superseded"; break;
+        case KSBA_CRLREASON_CESSATION_OF_OPERATION:
+          sreason = "cessation of operation"; break;
+        case KSBA_CRLREASON_CERTIFICATE_HOLD:
+          sreason = "certificate on hold"; break;
+        case KSBA_CRLREASON_REMOVE_FROM_CRL:
+          sreason = "removed from CRL"; break;
+        case KSBA_CRLREASON_PRIVILEGE_WITHDRAWN:
+          sreason = "privilege withdrawn"; break;
+        case KSBA_CRLREASON_AA_COMPROMISE:
+          sreason = "AA compromise"; break;
+        case KSBA_CRLREASON_OTHER:
+          sreason = "other"; break;
+        default: sreason = "?"; break;
+        }
+    }
+  else
+    sreason = "";
 
   if (opt.verbose)
     {
@@ -852,29 +892,19 @@ ocsp_isvalid (ctrl_t ctrl, ksba_cert_t cert, const char *cert_fpr,
                 this_update, next_update);
       if (status == KSBA_STATUS_REVOKED)
         log_info (_("certificate has been revoked at: %s due to: %s\n"),
-                  revocation_time,
-                  reason == KSBA_CRLREASON_UNSPECIFIED?   "unspecified":
-                  reason == KSBA_CRLREASON_KEY_COMPROMISE? "key compromise":
-                  reason == KSBA_CRLREASON_CA_COMPROMISE?   "CA compromise":
-                  reason == KSBA_CRLREASON_AFFILIATION_CHANGED?
-                                                      "affiliation changed":
-                  reason == KSBA_CRLREASON_SUPERSEDED?   "superseded":
-                  reason == KSBA_CRLREASON_CESSATION_OF_OPERATION?
-                                                  "cessation of operation":
-                  reason == KSBA_CRLREASON_CERTIFICATE_HOLD?
-                                                  "certificate on hold":
-                  reason == KSBA_CRLREASON_REMOVE_FROM_CRL?
-                                                  "removed from CRL":
-                  reason == KSBA_CRLREASON_PRIVILEGE_WITHDRAWN?
-                                                  "privilege withdrawn":
-                  reason == KSBA_CRLREASON_AA_COMPROMISE? "AA compromise":
-                  reason == KSBA_CRLREASON_OTHER?   "other":"?");
+                  revocation_time, sreason);
 
     }
 
 
   if (status == KSBA_STATUS_REVOKED)
-    err = gpg_error (GPG_ERR_CERT_REVOKED);
+    {
+      err = gpg_error (GPG_ERR_CERT_REVOKED);
+      if (r_revoked_at)
+        gnupg_copy_time (r_revoked_at, revocation_time);
+      if (r_reason)
+        *r_reason = sreason;
+    }
   else if (status == KSBA_STATUS_UNKNOWN)
     err = gpg_error (GPG_ERR_NO_DATA);
   else if (status != KSBA_STATUS_GOOD)
@@ -905,7 +935,7 @@ ocsp_isvalid (ctrl_t ctrl, ksba_cert_t cert, const char *cert_fpr,
         err = gpg_error (GPG_ERR_TIME_CONFLICT);
     }
 
-  /* Check that we are not beyound NEXT_UPDATE  (plus some extra time). */
+  /* Check that we are not beyond NEXT_UPDATE  (plus some extra time). */
   if (*next_update)
     {
       gnupg_copy_time (tmp_time, next_update);

@@ -144,40 +144,9 @@ gpg_dirmngr_deinit_session_data (ctrl_t ctrl)
 static gpg_error_t
 warn_version_mismatch (assuan_context_t ctx, const char *servername)
 {
-  gpg_error_t err;
-  char *serverversion;
-  const char *myversion = strusage (13);
-
-  err = get_assuan_server_version (ctx, 0, &serverversion);
-  if (err)
-    log_error (_("error getting version from '%s': %s\n"),
-               servername, gpg_strerror (err));
-  else if (compare_version_strings (serverversion, myversion) < 0)
-    {
-      char *warn;
-
-      warn = xtryasprintf (_("server '%s' is older than us (%s < %s)"),
-                           servername, serverversion, myversion);
-      if (!warn)
-        err = gpg_error_from_syserror ();
-      else
-        {
-          log_info (_("WARNING: %s\n"), warn);
-          if (!opt.quiet)
-            {
-              log_info (_("Note: Outdated servers may lack important"
-                          " security fixes.\n"));
-              log_info (_("Note: Use the command \"%s\" to restart them.\n"),
-                        "gpgconf --kill all");
-            }
-
-          write_status_strings (STATUS_WARNING, "server_version_mismatch 0",
-                                " ", warn, NULL);
-          xfree (warn);
-        }
-    }
-  xfree (serverversion);
-  return err;
+  return warn_server_version_mismatch (ctx, servername, 0,
+                                       write_status_strings2, NULL,
+                                       !opt.quiet);
 }
 
 
@@ -240,9 +209,8 @@ create_context (ctrl_t ctrl, assuan_context_t *r_ctx)
           err = assuan_transact (ctx, "OPTION honor-keyserver-url-used",
                                  NULL, NULL, NULL, NULL, NULL, NULL);
           if (gpg_err_code (err) == GPG_ERR_FORBIDDEN)
-            log_error (_("keyserver option \"%s\""
-                         " may not be used in %s mode\n"),
-                       "honor-keyserver-url", "Tor");
+            log_error (_("keyserver option \"honor-keyserver-url\""
+                         " may not be used in Tor mode\n"));
           else if (gpg_err_code (err) == GPG_ERR_UNKNOWN_OPTION)
             err = 0; /* Old dirmngr versions do not support this option.  */
         }
@@ -1067,7 +1035,7 @@ ks_put_inq_cb (void *opaque, const char *line)
 
 /* Send a key to the configured server.  {DATA,DATLEN} contains the
    key in OpenPGP binary transport format.  If KEYBLOCK is not NULL it
-   has the internal representaion of that key; this is for example
+   has the internal representation of that key; this is for example
    used to convey meta data to LDAP keyservers.  */
 gpg_error_t
 gpg_dirmngr_ks_put (ctrl_t ctrl, void *data, size_t datalen, kbnode_t keyblock)
@@ -1254,72 +1222,6 @@ gpg_dirmngr_dns_cert (ctrl_t ctrl, const char *name, const char *certtype,
   xfree (parm.fpr);
   xfree (parm.url);
   es_fclose (parm.memfp);
-  xfree (line);
-  close_context (ctrl, ctx);
-  return err;
-}
-
-
-/* Ask the dirmngr for PKA info.  On success the retrieved fingerprint
-   is returned in a malloced buffer at R_FPR and its length is stored
-   at R_FPRLEN.  If an URL is available it is stored as a malloced
-   string at R_URL.  On error all return values are set to NULL/0.  */
-gpg_error_t
-gpg_dirmngr_get_pka (ctrl_t ctrl, const char *userid,
-                     unsigned char **r_fpr, size_t *r_fprlen,
-                     char **r_url)
-{
-  gpg_error_t err;
-  assuan_context_t ctx;
-  struct dns_cert_parm_s parm;
-  char *line = NULL;
-
-  memset (&parm, 0, sizeof parm);
-  if (r_fpr)
-    *r_fpr = NULL;
-  if (r_fprlen)
-    *r_fprlen = 0;
-  if (r_url)
-    *r_url = NULL;
-
-  err = open_context (ctrl, &ctx);
-  if (err)
-    return err;
-
-  line = es_bsprintf ("DNS_CERT --pka -- %s", userid);
-  if (!line)
-    {
-      err = gpg_error_from_syserror ();
-      goto leave;
-    }
-  if (strlen (line) + 2 >= ASSUAN_LINELENGTH)
-    {
-      err = gpg_error (GPG_ERR_TOO_LARGE);
-      goto leave;
-    }
-
-  err = assuan_transact (ctx, line, dns_cert_data_cb, &parm,
-                         NULL, NULL, dns_cert_status_cb, &parm);
-  if (err)
-    goto leave;
-
-  if (r_fpr && parm.fpr)
-    {
-      *r_fpr = parm.fpr;
-      parm.fpr = NULL;
-    }
-  if (r_fprlen)
-    *r_fprlen = parm.fprlen;
-
-  if (r_url && parm.url)
-    {
-      *r_url = parm.url;
-      parm.url = NULL;
-    }
-
- leave:
-  xfree (parm.fpr);
-  xfree (parm.url);
   xfree (line);
   close_context (ctrl, ctx);
   return err;

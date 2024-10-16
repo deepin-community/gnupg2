@@ -70,6 +70,7 @@
 #include "../common/i18n.h"
 #include "../common/zb32.h"
 
+
 /* FIXME: Libgcrypt 1.9 will support EAX.  Until we name this a
  * requirement we hardwire the enum used for EAX.  */
 #define MY_GCRY_CIPHER_MODE_EAX 14
@@ -240,7 +241,7 @@ checksum_u16( unsigned n )
 
 
 u16
-checksum( byte *p, unsigned n )
+checksum (const byte *p, unsigned n)
 {
     u16 a;
 
@@ -255,6 +256,25 @@ checksum_mpi (gcry_mpi_t a)
   u16 csum;
   byte *buffer;
   size_t nbytes;
+
+  /*
+   * This code can be skipped when gcry_mpi_print
+   * supports opaque MPI.
+   */
+  if (gcry_mpi_get_flag (a, GCRYMPI_FLAG_OPAQUE))
+    {
+      const byte *p;
+      unsigned int nbits;
+
+      p = gcry_mpi_get_opaque (a, &nbits);
+      if (!p)
+        return 0;
+
+      csum = nbits >> 8;
+      csum += (nbits & 0xff);
+      csum += checksum (p, (nbits+7)/8);
+      return csum;
+    }
 
   if ( gcry_mpi_print (GCRYMPI_FMT_PGP, NULL, 0, &nbytes, a) )
     BUG ();
@@ -376,8 +396,9 @@ print_sha1_keysig_rejected_note (void)
   log_info (_("Note: third-party key signatures using"
               " the %s algorithm are rejected\n"),
             gcry_md_algo_name (GCRY_MD_SHA1));
-  print_further_info ("use option \"%s\" to override",
-                      "--allow-weak-key-signatures");
+  if (!opt.quiet)
+    log_info (_("(use option \"%s\" to override)\n"),
+              "--allow-weak-key-signatures");
 }
 
 
@@ -421,7 +442,7 @@ print_further_info (const char *format, ...)
 
   log_info (_("(further info: "));
   va_start (arg_ptr, format);
-  log_logv (GPGRT_LOG_CONT, format, arg_ptr);
+  log_logv (GPGRT_LOGLVL_CONT, format, arg_ptr);
   va_end (arg_ptr);
   log_printf (")\n");
 }
@@ -524,21 +545,6 @@ map_cipher_gcry_to_openpgp (enum gcry_cipher_algos algo)
     }
 }
 
-/* Map Gcrypt public key algorithm numbers to those used by OpenPGP.
-   FIXME: This mapping is used at only two places - we should get rid
-   of it.  */
-pubkey_algo_t
-map_pk_gcry_to_openpgp (enum gcry_pk_algos algo)
-{
-  switch (algo)
-    {
-    case GCRY_PK_EDDSA:  return PUBKEY_ALGO_EDDSA;
-    case GCRY_PK_ECDSA:  return PUBKEY_ALGO_ECDSA;
-    case GCRY_PK_ECDH:   return PUBKEY_ALGO_ECDH;
-    default: return algo < 110 ? (pubkey_algo_t)algo : 0;
-    }
-}
-
 
 /* Return the block length of an OpenPGP cipher algorithm.  */
 int
@@ -569,7 +575,7 @@ openpgp_cipher_blocklen (cipher_algo_t algo)
 
 /****************
  * Wrapper around the libgcrypt function with additional checks on
- * the OpenPGP contraints for the algo ID.
+ * the OpenPGP constraints for the algo ID.
  */
 int
 openpgp_cipher_test_algo (cipher_algo_t algo)
@@ -609,19 +615,14 @@ openpgp_cipher_algo_name (cipher_algo_t algo)
 
 
 /* Same as openpgp_cipher_algo_name but returns a string in the form
- * "ALGO.MODE" if AEAD is not 0.  Note that in this version we do not
- * print "ALGO.CFB" as we do in 2.3 to avoid confusing users.  */
+ * "ALGO.MODE".  If AEAD is 0 "CFB" is used for the mode.  */
 const char *
 openpgp_cipher_algo_mode_name (cipher_algo_t algo, aead_algo_t aead)
 {
-
-  if (aead == AEAD_ALGO_NONE)
-    return openpgp_cipher_algo_name (algo);
-
   return map_static_strings ("openpgp_cipher_algo_mode_name", algo, aead,
                              openpgp_cipher_algo_name (algo),
                              ".",
-                             openpgp_aead_algo_name (aead),
+                             aead? openpgp_aead_algo_name (aead) : "CFB",
                              NULL);
 }
 
@@ -633,20 +634,14 @@ openpgp_aead_test_algo (aead_algo_t algo)
   /* FIXME: We currently have no easy way to test whether libgcrypt
    * implements a mode.  The only way we can do this is to open a
    * cipher context with that mode and close it immediately.  That is
-   * a bit costly.  So we look at the libgcrypt version and assume
-   * nothing has been patched out.  */
+   * a bit costly.  Thus in case we add another algo we need to look
+   * at the libgcrypt version and assume nothing has been patched out.  */
   switch (algo)
     {
     case AEAD_ALGO_NONE:
       break;
 
     case AEAD_ALGO_EAX:
-#if GCRYPT_VERSION_NUMBER < 0x010900
-      break;
-#else
-      return 0;
-#endif
-
     case AEAD_ALGO_OCB:
       return 0;
     }
@@ -687,7 +682,7 @@ openpgp_aead_algo_info (aead_algo_t algo, enum gcry_cipher_modes *r_mode,
       *r_noncelen = 15;
       break;
 
-    case AEAD_ALGO_EAX:  /* Only for decryption of some old data.  */
+    case AEAD_ALGO_EAX:
       *r_mode = MY_GCRY_CIPHER_MODE_EAX;
       *r_noncelen = 16;
       break;
@@ -750,7 +745,7 @@ openpgp_pk_test_algo2 (pubkey_algo_t algo, unsigned int use)
 #endif
 
     case PUBKEY_ALGO_ELGAMAL:
-      /* Dont't allow type 20 keys unless in rfc2440 mode.  */
+      /* Don't allow type 20 keys unless in rfc2440 mode.  */
       if (RFC2440)
         ga = GCRY_PK_ELG;
       break;
@@ -932,7 +927,7 @@ get_signature_count (PKT_public_key *pk)
 /* Expand %-strings.  Returns a string which must be xfreed.  Returns
    NULL if the string cannot be expanded (too large). */
 char *
-pct_expando(const char *string,struct expando_args *args)
+pct_expando (ctrl_t ctrl, const char *string,struct expando_args *args)
 {
   const char *ch=string;
   int idx=0,maxlen=0,done=0;
@@ -1059,7 +1054,7 @@ pct_expando(const char *string,struct expando_args *args)
 			PKT_public_key *pk=
 			  xmalloc_clear(sizeof(PKT_public_key));
 
-			if (!get_pubkey_fast (pk,args->pksk->main_keyid))
+			if (!get_pubkey_fast (ctrl, pk,args->pksk->main_keyid))
 			  fingerprint_from_pk (pk, array, &len);
 			else
 			  memset (array, 0, (len=MAX_FINGERPRINT_LEN));
@@ -1242,6 +1237,39 @@ string_to_cipher_algo (const char *string)
   return val;
 }
 
+
+/*
+ * Map an AEAD mode string to a an AEAD algorithm number as defined by
+ * rfc4880bis.  Also support the "An" syntax as used by the preference
+ * strings.
+ */
+aead_algo_t
+string_to_aead_algo (const char *string)
+{
+  int result;
+
+  if (!string)
+    result = 0;
+  else if (!ascii_strcasecmp (string, "EAX"))
+    result = 1;
+  else if (!ascii_strcasecmp (string, "OCB"))
+    result = 2;
+  else if ((string[0]=='A' || string[0]=='a'))
+    {
+      char *endptr;
+
+      string++;
+      result = strtol (string, &endptr, 10);
+      if (!*string || *endptr || result < 1 || result > 2)
+        result = 0;
+    }
+  else
+    result = 0;
+
+  return result;
+}
+
+
 /*
  * Wrapper around gcry_md_map_name to provide a fallback using the
  * "Hn" syntax as used by the preference strings.
@@ -1358,6 +1386,7 @@ default_cipher_algo(void)
     return opt.s2k_cipher_algo;
 }
 
+
 /* There is no default_digest_algo function, but see
    sign.c:hash_for() */
 
@@ -1392,10 +1421,6 @@ compliance_failure(void)
       ver="OpenPGP (older)";
       break;
 
-    case CO_PGP6:
-      ver="PGP 6.x";
-      break;
-
     case CO_PGP7:
       ver="PGP 7.x";
       break;
@@ -1405,12 +1430,8 @@ compliance_failure(void)
       break;
 
     case CO_DE_VS:
-      /* For de-vs we do not allow any kind of fallback.  */
-      write_status_failure ("compliance-check", gpg_error (GPG_ERR_FORBIDDEN));
-      log_error (_("operation forced to fail due to"
-                   " unfulfilled compliance rules\n"));
-      g10_errors_seen = 1;
-      return;
+      ver="DE-VS applications";
+      break;
     }
 
   log_info(_("this message may not be usable by %s\n"),ver);
@@ -1534,15 +1555,18 @@ optlen(const char *s)
     return strlen(s);
 }
 
+
+/* Note: This function returns true on success.  */
 int
 parse_options(char *str,unsigned int *options,
 	      struct parse_options *opts,int noisy)
 {
   char *tok;
 
-  if (str && !strcmp (str, "help"))
+  if (str && (!strcmp (str, "help") || !strcmp (str, "full-help")))
     {
       int i,maxlen=0;
+      int full = *str == 'f';
 
       /* Figure out the longest option name so we can line these up
 	 neatly. */
@@ -1554,6 +1578,10 @@ parse_options(char *str,unsigned int *options,
         if(opts[i].help)
 	  es_printf("%s%*s%s\n",opts[i].name,
                     maxlen+2-(int)strlen(opts[i].name),"",_(opts[i].help));
+      if (full)
+        for (i=0; opts[i].name; i++)
+          if(!opts[i].help)
+            es_printf("%s\n",opts[i].name);
 
       g10_exit(0);
     }

@@ -100,25 +100,6 @@ void ldap_pvt_hex_unescape( char *s );
 # define LDAP_SCOPE_DEFAULT -1
 #endif
 
-#if __GNUC__
-# define MY_GCC_VERSION (__GNUC__ * 10000 \
-                         + __GNUC_MINOR__ * 100 \
-                         + __GNUC_PATCHLEVEL__)
-#else
-# define MY_GCC_VERSION 0
-#endif
-
-
-/* Avoid warnings about strncpy usage.  */
-#if MY_GCC_VERSION >= 80000
-# pragma GCC diagnostic ignored "-Wstringop-truncation"
-# pragma GCC diagnostic ignored "-Wstringop-overflow"
-#elif defined __clang__
-# pragma clang diagnostic ignored "-Wstringop-truncation"
-# pragma clang diagnostic ignored "-Wstringop-overflow"
-#endif
-
-
 
 
 /* $OpenLDAP: pkg/ldap/libraries/libldap/charray.c,v 1.9.2.2 2003/03/03 17:10:04 kurt Exp $ */
@@ -365,12 +346,12 @@ char * ldap_charray2str( char **a, const char *sep )
 	p = s;
 	for ( v = a; *v != NULL; v++ ) {
 		if ( v != a ) {
-			strncpy( p, sep, slen );
+			memcpy( p, sep, slen );
 			p += slen;
 		}
 
 		len = strlen( *v );
-		strncpy( p, *v, len );
+		memcpy( p, *v, len );
 		p += len;
 	}
 

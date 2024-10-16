@@ -28,7 +28,6 @@
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 #include <time.h>
 #include <fcntl.h>
 #ifndef HAVE_W32_SYSTEM
@@ -55,6 +54,7 @@
 #include "../common/gc-opt-flags.h"
 #include "../common/asshelp.h"
 #include "../common/exechelp.h"
+#include "../common/comopt.h"
 #include "../common/init.h"
 
 #ifndef ENAMETOOLONG
@@ -79,6 +79,7 @@ enum cmd_and_opt_values
   oDebugAllowCoreDump,
   oDebugCCIDDriver,
   oDebugLogTid,
+  oDebugAllowPINLogging,
   oDebugAssuanLogCats,
   oNoGreeting,
   oNoOptions,
@@ -101,15 +102,15 @@ enum cmd_and_opt_values
   oAllowAdmin,
   oDenyAdmin,
   oDisableApplication,
+  oApplicationPriority,
   oEnablePinpadVarlen,
-  oListenBacklog,
-
-  oNoop
+  oCompatibilityFlags,
+  oListenBacklog
 };
 
 
 
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
   ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
   ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
 
@@ -139,6 +140,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oDebugAllowCoreDump, "debug-allow-core-dump", "@"),
   ARGPARSE_s_n (oDebugCCIDDriver, "debug-ccid-driver", "@"),
   ARGPARSE_s_n (oDebugLogTid, "debug-log-tid", "@"),
+  ARGPARSE_s_n (oDebugAllowPINLogging, "debug-allow-pin-logging", "@"),
   ARGPARSE_p_u (oDebugAssuanLogCats, "debug-assuan-log-cats", "@"),
   ARGPARSE_s_s (oLogFile,  "log-file", N_("|FILE|write a log to FILE")),
 
@@ -169,6 +171,9 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oEnablePinpadVarlen, "enable-pinpad-varlen",
                 N_("use variable length input for pinpad")),
   ARGPARSE_s_s (oDisableApplication, "disable-application", "@"),
+  ARGPARSE_s_s (oApplicationPriority, "application-priority",
+                N_("|LIST|change the application priority to LIST")),
+  ARGPARSE_s_s (oCompatibilityFlags, "compatibility-flags", "@"),
   ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
 
 
@@ -178,8 +183,6 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oDenyAdmin, "deny-admin",
                 N_("deny the use of admin card commands")),
 
-  /* Stubs for options which are implemented by 2.3 or later.  */
-  ARGPARSE_s_s (oNoop, "application-priority", "@"),
 
   ARGPARSE_end ()
 };
@@ -198,6 +201,15 @@ static struct debug_flags_s debug_flags [] =
     { DBG_CARD_VALUE   , "card"    },
     { DBG_CARD_IO_VALUE, "cardio"  },
     { DBG_READER_VALUE , "reader"  },
+    { DBG_APP_VALUE    , "app"     },
+    { 0, NULL }
+  };
+
+
+/* The list of compatibility flags.  */
+static struct compatibility_flags_s compatibility_flags [] =
+  {
+    { COMPAT_CCID_NO_AUTO_DETACH, "ccid-no-auto-detach" },
     { 0, NULL }
   };
 
@@ -270,7 +282,7 @@ static gnupg_fd_t create_server_socket (const char *name,
                                         assuan_sock_nonce_t *nonce);
 
 static void *start_connection_thread (void *arg);
-static void handle_connections (int listen_fd);
+static void handle_connections (gnupg_fd_t listen_fd);
 
 /* Pth wrapper function definitions. */
 ASSUAN_SYSTEM_NPTH_IMPL;
@@ -437,7 +449,7 @@ setup_signal_mask (void)
 int
 main (int argc, char **argv )
 {
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   int orig_argc;
   char **orig_argv;
   char *last_configname = NULL;
@@ -459,9 +471,10 @@ main (int argc, char **argv )
   struct assuan_malloc_hooks malloc_hooks;
   int res;
   npth_t pipecon_handler;
+  const char *application_priority = NULL;
 
   early_system_init ();
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
   /* Please note that we may running SUID(ROOT), so be very CAREFUL
      when adding any stuff between here and the call to INIT_SECMEM()
@@ -502,7 +515,7 @@ main (int argc, char **argv )
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= (ARGPARSE_FLAG_KEEP | ARGPARSE_FLAG_NOVERSION);
-  while (gnupg_argparse (NULL, &pargs, opts))
+  while (gpgrt_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -518,18 +531,20 @@ main (int argc, char **argv )
   /* Reset the flags.  */
   pargs.flags &= ~(ARGPARSE_FLAG_KEEP | ARGPARSE_FLAG_NOVERSION);
 
-  /* Initialize the secure memory. */
+  /* initialize the secure memory. */
   gcry_control (GCRYCTL_INIT_SECMEM, 16384, 0);
   maybe_setuid = 0;
 
   /*
-   * Now we are working under our real uid
-   */
+     Now we are working under our real uid
+  */
 
   /* The configuraton directories for use by gpgrt_argparser.  */
-  gnupg_set_confdir (GNUPG_CONFDIR_SYS, gnupg_sysconfdir ());
-  gnupg_set_confdir (GNUPG_CONFDIR_USER, gnupg_homedir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
 
+  /* We are re-using the struct, thus the reset flag.  We OR the
+   * flags so that the internal intialized flag won't be cleared. */
   argc = orig_argc;
   argv = orig_argv;
   pargs.argc = &argc;
@@ -538,7 +553,7 @@ main (int argc, char **argv )
                    | ARGPARSE_FLAG_KEEP
                    | ARGPARSE_FLAG_SYS
                    | ARGPARSE_FLAG_USER);
-  while (gnupg_argparser (&pargs, opts, SCDAEMON_NAME EXTSEP_S "conf"))
+  while (gpgrt_argparser (&pargs, opts, SCDAEMON_NAME EXTSEP_S "conf"))
     {
       switch (pargs.r_opt)
         {
@@ -584,6 +599,9 @@ main (int argc, char **argv )
         case oDebugLogTid:
           log_set_pid_suffix_cb (tid_log_callback);
           break;
+        case oDebugAllowPINLogging:
+          opt.debug_allow_pin_logging = 1;
+          break;
         case oDebugAssuanLogCats:
           set_libassuan_log_cats (pargs.r.ret_ulong);
           break;
@@ -618,13 +636,24 @@ main (int argc, char **argv )
           add_to_strlist (&opt.disabled_applications, pargs.r.ret_str);
           break;
 
+        case oApplicationPriority:
+          application_priority = pargs.r.ret_str;
+          break;
+
         case oEnablePinpadVarlen: opt.enable_pinpad_varlen = 1; break;
+
+        case oCompatibilityFlags:
+          if (parse_compatibility_flags (pargs.r.ret_str, &opt.compat_flags,
+                                         compatibility_flags))
+            {
+              pargs.r_opt = ARGPARSE_INVALID_ARG;
+              pargs.err = ARGPARSE_PRINT_WARNING;
+            }
+          break;
 
         case oListenBacklog:
           listen_backlog = pargs.r.ret_int;
           break;
-
-        case oNoop: break;
 
         default:
           if (configname)
@@ -634,12 +663,13 @@ main (int argc, char **argv )
           break;
         }
     }
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+
+  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (!last_configname)
-    config_filename = make_filename (gnupg_homedir (),
-                                     SCDAEMON_NAME EXTSEP_S "conf",
-                                     NULL);
+    config_filename = gpgrt_fnameconcat (gnupg_homedir (),
+                                         SCDAEMON_NAME EXTSEP_S "conf",
+                                         NULL);
   else
     {
       config_filename = last_configname;
@@ -648,14 +678,25 @@ main (int argc, char **argv )
 
   if (log_get_errorcount(0))
     exit(2);
+
+  /* Process common component options.  */
+  if (parse_comopt (GNUPG_MODULE_NAME_SCDAEMON, debug_argparser))
+    exit(2);
+
+  if (!logfile)
+    {
+      logfile = comopt.logfile;
+      comopt.logfile = NULL;
+    }
+
   if (nogreeting )
     greeting = 0;
 
   if (greeting)
     {
       es_fprintf (es_stderr, "%s %s; %s\n",
-                  strusage(11), strusage(13), strusage(14) );
-      es_fprintf (es_stderr, "%s\n", strusage(15) );
+                  gpgrt_strusage (11),gpgrt_strusage (13),gpgrt_strusage (14));
+      es_fprintf (es_stderr, "%s\n", gpgrt_strusage (15));
     }
 #ifdef IS_DEVELOPMENT_VERSION
   log_info ("NOTE: this is a development version!\n");
@@ -692,34 +733,10 @@ main (int argc, char **argv )
   if (gpgconf_list)
     {
       /* List options and default values in the GPG Conf format.  */
-      char *filename_esc;
-
-      filename_esc = percent_escape (config_filename, NULL);
-      es_printf ("%s-%s.conf:%lu:\"%s\n",
-                 GPGCONF_NAME, SCDAEMON_NAME,
-                 GC_OPT_FLAG_DEFAULT, filename_esc);
-      xfree (filename_esc);
-
-      es_printf ("verbose:%lu:\n"
-                 "quiet:%lu:\n"
-                 "debug-level:%lu:\"none:\n"
-                 "log-file:%lu:\n",
-                 GC_OPT_FLAG_NONE,
-                 GC_OPT_FLAG_NONE,
-                 GC_OPT_FLAG_DEFAULT,
-                 GC_OPT_FLAG_NONE );
-
-      es_printf ("reader-port:%lu:\n", GC_OPT_FLAG_NONE );
-      es_printf ("ctapi-driver:%lu:\n", GC_OPT_FLAG_NONE );
+      es_printf ("debug-level:%lu:\"none:\n", GC_OPT_FLAG_DEFAULT);
       es_printf ("pcsc-driver:%lu:\"%s:\n",
-              GC_OPT_FLAG_DEFAULT, DEFAULT_PCSC_DRIVER );
-#ifdef HAVE_LIBUSB
-      es_printf ("disable-ccid:%lu:\n", GC_OPT_FLAG_NONE );
-#endif
-      es_printf ("deny-admin:%lu:\n", GC_OPT_FLAG_NONE );
-      es_printf ("disable-pinpad:%lu:\n", GC_OPT_FLAG_NONE );
+                 GC_OPT_FLAG_DEFAULT, DEFAULT_PCSC_DRIVER );
       es_printf ("card-timeout:%lu:%d:\n", GC_OPT_FLAG_DEFAULT, 0);
-      es_printf ("enable-pinpad-varlen:%lu:\n", GC_OPT_FLAG_NONE );
 
       scd_exit (0);
     }
@@ -728,7 +745,9 @@ main (int argc, char **argv )
   if (logfile)
     {
       log_set_file (logfile);
-      log_set_prefix (NULL, GPGRT_LOG_WITH_PREFIX | GPGRT_LOG_WITH_TIME | GPGRT_LOG_WITH_PID);
+      log_set_prefix (NULL, (GPGRT_LOG_WITH_PREFIX
+                             | GPGRT_LOG_WITH_TIME
+                             | GPGRT_LOG_WITH_PID));
     }
 
   if (debug_wait && pipe_server)
@@ -739,12 +758,15 @@ main (int argc, char **argv )
       log_debug ("... okay\n");
     }
 
+  if (application_priority)
+    app_update_priority_list (application_priority);
+
   if (pipe_server)
     {
       /* This is the simple pipe based server */
       ctrl_t ctrl;
       npth_attr_t tattr;
-      int fd = -1;
+      gnupg_fd_t fd = GNUPG_INVALID_FD;
 
 #ifndef HAVE_W32_SYSTEM
       {
@@ -779,8 +801,8 @@ main (int argc, char **argv )
       if (multi_server)
         {
           socket_name = create_socket_name (SCDAEMON_SOCK_NAME);
-          fd = FD2INT(create_server_socket (socket_name,
-                                            &redir_socket_name, &socket_nonce));
+          fd = create_server_socket (socket_name,
+                                     &redir_socket_name, &socket_nonce);
         }
 
       res = npth_attr_init (&tattr);
@@ -814,8 +836,8 @@ main (int argc, char **argv )
       /* We run handle_connection to wait for the shutdown signal and
          to run the ticker stuff.  */
       handle_connections (fd);
-      if (fd != -1)
-        close (fd);
+      if (fd != GNUPG_INVALID_FD)
+        assuan_sock_close (fd);
     }
   else if (!is_daemon)
     {
@@ -824,7 +846,7 @@ main (int argc, char **argv )
     }
   else
     { /* Regular server mode */
-      int fd;
+      gnupg_fd_t fd;
 #ifndef HAVE_W32_SYSTEM
       pid_t pid;
       int i;
@@ -832,8 +854,8 @@ main (int argc, char **argv )
 
       /* Create the socket.  */
       socket_name = create_socket_name (SCDAEMON_SOCK_NAME);
-      fd = FD2INT (create_server_socket (socket_name,
-                                         &redir_socket_name, &socket_nonce));
+      fd = create_server_socket (socket_name,
+                                 &redir_socket_name, &socket_nonce);
 
 
       fflush (NULL);
@@ -949,13 +971,12 @@ main (int argc, char **argv )
 
       handle_connections (fd);
 
-      close (fd);
+      assuan_sock_close (fd);
     }
 
   xfree (config_filename);
   return 0;
 }
-
 
 void
 scd_exit (int rc)
@@ -1001,7 +1022,7 @@ scd_deinit_default_ctrl (ctrl_t ctrl)
 /* Return the name of the socket to be used to connect to this
    process.  If no socket is available, return NULL. */
 const char *
-scd_get_socket_name ()
+scd_get_socket_name (void)
 {
   if (socket_name && *socket_name)
     return socket_name;
@@ -1048,7 +1069,7 @@ handle_signal (int signo)
       if (shutdown_pending > 2)
         {
           log_info ("shutdown forced\n");
-          log_info ("%s %s stopped\n", strusage(11), strusage(13) );
+          log_info ("%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
           cleanup ();
           scd_exit (0);
         }
@@ -1056,7 +1077,7 @@ handle_signal (int signo)
 
     case SIGINT:
       log_info ("SIGINT received - immediate shutdown\n");
-      log_info( "%s %s stopped\n", strusage(11), strusage(13));
+      log_info( "%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
       cleanup ();
       scd_exit (0);
       break;
@@ -1071,7 +1092,7 @@ handle_signal (int signo)
 /* Create a name for the socket.  We check for valid characters as
    well as against a maximum allowed length for a unix domain socket
    is done.  The function terminates the process in case of an error.
-   Retunrs: Pointer to an allcoated string with the absolute name of
+   Returns: Pointer to an allocated string with the absolute name of
    the socket used.  */
 static char *
 create_socket_name (char *standard_name)
@@ -1203,7 +1224,7 @@ start_connection_thread (void *arg)
      handler asked for it.  With the next ticker event and given that
      no other connections are running the shutdown will then
      happen.  */
-  if (scd_command_handler (ctrl, FD2INT(ctrl->thread_startup.fd))
+  if (scd_command_handler (ctrl, ctrl->thread_startup.fd)
       && pipe_server)
     shutdown_pending = 1;
 
@@ -1245,7 +1266,7 @@ scd_kick_the_loop (void)
    in which case this code will only do regular timeouts and handle
    signals. */
 static void
-handle_connections (int listen_fd)
+handle_connections (gnupg_fd_t listen_fd)
 {
   npth_attr_t tattr;
   struct sockaddr_un paddr;
@@ -1253,7 +1274,6 @@ handle_connections (int listen_fd)
   fd_set fdset, read_fdset;
   int nfd;
   int ret;
-  int fd;
   struct timespec timeout;
   struct timespec *t;
   int saved_errno;
@@ -1314,10 +1334,10 @@ handle_connections (int listen_fd)
 
   FD_ZERO (&fdset);
   nfd = 0;
-  if (listen_fd != -1)
+  if (listen_fd != GNUPG_INVALID_FD)
     {
-      FD_SET (listen_fd, &fdset);
-      nfd = listen_fd;
+      FD_SET (FD2INT (listen_fd), &fdset);
+      nfd = FD2INT (listen_fd);
     }
 
   for (;;)
@@ -1335,7 +1355,7 @@ handle_connections (int listen_fd)
              file descriptors to wait for, so that the select will be
              used to just wait on a signal or timeout event. */
           FD_ZERO (&fdset);
-          listen_fd = -1;
+          listen_fd = GNUPG_INVALID_FD;
         }
 
       periodical_check = scd_update_reader_status_file ();
@@ -1379,7 +1399,7 @@ handle_connections (int listen_fd)
         {
           log_error (_("npth_pselect failed: %s - waiting 1s\n"),
                      strerror (saved_errno));
-          npth_sleep (1);
+          gnupg_sleep (1);
           continue;
         }
 
@@ -1396,13 +1416,16 @@ handle_connections (int listen_fd)
         }
 #endif
 
-      if (listen_fd != -1 && FD_ISSET (listen_fd, &read_fdset))
+      if (listen_fd != GNUPG_INVALID_FD
+          && FD_ISSET (FD2INT (listen_fd), &read_fdset))
         {
           ctrl_t ctrl;
+          gnupg_fd_t fd;
 
           plen = sizeof paddr;
-          fd = npth_accept (listen_fd, (struct sockaddr *)&paddr, &plen);
-          if (fd == -1)
+          fd = INT2FD (npth_accept (FD2INT (listen_fd),
+                                    (struct sockaddr *)&paddr, &plen));
+          if (fd == GNUPG_INVALID_FD)
             {
               log_error ("accept failed: %s\n", strerror (errno));
             }
@@ -1410,22 +1433,23 @@ handle_connections (int listen_fd)
             {
               log_error ("error allocating connection control data: %s\n",
                          strerror (errno) );
-              close (fd);
+              assuan_sock_close (fd);
             }
           else
             {
               char threadname[50];
               npth_t thread;
 
-              snprintf (threadname, sizeof threadname, "conn fd=%d", fd);
-              ctrl->thread_startup.fd = INT2FD (fd);
+              snprintf (threadname, sizeof threadname, "conn fd=%d",
+                        FD2INT (fd));
+              ctrl->thread_startup.fd = fd;
               ret = npth_create (&thread, &tattr, start_connection_thread, ctrl);
               if (ret)
                 {
                   log_error ("error spawning connection handler: %s\n",
                              strerror (ret));
                   xfree (ctrl);
-                  close (fd);
+                  assuan_sock_close (fd);
                 }
               else
                 npth_setname_np (thread, threadname);
@@ -1442,7 +1466,7 @@ handle_connections (int listen_fd)
   close (pipe_fd[1]);
 #endif
   cleanup ();
-  log_info (_("%s %s stopped\n"), strusage(11), strusage(13));
+  log_info (_("%s %s stopped\n"), gpgrt_strusage(11), gpgrt_strusage(13));
   npth_attr_destroy (&tattr);
 }
 

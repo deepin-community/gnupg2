@@ -88,6 +88,7 @@ ks_http_fetch (ctrl_t ctrl, const char *url, unsigned int flags,
   redirinfo.orig_onion = uri->onion;
   redirinfo.orig_https = uri->use_tls;
   redirinfo.allow_downgrade = !!(flags & KS_HTTP_FETCH_ALLOW_DOWNGRADE);
+  redirinfo.restrict_redir = !!(opt.compat_flags & COMPAT_RESTRICT_HTTP_REDIR);
 
   /* By default we only use the system provided certificates with this
    * fetch command.  */
@@ -106,7 +107,7 @@ ks_http_fetch (ctrl_t ctrl, const char *url, unsigned int flags,
   http_session_set_timeout (session, ctrl->timeout);
 
   *r_fp = NULL;
-  err = http_open (&http,
+  err = http_open (ctrl, &http,
                    HTTP_REQ_GET,
                    url,
                    /* httphost */ NULL,

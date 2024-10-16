@@ -24,7 +24,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
-#include <assert.h>
 
 
 #include "gpgsm.h"
@@ -55,7 +54,7 @@ gpgsm_get_fingerprint (ksba_cert_t cert, int algo,
     algo = GCRY_MD_SHA1;
 
   len = gcry_md_get_algo_dlen (algo);
-  assert (len);
+  log_assert (len);
   if (!array)
     array = xmalloc (len);
 
@@ -67,7 +66,7 @@ gpgsm_get_fingerprint (ksba_cert_t cert, int algo,
     {
       size_t buflen;
 
-      assert (len >= 20);
+      log_assert (len >= 20);
       if (!ksba_cert_get_user_data (cert, "sha1-fingerprint",
                                     array, len, &buflen)
           && buflen == 20)
@@ -115,7 +114,7 @@ gpgsm_get_fingerprint_string (ksba_cert_t cert, int algo)
     algo = GCRY_MD_SHA1;
 
   len = gcry_md_get_algo_dlen (algo);
-  assert (len <= MAX_DIGEST_LEN );
+  log_assert (len <= MAX_DIGEST_LEN );
   gpgsm_get_fingerprint (cert, algo, digest, NULL);
   buf = xmalloc (len*3+1);
   bin2hexcolon (digest, len, buf);
@@ -135,7 +134,7 @@ gpgsm_get_fingerprint_hexstring (ksba_cert_t cert, int algo)
     algo = GCRY_MD_SHA1;
 
   len = gcry_md_get_algo_dlen (algo);
-  assert (len <= MAX_DIGEST_LEN );
+  log_assert (len <= MAX_DIGEST_LEN );
   gpgsm_get_fingerprint (cert, algo, digest, NULL);
   buf = xmalloc (len*2+1);
   bin2hex (digest, len, buf);
@@ -158,7 +157,7 @@ gpgsm_get_short_fingerprint (ksba_cert_t cert, unsigned long *r_high)
 
 
 /* Return the so called KEYGRIP which is the SHA-1 hash of the public
-   key parameters expressed as an canoncial encoded S-Exp.  ARRAY must
+   key parameters expressed as an canonical encoded S-Exp.  ARRAY must
    be 20 bytes long.  Returns ARRAY or a newly allocated buffer if ARRAY was
    given as NULL.  May return NULL on error.  */
 unsigned char *
@@ -196,7 +195,7 @@ gpgsm_get_keygrip (ksba_cert_t cert, unsigned char *array)
       return NULL;
     }
   if (DBG_X509)
-    log_printhex (array, 20, "keygrip=");
+    log_printhex (array, 20, "keygrip:");
 
   return array;
 }
@@ -341,6 +340,71 @@ gpgsm_pubkey_algo_string (ksba_cert_t cert, int *r_algoid)
 
   gcry_sexp_release (s_pkey);
   return algostr;
+}
+
+
+/* If KEY is an RSA key, return its modulus.  For non-RSA keys or on
+ * error return NULL.  */
+gcry_mpi_t
+gpgsm_get_rsa_modulus (ksba_cert_t cert)
+{
+  gpg_error_t err;
+  gcry_sexp_t key;
+  gcry_sexp_t list = NULL;
+  gcry_sexp_t l2 = NULL;
+  char *name = NULL;
+  gcry_mpi_t modulus = NULL;
+
+  {
+    ksba_sexp_t ckey;
+    size_t n;
+
+    ckey = ksba_cert_get_public_key (cert);
+    if (!ckey)
+      return NULL;
+    n = gcry_sexp_canon_len (ckey, 0, NULL, NULL);
+    if (!n)
+      {
+        xfree (ckey);
+        return NULL;
+      }
+    err = gcry_sexp_sscan (&key, NULL, (char *)ckey, n);
+    xfree (ckey);
+    if (err)
+      return NULL;
+  }
+
+  list = gcry_sexp_find_token (key, "public-key", 0);
+  if (!list)
+    list = gcry_sexp_find_token (key, "private-key", 0);
+  if (!list)
+    list = gcry_sexp_find_token (key, "protected-private-key", 0);
+  if (!list)
+    list = gcry_sexp_find_token (key, "shadowed-private-key", 0);
+
+  gcry_sexp_release (key);
+  if (!list)
+    return NULL;  /* No suitable key.  */
+
+  l2 = gcry_sexp_cadr (list);
+  gcry_sexp_release (list);
+  list = l2;
+  l2 = NULL;
+
+  name = gcry_sexp_nth_string (list, 0);
+  if (!name)
+    ;
+  else if (gcry_pk_map_name (name) == GCRY_PK_RSA)
+    {
+      l2 = gcry_sexp_find_token (list, "n", 1);
+      if (l2)
+        modulus = gcry_sexp_nth_mpi (l2, 1, GCRYMPI_FMT_USG);
+    }
+
+  gcry_free (name);
+  gcry_sexp_release (l2);
+  gcry_sexp_release (list);
+  return modulus;
 }
 
 

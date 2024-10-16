@@ -24,16 +24,16 @@ necessary in debian, but it remains in place for now.
 
 Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
 ---
- dirmngr/dirmngr.c       |  3 ---
+ dirmngr/dirmngr.c       |  3 --
  dirmngr/dirmngr.h       |  1 -
- dirmngr/ks-engine-hkp.c | 72 ++++++++++++++++++++++++-------------------------
- 3 files changed, 35 insertions(+), 41 deletions(-)
+ dirmngr/ks-engine-hkp.c | 78 ++++++++++++++++++++++---------------------------
+ 3 files changed, 35 insertions(+), 47 deletions(-)
 
 diff --git a/dirmngr/dirmngr.c b/dirmngr/dirmngr.c
-index 06ef22b..0238359 100644
+index bb54f4e..637007b 100644
 --- a/dirmngr/dirmngr.c
 +++ b/dirmngr/dirmngr.c
-@@ -2071,12 +2071,10 @@ static void *
+@@ -2085,12 +2085,10 @@ static void *
  housekeeping_thread (void *arg)
  {
    static int sentinel;
@@ -46,7 +46,7 @@ index 06ef22b..0238359 100644
    if (sentinel)
      {
        log_info ("housekeeping is already going on\n");
-@@ -2090,7 +2088,6 @@ housekeeping_thread (void *arg)
+@@ -2104,7 +2102,6 @@ housekeeping_thread (void *arg)
    dirmngr_init_default_ctrl (&ctrlbuf);
  
    dns_stuff_housekeeping ();
@@ -55,22 +55,22 @@ index 06ef22b..0238359 100644
      {
        network_activity_seen = 0;
 diff --git a/dirmngr/dirmngr.h b/dirmngr/dirmngr.h
-index 07f0df8..48f293c 100644
+index 1128e11..1e10b72 100644
 --- a/dirmngr/dirmngr.h
 +++ b/dirmngr/dirmngr.h
-@@ -250,7 +250,6 @@ int dirmngr_use_tor (void);
+@@ -240,7 +240,6 @@ int dirmngr_use_tor (void);
  int dirmngr_never_use_tor_p (void);
  
  /*-- Various housekeeping functions.  --*/
 -void ks_hkp_housekeeping (time_t curtime);
  void ks_hkp_reload (void);
- 
+ void ks_hkp_init (void);
  
 diff --git a/dirmngr/ks-engine-hkp.c b/dirmngr/ks-engine-hkp.c
-index bbd5a9d..8a95291 100644
+index 770a9d9..8a3d392 100644
 --- a/dirmngr/ks-engine-hkp.c
 +++ b/dirmngr/ks-engine-hkp.c
-@@ -218,6 +218,24 @@ host_in_pool_p (hostinfo_t hi, int tblidx)
+@@ -221,6 +221,24 @@ host_in_pool_p (hostinfo_t hi, int tblidx)
    return 0;
  }
  
@@ -95,11 +95,14 @@ index bbd5a9d..8a95291 100644
  
  /* Select a random host.  Consult HI->pool which indices into the global
     hosttable.  Returns index into HI->pool or -1 if no host could be
-@@ -228,13 +246,15 @@ select_random_host (hostinfo_t hi)
+@@ -231,16 +249,18 @@ select_random_host (hostinfo_t hi)
    int *tbl = NULL;
    size_t tblsize = 0;
    int pidx, idx;
 +  time_t curtime;
+ 
+   /* CHECKTHIS();  See */
+   /*                 https://sources.debian.org/patches/gnupg2/2.2.20-1/dirmngr-idling/dirmngr-hkp-Avoid-potential-race-condition-when-some.patch/ */
  
 +  curtime = gnupg_get_time ();
    /* We create a new table so that we randomly select only from
@@ -112,7 +115,7 @@ index bbd5a9d..8a95291 100644
        {
          tblsize++;
          tbl = xtryrealloc(tbl, tblsize * sizeof *tbl);
-@@ -462,6 +482,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
+@@ -468,6 +488,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
    int is_pool;
    int new_hosts = 0;
    char *cname;
@@ -120,7 +123,7 @@ index bbd5a9d..8a95291 100644
  
    *r_host = NULL;
    if (r_httpflags)
-@@ -501,6 +522,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
+@@ -507,6 +528,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
      }
    else
      hi = hosttable[idx];
@@ -128,7 +131,7 @@ index bbd5a9d..8a95291 100644
  
    is_pool = hi->pool != NULL;
  
-@@ -607,7 +629,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
+@@ -613,7 +635,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
        if (force_reselect)
          hi->poolidx = -1;
        else if (hi->poolidx >= 0 && hi->poolidx < hosttable_size
@@ -137,7 +140,7 @@ index bbd5a9d..8a95291 100644
          hi->poolidx = -1;
  
        /* Select a host if needed.  */
-@@ -665,7 +687,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
+@@ -672,7 +694,7 @@ map_host (ctrl_t ctrl, const char *name, const char *srvtag, int force_reselect,
          return gpg_error_from_syserror ();
      }
  
@@ -146,7 +149,7 @@ index bbd5a9d..8a95291 100644
      {
        log_error ("host '%s' marked as dead\n", hi->name);
        if (r_httphost)
-@@ -771,7 +793,8 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
+@@ -778,7 +800,8 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
  {
    gpg_error_t err = 0;
    hostinfo_t hi, hi2;
@@ -156,9 +159,9 @@ index bbd5a9d..8a95291 100644
  
    if (!name || !*name || !strcmp (name, "localhost"))
      return 0;
-@@ -780,13 +803,15 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
-   if (idx == -1)
-     return gpg_error (GPG_ERR_NOT_FOUND);
+@@ -793,13 +816,15 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
+       goto leave;
+     }
  
 +  curtime = gnupg_get_time ();
    hi = hosttable[idx];
@@ -174,7 +177,7 @@ index bbd5a9d..8a95291 100644
      {
        hi->dead = 1;
        hi->died_at = 0; /* Manually set dead.  */
-@@ -820,14 +845,15 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
+@@ -833,14 +858,15 @@ ks_hkp_mark_host (ctrl_t ctrl, const char *name, int alive)
  
            hi2 = hosttable[n];
            if (!hi2)
@@ -193,7 +196,7 @@ index bbd5a9d..8a95291 100644
              {
                hi2->dead = 1;
                hi2->died_at = 0; /* Manually set dead. */
-@@ -1113,34 +1139,6 @@ ks_hkp_resolve (ctrl_t ctrl, parsed_uri_t uri)
+@@ -1146,40 +1172,6 @@ ks_hkp_resolve (ctrl_t ctrl, parsed_uri_t uri)
  }
  
  
@@ -205,6 +208,9 @@ index bbd5a9d..8a95291 100644
 -{
 -  int idx;
 -  hostinfo_t hi;
+-
+-  if (npth_mutex_lock (&hosttable_lock))
+-    log_fatal ("failed to acquire mutex\n");
 -
 -  for (idx=0; idx < hosttable_size; idx++)
 -    {
@@ -222,6 +228,9 @@ index bbd5a9d..8a95291 100644
 -          log_info ("resurrected host '%s'", hi->name);
 -        }
 -    }
+-
+-  if (npth_mutex_unlock (&hosttable_lock))
+-    log_fatal ("failed to release mutex\n");
 -}
 -
 -

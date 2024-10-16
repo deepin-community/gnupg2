@@ -520,7 +520,7 @@ nve_set (nvc_t pk, nve_t e, const char *value)
   if (e->value && value && !strcmp (e->value, value))
     {
       /* Setting same value - ignore this call and don't set the
-       * modified flag.  */
+       * modified flag (if PK is given).  */
       return 0;
     }
 
@@ -558,6 +558,7 @@ nvc_delete (nvc_t pk, nve_t entry)
   nve_release (entry, pk->private_key_mode);
   pk->modified = 1;
 }
+
 
 /* Delete the entries with NAME from PK.  */
 void
@@ -636,7 +637,7 @@ nve_next_value (nve_t entry, const char *name)
 
 /* Return the string for the first entry in NVC with NAME.  If an
  * entry with NAME is missing in NVC or its value is the empty string
- * NULL is returned.  Note that the returned string is a pointer
+ * NULL is returned.  Note that the the returned string is a pointer
  * into NVC.  */
 const char *
 nvc_get_string (nvc_t nvc, const char *name)
@@ -652,13 +653,14 @@ nvc_get_string (nvc_t nvc, const char *name)
 }
 
 
-/* Return true if NAME exists and its value is true; that is either
- * "yes", "true", or a decimal value unequal to 0.  */
+/* Return true (ie. a non-zero value) if NAME exists and its value is
+ * true; that is either "yes", "true", or a decimal value unequal to 0.  */
 int
 nvc_get_boolean (nvc_t nvc, const char *name)
 {
   nve_t item;
   const char *s;
+  int n;
 
   if (!nvc)
     return 0;
@@ -666,12 +668,16 @@ nvc_get_boolean (nvc_t nvc, const char *name)
   if (!item)
     return 0;
   s = nve_value (item);
-  if (s && (atoi (s)
-            || !ascii_strcasecmp (s, "yes")
-            || !ascii_strcasecmp (s, "true")))
+  if (!s)
+    return 0;
+  n = atoi (s);
+  if (n)
+    return n;
+  if (!ascii_strcasecmp (s, "yes") || !ascii_strcasecmp (s, "true"))
     return 1;
   return 0;
 }
+
 
 
 
@@ -854,9 +860,13 @@ do_nvc_parse (nvc_t *result, int *errlinep, estream_t stream,
 
   /* Add the final entry.  */
   if (raw_value)
-    err = _nvc_add (*result, name, NULL, raw_value, 1);
+    {
+      err = _nvc_add (*result, name, NULL, raw_value, 1);
+      name = NULL;
+    }
 
  leave:
+  xfree (name);
   gpgrt_free (buf);
   if (err)
     {

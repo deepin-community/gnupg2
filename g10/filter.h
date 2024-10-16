@@ -35,6 +35,7 @@ typedef struct {
     /* these fields may be initialized */
     int what;		    /* what kind of armor headers to write */
     int only_keyblocks;     /* skip all headers but ".... key block" */
+    int dearmor_mode;       /* dearmor all kind of stuff.  */
     const char *hdrlines;   /* write these headerlines */
 
     /* these fields must be initialized to zero */
@@ -49,6 +50,7 @@ typedef struct {
     int faked;		    /* we are faking a literal data packet */
     int truncated;	    /* number of truncated lines */
     int qp_detected;
+    int dearmor_state;      /* helper for dearmor_mode.  */
     byte eol[3];            /* The end of line characters as a
 			       zero-terminated string.  Defaults
 			       (eol[0]=='\0') to whatever the local
@@ -61,7 +63,7 @@ typedef struct {
 
     byte radbuf[4];
     int idx, idx2;
-    u32 crc;
+    gcry_md_hd_t crc_md;
 
     int status; 	    /* an internal state flag */
     int cancel;
@@ -69,8 +71,6 @@ typedef struct {
     int pending_lf;	    /* used together with faked */
 } armor_filter_context_t;
 
-struct unarmor_pump_s;
-typedef struct unarmor_pump_s *UnarmorPump;
 
 
 struct compress_filter_context_s {
@@ -172,9 +172,6 @@ armor_filter_context_t *new_armor_context (void);
 void release_armor_context (armor_filter_context_t *afx);
 int push_armor_filter (armor_filter_context_t *afx, iobuf_t iobuf);
 int use_armor_filter( iobuf_t a );
-UnarmorPump unarmor_pump_new (void);
-void        unarmor_pump_release (UnarmorPump x);
-int         unarmor_pump (UnarmorPump x, int c);
 
 /*-- compress.c --*/
 gpg_error_t push_compress_filter (iobuf_t out, compress_filter_context_t *zfx,
@@ -185,8 +182,10 @@ gpg_error_t push_compress_filter2 (iobuf_t out,compress_filter_context_t *zfx,
 /*-- cipher.c --*/
 int cipher_filter_cfb (void *opaque, int control,
                        iobuf_t chain, byte *buf, size_t *ret_len);
-int cipher_filter_ocb (void *opaque, int control,
-                       iobuf_t chain, byte *buf, size_t *ret_len);
+
+/*-- cipher-aead.c --*/
+int cipher_filter_aead (void *opaque, int control,
+                        iobuf_t chain, byte *buf, size_t *ret_len);
 
 /*-- textfilter.c --*/
 int text_filter( void *opaque, int control,

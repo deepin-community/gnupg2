@@ -10,17 +10,19 @@ Last-Update: 2024-05-09
  1 file changed, 4 insertions(+)
 
 diff --git a/g10/keygen.c b/g10/keygen.c
-index 6612352..dfaa591 100644
+index d4fe7aa..fd9f16e 100644
 --- a/g10/keygen.c
 +++ b/g10/keygen.c
-@@ -527,6 +527,10 @@ keygen_set_std_prefs (const char *string,int personal)
-     if (!(opt.compat_flags & COMPAT_VSD_ALLOW_OCB))
-       ocb = 0;
+@@ -417,8 +417,12 @@ keygen_set_std_prefs (const char *string,int personal)
+ 	      strcat(dummy_string,"S7 ");
+ 	    strcat(dummy_string,"S2 "); /* 3DES */
  
-+    /* Do not set AEAD: OCB on newly generated key, it is a LibrePGP
-+     * feature.  */
-+    ocb = 0;
-+
-     if(!rc)
-       {
- 	if(personal)
++#if 0
++	    /* Do not set AEAD: OCB on newly generated key, it is a LibrePGP
++	     * feature.  */
+             if (!openpgp_aead_test_algo (AEAD_ALGO_OCB))
+ 	      strcat(dummy_string,"A2 ");
++#endif
+ 
+             if (personal)
+               {

@@ -25,7 +25,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
-#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -342,7 +341,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
   rc = classify_user_id (name, &desc, 0);
   if (!rc)
     {
-      kh = keydb_new ();
+      kh = keydb_new (ctrl);
       if (!kh)
         rc = gpg_error (GPG_ERR_ENOMEM);
       else
@@ -370,19 +369,14 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
                 {
                   /* There might be another certificate with the
                      correct usage, so we try again */
-                  if (!wrong_usage)
-                    { /* save the first match */
-                      wrong_usage = rc;
-                      ksba_cert_release (cert);
-                      cert = NULL;
-                      goto get_next;
-                    }
-                  else if (same_subject_issuer (first_subject, first_issuer,
-                                                cert))
+                  if (!wrong_usage
+                      || same_subject_issuer (first_subject, first_issuer,cert))
                     {
-                      wrong_usage = rc;
+                      if (!wrong_usage)
+                        wrong_usage = rc; /* save error of the first match */
                       ksba_cert_release (cert);
                       cert = NULL;
+                      log_info (_("looking for another certificate\n"));
                       goto get_next;
                     }
                   else
@@ -418,7 +412,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
 
                      Further we ignore them if they are due to an
                      identical certificate (which may happen if a
-                     certificate is accidential duplicated in the
+                     certificate is accidentally duplicated in the
                      keybox).  */
                   if (!keydb_get_cert (kh, &cert2))
                     {
@@ -480,7 +474,7 @@ gpgsm_add_to_certlist (ctrl_t ctrl, const char *name, int secret,
                 {
                   certlist_t cl = xtrycalloc (1, sizeof *cl);
                   if (!cl)
-                    rc = out_of_core ();
+                    rc = gpg_error_from_syserror ();
                   else
                     {
                       cl->cert = cert; cert = NULL;
@@ -531,7 +525,7 @@ gpgsm_find_cert (ctrl_t ctrl,
   rc = classify_user_id (name, &desc, 0);
   if (!rc)
     {
-      kh = keydb_new ();
+      kh = keydb_new (ctrl);
       if (!kh)
         rc = gpg_error (GPG_ERR_ENOMEM);
       else
@@ -567,7 +561,7 @@ gpgsm_find_cert (ctrl_t ctrl,
             }
 
           /* If we don't have the KEYID filter we need to check for
-             ambiguous search results.  Note, that it is somehwat
+             ambiguous search results.  Note, that it is somewhat
              reasonable to assume that a specification of a KEYID
              won't lead to ambiguous names. */
           if (!rc && !keyid)

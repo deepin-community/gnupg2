@@ -47,6 +47,10 @@
 #include "i18n.h"
 #include "gettime.h"
 
+#ifdef HAVE_W32_SYSTEM
+#include <windows.h>
+#endif
+
 #ifdef HAVE_UNSIGNED_TIME_T
 # define IS_INVALID_TIME_T(a) ((a) == (time_t)(-1))
 #else
@@ -170,7 +174,7 @@ timegm_u64 (struct tm *tm)
 /* Wrapper for the time(3).  We use this here so we can fake the time
    for tests */
 time_t
-gnupg_get_time ()
+gnupg_get_time (void)
 {
   time_t current = time (NULL);
   if (current == (time_t)(-1))
@@ -798,46 +802,6 @@ isotimestamp (u32 stamp)
 }
 
 
-/* Windows version of strftime returning the string as utf-8.  */
-#ifdef HAVE_W32_SYSTEM
-
-#define strftime(a,b,c,d)  w32_strftime ((a),(b),(c),(d))
-
-static size_t
-w32_strftime (char *s, size_t max, const char *format, const struct tm *tm)
-{
-  wchar_t *wformatbuf = NULL;
-  const wchar_t *wformat = L"%c %Z";
-  wchar_t wbuf[200];
-  size_t n;
-  char *buf;
-
-  if (strcmp (format, "%c %Z"))
-    {
-      log_debug ("  comverted\n");
-      wformatbuf = utf8_to_wchar (format);
-      if (wformatbuf)
-        wformat = wformatbuf;
-    }
-
-  n = wcsftime (wbuf, sizeof wbuf, wformat, tm);
-  xfree (wformatbuf);
-  if (!n)
-    {
-      /* Most likely the buffer is too short - try ISO format instead.  */
-      n = wcsftime (wbuf, sizeof wbuf, L"%Y-%m-%d %H:%M:%S", tm);
-      if (!n)
-        wcscpy (wbuf, L"[????" "-??" "-??]");
-    }
-  buf = wchar_to_utf8 (wbuf);
-  mem2str (s, buf? buf : "[????" "-??" "-??]", max);
-  xfree (buf);
-  return strlen (s) + 1;
-}
-#endif /*HAVE_W32_SYSTEM*/
-
-
-
 /****************
  * Note: this function returns local time
  */
@@ -856,6 +820,7 @@ asctimestamp (u32 stamp)
       strcpy (buffer, "????" "-??" "-??");
       return buffer;
     }
+
   tp = localtime( &atime );
 #ifdef HAVE_STRFTIME
 # if defined(HAVE_NL_LANGINFO)
@@ -865,11 +830,6 @@ asctimestamp (u32 stamp)
   /* NOTE: gcc -Wformat-noliteral will complain here.  I have found no
      way to suppress this warning.  */
   strftime (buffer, DIM(buffer)-1, fmt, tp);
-# elif defined(HAVE_W32CE_SYSTEM)
-  /* tzset is not available but %Z nevertheless prints a default
-     nonsense timezone ("WILDABBR").  Thus we don't print the time
-     zone at all.  */
-  strftime (buffer, DIM(buffer)-1, "%c", tp);
 # else
 #  if HAVE_W32_SYSTEM
   {

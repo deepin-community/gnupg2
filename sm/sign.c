@@ -28,7 +28,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
-#include <assert.h>
 
 #include "gpgsm.h"
 #include <gcrypt.h>
@@ -145,7 +144,7 @@ gpgsm_get_default_cert (ctrl_t ctrl, ksba_cert_t *r_cert)
   int rc;
   char *p;
 
-  hd = keydb_new ();
+  hd = keydb_new (ctrl);
   if (!hd)
     return gpg_error (GPG_ERR_GENERAL);
   rc = keydb_search_first (ctrl, hd);
@@ -222,7 +221,7 @@ get_default_signer (ctrl_t ctrl)
       return NULL;
     }
 
-  kh = keydb_new ();
+  kh = keydb_new (ctrl);
   if (!kh)
     return NULL;
 
@@ -259,7 +258,6 @@ add_certificate_list (ctrl_t ctrl, ksba_cms_t cms, ksba_cert_t cert)
   ksba_cert_ref (cert);
 
   n = ctrl->include_certs;
-  log_debug ("adding certificates at level %d\n", n);
   if (n == -2)
     {
       not_root = 1;
@@ -306,6 +304,102 @@ add_certificate_list (ctrl_t ctrl, ksba_cms_t cms, ksba_cert_t cert)
 }
 
 
+static gpg_error_t
+add_signed_attribute (ksba_cms_t cms, const char *attrstr)
+{
+  gpg_error_t err;
+  char **fields = NULL;
+  const char *s;
+  int i;
+  unsigned char *der = NULL;
+  size_t derlen;
+
+  fields = strtokenize (attrstr, ":");
+  if (!fields)
+    {
+      err = gpg_error_from_syserror ();
+      log_error ("strtokenize failed: %s\n", gpg_strerror (err));
+      goto leave;
+    }
+
+  for (i=0; fields[i]; i++)
+    ;
+  if (i != 3)
+    {
+      err = gpg_error (GPG_ERR_SYNTAX);
+      log_error ("invalid attribute specification '%s': %s\n",
+                 attrstr, i < 3 ? "not enough fields":"too many fields");
+      goto leave;
+    }
+  if (!ascii_strcasecmp (fields[1], "u"))
+    {
+      err = 0;
+      goto leave; /* Skip unsigned attributes.  */
+    }
+  if (ascii_strcasecmp (fields[1], "s"))
+    {
+      err = gpg_error (GPG_ERR_SYNTAX);
+      log_error ("invalid attribute specification '%s': %s\n",
+                 attrstr, "type is not 's' or 'u'");
+      goto leave;
+    }
+  /* Check that the OID is valid.  */
+  err = ksba_oid_from_str (fields[0], &der, &derlen);
+  if (err)
+    {
+      log_error ("invalid attribute specification '%s': %s\n",
+                 attrstr, gpg_strerror (err));
+      goto leave;
+    }
+  xfree (der);
+  der = NULL;
+
+  if (strchr (fields[2], '/'))
+    {
+      /* FIXME: read from file. */
+    }
+  else /* Directly given in hex.  */
+    {
+      for (i=0, s = fields[2]; hexdigitp (s); s++, i++)
+        ;
+      if (*s || !i || (i&1))
+        {
+          log_error ("invalid attribute specification '%s': %s\n",
+                     attrstr, "invalid hex encoding of the data");
+          err = gpg_error (GPG_ERR_SYNTAX);
+          goto leave;
+        }
+      der = xtrystrdup (fields[2]);
+      if (!der)
+        {
+          err = gpg_error_from_syserror ();
+          log_error ("malloc failed: %s\n", gpg_strerror (err));
+          goto leave;
+        }
+      for (s=fields[2], derlen=0; s[0] && s[1]; s += 2)
+        der[derlen++] = xtoi_2 (s);
+    }
+
+  /* Store the data in the CMS object for all signers.  */
+#if 0
+  err = ksba_cms_add_attribute (cms, -1, fields[0], 0, der, derlen);
+#else
+  (void)cms;
+  err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
+#endif
+  if (err)
+    {
+      log_error ("invalid attribute specification '%s': %s\n",
+                 attrstr, gpg_strerror (err));
+      goto leave;
+    }
+
+ leave:
+  xfree (der);
+  xfree (fields);
+  return err;
+}
+
 
 
 /* This function takes a binary detached signature in (BLOB,BLOBLEN)
@@ -335,7 +429,8 @@ add_certificate_list (ctrl_t ctrl, ksba_cms_t cms, ksba_cert_t cert)
  * Our goal is to replace the NDEF by fixed length tags.
  */
 static gpg_error_t
-write_detached_signature (const void *blob, size_t bloblen, estream_t out_fp)
+write_detached_signature (ctrl_t ctrl, const void *blob, size_t bloblen,
+                          estream_t out_fp)
 {
   gpg_error_t err;
   const unsigned char *p;
@@ -349,6 +444,8 @@ write_detached_signature (const void *blob, size_t bloblen, estream_t out_fp)
   ksba_der_t dbld;
   unsigned char *finalder = NULL;
   size_t finalderlen;
+
+  (void)ctrl;
 
   p = blob;
   n = bloblen;
@@ -547,7 +644,7 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
 
   audit_set_type (ctrl->audit, AUDIT_TYPE_SIGN);
 
-  kh = keydb_new ();
+  kh = keydb_new (ctrl);
   if (!kh)
     {
       log_error (_("failed to allocate keyDB handle\n"));
@@ -607,10 +704,15 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
       goto leave;
     }
 
-  /* We are going to create signed data with data as encap. content */
+  /* We are going to create signed data with data as encap. content.
+   * In authenticode mode we use spcIndirectDataContext instead.  */
   err = ksba_cms_set_content_type (cms, 0, KSBA_CT_SIGNED_DATA);
   if (!err)
-    err = ksba_cms_set_content_type (cms, 1, KSBA_CT_DATA);
+    err = ksba_cms_set_content_type
+      (cms, 1,
+       opt.authenticode? KSBA_CT_SPC_IND_DATA_CTX :
+       KSBA_CT_DATA
+       );
   if (err)
     {
       log_debug ("ksba_cms_set_content_type failed: %s\n",
@@ -708,6 +810,7 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
         case GCRY_MD_SHA256: oid = "2.16.840.1.101.3.4.2.1"; break;
         case GCRY_MD_SHA384: oid = "2.16.840.1.101.3.4.2.2"; break;
         case GCRY_MD_SHA512: oid = "2.16.840.1.101.3.4.2.3"; break;
+/*         case GCRY_MD_WHIRLPOOL: oid = "No OID yet"; break; */
 
         case GCRY_MD_MD5:  /* We don't want to use MD5.  */
         case 0:            /* No algorithm found in cert.  */
@@ -745,6 +848,7 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
           err = gpg_error (GPG_ERR_PUBKEY_ALGO);
           goto leave;
         }
+
     }
 
   if (opt.verbose > 1 || opt.debug)
@@ -880,6 +984,15 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
         }
     }
 
+  {
+    strlist_t sl;
+
+    for (sl = opt.attributes; sl; sl = sl->next)
+      if ((err = add_signed_attribute (cms, sl->d)))
+        goto leave;
+  }
+
+
   /* We need to write at least a minimal list of our capabilities to
    * try to convince some MUAs to use 3DES and not the crippled
    * RC2. Our list is:
@@ -917,7 +1030,7 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
           unsigned char *digest;
           size_t digest_len;
 
-          assert (!detached);
+          log_assert (!detached);
 
           err = hash_and_copy_data (data_fd, data_md, writer);
           if (err)
@@ -1062,7 +1175,7 @@ gpgsm_sign (ctrl_t ctrl, certlist_t signerlist,
       sig_fp = NULL;
       if (err)
         goto leave;
-      err = write_detached_signature (blob, bloblen, out_fp);
+      err = write_detached_signature (ctrl, blob, bloblen, out_fp);
       xfree (blob);
       if (err)
         goto leave;
