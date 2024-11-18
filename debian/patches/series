@@ -10,6 +10,7 @@ gpg-agent-idling/agent-Avoid-tight-timer-tick-when-possible.patch
 gpg-agent-idling/agent-Avoid-scheduled-checks-on-socket-when-inotify-.patch
 from-master/gpg-default-to-3072-bit-keys.patch
 from-master/gpg-default-to-AES-256.patch
+from-master/gpg-Do-not-fail-with-an-error-for-a-Note-diagnostic.patch
 update-defaults/gpg-Default-to-SHA-512-for-all-signature-types-on-RS.patch
 update-defaults/gpg-Prefer-SHA-512-and-SHA-384-in-personal-digest.patch
 update-defaults/gpg-Do-not-set-OCB-key-preference.diff
@@ -26,6 +27,7 @@ from-master/build-Use-LDAP_DEPRECATED-to-detect-ldap-library.patch
 debian-packaging/Build-regexp-against-debian-s-unicode-data-package.patch
 debian-packaging/Always-build-common-status-codes.h-and-common-audit-event.patch
 restore-nl.po.patch
-from-upstream/scd-openpgp-Fix-PIN-pin2hash_if_kdf.patch
 from-master/gpg-Report-BEGIN_-status-before-examining-the-input.patch
 drop_outdated_libgcrypt.m4.diff
+drop-outdated-libassuan.m4.patch
+agent-Fix-status-output-for-LISTTRUSTED.patch

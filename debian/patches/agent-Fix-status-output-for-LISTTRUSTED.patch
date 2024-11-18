@@ -1,0 +1,45 @@
+From 2ca38bee7a63c0f7185ca1dbf13da1cbc4933563 Mon Sep 17 00:00:00 2001
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Thu, 31 Oct 2024 11:47:55 +0900
+Subject: [PATCH] agent: Fix status output for LISTTRUSTED.
+Bug: https://dev.gnupg.org/T7363
+Bug-Debian: https://bugs.debian.org/1086271
+
+* agent/trustlist.c (istrusted_internal): When LISTMODE is enabled,
+TRUSTLISTFPR status output should be done.
+
+--
+
+GnuPG-bug-id: 7363
+Fixes-commit: 4fa82eec43e8d205fa336113f6ea554923fd6986
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+---
+ agent/trustlist.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/agent/trustlist.c b/agent/trustlist.c
+index 4f4ef65d2..917e56cfe 100644
+--- a/agent/trustlist.c
++++ b/agent/trustlist.c
+@@ -481,16 +481,16 @@ istrusted_internal (ctrl_t ctrl, const char *fpr, int listmode, int *r_disabled,
+             if (ti->flags.disabled && r_disabled)
+               *r_disabled = 1;
+ 
+             /* Print status messages only if we have not been called
+                in a locked state.  */
+             if (already_locked)
+               ;
+-            else if (ti->flags.relax || ti->flags.cm || ti->flags.qual
+-                     || ti->flags.de_vs)
++            else if (listmode || ti->flags.relax || ti->flags.cm
++                     || ti->flags.qual || ti->flags.de_vs)
+               {
+                 unlock_trusttable ();
+                 locked = 0;
+                 err = 0;
+                 if (listmode)
+                   {
+                     char hexfpr[2*20+1];
+-- 
+2.45.2
+

@@ -125,6 +125,8 @@ struct
 
   const char *def_new_key_algo;
 
+  strlist_t def_new_key_adsks;  /* Option --default-new-key-adsk.  */
+
   /* Options to be passed to the gpg-agent */
   session_env_t session_env;
   char *lc_ctype;
@@ -260,6 +262,8 @@ struct
     /* Fail if an operation can't be done in the requested compliance
      * mode.  */
     unsigned int require_compliance:1;
+    /* Process all signatures even in batch mode.  */
+    unsigned int proc_all_sigs:1;
   } flags;
 
   /* Linked list of ways to find a key if the key isn't on the local
@@ -354,7 +358,6 @@ EXTERN_UNLESS_MAIN_MODULE int memory_debug_mode;
 EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 
 /* Compatibility flags */
-#define COMPAT_VSD_ALLOW_OCB  1
 
 
 /* Compliance test macors.  */
@@ -377,7 +380,7 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define IMPORT_MERGE_ONLY                (1<<4)
 #define IMPORT_MINIMAL                   (1<<5)
 #define IMPORT_CLEAN                     (1<<6)
-#define IMPORT_NO_SECKEY                 (1<<7)
+#define IMPORT_ONLY_PUBKEYS              (1<<7)
 #define IMPORT_KEEP_OWNERTTRUST          (1<<8)
 #define IMPORT_EXPORT                    (1<<9)
 #define IMPORT_RESTORE                   (1<<10)

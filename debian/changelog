@@ -1,3 +1,26 @@
+gnupg2 (2.2.45-2) unstable; urgency=low
+
+  * Fix status output for LISTTRUSTED. Patch from upstream STABLE-BRANCH-2-2
+    branch. Closes: #1086271
+  * Do not throw exit code 2 on importing rev-cert for expired key.
+    Patch from upstream GIT master. Closes: #1086140
+
+ -- Andreas Metzler <ametzler@debian.org>  Fri, 01 Nov 2024 12:49:11 +0100
+
+gnupg2 (2.2.45-1) unstable; urgency=low
+
+  * New upstream version.
+
+ -- Andreas Metzler <ametzler@debian.org>  Sat, 26 Oct 2024 18:22:49 +0200
+
+gnupg2 (2.2.44-1) unstable; urgency=medium
+
+  * New upstream version.
+    + Refresh patches, drop cherry-picked one.
+    + Drop outdated libassuan.m4. Closes: #1081866
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 15 Sep 2024 13:45:10 +0200
+
 gnupg2 (2.2.43-8) unstable; urgency=medium
 
   * Team upload.

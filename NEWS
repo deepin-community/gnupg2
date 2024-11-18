@@ -1,3 +1,68 @@
+Noteworthy changes in version 2.2.45 (2024-10-22)
+-------------------------------------------------
+
+  * gpg: New command --quick-add-adsk  [T6395]
+
+  * gpg: New option --default-new-key-adsk and "addadsk" for
+    --edit-key.  [T6882]
+
+  * gpg: New option --proc-all-sigs.  [T7261]
+
+  * gpg: Allow import of keys with unknown subkey packet versions.
+    [rGb357ff2aa6]
+
+  * gpg: Avoid a wrong decryption failed status if a messages is
+    signed and OCB encrypted but the pubkey for verification is
+    missing.  [T7042]
+
+  * gpg: Validate the trustdb after the import of a trusted key.
+    [T7200]
+
+  * gpg: Exclude expired trusted keys from the key validation process.
+    [T7200]
+
+  * gpgsm: Nearly fourfold speedup of validated certificate listings.
+    [T7308]
+
+  * agent: Fix KEYTOCARD for the use case with loopback pinentry.
+    [T7283]
+
+  * dirmngr: A list of used URLs for loaded CRLs is printed first in
+    the output of the LISTCRL command.  [T7337]
+
+  * gpgconf: Allow listing of options --trusted-key,
+    add-desig-revoker, and default-new-key-adsk.  [T6882]
+
+  Release-info: https://dev.gnupg.org/T7255
+
+
+Noteworthy changes in version 2.2.44 (2024-08-12)
+-------------------------------------------------
+
+  * gpg: More improvements to PKCS#12 parsing to cope with latest IVBB
+    changes.  [T7213]
+
+  * gpg: New import option "only-pubkeys".  [T7146]
+
+  * gpg: Do not show RENC if no key capabilities are found for a key.
+    [rG1d91252205]
+
+  * gpg: Do not bail out on secret keys with an unknown algo.
+    [rGc489bf7e7e]
+
+  * gpg: Improved decryption diagnostic for an ADSK key.
+    [rG861dc01994]
+
+  * agent: Fix an uninitialized variable in an error path which may
+    have caused gpg's "keytocard" command to fail.  [T6944]
+
+  * scd: Fix regression for KDF use with OpenPGP cards.  [T7121]
+
+  * scd: New getinfo subcommand "manufacturer".  [rG1d0874c3d2]
+
+  Release-info: https://dev.gnupg.org/T7087
+
+
 Noteworthy changes in version 2.2.43 (2024-04-16)
 -------------------------------------------------
 

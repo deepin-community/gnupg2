@@ -13,10 +13,10 @@ Last-Update: 2024-05-09
  2 files changed, 7 insertions(+), 1 deletion(-)
 
 diff --git a/g10/encrypt.c b/g10/encrypt.c
-index a4863fa..d2ad3fe 100644
+index fbf355e..d14ac91 100644
 --- a/g10/encrypt.c
 +++ b/g10/encrypt.c
-@@ -279,6 +279,12 @@ use_aead (pk_list_t pk_list, int algo)
+@@ -275,6 +275,12 @@ use_aead (pk_list_t pk_list, int algo)
          }
        return AEAD_ALGO_OCB;
      }

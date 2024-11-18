@@ -13,7 +13,7 @@ Forwarded: not-needed
  1 file changed, 2 deletions(-)
 
 diff --git a/common/Makefile.am b/common/Makefile.am
-index 65ce35b..3ccc137 100644
+index f55a9c3..e5260c2 100644
 --- a/common/Makefile.am
 +++ b/common/Makefile.am
 @@ -140,7 +140,6 @@ endif

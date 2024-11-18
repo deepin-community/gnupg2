@@ -1,29 +1,36 @@
-Tests: gpgv-win32
+Tests:
+ gpgv-win32,
 Depends:
  diffutils,
  gnupg,
  gpgv,
  gpgv-win32,
  wine32,
-Restrictions: allow-stderr
+Restrictions:
+ allow-stderr,
 Architecture: i386
 
-Tests: simple-tests
+Tests:
+ simple-tests,
 Depends:
  gnupg,
  gpgv,
-Restrictions: allow-stderr
+Restrictions:
+ allow-stderr,
 
-Tests: migration
+Tests:
+ migration,
 Depends:
  debian-archive-keyring,
  diffutils,
  gnupg-utils,
  gnupg1,
  gpg,
-Restrictions: allow-stderr
+Restrictions:
+ allow-stderr,
 
-tests: emacs-epg-message-mode
+tests:
+ emacs-epg-message-mode,
 Depends:
  coreutils,
  emacs-nox,

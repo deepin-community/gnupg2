@@ -310,6 +310,7 @@ int keygen_set_std_prefs (const char *string,int personal);
 PKT_user_id *keygen_get_std_prefs (void);
 int keygen_add_key_expire( PKT_signature *sig, void *opaque );
 int keygen_add_key_flags (PKT_signature *sig, void *opaque);
+int keygen_add_key_flags_and_expire (PKT_signature *sig, void *opaque);
 int keygen_add_std_prefs( PKT_signature *sig, void *opaque );
 int keygen_upd_std_prefs( PKT_signature *sig, void *opaque );
 int keygen_add_keyserver_url(PKT_signature *sig, void *opaque);
@@ -319,6 +320,7 @@ gpg_error_t make_backsig (ctrl_t ctrl,
                           PKT_signature *sig, PKT_public_key *pk,
                           PKT_public_key *sub_pk, PKT_public_key *sub_psk,
                           u32 timestamp, const char *cache_nonce);
+gpg_error_t append_all_default_adsks (ctrl_t ctrl, kbnode_t pub_root);
 gpg_error_t generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock,
                                  const char *algostr,
                                  const char *usagestr,

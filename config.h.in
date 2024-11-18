@@ -14,8 +14,8 @@
 /* an Apple OSXism */
 #undef BIND_8_COMPAT
 
-/* GIT commit id revision used to build this package */
-#undef BUILD_REVISION
+/* Git commit id used to build this package */
+#undef BUILD_COMMITID
 
 /* The time this package was configured for a build */
 #undef BUILD_TIMESTAMP
@@ -882,7 +882,7 @@
 #define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
 #define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
 
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2023 g10 Code GmbH"
+#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2024 g10 Code GmbH"
 
 
 /* For some systems (DOS currently), we hardcode the path here.  For

@@ -19,7 +19,7 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  1 file changed, 3 insertions(+), 1 deletion(-)
 
 diff --git a/g10/main.h b/g10/main.h
-index 273ddaa..d1a54db 100644
+index da181d3..a0f29e4 100644
 --- a/g10/main.h
 +++ b/g10/main.h
 @@ -31,7 +31,9 @@

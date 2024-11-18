@@ -25,7 +25,7 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  4 files changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/agent/command.c b/agent/command.c
-index 940e017..4b3634f 100644
+index 04b024e..96264c4 100644
 --- a/agent/command.c
 +++ b/agent/command.c
 @@ -843,7 +843,7 @@ static const char hlp_genkey[] =
@@ -55,10 +55,10 @@ index e8d026f..11bd1eb 100644
  
  Take the fingerprint from that output and manually publish the key:
 diff --git a/g10/keygen.c b/g10/keygen.c
-index 52fd97a..1e9249e 100644
+index 26126cd..f81a19e 100644
 --- a/g10/keygen.c
 +++ b/g10/keygen.c
-@@ -1565,7 +1565,7 @@ gen_elg (int algo, unsigned int nbits, KBNODE pub_root,
+@@ -1561,7 +1561,7 @@ gen_elg (int algo, unsigned int nbits, KBNODE pub_root,
  
    if (nbits < 1024)
      {

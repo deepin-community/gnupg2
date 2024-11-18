@@ -128,6 +128,7 @@ enum cmd_and_opt_values
     aQuickRevSig,
     aQuickAddUid,
     aQuickAddKey,
+    aQuickAddADSK,
     aQuickRevUid,
     aQuickSetExpire,
     aQuickSetPrimaryUid,
@@ -422,6 +423,7 @@ enum cmd_and_opt_values
     oTOFUDefaultPolicy,
     oTOFUDBFormat,
     oDefaultNewKeyAlgo,
+    oDefaultNewKeyADSK,
     oWeakDigest,
     oUnwrap,
     oOnlySignTextIDs,
@@ -438,6 +440,7 @@ enum cmd_and_opt_values
     oRequireCompliance,
     oCompatibilityFlags,
     oAddDesigRevoker,
+    oProcAllSigs,
 
     oNoop
   };
@@ -479,6 +482,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_c (aQuickAddUid,  "quick-adduid", "@"),
   ARGPARSE_c (aQuickAddKey,  "quick-add-key", "@"),
   ARGPARSE_c (aQuickAddKey,  "quick-addkey", "@"),
+  ARGPARSE_c (aQuickAddADSK, "quick-add-adsk", "@"),
   ARGPARSE_c (aQuickRevUid,  "quick-revoke-uid",
               N_("quickly revoke a user-id")),
   ARGPARSE_c (aQuickRevUid,  "quick-revuid", "@"),
@@ -626,6 +630,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oPGP7, "pgp7", "@"),
   ARGPARSE_s_n (oPGP8, "pgp8", "@"),
   ARGPARSE_s_s (oDefaultNewKeyAlgo, "default-new-key-algo", "@"),
+  ARGPARSE_s_s (oDefaultNewKeyADSK, "default-new-key-adsk", "@"),
   ARGPARSE_p_u (oMinRSALength, "min-rsa-length", "@"),
 #ifndef NO_TRUST_MODELS
   ARGPARSE_s_n (oAlwaysTrust, "always-trust", "@"),
@@ -877,6 +882,7 @@ static ARGPARSE_OPTS opts[] = {
 
   ARGPARSE_s_n (oBatch, "batch", "@"),
   ARGPARSE_s_n (oNoBatch, "no-batch", "@"),
+  ARGPARSE_s_n (oProcAllSigs, "proc-all-sigs", "@"),
   ARGPARSE_s_n (oAnswerYes, "yes", "@"),
   ARGPARSE_s_n (oAnswerNo, "no", "@"),
   ARGPARSE_s_i (oStatusFD, "status-fd", "@"),
@@ -1001,7 +1007,6 @@ static struct debug_flags_s debug_flags [] =
 /* The list of compatibility flags.  */
 static struct compatibility_flags_s compatibility_flags [] =
   {
-    { COMPAT_VSD_ALLOW_OCB, "vsd-allow-ocb" },
     { 0, NULL }
   };
 
@@ -2308,6 +2313,7 @@ main (int argc, char **argv)
     const char *fname;
     char *username;
     int may_coredump;
+    gpg_error_t tmperr;
     strlist_t sl;
     strlist_t remusr = NULL;
     strlist_t locusr = NULL;
@@ -2637,6 +2643,7 @@ main (int argc, char **argv)
 	  case aQuickKeygen:
 	  case aQuickAddUid:
 	  case aQuickAddKey:
+	  case aQuickAddADSK:
 	  case aQuickRevUid:
 	  case aQuickSetExpire:
 	  case aQuickSetPrimaryUid:
@@ -2712,6 +2719,10 @@ main (int argc, char **argv)
 	  case oBatch:
             opt.batch = 1;
             nogreeting = 1;
+            break;
+
+          case oProcAllSigs:
+            opt.flags.proc_all_sigs = 1;
             break;
 
           case oUseAgent: /* Dummy. */
@@ -3643,6 +3654,16 @@ main (int argc, char **argv)
             opt.def_new_key_algo = pargs.r.ret_str;
             break;
 
+          case oDefaultNewKeyADSK:
+            if (!strcmp (pargs.r.ret_str, "clear"))
+              FREE_STRLIST (opt.def_new_key_adsks);
+            else if (!tokenize_to_strlist (&opt.def_new_key_adsks,
+                                           pargs.r.ret_str, " \t,")
+                && (tmperr = gpg_err_code_from_syserror()) != GPG_ERR_ENOENT)
+              log_info (_("error parsing value for option '%s': %s\n"),
+                        "--default-new-key-algo", gpg_strerror (tmperr));
+            break;
+
           case oUseOnlyOpenPGPCard:
             opt.flags.use_only_openpgp_card = 1;
             break;
@@ -3825,8 +3846,7 @@ main (int argc, char **argv)
       parse_compatibility_flags (NULL, &opt.compat_flags, compatibility_flags);
 
     gnupg_set_compliance_extra_info (CO_EXTRA_INFO_MIN_RSA, opt.min_rsa_length);
-    if ((opt.compat_flags & COMPAT_VSD_ALLOW_OCB))
-      gnupg_set_compliance_extra_info (CO_EXTRA_INFO_VSD_ALLOW_OCB, 1);
+    gnupg_set_compliance_extra_info (CO_EXTRA_INFO_VSD_ALLOW_OCB, 1);
 
     if (DBG_CLOCK)
       log_clock ("start");
@@ -4207,6 +4227,7 @@ main (int argc, char **argv)
       case aQuickKeygen:
       case aQuickAddUid:
       case aQuickAddKey:
+      case aQuickAddADSK:
       case aQuickRevUid:
       case aQuickSetPrimaryUid:
       case aQuickUpdatePref:
@@ -4671,6 +4692,17 @@ main (int argc, char **argv)
             gen_key_forbidden ();
           else
             keyedit_quick_addkey (ctrl, x_fpr, x_algo, x_usage, x_expire);
+        }
+	break;
+
+      case aQuickAddADSK:
+        {
+          if (argc != 2)
+            wrong_args ("--quick-add-adsk FINGERPRINT ADSK-FINGERPRINT");
+          if (mopt.forbid_gen_key)
+            gen_key_forbidden ();
+          else
+            keyedit_quick_addadsk (ctrl, argv[0], argv[1]);
         }
 	break;
 

@@ -207,6 +207,8 @@ parse_import_options(char *str,unsigned int *options,int noisy)
       {"show-only", (IMPORT_SHOW | IMPORT_DRY_RUN), NULL,
        NULL},
 
+      {"only-pubkeys", IMPORT_ONLY_PUBKEYS, NULL, NULL},
+
       /* Aliases for backward compatibility */
       {"allow-local-sigs",IMPORT_LOCAL_SIGS,NULL,NULL},
       {"repair-hkp-subkey-bug",IMPORT_REPAIR_PKS_SUBKEY_BUG,NULL,NULL},
@@ -957,7 +959,8 @@ read_block( IOBUF a, unsigned int options,
       else if (rc ) /* (ignore errors) */
         {
           skip_sigs = 0;
-          if (gpg_err_code (rc) == GPG_ERR_UNKNOWN_PACKET)
+          if (gpg_err_code (rc) == GPG_ERR_UNKNOWN_PACKET
+              || gpg_err_code (rc) == GPG_ERR_UNKNOWN_VERSION)
             ; /* Do not show a diagnostic.  */
           else if (gpg_err_code (rc) == GPG_ERR_INV_PACKET
                    && (pkt->pkttype == PKT_USER_ID
@@ -1854,7 +1857,7 @@ import_one_real (ctrl_t ctrl,
   int new_key = 0;
   int mod_key = 0;
   int same_key = 0;
-  int non_self = 0;
+  int non_self_or_utk = 0;
   size_t an;
   char pkstrbuf[PUBKEY_STRING_SIZE];
   int merge_keys_done = 0;
@@ -1956,8 +1959,20 @@ import_one_real (ctrl_t ctrl,
   if ((options & IMPORT_REPAIR_KEYS))
     key_check_all_keysigs (ctrl, 1, keyblock, 0, 0);
 
-  if (chk_self_sigs (ctrl, keyblock, keyid, &non_self))
+  if (chk_self_sigs (ctrl, keyblock, keyid, &non_self_or_utk))
     return 0;  /* Invalid keyblock - error already printed.  */
+
+  /* If the imported key is marked as ultimately trusted key (using
+   * --trusted-key), we set the flag so that we can later set the
+   * revalidation mark.  */
+  if (!non_self_or_utk)
+    {
+      /* Make sure the trustdb is initialized so that the UTK list is
+       * available.  */
+      init_trustdb (ctrl, 1);
+      if (tdb_keyid_is_utk (keyid))
+        non_self_or_utk = 2;
+    }
 
   /* If we allow such a thing, mark unsigned uids as valid */
   if (opt.allow_non_selfsigned_uid)
@@ -2124,7 +2139,7 @@ import_one_real (ctrl_t ctrl,
              importing and locally exported key. */
 
           clear_ownertrusts (ctrl, pk);
-          if (non_self)
+          if (non_self_or_utk)
             revalidation_mark (ctrl);
         }
 
@@ -2217,7 +2232,7 @@ import_one_real (ctrl_t ctrl,
           if (err)
             log_error (_("error writing keyring '%s': %s\n"),
                        keydb_get_resource_name (hd), gpg_strerror (err));
-          else if (non_self)
+          else if (non_self_or_utk)
             revalidation_mark (ctrl);
 
           /* Release the handle and thus unlock the keyring asap.  */
@@ -3024,7 +3039,7 @@ import_secret_one (ctrl_t ctrl, kbnode_t keyblock,
     }
   stats->secret_read++;
 
-  if ((options & IMPORT_NO_SECKEY))
+  if ((options & IMPORT_ONLY_PUBKEYS))
     {
       if (!for_migration)
         log_error (_("importing secret keys not allowed\n"));

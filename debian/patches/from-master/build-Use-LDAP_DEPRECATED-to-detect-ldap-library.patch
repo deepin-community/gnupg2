@@ -13,7 +13,7 @@ Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
  1 file changed, 2 insertions(+)
 
 diff --git a/m4/ldap.m4 b/m4/ldap.m4
-index 954f88a..f65eed5 100644
+index f92bc3c..92dcf8b 100644
 --- a/m4/ldap.m4
 +++ b/m4/ldap.m4
 @@ -44,6 +44,7 @@ if test x$_ldap_with != xno ; then

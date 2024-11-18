@@ -1,7 +1,7 @@
 # configure.ac - for GnuPG 2.2
 # Copyright (C) 1998-2019 Free Software Foundation, Inc.
 # Copyright (C) 1998-2019 Werner Koch
-# Copyright (C) 2003-2023 g10 Code GmbH
+# Copyright (C) 2003-2024 g10 Code GmbH
 #
 # This file is part of GnuPG.
 #
@@ -29,7 +29,7 @@ min_automake_version="1.16.3"
 m4_define([mym4_package],[gnupg])
 m4_define([mym4_major], [2])
 m4_define([mym4_minor], [2])
-m4_define([mym4_micro], [43])
+m4_define([mym4_micro], [45])
 
 # To start a new development series, i.e a new major or minor number
 # you need to mark an arbitrary commit before the first beta release
@@ -47,7 +47,9 @@ m4_define([mym4_isbeta],       m4_argn(2, mym4_verslist))
 m4_define([mym4_version],      m4_argn(4, mym4_verslist))
 m4_define([mym4_revision],     m4_argn(7, mym4_verslist))
 m4_define([mym4_revision_dec], m4_argn(8, mym4_verslist))
+m4_define([mym4_commitid],     m4_argn(9, mym4_verslist))
 m4_esyscmd([echo ]mym4_version[>VERSION])
+m4_esyscmd([echo ]mym4_commitid[>>VERSION])
 AC_INIT([mym4_package],[mym4_version],[https://bugs.gnupg.org])
 
 # When changing the SWDB tag please also adjust the hard coded tags in
@@ -509,7 +511,7 @@ AH_BOTTOM([
 #define GNUPG_PRIVATE_KEYS_DIR  "private-keys-v1.d"
 #define GNUPG_OPENPGP_REVOC_DIR "openpgp-revocs.d"
 
-#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2023 g10 Code GmbH"
+#define GNUPG_DEF_COPYRIGHT_LINE "Copyright (C) 2024 g10 Code GmbH"
 
 
 /* For some systems (DOS currently), we hardcode the path here.  For
@@ -1843,9 +1845,10 @@ fi
 # Provide information about the build.
 #
 BUILD_REVISION="mym4_revision"
+BUILD_COMMITID="mym4_commitid"
 AC_SUBST(BUILD_REVISION)
-AC_DEFINE_UNQUOTED(BUILD_REVISION, "$BUILD_REVISION",
-                   [GIT commit id revision used to build this package])
+AC_DEFINE_UNQUOTED(BUILD_COMMITID, "$BUILD_COMMITID",
+                   [Git commit id used to build this package])
 
 changequote(,)dnl
 BUILD_VERSION=`echo "$VERSION" | sed 's/\([0-9.]*\).*/\1./'`

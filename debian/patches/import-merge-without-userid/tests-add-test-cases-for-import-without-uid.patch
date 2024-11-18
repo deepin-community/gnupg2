@@ -35,7 +35,7 @@ Signed-Off-By: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  create mode 100644 tests/openpgp/import-incomplete/primary+uid.asc
 
 diff --git a/tests/openpgp/Makefile.am b/tests/openpgp/Makefile.am
-index 59f39e2..3b8b699 100644
+index 2cef2fc..70a63e6 100644
 --- a/tests/openpgp/Makefile.am
 +++ b/tests/openpgp/Makefile.am
 @@ -78,6 +78,7 @@ XTESTS = \

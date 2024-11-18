@@ -48,10 +48,10 @@ index c3b71b0..d747707 100644
       file descriptors and the signal mask.  This info is required to
       do the exec call properly.  We don't need it on Windows.  */
 diff --git a/configure.ac b/configure.ac
-index 6d1e2ba..6962d20 100644
+index 6bd5fee..f217025 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1397,7 +1397,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
+@@ -1399,7 +1399,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
                  ftruncate funlockfile getaddrinfo getenv getpagesize \
                  getpwnam getpwuid getrlimit getrusage gettimeofday   \
                  gmtime_r inet_ntop inet_pton isascii lstat memicmp   \

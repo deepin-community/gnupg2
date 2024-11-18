@@ -5,6 +5,7 @@ Maintainer: Debian GnuPG Maintainers <pkg-gnupg-maint@lists.alioth.debian.org>
 Uploaders:
  Eric Dorland <eric@debian.org>,
  Daniel Kahn Gillmor <dkg@fifthhorseman.net>,
+ Andreas Metzler <ametzler@debian.org>,
 Standards-Version: 4.7.0
 Build-Depends:
  automake,

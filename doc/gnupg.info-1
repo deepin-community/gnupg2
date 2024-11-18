@@ -1,6 +1,7 @@
 This is gnupg.info, produced by makeinfo version 6.7 from gnupg.texi.
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.45-beta21,
+September 2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -26,7 +27,8 @@ File: gnupg.info,  Node: Top,  Next: Installation,  Up: (dir)
 Using the GNU Privacy Guard
 ***************************
 
-This is the 'The GNU Privacy Guard Manual' (version 2.2.43, March 2024).
+This is the 'The GNU Privacy Guard Manual' (version 2.2.45-beta21,
+September 2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -2572,6 +2574,11 @@ File: gnupg.info,  Node: Operational GPG Commands,  Next: OpenPGP Key Management
      signed data against a list of trusted keys and returns with success
      only for a good signature.  It has its own manual page.
 
+     Note: With option '--batch' the verification of signatures stops at
+     the first bad signature.  This is a safe default for unattended
+     processing but sometimes a status for all signatures is needed.  To
+     override this early bailout use the option '--proc-all-sigs'.
+
 '--multifile'
      This modifies certain other commands to accept multiple files for
      processing on the command line or read from STDIN with each
@@ -2988,6 +2995,16 @@ This section explains the main commands for key management.
      specifying a value, or using "-" results in a key expiring in a
      reasonable default interval.  The values "never", "none" can be
      used for no expiration date.
+
+'--quick-add-adsk FPR ADSKFPR'
+     Directly add an Additional Decryption Subkey to the key identified
+     by the fingerprint FPR.  ADSKFPR is the fingerprint of another
+     key's encryption subkey.  A subkey is commonly used here because by
+     default a primary key has no encryption capability.  Use the option
+     '--with-subkey-fingerprint' with a list command to display the
+     subkey fingerprints.  If the string "default" is used for ADSKFPR
+     all missing ADSKs configured with '--default-new-key-adsk' are
+     added.
 
 '--generate-key'
 '--gen-key'
@@ -3460,6 +3477,10 @@ usually found in the option file.
      Assume "no" on most questions.  Should not be used in an option
      file.
 
+'--proc-all-sigs'
+     This option overrides the behaviour of the '--batch' option to stop
+     signature verification at the first bad signatures.
+
 '--list-options PARAMETERS'
      This is a space or comma delimited string that gives options used
      when listing keys and signatures (that is, '--list-keys',
@@ -3819,13 +3840,25 @@ usually found in the option file.
 '--add-desig-revoker [sensitive:]FINGERPRINT'
      Add the key specified by FINGERPRINT as a designated revoker to
      newly created keys.  If the fingerprint is prefixed with the
-     keyword "sensitive:" that info is normally not exported wit the
-     key.  This option may be given several time to add more than one
+     keyword "sensitive:" that info is normally not exported with the
+     key.  This option may be given several times to add more than one
      designated revoker.  If the keyword "clear" is used instead of a
-     fingerprint, all designated options previously encountered are
-     discarded.  Designated revokers are marked on the key as
-     non-revocable.  Note that a designated revoker specified using a
-     parameter file will also be added to the key.
+     fingerprint, all previously given fingerprints are discarded.
+     Designated revokers are marked on the key as non-revocable.  Note
+     that a designated revoker specified using a parameter file will
+     also be added to the key.
+
+'--default-new-key-adsk FINGERPRINT'
+     Add the subkey specified by FINGERPRINT as an Additional Decryption
+     Subkey (ADSK) to newly created keys.  This option may be given
+     several time to add more than one ADSK. It is also possible to give
+     several fingerprints delimited by space or comma as value to this
+     option.  If the keyword "clear" is used instead of a fingerprint,
+     all previously specified fingerprints are discarded (useful to
+     override options given in a config file).  The fingerprint is
+     expected to specify a subkey and it does not need an exclamation
+     mark as suffix; it must be given in cmpact format (40 or 64
+     hex-digits without any spaces).
 
 '--trust-model {pgp|classic|tofu|tofu+pgp|direct|always|auto}'
      Set what trust model GnuPG should follow.  The models are:
@@ -4116,6 +4149,9 @@ usually found in the option file.
           When receiving a key, include subkeys as potential targets.
           Note that this option is not used with HKP keyservers, as they
           do not support retrieving keys by subkey id.
+
+     only-pubkeys
+          Do now allow to import secret keys.
 
      timeout
      http-proxy=VALUE

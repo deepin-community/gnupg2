@@ -203,10 +203,10 @@ am__libcommon_a_SOURCES_DIST = common-defs.h util.h utilproto.h \
 	utf8conv.c utf8conv.h argparse.c argparse.h logging.c \
 	logging.h dotlock.c dotlock.h mischelp.c mischelp.h status.c \
 	status.h shareddefs.h openpgpdefs.h gc-opt-flags.h \
-	sexp-parse.h tlv.c tlv.h tlv-builder.c init.c init.h \
-	sexputil.c sysutils.c sysutils.h homedir.c gettime.c gettime.h \
-	yesno.c b64enc.c b64dec.c zb32.c zb32.h convert.c percent.c \
-	mbox-util.c mbox-util.h miscellaneous.c xasprintf.c \
+	sexp-parse.h tlv.c tlv.h tlv-builder.c tlv-parser.c init.c \
+	init.h sexputil.c sysutils.c sysutils.h homedir.c gettime.c \
+	gettime.h yesno.c b64enc.c b64dec.c zb32.c zb32.h convert.c \
+	percent.c mbox-util.c mbox-util.h miscellaneous.c xasprintf.c \
 	xreadline.c membuf.c membuf.h ccparray.c ccparray.h iobuf.c \
 	iobuf.h ttyio.c ttyio.h asshelp.c asshelp2.c asshelp.h \
 	exechelp.h signal.c audit.c audit.h localename.c session-env.c \
@@ -230,12 +230,13 @@ am__objects_5 = libcommon_a-i18n.$(OBJEXT) \
 	libcommon_a-logging.$(OBJEXT) libcommon_a-dotlock.$(OBJEXT) \
 	libcommon_a-mischelp.$(OBJEXT) libcommon_a-status.$(OBJEXT) \
 	libcommon_a-tlv.$(OBJEXT) libcommon_a-tlv-builder.$(OBJEXT) \
-	libcommon_a-init.$(OBJEXT) libcommon_a-sexputil.$(OBJEXT) \
-	libcommon_a-sysutils.$(OBJEXT) libcommon_a-homedir.$(OBJEXT) \
-	libcommon_a-gettime.$(OBJEXT) libcommon_a-yesno.$(OBJEXT) \
-	libcommon_a-b64enc.$(OBJEXT) libcommon_a-b64dec.$(OBJEXT) \
-	libcommon_a-zb32.$(OBJEXT) libcommon_a-convert.$(OBJEXT) \
-	libcommon_a-percent.$(OBJEXT) libcommon_a-mbox-util.$(OBJEXT) \
+	libcommon_a-tlv-parser.$(OBJEXT) libcommon_a-init.$(OBJEXT) \
+	libcommon_a-sexputil.$(OBJEXT) libcommon_a-sysutils.$(OBJEXT) \
+	libcommon_a-homedir.$(OBJEXT) libcommon_a-gettime.$(OBJEXT) \
+	libcommon_a-yesno.$(OBJEXT) libcommon_a-b64enc.$(OBJEXT) \
+	libcommon_a-b64dec.$(OBJEXT) libcommon_a-zb32.$(OBJEXT) \
+	libcommon_a-convert.$(OBJEXT) libcommon_a-percent.$(OBJEXT) \
+	libcommon_a-mbox-util.$(OBJEXT) \
 	libcommon_a-miscellaneous.$(OBJEXT) \
 	libcommon_a-xasprintf.$(OBJEXT) \
 	libcommon_a-xreadline.$(OBJEXT) libcommon_a-membuf.$(OBJEXT) \
@@ -267,10 +268,10 @@ am__libcommonpth_a_SOURCES_DIST = common-defs.h util.h utilproto.h \
 	utf8conv.c utf8conv.h argparse.c argparse.h logging.c \
 	logging.h dotlock.c dotlock.h mischelp.c mischelp.h status.c \
 	status.h shareddefs.h openpgpdefs.h gc-opt-flags.h \
-	sexp-parse.h tlv.c tlv.h tlv-builder.c init.c init.h \
-	sexputil.c sysutils.c sysutils.h homedir.c gettime.c gettime.h \
-	yesno.c b64enc.c b64dec.c zb32.c zb32.h convert.c percent.c \
-	mbox-util.c mbox-util.h miscellaneous.c xasprintf.c \
+	sexp-parse.h tlv.c tlv.h tlv-builder.c tlv-parser.c init.c \
+	init.h sexputil.c sysutils.c sysutils.h homedir.c gettime.c \
+	gettime.h yesno.c b64enc.c b64dec.c zb32.c zb32.h convert.c \
+	percent.c mbox-util.c mbox-util.h miscellaneous.c xasprintf.c \
 	xreadline.c membuf.c membuf.h ccparray.c ccparray.h iobuf.c \
 	iobuf.h ttyio.c ttyio.h asshelp.c asshelp2.c asshelp.h \
 	exechelp.h signal.c audit.c audit.h localename.c session-env.c \
@@ -298,6 +299,7 @@ am__objects_11 = libcommonpth_a-i18n.$(OBJEXT) \
 	libcommonpth_a-mischelp.$(OBJEXT) \
 	libcommonpth_a-status.$(OBJEXT) libcommonpth_a-tlv.$(OBJEXT) \
 	libcommonpth_a-tlv-builder.$(OBJEXT) \
+	libcommonpth_a-tlv-parser.$(OBJEXT) \
 	libcommonpth_a-init.$(OBJEXT) \
 	libcommonpth_a-sexputil.$(OBJEXT) \
 	libcommonpth_a-sysutils.$(OBJEXT) \
@@ -491,6 +493,7 @@ am__depfiles_remade = ./$(DEPDIR)/gpgrlhelp.Po \
 	./$(DEPDIR)/libcommon_a-strlist.Po \
 	./$(DEPDIR)/libcommon_a-sysutils.Po \
 	./$(DEPDIR)/libcommon_a-tlv-builder.Po \
+	./$(DEPDIR)/libcommon_a-tlv-parser.Po \
 	./$(DEPDIR)/libcommon_a-tlv.Po \
 	./$(DEPDIR)/libcommon_a-ttyio.Po \
 	./$(DEPDIR)/libcommon_a-userids.Po \
@@ -547,6 +550,7 @@ am__depfiles_remade = ./$(DEPDIR)/gpgrlhelp.Po \
 	./$(DEPDIR)/libcommonpth_a-strlist.Po \
 	./$(DEPDIR)/libcommonpth_a-sysutils.Po \
 	./$(DEPDIR)/libcommonpth_a-tlv-builder.Po \
+	./$(DEPDIR)/libcommonpth_a-tlv-parser.Po \
 	./$(DEPDIR)/libcommonpth_a-tlv.Po \
 	./$(DEPDIR)/libcommonpth_a-ttyio.Po \
 	./$(DEPDIR)/libcommonpth_a-userids.Po \
@@ -881,11 +885,11 @@ common_sources = common-defs.h util.h utilproto.h fwddecl.h i18n.c \
 	utf8conv.h argparse.c argparse.h logging.c logging.h dotlock.c \
 	dotlock.h mischelp.c mischelp.h status.c status.h shareddefs.h \
 	openpgpdefs.h gc-opt-flags.h sexp-parse.h tlv.c tlv.h \
-	tlv-builder.c init.c init.h sexputil.c sysutils.c sysutils.h \
-	homedir.c gettime.c gettime.h yesno.c b64enc.c b64dec.c zb32.c \
-	zb32.h convert.c percent.c mbox-util.c mbox-util.h \
-	miscellaneous.c xasprintf.c xreadline.c membuf.c membuf.h \
-	ccparray.c ccparray.h iobuf.c iobuf.h ttyio.c ttyio.h \
+	tlv-builder.c tlv-parser.c init.c init.h sexputil.c sysutils.c \
+	sysutils.h homedir.c gettime.c gettime.h yesno.c b64enc.c \
+	b64dec.c zb32.c zb32.h convert.c percent.c mbox-util.c \
+	mbox-util.h miscellaneous.c xasprintf.c xreadline.c membuf.c \
+	membuf.h ccparray.c ccparray.h iobuf.c iobuf.h ttyio.c ttyio.h \
 	asshelp.c asshelp2.c asshelp.h exechelp.h signal.c audit.c \
 	audit.h localename.c session-env.c session-env.h userids.c \
 	userids.h openpgp-oid.c ssh-utils.c ssh-utils.h agent-opt.c \
@@ -1181,6 +1185,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-strlist.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-sysutils.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-tlv-builder.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-tlv-parser.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-tlv.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-ttyio.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommon_a-userids.Po@am__quote@ # am--include-marker
@@ -1237,6 +1242,7 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-strlist.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-sysutils.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-tlv-builder.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-tlv-parser.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-tlv.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-ttyio.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/libcommonpth_a-userids.Po@am__quote@ # am--include-marker
@@ -1462,6 +1468,20 @@ libcommon_a-tlv-builder.obj: tlv-builder.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='tlv-builder.c' object='libcommon_a-tlv-builder.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-tlv-builder.obj `if test -f 'tlv-builder.c'; then $(CYGPATH_W) 'tlv-builder.c'; else $(CYGPATH_W) '$(srcdir)/tlv-builder.c'; fi`
+
+libcommon_a-tlv-parser.o: tlv-parser.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-tlv-parser.o -MD -MP -MF $(DEPDIR)/libcommon_a-tlv-parser.Tpo -c -o libcommon_a-tlv-parser.o `test -f 'tlv-parser.c' || echo '$(srcdir)/'`tlv-parser.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-tlv-parser.Tpo $(DEPDIR)/libcommon_a-tlv-parser.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='tlv-parser.c' object='libcommon_a-tlv-parser.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-tlv-parser.o `test -f 'tlv-parser.c' || echo '$(srcdir)/'`tlv-parser.c
+
+libcommon_a-tlv-parser.obj: tlv-parser.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-tlv-parser.obj -MD -MP -MF $(DEPDIR)/libcommon_a-tlv-parser.Tpo -c -o libcommon_a-tlv-parser.obj `if test -f 'tlv-parser.c'; then $(CYGPATH_W) 'tlv-parser.c'; else $(CYGPATH_W) '$(srcdir)/tlv-parser.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommon_a-tlv-parser.Tpo $(DEPDIR)/libcommon_a-tlv-parser.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='tlv-parser.c' object='libcommon_a-tlv-parser.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -c -o libcommon_a-tlv-parser.obj `if test -f 'tlv-parser.c'; then $(CYGPATH_W) 'tlv-parser.c'; else $(CYGPATH_W) '$(srcdir)/tlv-parser.c'; fi`
 
 libcommon_a-init.o: init.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommon_a_CFLAGS) $(CFLAGS) -MT libcommon_a-init.o -MD -MP -MF $(DEPDIR)/libcommon_a-init.Tpo -c -o libcommon_a-init.o `test -f 'init.c' || echo '$(srcdir)/'`init.c
@@ -2246,6 +2266,20 @@ libcommonpth_a-tlv-builder.obj: tlv-builder.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='tlv-builder.c' object='libcommonpth_a-tlv-builder.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-tlv-builder.obj `if test -f 'tlv-builder.c'; then $(CYGPATH_W) 'tlv-builder.c'; else $(CYGPATH_W) '$(srcdir)/tlv-builder.c'; fi`
+
+libcommonpth_a-tlv-parser.o: tlv-parser.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-tlv-parser.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-tlv-parser.Tpo -c -o libcommonpth_a-tlv-parser.o `test -f 'tlv-parser.c' || echo '$(srcdir)/'`tlv-parser.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-tlv-parser.Tpo $(DEPDIR)/libcommonpth_a-tlv-parser.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='tlv-parser.c' object='libcommonpth_a-tlv-parser.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-tlv-parser.o `test -f 'tlv-parser.c' || echo '$(srcdir)/'`tlv-parser.c
+
+libcommonpth_a-tlv-parser.obj: tlv-parser.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-tlv-parser.obj -MD -MP -MF $(DEPDIR)/libcommonpth_a-tlv-parser.Tpo -c -o libcommonpth_a-tlv-parser.obj `if test -f 'tlv-parser.c'; then $(CYGPATH_W) 'tlv-parser.c'; else $(CYGPATH_W) '$(srcdir)/tlv-parser.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/libcommonpth_a-tlv-parser.Tpo $(DEPDIR)/libcommonpth_a-tlv-parser.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='tlv-parser.c' object='libcommonpth_a-tlv-parser.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -c -o libcommonpth_a-tlv-parser.obj `if test -f 'tlv-parser.c'; then $(CYGPATH_W) 'tlv-parser.c'; else $(CYGPATH_W) '$(srcdir)/tlv-parser.c'; fi`
 
 libcommonpth_a-init.o: init.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(libcommonpth_a_CFLAGS) $(CFLAGS) -MT libcommonpth_a-init.o -MD -MP -MF $(DEPDIR)/libcommonpth_a-init.Tpo -c -o libcommonpth_a-init.o `test -f 'init.c' || echo '$(srcdir)/'`init.c
@@ -3162,6 +3196,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/libcommon_a-strlist.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-sysutils.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-tlv-builder.Po
+	-rm -f ./$(DEPDIR)/libcommon_a-tlv-parser.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-tlv.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-ttyio.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-userids.Po
@@ -3218,6 +3253,7 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/libcommonpth_a-strlist.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-sysutils.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-tlv-builder.Po
+	-rm -f ./$(DEPDIR)/libcommonpth_a-tlv-parser.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-tlv.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-ttyio.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-userids.Po
@@ -3347,6 +3383,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/libcommon_a-strlist.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-sysutils.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-tlv-builder.Po
+	-rm -f ./$(DEPDIR)/libcommon_a-tlv-parser.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-tlv.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-ttyio.Po
 	-rm -f ./$(DEPDIR)/libcommon_a-userids.Po
@@ -3403,6 +3440,7 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/libcommonpth_a-strlist.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-sysutils.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-tlv-builder.Po
+	-rm -f ./$(DEPDIR)/libcommonpth_a-tlv-parser.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-tlv.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-ttyio.Po
 	-rm -f ./$(DEPDIR)/libcommonpth_a-userids.Po

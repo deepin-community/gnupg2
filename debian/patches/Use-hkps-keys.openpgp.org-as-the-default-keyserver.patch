@@ -40,10 +40,10 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  2 files changed, 8 insertions(+), 3 deletions(-)
 
 diff --git a/configure.ac b/configure.ac
-index 1ea8b7a..a3ff5c4 100644
+index b5a1300..4a3318a 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1828,7 +1828,7 @@ AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
+@@ -1830,7 +1830,7 @@ AC_DEFINE_UNQUOTED(SCDAEMON_SOCK_NAME, "S.scdaemon",
  AC_DEFINE_UNQUOTED(DIRMNGR_SOCK_NAME, "S.dirmngr",
                     [The name of the dirmngr socket])
  AC_DEFINE_UNQUOTED(DIRMNGR_DEFAULT_KEYSERVER,

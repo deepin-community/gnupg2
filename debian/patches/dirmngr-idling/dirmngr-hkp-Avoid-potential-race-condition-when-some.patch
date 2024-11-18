@@ -36,7 +36,7 @@ Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
  1 file changed, 10 insertions(+), 13 deletions(-)
 
 diff --git a/dirmngr/ks-engine-hkp.c b/dirmngr/ks-engine-hkp.c
-index ef7a717..5793f07 100644
+index 1767629..bbd5a9d 100644
 --- a/dirmngr/ks-engine-hkp.c
 +++ b/dirmngr/ks-engine-hkp.c
 @@ -225,29 +225,26 @@ host_in_pool_p (hostinfo_t hi, int tblidx)

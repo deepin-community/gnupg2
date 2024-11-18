@@ -1,0 +1,53 @@
+From 48aa9e82657902ceb7ef081c6c55adbea5dd0217 Mon Sep 17 00:00:00 2001
+From: Werner Koch <wk@gnupg.org>
+Date: Wed, 30 Oct 2024 08:13:55 +0100
+Subject: [PATCH] gpg: Do not fail with an error for a "Note:" diagnostic
+Bug: https://dev.gnupg.org/T7351
+Bug-Debian: https://bugs.debian.org/1086140
+
+* g10/trustdb.c (validate_keys): Use log_info instead of log_error for
+not found or expired UTKs.
+--
+
+Actually the not-found case used log_error for decades.  The
+semantically simialr expired case did thus the same.  The actual
+problem is for example in the import case where gpg exits with a
+failure despite that a key validation was requested.
+
+GnuPG-bug-id: 7351
+---
+ g10/trustdb.c | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/g10/trustdb.c b/g10/trustdb.c
+index 9f159a5f6..7dc1c8f38 100644
+--- a/g10/trustdb.c
++++ b/g10/trustdb.c
+@@ -2236,22 +2236,22 @@ validate_keys (ctrl_t ctrl, int interactive)
+     {
+       kbnode_t keyblock;
+       PKT_public_key *pk;
+ 
+       keyblock = get_pubkeyblock (ctrl, k->kid);
+       if (!keyblock)
+         {
+-          log_error (_("Note: ultimately trusted key %s not found\n"),
++          log_info (_("Note: ultimately trusted key %s not found\n"),
+                      keystr(k->kid));
+           continue;
+         }
+       pk = keyblock->pkt->pkt.public_key;
+       if (pk->has_expired)
+         {
+-          log_error (_("Note: ultimately trusted key %s expired\n"),
++          log_info (_("Note: ultimately trusted key %s expired\n"),
+                      keystr(k->kid));
+           continue;
+         }
+ 
+       {
+         struct key_item *ki = copy_key_item (k);
+         ki->next = valid_utk_list;
+-- 
+2.45.2
+

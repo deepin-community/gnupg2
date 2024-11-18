@@ -1082,7 +1082,7 @@ show_version_gnupg (estream_t fp, const char *prefix)
   ssize_t length;
 
   es_fprintf (fp, "%s%sGnuPG %s (%s)\n%s%s\n", prefix, *prefix?"":"* ",
-              strusage (13), BUILD_REVISION, prefix, strusage (17));
+              strusage (13), BUILD_COMMITID, prefix, strusage (17));
 
   /* Show the GnuPG VS-Desktop version in --show-configs mode  */
   if (prefix && *prefix)
@@ -1412,7 +1412,19 @@ show_other_registry_entries (estream_t outfp)
     { 3, "splitBCCMails" },
     { 3, "combinedOpsEnabled" },
     { 3, "encryptSubject" },
+    { 3, "noSaveBeforeDecrypt" },
+    { 3, "closeOnUnknownWriteEvent" },
     { 0, NULL }
+    /*  We should add the following key but also hide unset ones.:
+     *   "smimeNoCertSigErr"
+     *   "smimeHtmlWarnShown"
+     *   "alwaysShowApproval"
+     *   "syncDec"
+     *   "syncEnc"
+     *   "draftEnc"
+     *   "draftKey"
+     * Or we just interate over the GpgOL keys.
+     */
   };
   int idx;
   int group = 0;
@@ -1506,7 +1518,7 @@ show_registry_entries_from_file (estream_t outfp)
       if (!any)
         {
           any = 1;
-          es_fprintf (outfp, "Taken from gpgconf.rnames:\n");
+          es_fprintf (outfp, "\nTaken from gpgconf.rnames:\n");
         }
 
       es_fprintf (outfp, "  %s\n    ->%s<-%s\n", line, value,

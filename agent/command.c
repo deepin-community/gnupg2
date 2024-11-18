@@ -492,22 +492,24 @@ cmd_istrusted (assuan_context_t ctx, char *line)
 
 
 static const char hlp_listtrusted[] =
-  "LISTTRUSTED\n"
+  "LISTTRUSTED [--status]\n"
   "\n"
-  "List all entries from the trustlist.";
+  "List all entries from the trustlist.  With --status the\n"
+  "keys are listed using status line similar to ISTRUSTED";
 static gpg_error_t
 cmd_listtrusted (assuan_context_t ctx, char *line)
 {
   ctrl_t ctrl = assuan_get_pointer (ctx);
-  int rc;
+  gpg_error_t err;
+  int opt_status;
 
-  (void)line;
+  opt_status = has_option (line, "--status");
 
   if (ctrl->restricted)
     return leave_cmd (ctx, gpg_error (GPG_ERR_FORBIDDEN));
 
-  rc = agent_listtrusted (ctx);
-  return leave_cmd (ctx, rc);
+  err = agent_listtrusted (ctrl, ctx, opt_status);
+  return leave_cmd (ctx, err);
 }
 
 
@@ -876,6 +878,8 @@ cmd_genkey (assuan_context_t ctx, char *line)
   time_t opt_timestamp;
   int c;
 
+  init_membuf (&outbuf, 512);
+
   if (ctrl->restricted)
     return leave_cmd (ctx, gpg_error (GPG_ERR_FORBIDDEN));
 
@@ -927,8 +931,6 @@ cmd_genkey (assuan_context_t ctx, char *line)
     rc = assuan_inquire (ctx, "KEYPARAM", &value, &valuelen, MAXLEN_KEYPARAM);
   if (rc)
     return rc;
-
-  init_membuf (&outbuf, 512);
 
   /* If requested, ask for the password to be used for the key.  If
      this is not used the regular Pinentry mechanism is used.  */
@@ -2700,6 +2702,12 @@ cmd_keytocard (assuan_context_t ctx, char *line)
   force = has_option (line, "--force");
   line = skip_options (line);
 
+  /* Need a copy of LINE, since it might inquire to the frontend which
+     resulted original buffer overwritten.  */
+  line = xtrystrdup (line);
+  if (!line)
+    return gpg_error_from_syserror ();
+
   argc = split_fields (line, argv, DIM (argv));
   if (argc < 3)
     {
@@ -2820,6 +2828,7 @@ cmd_keytocard (assuan_context_t ctx, char *line)
   xfree (keydata);
 
  leave:
+  xfree (line);
   xfree (ecdh_params);
   gcry_sexp_release (s_skey);
   xfree (shadow_info);

@@ -337,6 +337,8 @@ int get_pubkey_fast (PKT_public_key *pk, u32 *keyid);
 kbnode_t get_pubkeyblock_for_sig (ctrl_t ctrl, PKT_signature *sig);
 
 /* Return the key block for the key with KEYID.  */
+#define GET_PUBKEYBLOCK_FLAG_ADSK  1 /* Allow returning ADSK key.  */
+kbnode_t get_pubkeyblock_ext (ctrl_t ctrl, u32 *keyid, unsigned int flags);
 kbnode_t get_pubkeyblock (ctrl_t ctrl, u32 *keyid);
 
 /* A list used by get_pubkeys to gather all of the matches.  */
@@ -469,6 +471,10 @@ int akl_empty_or_only_local (void);
 int parse_auto_key_locate(const char *options);
 int parse_key_origin (char *string);
 const char *key_origin_string (int origin);
+
+/* Return an error if KEYBLOCK has a primary or subkey with the fpr.  */
+gpg_error_t has_key_with_fingerprint (kbnode_t keyblock,
+                                      const byte *fpr, size_t fprlen);
 
 /*-- keyid.c --*/
 int pubkey_letter( int algo );
