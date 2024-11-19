@@ -217,7 +217,7 @@ gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 
     afx = new_armor_context ();
 
-    kdbhd = keydb_new ();
+    kdbhd = keydb_new (ctrl);
     if (!kdbhd)
       {
         rc = gpg_error_from_syserror ();
@@ -277,12 +277,12 @@ gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 
 		fingerprint_from_pk (list->pk, fpr, &fprlen);
 
-		/* Don't get involved with keys that don't have 160
-		   bit fingerprints */
-		if(fprlen!=20)
+		/* Don't get involved with keys that don't have a v4
+		 * or v5 fingerprint */
+		if (fprlen != 20 && fprlen != 32)
 		  continue;
 
-		if(memcmp(fpr,pk->revkey[i].fpr,20)==0)
+		if (!memcmp(fpr,pk->revkey[i].fpr, fprlen))
 		  break;
 	      }
 
@@ -295,7 +295,7 @@ gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 	  {
 	    pk2 = xmalloc_clear (sizeof *pk2);
 	    rc = get_pubkey_byfprint (ctrl, pk2, NULL,
-                                      pk->revkey[i].fpr, MAX_FINGERPRINT_LEN);
+                                      pk->revkey[i].fpr, pk->revkey[i].fprlen);
 	  }
 
 	/* We have the revocation key.  */
@@ -305,11 +305,11 @@ gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 
 	    any = 1;
 
-            print_pubkey_info (ctrl, NULL, pk);
+            print_key_info (ctrl, NULL, 0, pk, 0);
 	    tty_printf ("\n");
 
 	    tty_printf (_("To be revoked by:\n"));
-            print_seckey_info (ctrl, pk2);
+            print_key_info (ctrl, NULL, 0, pk2, 1);
 
 	    if(pk->revkey[i].class&0x40)
 	      tty_printf(_("(This is a sensitive revocation key)\n"));
@@ -342,7 +342,7 @@ gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 	    push_armor_filter (afx, out);
 
 	    /* create it */
-	    rc = make_keysig_packet (ctrl, &sig, pk, NULL, NULL, pk2, 0x20, 0,
+	    rc = make_keysig_packet (ctrl, &sig, pk, NULL, NULL, pk2, 0x20,
 				     0, 0,
 				     revocation_reason_build_cb, reason,
                                      NULL);
@@ -387,15 +387,18 @@ gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 
 		    for(j=0;j<signode->pkt->pkt.signature->numrevkeys;j++)
 		      {
-			if(pk->revkey[i].class==
-			   signode->pkt->pkt.signature->revkey[j].class &&
-			   pk->revkey[i].algid==
-			   signode->pkt->pkt.signature->revkey[j].algid &&
-			   memcmp(pk->revkey[i].fpr,
-				  signode->pkt->pkt.signature->revkey[j].fpr,
-				  MAX_FINGERPRINT_LEN)==0)
+			if (pk->revkey[i].class
+                               == signode->pkt->pkt.signature->revkey[j].class
+                            && pk->revkey[i].algid
+                                == signode->pkt->pkt.signature->revkey[j].algid
+                            && pk->revkey[i].fprlen
+                               == signode->pkt->pkt.signature->revkey[j].fprlen
+                            && !memcmp
+                                 (pk->revkey[i].fpr,
+                                  signode->pkt->pkt.signature->revkey[j].fpr,
+                                  pk->revkey[i].fprlen))
 			  {
-			    revkey=signode->pkt->pkt.signature;
+			    revkey = signode->pkt->pkt.signature;
 			    break;
 			  }
 		      }
@@ -432,6 +435,7 @@ gen_desig_revoke (ctrl_t ctrl, const char *uname, strlist_t locusr)
 	iobuf_close(out);
     release_revocation_reason_info( reason );
     release_armor_context (afx);
+    keydb_release (kdbhd);
     return rc;
 }
 
@@ -470,7 +474,7 @@ create_revocation (ctrl_t ctrl,
   afx->hdrlines = "Comment: This is a revocation certificate\n";
   push_armor_filter (afx, out);
 
-  rc = make_keysig_packet (ctrl, &sig, psk, NULL, NULL, psk, 0x20, 0,
+  rc = make_keysig_packet (ctrl, &sig, psk, NULL, NULL, psk, 0x20,
                            0, 0,
                            revocation_reason_build_cb, reason, cache_nonce);
   if (rc)
@@ -479,7 +483,7 @@ create_revocation (ctrl_t ctrl,
       goto leave;
     }
 
-  if (keyblock && (PGP6 || PGP7 || PGP8))
+  if (keyblock && (PGP7 || PGP8))
     {
       /* Use a minimal pk for PGPx mode, since PGP can't import bare
          revocation certificates. */
@@ -637,7 +641,7 @@ gen_revoke (ctrl_t ctrl, const char *uname)
     }
 
   /* Search the userid; we don't want the whole getkey stuff here.  */
-  kdbhd = keydb_new ();
+  kdbhd = keydb_new (ctrl);
   if (!kdbhd)
     {
       rc = gpg_error_from_syserror ();
@@ -665,30 +669,26 @@ gen_revoke (ctrl_t ctrl, const char *uname)
 
   rc = keydb_search (kdbhd, &desc, 1, NULL);
   if (gpg_err_code (rc) == GPG_ERR_NOT_FOUND)
-    /* Not ambiguous.  */
     {
+      /* Not ambiguous.  */
     }
   else if (rc == 0)
-    /* Ambiguous.  */
     {
-      char *info;
-
+      /* Ambiguous.  */
       /* TRANSLATORS: The %s prints a key specification which
          for example has been given at the command line.  Several lines
          lines with secret key infos are printed after this message.  */
       log_error (_("'%s' matches multiple secret keys:\n"), uname);
 
-      info = format_seckey_info (ctrl, keyblock->pkt->pkt.public_key);
-      log_error ("  %s\n", info);
-      xfree (info);
+      print_key_info_log (ctrl, GPGRT_LOGLVL_ERROR, 2,
+                          keyblock->pkt->pkt.public_key, 1);
       release_kbnode (keyblock);
 
       rc = keydb_get_keyblock (kdbhd, &keyblock);
       while (! rc)
         {
-          info = format_seckey_info (ctrl, keyblock->pkt->pkt.public_key);
-          log_info ("  %s\n", info);
-          xfree (info);
+          print_key_info_log (ctrl, GPGRT_LOGLVL_INFO, 2,
+                              keyblock->pkt->pkt.public_key, 1);
           release_kbnode (keyblock);
           keyblock = NULL;
 
@@ -722,7 +722,7 @@ gen_revoke (ctrl_t ctrl, const char *uname)
     }
 
   keyid_from_pk (psk, keyid );
-  print_seckey_info (ctrl, psk);
+  print_key_info (ctrl, NULL, 0, psk, 1);
 
   tty_printf("\n");
   if (!cpr_get_answer_is_yes ("gen_revoke.okay",
@@ -805,7 +805,10 @@ ask_revocation_reason( int key_rev, int cert_rev, int hint )
 	    trim_spaces( answer );
 	    cpr_kill_prompt();
 	    if( *answer == 'q' || *answer == 'Q')
-	      return NULL; /* cancel */
+              {
+                xfree (answer);
+                return NULL; /* cancel */
+              }
 	    if( hint && !*answer )
 		n = hint;
 	    else if(!digitp( answer ) )

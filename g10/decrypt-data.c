@@ -1,7 +1,6 @@
 /* decrypt-data.c - Decrypt an encrypted data packet
  * Copyright (C) 1998-2001, 2005-2006, 2009 Free Software Foundation, Inc.
  * Copyright (C) 1998-2001, 2005-2006, 2009, 2018 Werner Koch
- * Copyright (C) 2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -44,7 +43,7 @@ static int decode_filter ( void *opaque, int control, IOBUF a,
 /* Our context object.  */
 struct decode_filter_context_s
 {
-  /* Recounter (max value is 2).  We need it because we do not know
+  /* Redcounter (max value is 2).  We need it because we do not know
    * whether the iobuf or the outer control code frees this object
    * first.  */
   int  refcount;
@@ -206,7 +205,6 @@ aead_checktag (decode_filter_ctx_t dfx, int final, const void *tagbuf)
     {
       log_error ("gcry_cipher_checktag%s failed: %s\n",
                  final? " (final)":"", gpg_strerror (err));
-      write_status_error ("aead_checktag", err);
       return err;
     }
   if (DBG_FILTER)
@@ -231,8 +229,8 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek,
   byte *p;
   int rc=0, c, i;
   byte temp[32];
-  unsigned blocksize;
-  unsigned nprefix;
+  unsigned int blocksize;
+  unsigned int nprefix;
 
   *compliance_error = 0;
 
@@ -278,11 +276,11 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek,
     }
 
   write_status_printf (STATUS_DECRYPTION_INFO, "%d %d %d",
-                       ed->mdc_method, dek->algo, 0);
+                       ed->mdc_method, dek->algo, ed->aead_algo);
 
   if (opt.show_session_key)
     {
-      char numbuf[25];
+      char numbuf[30];
       char *hexbuf;
 
       if (ed->aead_algo)
@@ -425,11 +423,11 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek,
         {
           log_info (_("WARNING: message was encrypted with"
                       " a weak key in the symmetric cipher.\n"));
-          rc = 0;
+          rc=0;
         }
       else if (rc)
         {
-          log_error("key setup failed: %s\n", gpg_strerror (rc) );
+          log_error ("key setup failed: %s\n", gpg_strerror (rc) );
           goto leave;
         }
 
@@ -494,7 +492,7 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek,
       rc = get_output_file ("", 0, ed->buf, &filename, &fp);
       if (! rc)
         {
-          iobuf_t output = iobuf_esopen (fp, "w", 0);
+          iobuf_t output = iobuf_esopen (fp, "w", 0, 0);
           armor_filter_context_t *afx = NULL;
 
 	  es_setbuf (fp, NULL);
@@ -552,8 +550,8 @@ decrypt_data (ctrl_t ctrl, void *procctx, PKT_encrypted *ed, DEK *dek,
           || datalen != 20
           || memcmp (gcry_md_read (dfx->mdc_hash, 0), dfx->holdback+2, datalen))
         rc = gpg_error (GPG_ERR_BAD_SIGNATURE);
-      /* log_printhex(dfx->holdback, 22, "MDC message:"); */
-      /* log_printhex(gcry_md_read (dfx->mdc_hash,0), datalen, "MDC calc:"); */
+      /* log_printhex("MDC message:", dfx->holdback, 22); */
+      /* log_printhex("MDC calc:", gcry_md_read (dfx->mdc_hash,0), datalen); */
     }
 
  leave:
@@ -677,8 +675,10 @@ aead_underflow (decode_filter_ctx_t dfx, iobuf_t a, byte *buf, size_t *ret_len)
   /* Decrypt the buffer.  This first requires a loop to handle the
    * case when a chunk ends within the buffer.  */
   if (DBG_FILTER)
-    log_debug ("decrypt: chunklen=%ju total=%ju size=%zu len=%zu%s\n",
-               dfx->chunklen, dfx->total, size, len,
+    log_debug ("decrypt: chunklen=%llu total=%llu size=%zu len=%zu%s\n",
+               (unsigned long long)dfx->chunklen,
+               (unsigned long long)dfx->total,
+               size, len,
                dfx->eof_seen? " eof":"");
 
   while (len && dfx->chunklen + len >= dfx->chunksize)
@@ -714,8 +714,8 @@ aead_underflow (decode_filter_ctx_t dfx, iobuf_t a, byte *buf, size_t *ret_len)
       len -= n;
 
       if (DBG_FILTER)
-        log_debug ("ndecrypted: %zu (nchunk=%ju) bytes left: %zu at off=%zu\n",
-                   totallen, dfx->chunklen, len, off);
+        log_debug ("ndecrypted: %zu (nchunk=%llu) bytes left: %zu at off=%zu\n",
+                   totallen, (unsigned long long)dfx->chunklen, len, off);
 
       /* Check the tag.  */
       if (len < 16)
@@ -796,7 +796,8 @@ aead_underflow (decode_filter_ctx_t dfx, iobuf_t a, byte *buf, size_t *ret_len)
       dfx->chunklen += len;
       dfx->total += len;
       if (DBG_FILTER)
-        log_debug ("ndecrypted: %zu (nchunk=%ju)\n", totallen, dfx->chunklen);
+        log_debug ("ndecrypted: %zu (nchunk=%llu)\n",
+                   totallen, (unsigned long long)dfx->chunklen);
     }
 
   if (dfx->eof_seen)
@@ -927,7 +928,7 @@ mdc_decode_filter (void *opaque, int control, IOBUF a,
       n = fill_buffer (dfx, a, buf, 44, 22);
       if (n == 44)
         {
-          /* We have enough stuff - flush the deferred stuff.  */
+          /* We have enough stuff - flush the holdback buffer.  */
           if ( !dfx->holdbacklen )  /* First time. */
             {
               memcpy (buf, buf+22, 22);
@@ -937,6 +938,7 @@ mdc_decode_filter (void *opaque, int control, IOBUF a,
             {
               memcpy (buf, dfx->holdback, 22);
 	    }
+
           /* Fill up the buffer. */
           n = fill_buffer (dfx, a, buf, size, n);
 
@@ -946,7 +948,7 @@ mdc_decode_filter (void *opaque, int control, IOBUF a,
           memcpy (dfx->holdback, buf+n, 22 );
           dfx->holdbacklen = 22;
 	}
-      else if ( !dfx->holdbacklen )  /* EOF seen but empty holdback buffer. */
+      else if ( !dfx->holdbacklen ) /* EOF seen but empty holdback. */
         {
           /* This is bad because it means an incomplete hash. */
           n -= 22;

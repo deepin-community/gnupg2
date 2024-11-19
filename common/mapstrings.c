@@ -50,6 +50,7 @@ static struct {
   { "GPGSM",     GPGSM_NAME },
   { "GPG_AGENT", GPG_AGENT_NAME },
   { "SCDAEMON",  SCDAEMON_NAME },
+  { "TPM2DAEMON",TPM2DAEMON_NAME},
   { "DIRMNGR",   DIRMNGR_NAME },
   { "G13",       G13_NAME },
   { "GPGCONF",   GPGCONF_NAME },
@@ -152,6 +153,14 @@ map_static_macro_string (const char *string)
   const char *s, *s2, *s3, *value;
   membuf_t mb;
   char *p;
+
+  /* We use a hack if we don't use the fixed gpgrt 1.47
+   * (commit 885a287a57cf060b4c5b441822c09d23b8dee2bd) */
+#if GPGRT_VERSION_NUMBER < 0x012f00
+  if (string && !strncmp (string, "Project-Id-Version:", 19)
+      && strstr (string, "PO-Revision-Date:"))
+    return "";
+#endif
 
   if ((s = already_mapped (string)))
     return s;

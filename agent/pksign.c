@@ -24,8 +24,6 @@
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
-#include <assert.h>
-#include <unistd.h>
 #include <sys/stat.h>
 
 #include "agent.h"
@@ -46,32 +44,27 @@ do_encode_md (const byte * md, size_t mdlen, int algo, gcry_sexp_t * r_hash,
       int i;
 
       s = gcry_md_algo_name (algo);
-      if (s && strlen (s) < 16)
+      if (!s || strlen (s) >= 16)
+        {
+          hash = NULL;
+          rc = gpg_error (GPG_ERR_DIGEST_ALGO);
+        }
+      else
 	{
-	  for (i=0; i < strlen (s); i++)
-	    tmp[i] = tolower (s[i]);
+	  for (i=0; s[i]; i++)
+	    tmp[i] = ascii_tolower (s[i]);
 	  tmp[i] = '\0';
-	}
 
-      rc = gcry_sexp_build (&hash, NULL,
-			    "(data (flags pkcs1) (hash %s %b))",
-			    tmp, (int)mdlen, md);
+          rc = gcry_sexp_build (&hash, NULL,
+                                "(data (flags pkcs1) (hash %s %b))",
+                                tmp, (int)mdlen, md);
+	}
     }
   else
     {
-      gcry_mpi_t mpi;
-
-      rc = gcry_mpi_scan (&mpi, GCRYMPI_FMT_USG, md, mdlen, NULL);
-      if (!rc)
-	{
-	  rc = gcry_sexp_build (&hash, NULL,
-				"(data (flags raw) (value %m))",
-				mpi);
-	  gcry_mpi_release (mpi);
-	}
-      else
-        hash = NULL;
-
+      rc = gcry_sexp_build (&hash, NULL,
+                            "(data (flags raw) (value %b))",
+                            (int)mdlen, md);
     }
 
   *r_hash = hash;
@@ -136,15 +129,20 @@ rfc6979_hash_algo_string (size_t mdlen)
 /* Encode a message digest for use with the EdDSA algorithm
    (i.e. curve Ed25519). */
 static gpg_error_t
-do_encode_eddsa (const byte *md, size_t mdlen, gcry_sexp_t *r_hash)
+do_encode_eddsa (size_t nbits, const byte *md, size_t mdlen,
+                 gcry_sexp_t *r_hash)
 {
   gpg_error_t err;
   gcry_sexp_t hash;
+  const char *fmt;
+
+  if (nbits == 448)
+    fmt = "(data(value %b))";
+  else
+    fmt = "(data(flags eddsa)(hash-algo sha512)(value %b))";
 
   *r_hash = NULL;
-  err = gcry_sexp_build (&hash, NULL,
-                         "(data(flags eddsa)(hash-algo sha512)(value %b))",
-                         (int)mdlen, md);
+  err = gcry_sexp_build (&hash, NULL, fmt, (int)mdlen, md);
   if (!err)
     *r_hash = hash;
   return err;
@@ -162,7 +160,7 @@ do_encode_dsa (const byte *md, size_t mdlen, int pkalgo, gcry_sexp_t pkey,
 
   *r_hash = NULL;
 
-  if (pkalgo == GCRY_PK_ECDSA)
+  if (pkalgo == GCRY_PK_ECC)
     qbits = gcry_pk_get_nbits (pkey);
   else if (pkalgo == GCRY_PK_DSA)
     qbits = get_dsa_qbits (pkey);
@@ -189,10 +187,10 @@ do_encode_dsa (const byte *md, size_t mdlen, int pkalgo, gcry_sexp_t pkey,
       return gpg_error (GPG_ERR_INV_LENGTH);
     }
 
-  /* ECDSA 521 is special has it is larger than the largest hash
+  /* ECDSA 521 is special as it is larger than the largest hash
      we have (SHA-512).  Thus we change the size for further
      processing to 512.  */
-  if (pkalgo == GCRY_PK_ECDSA && qbits > 512)
+  if (pkalgo == GCRY_PK_ECC && qbits > 512)
     qbits = 512;
 
   /* Check if we're too short.  Too long is safe as we'll
@@ -250,13 +248,13 @@ do_encode_raw_pkcs1 (const byte *md, size_t mdlen, unsigned int nbits,
   frame[n++] = 0;
   frame[n++] = 1; /* Block type. */
   i = nframe - mdlen - 3 ;
-  assert (i >= 8); /* At least 8 bytes of padding.  */
+  log_assert (i >= 8); /* At least 8 bytes of padding.  */
   memset (frame+n, 0xff, i );
   n += i;
   frame[n++] = 0;
   memcpy (frame+n, md, mdlen );
   n += mdlen;
-  assert (n == nframe);
+  log_assert (n == nframe);
 
   /* Create the S-expression.  */
   rc = gcry_sexp_build (&hash, NULL,
@@ -291,14 +289,21 @@ agent_pksign_do (ctrl_t ctrl, const char *cache_nonce,
   gcry_sexp_t s_hash = NULL;
   gcry_sexp_t s_pkey = NULL;
   unsigned char *shadow_info = NULL;
+  int no_shadow_info = 0;
   const unsigned char *data;
   int datalen;
   int check_signature = 0;
+  int algo;
 
   if (overridedata)
     {
       data = overridedata;
       datalen = overridedatalen;
+    }
+  else if (ctrl->digest.data)
+    {
+      data = ctrl->digest.data;
+      datalen = ctrl->digest.valuelen;
     }
   else
     {
@@ -309,56 +314,103 @@ agent_pksign_do (ctrl_t ctrl, const char *cache_nonce,
   if (!ctrl->have_keygrip)
     return gpg_error (GPG_ERR_NO_SECKEY);
 
-  err = agent_key_from_file (ctrl, cache_nonce, desc_text, ctrl->keygrip,
+  err = agent_key_from_file (ctrl, cache_nonce, desc_text, NULL,
                              &shadow_info, cache_mode, lookup_ttl,
                              &s_skey, NULL, NULL);
-  if (err)
+  if (gpg_err_code (err) == GPG_ERR_NO_SECKEY)
+    no_shadow_info = 1;
+  else if (err)
     {
-      if (gpg_err_code (err) != GPG_ERR_NO_SECKEY)
-        log_error ("failed to read the secret key\n");
+      log_error ("failed to read the secret key\n");
       goto leave;
     }
+  else
+    algo = get_pk_algo_from_key (s_skey);
 
-  if (shadow_info)
+  if (shadow_info || no_shadow_info)
     {
-      /* Divert operation to the smartcard */
+      /* Divert operation to the smartcard.  With NO_SHADOW_INFO set
+       * we don't have the keystub but we want to see whether the key
+       * is on the active card.  */
       size_t len;
       unsigned char *buf = NULL;
-      int key_type;
-      int is_RSA = 0;
-      int is_ECDSA = 0;
-      int is_EdDSA = 0;
 
-      err = agent_public_key_from_file (ctrl, ctrl->keygrip, &s_pkey);
-      if (err)
+      if (no_shadow_info)
         {
-          log_error ("failed to read the public key\n");
-          goto leave;
-        }
+          /* Try to get the public key from the card or fail with the
+           * original NO_SECKEY error.  We also write a stub file (we
+           * are here only because no stub exists). */
+          char *serialno;
+          unsigned char *pkbuf = NULL;
+          size_t pkbuflen;
+          char hexgrip[2*KEYGRIP_LEN+1];
+          char *keyref;
 
-      if (agent_is_eddsa_key (s_skey))
-        is_EdDSA = 1;
+          if (agent_card_serialno (ctrl, &serialno, NULL))
+            {
+              /* No card available or error reading the card.  */
+              err = gpg_error (GPG_ERR_NO_SECKEY);
+              goto leave;
+            }
+          bin2hex (ctrl->keygrip, KEYGRIP_LEN, hexgrip);
+          if (agent_card_readkey (ctrl, hexgrip, &pkbuf, &keyref))
+            {
+              /* No such key on the card.  */
+              xfree (serialno);
+              err = gpg_error (GPG_ERR_NO_SECKEY);
+              goto leave;
+            }
+          pkbuflen = gcry_sexp_canon_len (pkbuf, 0, NULL, NULL);
+          err = gcry_sexp_sscan (&s_pkey, NULL, (char*)pkbuf, pkbuflen);
+          if (err)
+            {
+              xfree (serialno);
+              xfree (pkbuf);
+              xfree (keyref);
+              log_error ("%s: corrupted key returned by scdaemon\n", __func__);
+              goto leave;
+            }
+
+          if (keyref && !ctrl->ephemeral_mode)
+            {
+              char *dispserialno;
+
+              agent_card_getattr (ctrl, "$DISPSERIALNO", &dispserialno,
+                                  hexgrip);
+              agent_write_shadow_key (ctrl,
+                                      ctrl->keygrip, serialno, keyref, pkbuf,
+                                      0, dispserialno);
+              xfree (dispserialno);
+            }
+          algo = get_pk_algo_from_key (s_pkey);
+
+          xfree (serialno);
+          xfree (pkbuf);
+          xfree (keyref);
+        }
       else
         {
-          key_type = agent_is_dsa_key (s_skey);
-          if (key_type == 0)
-            is_RSA = 1;
-          else if (key_type == GCRY_PK_ECDSA)
-            is_ECDSA = 1;
+          /* Get the public key from the stub file.  */
+          err = agent_public_key_from_file (ctrl, ctrl->keygrip, &s_pkey);
+          if (err)
+            {
+              log_error ("failed to read the public key\n");
+              goto leave;
+            }
         }
 
       {
-        char *desc2 = NULL;
-
-        if (desc_text)
-          agent_modify_description (desc_text, NULL, s_skey, &desc2);
-
-        err = divert_pksign (ctrl, desc2? desc2 : desc_text,
-                             data, datalen,
-                             ctrl->digest.algo,
-                             ctrl->keygrip,
-                             shadow_info, &buf, &len);
-        xfree (desc2);
+	if (agent_is_tpm2_key (s_skey))
+	  err = divert_tpm2_pksign (ctrl,
+				    data, datalen,
+				    ctrl->digest.algo,
+				    shadow_info, &buf, &len);
+	else
+	  err = divert_pksign (ctrl,
+			       ctrl->keygrip,
+			       data, datalen,
+			       ctrl->digest.algo,
+			       &buf, &len);
       }
       if (err)
         {
@@ -366,77 +418,67 @@ agent_pksign_do (ctrl_t ctrl, const char *cache_nonce,
           goto leave;
         }
 
-      if (is_RSA)
+      if (algo == GCRY_PK_RSA)
         {
-          check_signature = 1;
-          if (*buf & 0x80)
-            {
-              len++;
-              buf = xtryrealloc (buf, len);
-              if (!buf)
-                goto leave;
+          unsigned char *p = buf;
 
-              memmove (buf + 1, buf, len - 1);
-              *buf = 0;
+          check_signature = 1;
+
+          /*
+           * Smartcard returns fixed-size data, which is good for
+           * PKCS1.  If variable-size unsigned MPI is needed, remove
+           * zeros.
+           */
+          if (ctrl->digest.algo == MD_USER_TLS_MD5SHA1
+              || ctrl->digest.raw_value)
+            {
+              int i;
+
+              for (i = 0; i < len - 1; i++)
+                if (p[i])
+                  break;
+              p += i;
+              len -= i;
             }
 
           err = gcry_sexp_build (&s_sig, NULL, "(sig-val(rsa(s%b)))",
-                                 (int)len, buf);
+                                 (int)len, p);
         }
-      else if (is_EdDSA)
+      else if (algo == GCRY_PK_EDDSA)
         {
           err = gcry_sexp_build (&s_sig, NULL, "(sig-val(eddsa(r%b)(s%b)))",
                                  (int)len/2, buf, (int)len/2, buf + len/2);
         }
-      else if (is_ECDSA)
+      else if (algo == GCRY_PK_ECC)
         {
-          unsigned char *r_buf_allocated = NULL;
-          unsigned char *s_buf_allocated = NULL;
           unsigned char *r_buf, *s_buf;
           int r_buflen, s_buflen;
+          int i;
 
           r_buflen = s_buflen = len/2;
 
-          if (*buf & 0x80)
-            {
-              r_buflen++;
-              r_buf_allocated = xtrymalloc (r_buflen);
-              if (!r_buf_allocated)
-                {
-                  err = gpg_error_from_syserror ();
-                  goto leave;
-                }
+          /*
+           * Smartcard returns fixed-size data.  For ECDSA signature,
+           * variable-size unsigned MPI is assumed, thus, remove
+           * zeros.
+           */
+          r_buf = buf;
+          for (i = 0; i < r_buflen - 1; i++)
+            if (r_buf[i])
+              break;
+          r_buf += i;
+          r_buflen -= i;
 
-              r_buf = r_buf_allocated;
-              memcpy (r_buf + 1, buf, len/2);
-              *r_buf = 0;
-            }
-          else
-            r_buf = buf;
-
-          if (*(buf + len/2) & 0x80)
-            {
-              s_buflen++;
-              s_buf_allocated = xtrymalloc (s_buflen);
-              if (!s_buf_allocated)
-                {
-                  err = gpg_error_from_syserror ();
-                  xfree (r_buf_allocated);
-                  goto leave;
-                }
-
-              s_buf = s_buf_allocated;
-              memcpy (s_buf + 1, buf + len/2, len/2);
-              *s_buf = 0;
-            }
-          else
-            s_buf = buf + len/2;
+          s_buf = buf + len/2;
+          for (i = 0; i < s_buflen - 1; i++)
+            if (s_buf[i])
+              break;
+          s_buf += i;
+          s_buflen -= i;
 
           err = gcry_sexp_build (&s_sig, NULL, "(sig-val(ecdsa(r%b)(s%b)))",
                                  r_buflen, r_buf,
                                  s_buflen, s_buf);
-          xfree (r_buf_allocated);
-          xfree (s_buf_allocated);
         }
       else
         err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
@@ -451,21 +493,26 @@ agent_pksign_do (ctrl_t ctrl, const char *cache_nonce,
     }
   else
     {
-      /* No smartcard, but a private key */
-      int dsaalgo = 0;
+      /* No smartcard, but a private key (in S_SKEY). */
 
       /* Put the hash into a sexp */
-      if (agent_is_eddsa_key (s_skey))
-        err = do_encode_eddsa (data, datalen,
+      if (algo == GCRY_PK_EDDSA)
+        err = do_encode_eddsa (gcry_pk_get_nbits (s_skey), data, datalen,
                                &s_hash);
       else if (ctrl->digest.algo == MD_USER_TLS_MD5SHA1)
         err = do_encode_raw_pkcs1 (data, datalen,
                                    gcry_pk_get_nbits (s_skey),
                                    &s_hash);
-      else if ( (dsaalgo = agent_is_dsa_key (s_skey)) )
+      else if (algo == GCRY_PK_DSA || algo == GCRY_PK_ECC)
         err = do_encode_dsa (data, datalen,
-                             dsaalgo, s_skey,
+                             algo, s_skey,
                              &s_hash);
+      else if (ctrl->digest.is_pss)
+        {
+          log_info ("signing with rsaPSS is currently only supported"
+                    " for (some) smartcards\n");
+          err = gpg_error (GPG_ERR_NOT_SUPPORTED);
+        }
       else
         err = do_encode_md (data, datalen,
                             ctrl->digest.algo,
@@ -495,14 +542,23 @@ agent_pksign_do (ctrl_t ctrl, const char *cache_nonce,
   /* Check that the signature verification worked and nothing is
    * fooling us e.g. by a bug in the signature create code or by
    * deliberately introduced faults.  Because Libgcrypt 1.7 does this
-   * for RSA internally there is no need to do it here again.  */
+   * for RSA internally there is no need to do it here again.  We do
+   * this always for card based RSA keys, though.  */
   if (check_signature)
     {
       gcry_sexp_t sexp_key = s_pkey? s_pkey: s_skey;
 
       if (s_hash == NULL)
         {
-          if (ctrl->digest.algo == MD_USER_TLS_MD5SHA1)
+          if (ctrl->digest.is_pss)
+            {
+              err = gcry_sexp_build (&s_hash, NULL,
+                                     "(data (flags raw) (value %b))",
+                                     (int)datalen, data);
+            }
+          else if (algo == GCRY_PK_DSA || algo == GCRY_PK_ECC)
+            err = do_encode_dsa (data, datalen, algo, sexp_key, &s_hash);
+          else if (ctrl->digest.algo == MD_USER_TLS_MD5SHA1)
             err = do_encode_raw_pkcs1 (data, datalen,
                                        gcry_pk_get_nbits (sexp_key), &s_hash);
           else
@@ -517,6 +573,12 @@ agent_pksign_do (ctrl_t ctrl, const char *cache_nonce,
         {
           log_error (_("checking created signature failed: %s\n"),
                      gpg_strerror (err));
+          if (DBG_CRYPTO)
+            {
+              gcry_log_debugsxp ("verify s_hsh", s_hash);
+              gcry_log_debugsxp ("verify s_sig", s_sig);
+              gcry_log_debugsxp ("verify s_key", sexp_key);
+            }
           gcry_sexp_release (s_sig);
           s_sig = NULL;
         }

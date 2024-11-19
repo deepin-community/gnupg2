@@ -66,15 +66,13 @@ do_delete_key (ctrl_t ctrl, const char *username, int secret, int force,
 
   *r_sec_avail = 0;
 
-  hd = keydb_new ();
+  hd = keydb_new (ctrl);
   if (!hd)
     return gpg_error_from_syserror ();
 
   /* Search the userid.  */
   err = classify_user_id (username, &desc, 1);
-  exactmatch = (desc.mode == KEYDB_SEARCH_MODE_FPR
-                || desc.mode == KEYDB_SEARCH_MODE_FPR16
-                || desc.mode == KEYDB_SEARCH_MODE_FPR20);
+  exactmatch = (desc.mode == KEYDB_SEARCH_MODE_FPR);
   thiskeyonly = desc.exact;
   if (!err)
     err = keydb_search (hd, &desc, 1, NULL);
@@ -134,7 +132,7 @@ do_delete_key (ctrl_t ctrl, const char *username, int secret, int force,
 
   if (!secret && !force)
     {
-      if (have_secret_key_with_kid (keyid))
+      if (have_secret_key_with_kid (ctrl, keyid))
         {
           *r_sec_avail = 1;
           err = gpg_error (GPG_ERR_EOF);
@@ -144,7 +142,7 @@ do_delete_key (ctrl_t ctrl, const char *username, int secret, int force,
         err = 0;
     }
 
-  if (secret && !have_secret_key_with_kid (keyid))
+  if (secret && !have_secret_key_with_kid (ctrl, keyid))
     {
       err = gpg_error (GPG_ERR_NOT_FOUND);
       log_error (_("key \"%s\" not found\n"), username);
@@ -154,7 +152,13 @@ do_delete_key (ctrl_t ctrl, const char *username, int secret, int force,
 
 
   if (opt.batch && exactmatch)
-    okay++;
+    {
+      if (secret && opt.pinentry_mode == PINENTRY_MODE_LOOPBACK
+          && !opt.answer_yes)
+        log_error(_("can't do this in batch mode without \"--yes\"\n"));
+      else
+        okay++;
+    }
   else if (opt.batch && secret)
     {
       log_error(_("can't do this in batch mode\n"));
@@ -169,12 +173,8 @@ do_delete_key (ctrl_t ctrl, const char *username, int secret, int force,
     }
   else
     {
-      if (secret)
-        print_seckey_info (ctrl, pk);
-      else
-        print_pubkey_info (ctrl, NULL, pk );
-      tty_printf( "\n" );
-
+      print_key_info (ctrl, NULL, 0, pk, secret);
+      tty_printf ("\n");
       if (thiskeyonly == 1 && !secret)
         {
           /* We need to delete the entire public key despite the use
@@ -369,11 +369,6 @@ delete_keys (ctrl_t ctrl, strlist_t names, int secret, int allow_both)
         {
           log_error ("%s: delete key failed: %s\n",
                      names->d, gpg_strerror (err));
-          if (gpg_err_code (err) == GPG_ERR_NO_PIN_ENTRY
-              && opt.batch && secret
-              && opt.pinentry_mode == PINENTRY_MODE_LOOPBACK)
-            log_info ("(try option \"--yes\" to delete anyway)\n");
-
           return err;
         }
     }

@@ -40,9 +40,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
-#ifdef HAVE_PWD_H
-# include <pwd.h>
-#endif
+#include <limits.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <errno.h>
 #ifdef HAVE_STAT
@@ -57,6 +56,10 @@
 # include <sys/time.h>
 # include <sys/resource.h>
 #endif
+#ifdef HAVE_PWD_H
+# include <pwd.h>
+# include <grp.h>
+#endif /*HAVE_PWD_H*/
 #ifdef HAVE_W32_SYSTEM
 # if WINVER < 0x0500
 #   define WINVER 0x0500  /* Required for AllowSetForegroundWindow.  */
@@ -106,6 +109,11 @@ struct gnupg_dir_s
 /* Flag to tell whether special file names are enabled.  See gpg.c for
  * an explanation of these file names.  */
 static int allow_special_filenames;
+
+#ifdef HAVE_W32_SYSTEM
+/* State of gnupg_inhibit_set_foregound_window.  */
+static int inhibit_set_foregound_window;
+#endif
 
 
 static GPGRT_INLINE gpg_error_t
@@ -532,10 +540,7 @@ gnupg_usleep (unsigned int usecs)
 int
 translate_sys2libc_fd (gnupg_fd_t fd, int for_write)
 {
-#if defined(HAVE_W32CE_SYSTEM)
-  (void)for_write;
-  return (int) fd;
-#elif defined(HAVE_W32_SYSTEM)
+#if defined(HAVE_W32_SYSTEM)
   int x;
 
   if (fd == GNUPG_INVALID_FD)
@@ -543,7 +548,7 @@ translate_sys2libc_fd (gnupg_fd_t fd, int for_write)
 
   /* Note that _open_osfhandle is currently defined to take and return
      a long.  */
-  x = _open_osfhandle ((long)fd, for_write ? 1 : 0);
+  x = _open_osfhandle ((intptr_t)fd, for_write ? 1 : 0);
   if (x == -1)
     log_error ("failed to translate osfhandle %p\n", (void *) fd);
   return x;
@@ -560,10 +565,7 @@ translate_sys2libc_fd (gnupg_fd_t fd, int for_write)
 int
 translate_sys2libc_fd_int (int fd, int for_write)
 {
-#if HAVE_W32CE_SYSTEM
-  fd = (int) _assuan_w32ce_finish_pipe (fd, for_write);
-  return translate_sys2libc_fd ((void*)fd, for_write);
-#elif HAVE_W32_SYSTEM
+#ifdef HAVE_W32_SYSTEM
   if (fd <= 2)
     return fd;	/* Do not do this for error, stdin, stdout, stderr. */
 
@@ -608,18 +610,11 @@ gnupg_tmpfile (void)
 {
 #ifdef HAVE_W32_SYSTEM
   int attempts, n;
-#ifdef HAVE_W32CE_SYSTEM
-  wchar_t buffer[MAX_PATH+7+12+1];
-# define mystrlen(a) wcslen (a)
-  wchar_t *name, *p;
-#else
   char buffer[MAX_PATH+7+12+1];
-# define mystrlen(a) strlen (a)
   char *name, *p;
-#endif
   HANDLE file;
   int pid = GetCurrentProcessId ();
-  unsigned int value;
+  unsigned int value = 0;
   int i;
   SECURITY_ATTRIBUTES sec_attr;
 
@@ -628,18 +623,13 @@ gnupg_tmpfile (void)
   sec_attr.bInheritHandle = TRUE;
 
   n = GetTempPath (MAX_PATH+1, buffer);
-  if (!n || n > MAX_PATH || mystrlen (buffer) > MAX_PATH)
+  if (!n || n > MAX_PATH || strlen (buffer) > MAX_PATH)
     {
       gpg_err_set_errno (ENOENT);
       return NULL;
     }
-  p = buffer + mystrlen (buffer);
-#ifdef HAVE_W32CE_SYSTEM
-  wcscpy (p, L"_gnupg");
-  p += 7;
-#else
+  p = buffer + strlen (buffer);
   p = stpcpy (p, "_gnupg");
-#endif
   /* We try to create the directory but don't care about an error as
      it may already exist and the CreateFile would throw an error
      anyway.  */
@@ -649,17 +639,10 @@ gnupg_tmpfile (void)
   for (attempts=0; attempts < 10; attempts++)
     {
       p = name;
-      value = (GetTickCount () ^ ((pid<<16) & 0xffff0000));
+      value += (GetTickCount () ^ ((pid<<16) & 0xffff0000));
       for (i=0; i < 8; i++)
-        {
-          *p++ = tohex (((value >> 28) & 0x0f));
-          value <<= 4;
-        }
-#ifdef HAVE_W32CE_SYSTEM
-      wcscpy (p, L".tmp");
-#else
+	*p++ = tohex (((value >> (7 - i)*4) & 0x0f));
       strcpy (p, ".tmp");
-#endif
       file = CreateFile (buffer,
                          GENERIC_READ | GENERIC_WRITE,
                          0,
@@ -670,18 +653,13 @@ gnupg_tmpfile (void)
       if (file != INVALID_HANDLE_VALUE)
         {
           FILE *fp;
-#ifdef HAVE_W32CE_SYSTEM
-          int fd = (int)file;
-          fp = _wfdopen (fd, L"w+b");
-#else
-          int fd = _open_osfhandle ((long)file, 0);
+          int fd = _open_osfhandle ((intptr_t)file, 0);
           if (fd == -1)
             {
               CloseHandle (file);
               return NULL;
             }
           fp = fdopen (fd, "w+b");
-#endif
           if (!fp)
             {
               int save = errno;
@@ -695,9 +673,11 @@ gnupg_tmpfile (void)
     }
   gpg_err_set_errno (ENOENT);
   return NULL;
-#undef mystrlen
+
 #else /*!HAVE_W32_SYSTEM*/
+
   return tmpfile ();
+
 #endif /*!HAVE_W32_SYSTEM*/
 }
 
@@ -775,6 +755,20 @@ gnupg_reopen_std (const char *pgmname)
 }
 
 
+/* Inhibit calls to AllowSetForegroundWindow on Windows.  Calling this
+ * with YES set to true calls to gnupg_allow_set_foregound_window are
+ * shunted.  */
+void
+gnupg_inhibit_set_foregound_window (int yes)
+{
+#ifdef HAVE_W32_SYSTEM
+  inhibit_set_foregound_window = yes;
+#else
+  (void)yes;
+#endif
+}
+
+
 /* Hack required for Windows.  */
 void
 gnupg_allow_set_foregound_window (pid_t pid)
@@ -782,7 +776,9 @@ gnupg_allow_set_foregound_window (pid_t pid)
   if (!pid)
     log_info ("%s called with invalid pid %lu\n",
               "gnupg_allow_set_foregound_window", (unsigned long)pid);
-#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
+#if defined(HAVE_W32_SYSTEM)
+  else if (inhibit_set_foregound_window)
+    ;
   else if (!AllowSetForegroundWindow ((pid_t)pid == (pid_t)(-1)?ASFW_ANY:pid))
     {
       char *flags = getenv ("GNUPG_EXEC_DEBUG_FLAGS");
@@ -977,35 +973,9 @@ modestr_to_mode (const char *modestr, mode_t oldmode)
 int
 gnupg_mkdir (const char *name, const char *modestr)
 {
-#if GPG_ERROR_VERSION_NUMBER < 0x011c00 /* 1.28 */
- #ifdef HAVE_W32CE_SYSTEM
-  wchar_t *wname;
-  (void)modestr;
-
-  wname = utf8_to_wchar (name);
-  if (!wname)
-    return -1;
-  if (!CreateDirectoryW (wname, NULL))
-    {
-      xfree (wname);
-      return -1;  /* ERRNO is automagically provided by gpg-error.h.  */
-    }
-  xfree (wname);
-  return 0;
- #elif MKDIR_TAKES_ONE_ARG
-  (void)modestr;
-  /* Note: In the case of W32 we better use CreateDirectory and try to
-     set appropriate permissions.  However using mkdir is easier
-     because this sets ERRNO.  */
-  return mkdir (name);
- #else
-  return mkdir (name, modestr_to_mode (modestr, 0));
- #endif
-#else
   /* Note that gpgrt_mkdir also sets ERRNO in addition to returing an
    * gpg-error style error code.  */
   return gpgrt_mkdir (name, modestr);
-#endif
 }
 
 
@@ -1014,13 +984,9 @@ gnupg_mkdir (const char *name, const char *modestr)
 int
 gnupg_chdir (const char *name)
 {
-#if GPG_ERROR_VERSION_NUMBER < 0x011c00 /* 1.28 */
-  return chdir (name);
-#else /* Use the improved version from libgpg_error.  */
-  /* Note that gpgrt_chdir also sets ERRNO in addition to returning a
+  /* Note that gpgrt_chdir also sets ERRNO in addition to returning an
    * gpg-error style error code.  */
   return gpgrt_chdir (name);
-#endif
 }
 
 
@@ -1168,13 +1134,7 @@ gnupg_mkdtemp (char *tmpl)
 int
 gnupg_setenv (const char *name, const char *value, int overwrite)
 {
-#ifdef HAVE_W32CE_SYSTEM
-  (void)name;
-  (void)value;
-  (void)overwrite;
-  return 0;
-#else /*!W32CE*/
-# ifdef HAVE_W32_SYSTEM
+#ifdef HAVE_W32_SYSTEM
   /*  Windows maintains (at least) two sets of environment variables.
       One set can be accessed by GetEnvironmentVariable and
       SetEnvironmentVariable.  This set is inherited by the children.
@@ -1192,11 +1152,11 @@ gnupg_setenv (const char *name, const char *value, int overwrite)
         return -1;
       }
   }
-# endif /*W32*/
+#endif /*W32*/
 
-# ifdef HAVE_SETENV
+#ifdef HAVE_SETENV
   return setenv (name, value, overwrite);
-# else /*!HAVE_SETENV*/
+#else /*!HAVE_SETENV*/
   if (! getenv (name) || overwrite)
     {
       char *buf;
@@ -1216,19 +1176,14 @@ gnupg_setenv (const char *name, const char *value, int overwrite)
       return putenv (buf);
     }
   return 0;
-# endif /*!HAVE_SETENV*/
-#endif /*!W32CE*/
+#endif /*!HAVE_SETENV*/
 }
 
 
 int
 gnupg_unsetenv (const char *name)
 {
-#ifdef HAVE_W32CE_SYSTEM
-  (void)name;
-  return 0;
-#else /*!W32CE*/
-# ifdef HAVE_W32_SYSTEM
+#ifdef HAVE_W32_SYSTEM
   /*  Windows maintains (at least) two sets of environment variables.
       One set can be accessed by GetEnvironmentVariable and
       SetEnvironmentVariable.  This set is inherited by the children.
@@ -1240,29 +1195,37 @@ gnupg_unsetenv (const char *name)
       gpg_err_set_errno (EINVAL); /* (Might also be ENOMEM.) */
       return -1;
     }
-# endif /*W32*/
+#endif /*W32*/
 
-# ifdef HAVE_UNSETENV
+#ifdef HAVE_UNSETENV
   return unsetenv (name);
-# else /*!HAVE_UNSETENV*/
+#else /*!HAVE_UNSETENV*/
   {
     char *buf;
+    int r;
 
     if (!name)
       {
         gpg_err_set_errno (EINVAL);
         return -1;
       }
-    buf = xtrystrdup (name);
+    buf = strconcat (name, "=", NULL);
     if (!buf)
       return -1;
+
+    r = putenv (buf);
+# ifdef HAVE_W32_SYSTEM
+    /* For Microsoft implementation, we can free the memory in this
+       use case.  */
+    xfree (buf);
+# else
 #  if __GNUC__
 #   warning no unsetenv - trying putenv but leaking memory.
 #  endif
-    return putenv (buf);
+# endif
+    return r;
   }
-# endif /*!HAVE_UNSETENV*/
-#endif /*!W32CE*/
+#endif /*!HAVE_UNSETENV*/
 }
 
 
@@ -1271,53 +1234,7 @@ gnupg_unsetenv (const char *name)
 char *
 gnupg_getcwd (void)
 {
-#if GPGRT_VERSION_NUMBER < 0x012800 /* 1.40 */
-# ifdef HAVE_W32_SYSTEM
-  wchar_t wbuffer[MAX_PATH + sizeof(wchar_t)];
-  DWORD wlen;
-  char *buf, *p;
-
-  wlen = GetCurrentDirectoryW (MAX_PATH, wbuffer);
-  if (!wlen)
-    {
-      gpg_err_set_errno (EINVAL);
-      return NULL;
-
-    }
-  else if (wlen > MAX_PATH)
-    {
-      gpg_err_set_errno (ENAMETOOLONG);
-      return NULL;
-    }
-  buf = wchar_to_utf8 (wbuffer);
-  if (buf)
-    {
-      for (p=buf; *p; p++)
-        if (*p == '\\')
-          *p = '/';
-    }
-  return buf;
-
-# else /*Unix*/
-  char *buffer;
-  size_t size = 100;
-
-  for (;;)
-    {
-      buffer = xtrymalloc (size+1);
-      if (!buffer)
-        return NULL;
-      if (getcwd (buffer, size) == buffer)
-        return buffer;
-      xfree (buffer);
-      if (errno != ERANGE)
-        return NULL;
-      size *= 2;
-    }
-# endif /*Unix*/
-#else
   return gpgrt_getcwd ();
-#endif
 }
 
 
@@ -1326,26 +1243,7 @@ gnupg_getcwd (void)
 gpg_err_code_t
 gnupg_access (const char *name, int mode)
 {
-#if GPGRT_VERSION_NUMBER < 0x012800 /* 1.40 */
-# ifdef HAVE_W32_SYSTEM
-  wchar_t *wfname;
-  gpg_err_code_t ec;
-
-  wfname = utf8_to_wchar (name);
-  if (!wfname)
-    ec = gpg_err_code_from_syserror ();
-  else
-    {
-      ec = _waccess (wfname, mode)? gpg_err_code_from_syserror () : 0;
-      xfree (wfname);
-    }
-  return ec;
-# else
-  return access (name, mode)? gpg_err_code_from_syserror () : 0;
-# endif
-#else /* gpgrt 1.40 or newer.  */
   return gpgrt_access (name, mode);
-#endif
 }
 
 
@@ -1355,10 +1253,20 @@ int
 gnupg_stat (const char *name, struct stat *statbuf)
 {
 # ifdef HAVE_W32_SYSTEM
+#  if __MINGW32_MAJOR_VERSION > 3
+    /* mingw.org's MinGW */
+#   define STRUCT_STAT _stat
+#  elif defined(_USE_32BIT_TIME_T)
+    /* MinGW64 for i686 */
+#   define STRUCT_STAT _stat32
+#  else
+    /* MinGW64 for x86_64 */
+#   define STRUCT_STAT _stat64i32
+#  endif
   if (any8bitchar (name))
     {
       wchar_t *wname;
-      struct _stat32 st32;
+      struct STRUCT_STAT st32;
       int ret;
 
       wname = utf8_to_wchar (name);
@@ -1389,55 +1297,6 @@ gnupg_stat (const char *name, struct stat *statbuf)
 # endif
 }
 #endif /*HAVE_STAT*/
-
-
-/* Wrapper around fopen for the cases where we have not yet switched
- * to es_fopen.  Note that for convenience the prototype is in util.h */
-FILE *
-gnupg_fopen (const char *fname, const char *mode)
-{
-#ifdef HAVE_W32_SYSTEM
-  if (any8bitchar (fname))
-    {
-      wchar_t *wfname;
-      const wchar_t *wmode;
-      wchar_t *wmodebuf = NULL;
-      FILE *ret;
-
-      wfname = utf8_to_wchar (fname);
-      if (!wfname)
-        return NULL;
-      if (!strcmp (mode, "r"))
-        wmode = L"r";
-      else if (!strcmp (mode, "rb"))
-        wmode = L"rb";
-      else if (!strcmp (mode, "w"))
-        wmode = L"w";
-      else if (!strcmp (mode, "wb"))
-        wmode = L"wb";
-      else
-        {
-          wmodebuf = utf8_to_wchar (mode);
-          if (!wmodebuf)
-            {
-              xfree (wfname);
-              return NULL;
-            }
-          wmode = wmodebuf;
-        }
-      ret = _wfopen (wfname, wmode);
-      xfree (wfname);
-      xfree (wmodebuf);
-      return ret;
-    }
-  else
-    return fopen (fname, mode);
-
-#else /*Unix*/
-  return fopen (fname, mode);
-#endif /*Unix*/
-}
-
 
 
 /* A wrapper around open to handle Unicode file names under Windows.  */
@@ -1610,44 +1469,101 @@ gnupg_closedir (gnupg_dir_t gdir)
 }
 
 
-
-#ifdef HAVE_W32CE_SYSTEM
-/* There is a isatty function declaration in cegcc but it does not
-   make sense, thus we redefine it.  */
-int
-_gnupg_isatty (int fd)
+/* Try to set an envvar.  Print only a notice on error.  */
+#ifndef HAVE_W32_SYSTEM
+static void
+try_set_envvar (const char *name, const char *value, int silent)
 {
-  (void)fd;
-  return 0;
+  if (gnupg_setenv (name, value, 1))
+    if (!silent)
+      log_info ("error setting envvar %s to '%s': %s\n", name, value,
+                gpg_strerror (my_error_from_syserror ()));
 }
-#endif
+#endif /*!HAVE_W32_SYSTEM*/
 
 
-#ifdef HAVE_W32CE_SYSTEM
-/* Replacement for getenv which takes care of the our use of getenv.
-   The code is not thread safe but we expect it to work in all cases
-   because it is called for the first time early enough.  */
-char *
-_gnupg_getenv (const char *name)
+/* Switch to USER which is either a name or an UID.  This is a nop
+ * under Windows.  Note that in general it is only possible to switch
+ * to another user id if the process is running under root.  if silent
+ * is set no diagnostics are printed.  */
+gpg_error_t
+gnupg_chuid (const char *user, int silent)
 {
-  static int initialized;
-  static char *assuan_debug;
+#ifdef HAVE_W32_SYSTEM
+  (void)user;  /* Not implemented for Windows - ignore.  */
+  (void)silent;
+  return 0;
 
-  if (!initialized)
+#elif HAVE_PWD_H /* A proper Unix  */
+  unsigned long ul;
+  struct passwd *pw;
+  struct stat st;
+  char *endp;
+  gpg_error_t err;
+
+  gpg_err_set_errno (0);
+  ul = strtoul (user, &endp, 10);
+  if (errno || endp == user || *endp)
+    pw = getpwnam (user);  /* Not a number; assume USER is a name.  */
+  else
+    pw = getpwuid ((uid_t)ul);
+
+  if (!pw)
     {
-      assuan_debug = read_w32_registry_string (NULL,
-                                               "\\Software\\GNU\\libassuan",
-                                               "debug");
-      initialized = 1;
+      if (!silent)
+        log_error ("user '%s' not found\n", user);
+      return my_error (GPG_ERR_NOT_FOUND);
     }
 
-  if (!strcmp (name, "ASSUAN_DEBUG"))
-    return assuan_debug;
-  else
-    return NULL;
+  /* Try to set some envvars even if we are already that user.  */
+  if (!stat (pw->pw_dir, &st))
+    try_set_envvar ("HOME", pw->pw_dir, silent);
+
+  try_set_envvar ("USER", pw->pw_name, silent);
+  try_set_envvar ("LOGNAME", pw->pw_name, silent);
+#ifdef _AIX
+  try_set_envvar ("LOGIN", pw->pw_name, silent);
+#endif
+
+  if (getuid () == pw->pw_uid)
+    return 0;  /* We are already this user.  */
+
+  /* If we need to switch set PATH to a standard value and make sure
+   * GNUPGHOME is not set. */
+  try_set_envvar ("PATH", "/usr/local/bin:/usr/bin:/bin", silent);
+  if (gnupg_unsetenv ("GNUPGHOME"))
+    if (!silent)
+      log_info ("error unsetting envvar %s: %s\n", "GNUPGHOME",
+                gpg_strerror (gpg_error_from_syserror ()));
+
+  if (initgroups (pw->pw_name, pw->pw_gid))
+    {
+      err = my_error_from_syserror ();
+      if (!silent)
+        log_error ("error setting supplementary groups for '%s': %s\n",
+                   pw->pw_name, gpg_strerror (err));
+      return err;
+    }
+
+  if (setuid (pw->pw_uid))
+    {
+      err = my_error_from_syserror ();
+      log_error ("error switching to user '%s': %s\n",
+                 pw->pw_name, gpg_strerror (err));
+      return err;
+    }
+
+  return 0;
+
+#else /*!HAVE_PWD_H */
+  if (!silent)
+    log_info ("system is missing passwd querying functions\n");
+  return my_error (GPG_ERR_NOT_IMPLEMENTED);
+#endif
 }
 
-#endif /*HAVE_W32CE_SYSTEM*/
+
+
 
 
 #ifdef HAVE_W32_SYSTEM
@@ -1912,50 +1828,4 @@ gnupg_fd_valid (int fd)
     return 0;
   close (d);
   return 1;
-}
-
-
-/* Return a malloced copy of the current user's account name; this may
- * return NULL on memory failure.  Note that this should eventually be
- * replaced by a gpgrt function. */
-char *
-gnupg_getusername (void)
-{
-  char *result = NULL;
-
-#ifdef HAVE_W32_SYSTEM
-  wchar_t wtmp[1];
-  wchar_t *wbuf;
-  DWORD wsize = 1;
-
-  GetUserNameW (wtmp, &wsize);
-  wbuf = xtrymalloc (wsize * sizeof *wbuf);
-  if (!wbuf)
-    {
-      gpg_err_set_errno (ENOMEM);
-      return NULL;
-    }
-  if (!GetUserNameW (wbuf, &wsize))
-    {
-      gpg_err_set_errno (EINVAL);
-      xfree (wbuf);
-      return NULL;
-    }
-  result= wchar_to_utf8 (wbuf);
-  xfree (wbuf);
-
-#else /* !HAVE_W32_SYSTEM */
-
-# if defined(HAVE_PWD_H) && defined(HAVE_GETPWUID)
-  struct passwd *pwd;
-
-  pwd = getpwuid (getuid());
-  if (pwd)
-    result = xtrystrdup (pwd->pw_name);
-
-# endif /*HAVE_PWD_H*/
-
-#endif /* !HAVE_W32_SYSTEM */
-
-  return result;
 }

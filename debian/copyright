@@ -17,8 +17,10 @@ Copyright: 1998-2007, 2009, 2012, Free Software Foundation, Inc
   2013, Werner Koch
 License: GPL-3+
 
-Files: autogen.sh
-Copyright: 2003, g10 Code GmbH
+Files: autogen.sh dirmngr/dirmngr-client-w32info.rc
+ dirmngr/dirmngr_ldap-w32info.rc dirmngr/dirmngr-w32info.rc
+ g10/gpgv-w32info.rc
+Copyright: 2003, 2013-2014, 2017, 2018, 2022-2024 g10 Code GmbH
 License: permissive
 
 Files: common/gc-opt-flags.h
@@ -32,10 +34,46 @@ Files: common/localename.c
 Copyright: 1985, 1989-1993, 1995-2003, 2007, 2008 Free Software Foundation, Inc.
 License: LGPL-2.1+
 
+Files: common/t-b64.c
+Copyright: 2008 Free Software Foundation, Inc.
+ 2008, 2023 g10 Code GmbH
+License: LGPL-2.1+
+
+Files: common/tlv-parser.c
+Copyright: 2023 g10 Code GmbH
+License: LGPL-2.1+
+
+Files: common/ksba-io-support.c
+Copyright: 2001-2005, 2007, 2010-2011, 2017  Werner Koch
+ 2006, 2023  g10 Code GmbH
+License: LGPL-3+ or GPL-2+
+
+Files: common/ksba-io-support.h
+Copyright: 2017  Werner Koch
+License: LGPL-3+ or GPL-2+
+
 Files: dirmngr/dns.c
  dirmngr/dns.h
 Copyright: 2008-2010, 2012-2016 William Ahern
 License: Expat
+
+Files: dirmngr/http.c
+Copyright: 1999, 2001-2004, 2006, 2009, 2010,
+ 2011 Free Software Foundation, Inc.
+ 1999, 2001-2004, 2006, 2009, 2010, 2011, 2014 Werner Koch
+ 2015-2017, 2021, 2023 g10 Code GmbH
+License: LGPL-3+ or GPL-2+
+
+Files: g10/keyid.c
+Copyright: 1998, 1999, 2000, 2001, 2003,
+ 2004, 2006, 2010 Free Software Foundation, Inc.
+ 2014 Werner Koch
+ 2016, 2023 g10 Code GmbH
+License: GPL-3+
+
+Files: g10/t-keyid.c
+Copyright: 2024 g10 Code GmbH
+License: GPL-3+
 
 Files: doc/yat2m.c
  scd/app-geldkarte.c
@@ -43,10 +81,25 @@ Copyright: 2004, 2005, g10 Code GmbH
   2006, 2008, 2009, 2011, Free Software Foundation, Inc
 License: GPL-3+
 
+Files: sm/minip12.c
+Copyright: 2002, 2003, 2004, 2006, 2011 Free Software Foundation, Inc.
+ 2014 Werner Koch
+ 2022 g10 Code GmbH
+ 2022, 2023 g10 Code GmbH
+License: GPL-3+
+
+Files: sm/t-minip12.c
+Copyright: 2020, 2023 g10 Code GmbH
+License: GPL-3+
+
 Files: scd/ccid-driver.h
  scd/ccid-driver.c
 Copyright: 2003-2007, Free Software Foundation, Inc
 License: GPL-3+ or BSD-3-clause
+
+Files: scd/app-piv.c
+Copyright: 2019, 2020, 2024 g10 Code GmbH
+License: GPL-3+
 
 Files: tools/rfc822parse.c
  tools/rfc822parse.h
@@ -252,3 +305,20 @@ License: CC0-1.0
  .
  On Debian systems, the complete text of the CC0 license, version 1.0,
  can be found in /usr/share/common-licenses/CC0-1.0.
+
+License: GPL-2+
+ This program is free software; you can redistribute it and/or
+ modify it under the terms of the GNU General Public License
+ as published by the Free Software Foundation; either version 2
+ of the License, or (at your option) any later version.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ GNU General Public License for more details.
+ .
+ You should have received a copy of the GNU General Public License along
+ with this program. If not, see <https://www.gnu.org/licenses/>.
+ .
+ On Debian systems, the complete text of the GPL license, version 2.0,
+ can be found in /usr/share/common-licenses/GPL-2.0.

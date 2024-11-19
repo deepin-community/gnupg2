@@ -48,13 +48,6 @@
 #define MY_O_BINARY  0
 #endif
 
-/* We use ERRNO despite that the cegcc provided open/read/write
-   functions don't set ERRNO - at least show that ERRNO does not make
-   sense.  */
-#ifdef HAVE_W32CE_SYSTEM
-#undef strerror
-#define strerror(a) ("[errno not available]")
-#endif
 
 /*
  * Yes, this is a very simple implementation. We should really
@@ -106,8 +99,8 @@ struct cmp_xdir_struct
 static char *db_name;
 
 /* The handle for locking the trustdb file and a counter to record how
- * often this lock has been taken.  That counter is required becuase
- * dotlock does not implemen recursive locks.  */
+ * often this lock has been taken.  That counter is required because
+ * dotlock does not implement recursive locks.  */
 static dotlock_t lockhandle;
 static unsigned int is_locked;
 
@@ -422,7 +415,7 @@ put_record_into_cache (ulong recno, const char *data)
 
 /* Return true if the cache is dirty.  */
 int
-tdbio_is_dirty()
+tdbio_is_dirty (void)
 {
   return cache_is_dirty;
 }
@@ -432,7 +425,7 @@ tdbio_is_dirty()
  * Flush the cache.  This cannot be used while in a transaction.
  */
 int
-tdbio_sync()
+tdbio_sync (void)
 {
     CACHE_CTRL r;
     int did_lock = 0;
@@ -589,7 +582,7 @@ tdbio_update_version_record (ctrl_t ctrl)
 
 /*
  * Create and write the trustdb version record.
- * This is called with the writelock activ.
+ * This is called with the writelock active.
  * Returns: 0 on success or an error code.
  */
 static int
@@ -730,13 +723,6 @@ tdbio_set_dbname (ctrl_t ctrl, const char *new_dbname,
       int rc;
       mode_t oldmask;
 
-#ifdef HAVE_W32CE_SYSTEM
-      /* We know how the cegcc implementation of access works ;-). */
-      if (GetLastError () == ERROR_FILE_NOT_FOUND)
-        gpg_err_set_errno (ENOENT);
-      else
-        gpg_err_set_errno (EIO);
-#endif /*HAVE_W32CE_SYSTEM*/
       if (errno && errno != ENOENT)
         log_fatal ( _("can't access '%s': %s\n"), fname, strerror (errno));
 
@@ -779,7 +765,7 @@ tdbio_set_dbname (ctrl_t ctrl, const char *new_dbname,
  * Return the full name of the trustdb.
  */
 const char *
-tdbio_get_dbname ()
+tdbio_get_dbname (void)
 {
   return db_name;
 }
@@ -791,28 +777,12 @@ tdbio_get_dbname ()
  * the trustdb handle (DB_FD) is guaranteed to be open.
  */
 static void
-open_db ()
+open_db (void)
 {
   TRUSTREC rec;
 
   log_assert( db_fd == -1 );
 
-#ifdef HAVE_W32CE_SYSTEM
-  {
-    DWORD prevrc = 0;
-    wchar_t *wname = utf8_to_wchar (db_name);
-    if (wname)
-      {
-        db_fd = (int)CreateFile (wname, GENERIC_READ|GENERIC_WRITE,
-                                 FILE_SHARE_READ|FILE_SHARE_WRITE, NULL,
-                                 OPEN_EXISTING, 0, NULL);
-        xfree (wname);
-      }
-    if (db_fd == -1)
-      log_fatal ("can't open '%s': %d, %d\n", db_name,
-                 (int)prevrc, (int)GetLastError ());
-  }
-#else /*!HAVE_W32CE_SYSTEM*/
   db_fd = gnupg_open (db_name, O_RDWR | MY_O_BINARY, 0);
   if (db_fd == -1 && (errno == EACCES
 #ifdef EROFS
@@ -827,7 +797,7 @@ open_db ()
   }
   if ( db_fd == -1 )
     log_fatal( _("can't open '%s': %s\n"), db_name, strerror(errno) );
-#endif /*!HAVE_W32CE_SYSTEM*/
+
   register_secured_file (db_name);
 
   /* Read the version record. */
@@ -889,7 +859,7 @@ create_hashtable (ctrl_t ctrl, TRUSTREC *vr, int type)
  * Return: 1 for yes, 0 for no.
  */
 int
-tdbio_db_matches_options()
+tdbio_db_matches_options (void)
 {
   static int yes_no = -1;
 
@@ -946,7 +916,7 @@ tdbio_read_model (void)
  * problem the process is terminated.
  */
 ulong
-tdbio_read_nextcheck ()
+tdbio_read_nextcheck (void)
 {
   TRUSTREC vr;
   int rc;
@@ -1141,7 +1111,7 @@ upd_hashtable (ctrl_t ctrl, ulong table, byte *key, int keylen, ulong newrecnum)
 
               if (rec.r.hlst.next)
                 {
-                  /* read the next reord of the list.  */
+                  /* read the next record of the list.  */
                   rc = tdbio_read_record (rec.r.hlst.next, &rec, RECTYPE_HLST);
                   if (rc)
                     {
@@ -1894,13 +1864,21 @@ cmp_trec_fpr ( const void *fpr, const TRUSTREC *rec )
  * Return: 0 if found, GPG_ERR_NOT_FOUND, or another error code.
  */
 gpg_error_t
-tdbio_search_trust_byfpr (ctrl_t ctrl, const byte *fingerprint, TRUSTREC *rec)
+tdbio_search_trust_byfpr (ctrl_t ctrl, const byte *fpr, unsigned int fprlen,
+                          TRUSTREC *rec)
 {
   int rc;
+  byte fingerprint[20];
+
+  if (fprlen != 20)
+    {
+      fpr20_from_fpr (fpr, fprlen, fingerprint);
+      fpr = fingerprint;
+    }
 
   /* Locate the trust record using the hash table */
-  rc = lookup_hashtable (get_trusthashrec (ctrl), fingerprint, 20,
-                         cmp_trec_fpr, fingerprint, rec );
+  rc = lookup_hashtable (get_trusthashrec (ctrl), fpr, 20,
+                         cmp_trec_fpr, fpr, rec);
   return rc;
 }
 
@@ -1914,13 +1892,10 @@ tdbio_search_trust_byfpr (ctrl_t ctrl, const byte *fingerprint, TRUSTREC *rec)
 gpg_error_t
 tdbio_search_trust_bypk (ctrl_t ctrl, PKT_public_key *pk, TRUSTREC *rec)
 {
-  byte fingerprint[MAX_FINGERPRINT_LEN];
-  size_t fingerlen;
+  byte fingerprint[20];
 
-  fingerprint_from_pk( pk, fingerprint, &fingerlen );
-  for (; fingerlen < 20; fingerlen++)
-    fingerprint[fingerlen] = 0;
-  return tdbio_search_trust_byfpr (ctrl, fingerprint, rec);
+  fpr20_from_pk (pk, fingerprint);
+  return tdbio_search_trust_byfpr (ctrl, fingerprint, 20, rec);
 }
 
 

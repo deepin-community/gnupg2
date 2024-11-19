@@ -27,7 +27,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include <time.h>
 
 #include "scdaemon.h"
@@ -667,6 +666,7 @@ read_ef_prkd (app_t app, unsigned short fid, prkdf_object_t *prkdresult,
       {
         /* Yep, this is the keyReference.
            Note: UL is currently not used. */
+        (void)ul;
         for (ul=0; objlen; objlen--)
           {
             ul <<= 8;
@@ -1230,15 +1230,15 @@ read_serialno(app_t app)
     }
   chrlen -= 5;
 
-  app->serialno = xtrymalloc (chrlen);
-  if (!app->serialno)
+  app->card->serialno = xtrymalloc (chrlen);
+  if (!app->card->serialno)
     {
       err = gpg_error_from_syserror ();
       goto leave;
     }
 
-  app->serialnolen = chrlen;
-  memcpy (app->serialno, chr, chrlen);
+  app->card->serialnolen = chrlen;
+  memcpy (app->card->serialno, chr, chrlen);
 
  leave:
   xfree (buffer);
@@ -1388,7 +1388,7 @@ send_keypairinfo (app_t app, ctrl_t ctrl, prkdf_object_t keyinfo)
         }
       else
         {
-          assert (strlen (gripstr) == 40);
+          log_assert (strlen (gripstr) == 40);
           send_status_info (ctrl, "KEYPAIRINFO",
                             gripstr, 40,
                             buf, strlen (buf),
@@ -1484,7 +1484,7 @@ readcert_by_cdf (app_t app, cdf_object_t cdf,
       goto leave;
     }
   totobjlen = objlen + hdrlen;
-  assert (totobjlen <= buflen);
+  log_assert (totobjlen <= buflen);
 
   err = parse_ber_header (&p, &n, &class, &tag, &constructed,
                           &ndef, &objlen, &hdrlen);
@@ -1515,7 +1515,7 @@ readcert_by_cdf (app_t app, cdf_object_t cdf,
           goto leave;
         }
       totobjlen = objlen + hdrlen;
-      assert (save_p + totobjlen <= buffer + buflen);
+      log_assert (save_p + totobjlen <= buffer + buflen);
       memmove (buffer, save_p, totobjlen);
     }
 
@@ -1593,7 +1593,8 @@ do_getattr (app_t app, ctrl_t ctrl, const char *name)
     }
   else if (!strcmp (name, "$DISPSERIALNO"))
     {
-      send_status_info (ctrl, name, app->serialno, app->serialnolen, NULL, 0);
+      send_status_info (ctrl, name,
+                        app->card->serialno, app->card->serialnolen, NULL, 0);
       return 0;
     }
 
@@ -2072,6 +2073,8 @@ app_select_sc_hsm (app_t app)
         goto leave;
 
       app->fnc.deinit = do_deinit;
+      app->fnc.prep_reselect = NULL;
+      app->fnc.reselect = NULL;
       app->fnc.learn_status = do_learn_status;
       app->fnc.readcert = do_readcert;
       app->fnc.getattr = do_getattr;

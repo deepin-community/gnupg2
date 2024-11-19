@@ -1,5 +1,6 @@
 /* exechelp.h - Definitions for the fork and exec helpers
  * Copyright (C) 2004, 2009, 2010 Free Software Foundation, Inc.
+ * Copyright (C) 2004, 2006-2012, 2014-2017 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -25,6 +26,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: (LGPL-3.0+ OR GPL-2.0+)
  */
 
 #ifndef GNUPG_COMMON_EXECHELP_H
@@ -66,6 +68,9 @@ gpg_error_t gnupg_create_outbound_pipe (int filedes[2],
 /* Portable function to create a pipe.  Under Windows both ends are
    inheritable.  */
 gpg_error_t gnupg_create_pipe (int filedes[2]);
+
+/* Close the end of a pipe.  */
+void gnupg_close_pipe (int fd);
 
 
 #define GNUPG_SPAWN_NONBLOCK   16
@@ -128,7 +133,7 @@ gpg_error_t gnupg_create_pipe (int filedes[2]);
  */
 gpg_error_t
 gnupg_spawn_process (const char *pgmname, const char *argv[],
-                     int *execpt, void (*preexec)(void), unsigned int flags,
+                     int *execpt, unsigned int flags,
                      estream_t *r_infp,
                      estream_t *r_outfp,
                      estream_t *r_errfp,

@@ -24,9 +24,6 @@
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
-#ifdef HAVE_GETOPT_H
-# include <getopt.h>
-#endif
 #include <stdlib.h>
 #include <npth.h>
 #ifdef HAVE_W32_SYSTEM
@@ -302,16 +299,15 @@ ks_ldap_help (ctrl_t ctrl, parsed_uri_t uri)
 
   if(!uri)
     err = ks_print_help (ctrl, "  ldap");
-  else if (!strcmp (uri->scheme, "ldap")
-           || !strcmp (uri->scheme, "ldaps")
-           || !strcmp (uri->scheme, "ldapi")
-           || uri->opaque)
+  else if (uri->is_ldap || uri->opaque)
     err = ks_print_help (ctrl, data);
   else
     err = 0;
 
   return err;
 }
+
+
 
 /* Create a new empty state object.  Returns NULL on error */
 static struct ks_engine_ldap_local_s *
@@ -493,12 +489,10 @@ keyspec_to_ldap_filter (const char *keyspec, char **filter, int only_exact,
 		     (ulong) desc.u.kid[0], (ulong) desc.u.kid[1]);
       break;
 
-    case KEYDB_SEARCH_MODE_FPR16:
-    case KEYDB_SEARCH_MODE_FPR20:
     case KEYDB_SEARCH_MODE_FPR:
       if ((serverinfo & SERVERINFO_SCHEMAV2))
         {
-          freeme = bin2hex (desc.u.fpr, 20, NULL);
+          freeme = bin2hex (desc.u.fpr, desc.fprlen, NULL);
           if (!freeme)
             return gpg_error_from_syserror ();
           f = xasprintf ("(|(gpgFingerprint=%s)(gpgSubFingerprint=%s))",
@@ -582,7 +576,7 @@ interrogate_ldap_dn (LDAP *ldap_conn, const char *basedn_search,
             log_debug ("Version:\t%s\n", vals[0]);
           if (is_gnupg)
             {
-              char *fields[2];
+              const char *fields[2];
               int nfields;
               nfields = split_fields (vals[0], fields, DIM(fields));
               if (nfields > 0 && atoi(fields[0]) > 1)
@@ -611,7 +605,7 @@ interrogate_ldap_dn (LDAP *ldap_conn, const char *basedn_search,
  * including whether to use TLS and the username and password (see
  * ldap_parse_uri for a description of the various fields).  Be
  * default a PGP keyserver is assumed; if GENERIC is true a generic
- * ldap conenction is instead established.
+ * ldap connection is instead established.
  *
  * Returns: The ldap connection handle in *LDAP_CONNP, R_BASEDN is set
  * to the base DN for the PGP key space, several flags will be stored
@@ -860,13 +854,8 @@ my_ldap_connect (parsed_uri_t uri, unsigned int generic, LDAP **ldap_connp,
     }
   else if (bindname)
     {
-
       npth_unprotect ();
-      /* Older Windows header dont have the const for the last two args.
-       * Thus we need to cast to avoid warnings.  */
-      lerr = ldap_simple_bind_s (ldap_conn,
-                                 (char * const)bindname,
-                                 (char * const)password);
+      lerr = ldap_simple_bind_s (ldap_conn, bindname, password);
       npth_protect ();
       if (lerr != LDAP_SUCCESS)
 	{
@@ -1155,7 +1144,7 @@ no_ldap_due_to_tor (ctrl_t ctrl)
 
   log_error ("%s", msg);
   dirmngr_status_printf (ctrl, "NOTE", "no_ldap_due_to_tor %u %s", err, msg);
-  return err;
+  return gpg_error (GPG_ERR_NOT_SUPPORTED);
 }
 
 
@@ -1642,9 +1631,10 @@ ks_ldap_get (ctrl_t ctrl, parsed_uri_t uri, const char *keyspec,
      NULL
     };
 
-
   if (dirmngr_use_tor ())
-    return no_ldap_due_to_tor (ctrl);
+    {
+      return no_ldap_due_to_tor (ctrl);
+    }
 
   err = ks_ldap_prepare_my_state (ctrl, ks_get_flags, &first_mode, &next_mode);
   if (err)
@@ -1872,7 +1862,9 @@ ks_ldap_search (ctrl_t ctrl, parsed_uri_t uri, const char *pattern,
   (void) ctrl;
 
   if (dirmngr_use_tor ())
-    return no_ldap_due_to_tor (ctrl);
+    {
+      return no_ldap_due_to_tor (ctrl);
+    }
 
   /* Make sure we are talking to an OpenPGP LDAP server.  */
   err = my_ldap_connect (uri, 0, &ldap_conn, &basedn, NULL, NULL, &serverinfo);
@@ -2713,7 +2705,7 @@ extract_attributes (LDAPMod ***modlist, int *extract_state,
 
       uncescape (uid);
       modlist_add (modlist, "pgpUserID", uid);
-      if (schemav2 && (mbox = mailbox_from_userid (uid)))
+      if (schemav2 && (mbox = mailbox_from_userid (uid, 0)))
         {
           modlist_add (modlist, "gpgMailbox", mbox);
           xfree (mbox);
@@ -2758,7 +2750,9 @@ ks_ldap_put (ctrl_t ctrl, parsed_uri_t uri,
   (void) ctrl;
 
   if (dirmngr_use_tor ())
-    return no_ldap_due_to_tor (ctrl);
+    {
+      return no_ldap_due_to_tor (ctrl);
+    }
 
   err = my_ldap_connect (uri, 0, &ldap_conn, &basedn, NULL, NULL, &serverinfo);
   if (err || !basedn)

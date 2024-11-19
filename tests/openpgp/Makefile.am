@@ -38,6 +38,8 @@ TESTS_ENVIRONMENT = LC_ALL=C \
 	PATH="../gpgscm:$(PATH)" \
 	abs_top_srcdir="$(abs_top_srcdir)" \
 	objdir="$(abs_top_builddir)" \
+        GNUPG_BUILD_ROOT="$(abs_top_builddir)" \
+	GNUPG_IN_TEST_SUITE=fact \
 	GPGSCM_PATH="$(abs_top_srcdir)/tests/gpgscm"
 
 XTESTS = \
@@ -45,6 +47,7 @@ XTESTS = \
 	enarmor.scm \
 	mds.scm \
 	decrypt.scm \
+	decrypt-sym.scm \
 	decrypt-multifile.scm \
 	decrypt-dsa.scm \
 	decrypt-session-key.scm \
@@ -85,6 +88,7 @@ XTESTS = \
 	trust-pgp-1.scm \
 	trust-pgp-2.scm \
 	trust-pgp-3.scm \
+	trust-pgp-4.scm \
 	gpgtar.scm \
 	use-exact-key.scm \
 	default-key.scm \
@@ -101,9 +105,6 @@ XTESTS = \
 	issue2419.scm \
 	issue2929.scm \
 	issue2941.scm
-
-# Temporary removed tests:
-#	trust-pgp-4.scm
 
 
 # XXX: Currently, one cannot override automake's 'check' target.  As a
@@ -243,6 +244,10 @@ sample_keys = samplekeys/README \
 sample_msgs = samplemsgs/clearsig-1-key-1.asc \
 	      samplemsgs/clearsig-2-keys-1.asc \
 	      samplemsgs/clearsig-2-keys-2.asc \
+	      samplemsgs/enc-sym-cfb-1.asc \
+	      samplemsgs/enc-sym-cfb-2.asc \
+	      samplemsgs/enc-sym-ocb-1.asc \
+	      samplemsgs/enc-sym-ocb-2.asc \
 	      samplemsgs/enc-1-key-1.asc \
 	      samplemsgs/enc-1-key-2.asc \
 	      samplemsgs/enc-2-keys-1.asc \
@@ -271,18 +276,16 @@ sample_msgs = samplemsgs/clearsig-1-key-1.asc \
 
 EXTRA_DIST = defs.scm trust-pgp/common.scm $(XTESTS) $(TEST_FILES) \
 	     mkdemodirs signdemokey $(priv_keys) $(sample_keys)   \
-	     $(sample_msgs) ChangeLog-2011 run-tests.scm trust-pgp-4.scm \
+	     $(sample_msgs) ChangeLog-2011 run-tests.scm \
 	     setup.scm shell.scm all-tests.scm signed-messages.scm
 
 CLEANFILES = prepared.stamp x y yy z out err  $(data_files) \
 	     plain-1 plain-2 plain-3 trustdb.gpg *.lock .\#lk* \
 	     *.log gpg_dearmor gpg.conf gpg-agent.conf S.gpg-agent \
 	     pubring.gpg pubring.gpg~ pubring.kbx pubring.kbx~ \
-	     secring.gpg pubring.pkr secring.skr \
+	     common.conf secring.gpg pubring.pkr secring.skr \
 	     gnupg-test.stop random_seed gpg-agent.log tofu.db \
 	     passphrases sshcontrol S.gpg-agent.ssh report.xml
-
-XTESTS += trust-pgp-4.scm
 
 clean-local:
 	-rm -rf private-keys-v1.d openpgp-revocs.d tofu.d gpgtar.d

@@ -36,22 +36,31 @@ typedef enum {
   KEYDB_SEARCH_MODE_WORDS,
   KEYDB_SEARCH_MODE_SHORT_KID,
   KEYDB_SEARCH_MODE_LONG_KID,
-  KEYDB_SEARCH_MODE_FPR16,
-  KEYDB_SEARCH_MODE_FPR20,
-  KEYDB_SEARCH_MODE_FPR,
+  KEYDB_SEARCH_MODE_FPR,     /* (Length of fpr in .fprlen) */
   KEYDB_SEARCH_MODE_ISSUER,
   KEYDB_SEARCH_MODE_ISSUER_SN,
   KEYDB_SEARCH_MODE_SN,
   KEYDB_SEARCH_MODE_SUBJECT,
   KEYDB_SEARCH_MODE_KEYGRIP,
+  KEYDB_SEARCH_MODE_UBID,
   KEYDB_SEARCH_MODE_FIRST,
   KEYDB_SEARCH_MODE_NEXT
 } KeydbSearchMode;
 
 
-/* Forwward declaration.  See g10/packet.h.  */
+/* Identifiers for the public key types we use in GnuPG.  */
+enum pubkey_types
+  {
+   PUBKEY_TYPE_UNKNOWN = 0,
+   PUBKEY_TYPE_OPGP    = 1,
+   PUBKEY_TYPE_X509    = 2
+  };
+
+
+/* Forward declaration.  See g10/packet.h.  */
 struct gpg_pkt_user_id_s;
 typedef struct gpg_pkt_user_id_s *gpg_pkt_user_id_t;
+
 
 /* A search descriptor.  */
 struct keydb_search_desc
@@ -66,13 +75,17 @@ struct keydb_search_desc
   int (*skipfnc)(void *, u32 *, int);
   void *skipfncvalue;
   const unsigned char *sn;
-  int snlen;  /* -1 := sn is a hex string */
+  unsigned short snlen;
   union {
     const char *name;
-    unsigned char fpr[24];
+    unsigned char fpr[32];
     u32 kid[2]; /* Note that this is in native endianness.  */
-    unsigned char grip[20];
+    unsigned char grip[KEYGRIP_LEN];
+    unsigned char ubid[UBID_LEN];
   } u;
+  byte name_used;/* The union uses NAME.  */
+  byte snhex;   /* SN above is a hexstring and not binary.  */
+  byte fprlen;  /* Only used with KEYDB_SEARCH_MODE_FPR.  */
   int exact;    /* Use exactly this key ('!' suffix in gpg).  */
 };
 

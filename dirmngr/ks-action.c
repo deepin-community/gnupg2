@@ -161,8 +161,10 @@ ks_action_help (ctrl_t ctrl, const char *url)
 {
   gpg_error_t err;
   parsed_uri_t parsed_uri;  /* The broken down URI.  */
+#if USE_LDAP
   char *tmpstr;
   const char *s;
+#endif
 
   if (!url || !*url)
     {
@@ -211,7 +213,7 @@ ks_action_help (ctrl_t ctrl, const char *url)
         return err;
     }
 
-  /* Call all engines to give them a chance to print a help sting.  */
+  /* Call all engines to give them a chance to print a help string.  */
   err = ks_hkp_help (ctrl, parsed_uri);
   if (!err)
     err = ks_http_help (ctrl, parsed_uri);

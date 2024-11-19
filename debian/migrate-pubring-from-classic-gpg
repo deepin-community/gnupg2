@@ -17,8 +17,8 @@ GHD=${GNUPGHOME:-${HOME:-$(getent passwd "$(id -u)" | cut -f6 -d:)}/.gnupg}
 
 # Check that this is gnupg 2.1 or 2.2:
 VERSION=$("$GPG" --version | head -n1 | cut -f3 -d\  | cut -f1,2 -d.)
-if [ "$VERSION" != 2.1 ] && [ "$VERSION" != 2.2 ] ; then
-    printf '%s is version %s not version 2.1 or 2.2, this script might be wrong\n' "$GPG" "$VERSION" >&2
+if [ "$VERSION" != 2.1 ] && [ "$VERSION" != 2.2 ] && [ "$VERSION" != "2.4" ] ; then
+    printf '%s is version %s not version 2.1, 2.2, or 2.4, this script might be wrong\n' "$GPG" "$VERSION" >&2
     exit 1
 fi    
 

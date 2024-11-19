@@ -171,9 +171,11 @@ shell, gpg-agent terminates within a few seconds.
 @opindex supervised
 Run in the foreground, sending logs by default to stderr, and
 listening on provided file descriptors, which must already be bound to
-listening sockets.  This command is useful when running under systemd
-or other similar process supervision schemes.  This option is not
-supported on Windows.
+listening sockets.  This option is deprecated and not supported on
+Windows.
+
+If in @file{common.conf} the option @option{no-autostart} is set, any
+start attempts will be ignored.
 
 In --supervised mode, different file descriptors can be provided for
 use as different socket types (e.g. ssh, extra) as long as they are
@@ -256,30 +258,11 @@ however carefully selected to best aid in debugging.
 
 @item --debug @var{flags}
 @opindex debug
-This option is only useful for debugging and the behavior may change at
-any time without notice.  FLAGS are bit encoded and may be given in
-usual C-Syntax. The currently defined bits are:
-
-@table @code
-@item 0  (1)
-X.509 or OpenPGP protocol related data
-@item 1  (2)
-values of big number integers
-@item 2  (4)
-low level crypto operations
-@item 5  (32)
-memory allocation
-@item 6  (64)
-caching
-@item 7  (128)
-show memory statistics
-@item 9  (512)
-write hashed data to files named @code{dbgmd-000*}
-@item 10 (1024)
-trace Assuan protocol
-@item 12 (4096)
-bypass all certificate validation
-@end table
+Set debug flags.  All flags are or-ed and @var{flags} may be given
+in C syntax (e.g. 0x0042) or as a comma separated list of flag names.
+To get a list of all supported flags the single word "help" can be
+used. This option is only useful for debugging and the behavior may
+change at any time without notice.
 
 @item --debug-all
 @opindex debug-all
@@ -319,7 +302,7 @@ debugging.
 @item --steal-socket
 @opindex steal-socket
 In @option{--daemon} mode, gpg-agent detects an already running
-gpg-agent and does not allow to start a new instance. This option can
+gpg-agent and does not allow one to start a new instance. This option can
 be used to override this check: the new gpg-agent process will try to
 take over the communication sockets from the already running process
 and start anyway.  This option should in general not be used.
@@ -637,21 +620,33 @@ is used for years now and has been supported since 2.1.12.  Existing
 keys in the old format are migrated to the new format as soon as they
 are touched.
 
+
 @anchor{option --enable-ssh-support}
 @item --enable-ssh-support
+@itemx --enable-win32-openssh-support
 @itemx --enable-putty-support
 @opindex enable-ssh-support
+@opindex enable-win32-openssh-support
 @opindex enable-putty-support
 
-The OpenSSH Agent protocol is always enabled, but @command{gpg-agent}
-will only set the @code{SSH_AUTH_SOCK} variable if this flag is given.
+On Unix platforms the OpenSSH Agent protocol is always enabled, but
+@command{gpg-agent} will only set the @code{SSH_AUTH_SOCK} variable if
+the option @option{enable-ssh-support} is given.  Some Linux
+distributions use the presence of this option to decide whether the
+old ssh-agent shall be started.
+
+On Windows support for the native ssh implementation must be enabled
+using the the option @option{enable-win32-openssh-support}.  For using
+gpg-agent as a replacement for PuTTY's Pageant, the option
+@option{enable-putty-support} must be enabled.
 
 In this mode of operation, the agent does not only implement the
 gpg-agent protocol, but also the agent protocol used by OpenSSH
-(through a separate socket).  Consequently, it should be possible to use
-the gpg-agent as a drop-in replacement for the well known ssh-agent.
+(through a separate socket or via Named Pipes) or the protocol used by
+PuTTY.  Consequently, this allows one to use the gpg-agent as a drop-in
+replacement for the ssh-agent.
 
-SSH Keys, which are to be used through the agent, need to be added to
+SSH keys, which are to be used through the agent, need to be added to
 the gpg-agent initially through the ssh-add utility.  When a key is
 added, ssh-add will ask for the password of the provided key file and
 send the unprotected key material to the agent; this causes the
@@ -690,6 +685,39 @@ The @option{--enable-putty-support} is only available under Windows
 and allows the use of gpg-agent with the ssh implementation
 @command{putty}.  This is similar to the regular ssh-agent support but
 makes use of Windows message queue as required by @command{putty}.
+
+
+The order in which keys are presented to ssh are:
+@table @code
+
+@item Negative Use-for-ssh values
+      If a key file has the attribute "Use-for-ssh" and its value is
+      negative, these keys are presented first to ssh.  The negative
+      values are capped at -999 with -999 being lower ranked than -1.
+      These values can be used to prefer on-disk keys over keys taken
+      from active cards.
+
+@item Active cards
+      Active cards (inserted into a card reader or plugged in tokens)
+      are always tried; they are ordered by their serial numbers.
+
+@item Keys listed in the sshcontrol file
+      Non-disabled keys from the sshcontrol file are presented in the
+      order they appear in this file.  Note that the sshcontrol file
+      is deprecated.
+
+@item Positive Use-for-ssh values
+      If a key file has the attribute "Use-for-ssh" and its value is
+      "yes", "true", or any positive number the key is presented in
+      the order of their values.  "yes" and "true" have a value of 1;
+      other values are capped at 99999.
+
+@end table
+
+Editing the "Use-for-ssh" values can be done with an editor or using
+@command{gpg-connect-agent} and "KEYATTR" (Remember to append a colon
+to the key; i.e. use "Use-for-ssh:").
+
 
 @anchor{option --ssh-fingerprint-digest}
 @item --ssh-fingerprint-digest
@@ -843,6 +871,9 @@ This file is used when support for the secure shell agent protocol has
 been enabled (@pxref{option --enable-ssh-support}). Only keys present in
 this file are used in the SSH protocol.  You should backup this file.
 
+This file is deprecated in favor of the "Use-for-ssh" attribute in the
+key files.
+
 The @command{ssh-add} tool may be used to add new entries to this file;
 you may also add them manually.  Comment lines, indicated by a leading
 hash mark, as well as empty lines are ignored.  An entry starts with
@@ -886,7 +917,6 @@ Note that on larger installations, it is useful to put predefined
 files into the directory @file{@value{SYSCONFSKELDIR}} so that newly created
 users start up with a working configuration.  For existing users the
 a small helper script is provided to create these files (@pxref{addgnupghome}).
-
 
 
 @c
@@ -1542,7 +1572,7 @@ Incremented with any change of any of the other counters.
 @item KEY
 Incremented for added or removed private keys.
 @item CARD
-Incremented for changes of the card readers stati.
+Incremented for each change of the card reader's status.
 @end table
 
 @node Agent GETINFO

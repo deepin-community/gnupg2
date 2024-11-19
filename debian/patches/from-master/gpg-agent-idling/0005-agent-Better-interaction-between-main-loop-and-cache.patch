@@ -1,0 +1,195 @@
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Wed, 30 Aug 2023 14:48:56 +0900
+Subject: [PATCH 5/9] agent: Better interaction between main loop and cache
+ expiration.
+Applied-Upstream: 76a2f180286e6cb10fd7075994512a0028d4eb2c
+Last-Update: 2023-09-04
+
+* agent/agent.h (agent_cache_housekeeping): Remove.
+(agent_cache_expiration): New.
+* agent/cache.c (agent_cache_housekeeping): Remove.
+(agent_cache_expiration): New.
+* agent/gpg-agent.c (TIMERTICK_INTERVAL): Remove.
+(handle_tick): Remove.
+(handle_connections): Call agent_cache_expiration and use the timeout
+value determined by the call.
+
+--
+
+GnuPG-bug-id: 6681
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+---
+ agent/agent.h     |  2 +-
+ agent/cache.c     | 45 ++++++++++++++++++++++++++++++++++-----------
+ agent/gpg-agent.c | 44 +++++++++-----------------------------------
+ 3 files changed, 44 insertions(+), 47 deletions(-)
+
+Index: gnupg2/agent/agent.h
+===================================================================
+--- gnupg2.orig/agent/agent.h
++++ gnupg2/agent/agent.h
+@@ -513,7 +513,7 @@ int agent_clear_passphrase (ctrl_t ctrl,
+ /*-- cache.c --*/
+ void initialize_module_cache (void);
+ void deinitialize_module_cache (void);
+-void agent_cache_housekeeping (void);
++struct timespec *agent_cache_expiration (void);
+ void agent_flush_cache (int pincache_only);
+ int agent_put_cache (ctrl_t ctrl, const char *key, cache_mode_t cache_mode,
+                      const char *data, int ttl);
+Index: gnupg2/agent/cache.c
+===================================================================
+--- gnupg2.orig/agent/cache.c
++++ gnupg2/agent/cache.c
+@@ -270,23 +270,46 @@ housekeeping (void)
+ }
+ 
+ 
+-void
+-agent_cache_housekeeping (void)
++#define TIMERTICK_INTERVAL          (4)
++struct timespec *
++agent_cache_expiration (void)
+ {
++  static struct timespec abstime;
++  static struct timespec timeout;
++  static int initialized = 0;
++  struct timespec curtime;
+   int res;
+ 
+-  if (DBG_CACHE)
+-    log_debug ("agent_cache_housekeeping\n");
++  if (!initialized)
++    {
++      initialized = 1;
++      npth_clock_gettime (&abstime);
++      abstime.tv_sec += TIMERTICK_INTERVAL;
++    }
++
++  npth_clock_gettime (&curtime);
++  if (!(npth_timercmp (&curtime, &abstime, <)))
++    {
++      /* Timeout.  */
++      npth_clock_gettime (&abstime);
++      abstime.tv_sec += TIMERTICK_INTERVAL;
++
++      if (DBG_CACHE)
++        log_debug ("agent_cache_housekeeping\n");
++
++      res = npth_mutex_lock (&cache_lock);
++      if (res)
++        log_fatal ("failed to acquire cache mutex: %s\n", strerror (res));
++
++      housekeeping ();
++
++      res = npth_mutex_unlock (&cache_lock);
++      if (res)
++        log_fatal ("failed to release cache mutex: %s\n", strerror (res));
++    }
+ 
+-  res = npth_mutex_lock (&cache_lock);
+-  if (res)
+-    log_fatal ("failed to acquire cache mutex: %s\n", strerror (res));
+-
+-  housekeeping ();
+-
+-  res = npth_mutex_unlock (&cache_lock);
+-  if (res)
+-    log_fatal ("failed to release cache mutex: %s\n", strerror (res));
++  npth_timersub (&abstime, &curtime, &timeout);
++  return &timeout;
+ }
+ 
+ 
+Index: gnupg2/agent/gpg-agent.c
+===================================================================
+--- gnupg2.orig/agent/gpg-agent.c
++++ gnupg2/agent/gpg-agent.c
+@@ -344,14 +344,12 @@ static struct debug_flags_s debug_flags
+ #define MIN_PASSPHRASE_NONALPHA (1)
+ #define MAX_PASSPHRASE_DAYS   (0)
+ 
+-/* The timer tick used for housekeeping stuff.  Note that on Windows
+- * we use a SetWaitableTimer seems to signal earlier than about 2
+- * seconds.  Thus we use 4 seconds on all platforms.
+- * CHECK_OWN_SOCKET_INTERVAL defines how often we check
+- * our own socket in standard socket mode.  If that value is 0 we
+- * don't check at all.  All values are in seconds. */
+-#define TIMERTICK_INTERVAL          (4)
++/* CHECK_OWN_SOCKET_INTERVAL defines how often we check our own socket
++ * in standard socket mode.  If that value is 0 we don't check at all.
++ * Values is in seconds. */
+ #define CHECK_OWN_SOCKET_INTERVAL  (60)
++/* CHECK_PROBLEMS_INTERFAL defines how often we check the existence of
++ * parent process and homedir.  Value is in seconds.  */
+ #define CHECK_PROBLEMS_INTERVAL     (4)
+ 
+ /* Flag indicating that the ssh-agent subsystem has been enabled.  */
+@@ -2456,17 +2454,6 @@ create_directories (void)
+ }
+ 
+ 
+-
+-/* This is the worker for the ticker.  It is called every few seconds
+-   and may only do fast operations. */
+-static void
+-handle_tick (void)
+-{
+-  /* Need to check for expired cache entries.  */
+-  agent_cache_housekeeping ();
+-}
+-
+-
+ /* A global function which allows us to call the reload stuff from
+    other places too.  This is only used when build for W32.  */
+ void
+@@ -3000,9 +2987,7 @@ handle_connections (gnupg_fd_t listen_fd
+   gnupg_fd_t fd;
+   int nfd;
+   int saved_errno;
+-  struct timespec abstime;
+-  struct timespec curtime;
+-  struct timespec timeout;
++  struct timespec *tp;
+ #ifdef HAVE_W32_SYSTEM
+   HANDLE events[3];
+   unsigned int events_set;
+@@ -3166,9 +3151,6 @@ handle_connections (gnupg_fd_t listen_fd
+   listentbl[2].l_fd = listen_fd_browser;
+   listentbl[3].l_fd = listen_fd_ssh;
+ 
+-  npth_clock_gettime (&abstime);
+-  abstime.tv_sec += TIMERTICK_INTERVAL;
+-
+   for (;;)
+     {
+       /* Shutdown test.  */
+@@ -3209,25 +3191,17 @@ handle_connections (gnupg_fd_t listen_fd
+         nfd = pipe_fd[0];
+ #endif
+ 
+-      npth_clock_gettime (&curtime);
+-      if (!(npth_timercmp (&curtime, &abstime, <)))
+-	{
+-	  /* Timeout.  */
+-	  handle_tick ();
+-	  npth_clock_gettime (&abstime);
+-	  abstime.tv_sec += TIMERTICK_INTERVAL;
+-	}
+-      npth_timersub (&abstime, &curtime, &timeout);
++      tp = agent_cache_expiration ();
+ 
+ #ifndef HAVE_W32_SYSTEM
+-      ret = npth_pselect (nfd+1, &read_fdset, NULL, NULL, &timeout,
++      ret = npth_pselect (nfd+1, &read_fdset, NULL, NULL, tp,
+                           npth_sigev_sigmask ());
+       saved_errno = errno;
+ 
+       while (npth_sigev_get_pending (&signo))
+         handle_signal (signo);
+ #else
+-      ret = npth_eselect (nfd+1, &read_fdset, NULL, NULL, &timeout,
++      ret = npth_eselect (nfd+1, &read_fdset, NULL, NULL, tp,
+                           events, &events_set);
+       saved_errno = errno;
+ 
