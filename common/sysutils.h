@@ -77,6 +77,7 @@ int translate_sys2libc_fd_int (int fd, int for_write);
 int check_special_filename (const char *fname, int for_write, int notranslate);
 FILE *gnupg_tmpfile (void);
 void gnupg_reopen_std (const char *pgmname);
+void gnupg_inhibit_set_foregound_window (int yes);
 void gnupg_allow_set_foregound_window (pid_t pid);
 int  gnupg_remove (const char *fname);
 gpg_error_t gnupg_rename_file (const char *oldname, const char *newname,
@@ -94,12 +95,14 @@ gpg_err_code_t gnupg_access (const char *name, int mode);
 int gnupg_stat (const char *name, struct stat *statbuf);
 #endif /*HAVE_STAT*/
 int gnupg_open (const char *name, int flags, unsigned int mode);
+
 gnupg_dir_t gnupg_opendir (const char *name);
 gnupg_dirent_t gnupg_readdir (gnupg_dir_t gdir);
 int gnupg_closedir (gnupg_dir_t gdir);
+
+gpg_error_t gnupg_chuid (const char *user, int silent);
 char *gnupg_get_socket_name (int fd);
 int gnupg_fd_valid (int fd);
-char *gnupg_getusername (void);
 
 gpg_error_t gnupg_inotify_watch_delete_self (int *r_fd, const char *fname);
 gpg_error_t gnupg_inotify_watch_socket (int *r_fd, const char *socket_name);

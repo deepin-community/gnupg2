@@ -31,7 +31,6 @@
 #include "filter.h"
 #include "keydb.h"
 #include "../common/status.h"
-#include "exec.h"
 #include "main.h"
 #include "../common/i18n.h"
 #include "../common/ttyio.h"
@@ -100,8 +99,6 @@ static struct parse_options keyserver_opts[]=
      N_("automatically retrieve keys when verifying signatures")},
     {"honor-keyserver-url",KEYSERVER_HONOR_KEYSERVER_URL,NULL,
      N_("honor the preferred keyserver URL set on the key")},
-    {"honor-pka-record",KEYSERVER_HONOR_PKA_RECORD,NULL,
-     N_("honor the PKA record set on a key when retrieving keys")},
     {NULL,0,NULL,NULL}
   };
 
@@ -251,7 +248,7 @@ parse_keyserver_uri (const char *string, int require_scheme)
   if(*idx=='\0' || *idx=='[')
     {
       if(require_scheme)
-	return NULL;
+	goto fail;
 
       /* Assume HKP if there is no scheme */
       keyserver->uri = xstrconcat ("hkp://", string, NULL);
@@ -276,7 +273,7 @@ parse_preferred_keyserver(PKT_signature *sig)
   const byte *p;
   size_t plen;
 
-  p=parse_sig_subpkt(sig->hashed,SIGSUBPKT_PREF_KS,&plen);
+  p = parse_sig_subpkt (sig, 1, SIGSUBPKT_PREF_KS, &plen);
   if(p && plen)
     {
       byte *dupe=xmalloc(plen+1);
@@ -293,7 +290,6 @@ parse_preferred_keyserver(PKT_signature *sig)
 static void
 print_keyrec (ctrl_t ctrl, int number,struct keyrec *keyrec)
 {
-  int i;
 
   iobuf_writebyte(keyrec->uidbuf,0);
   iobuf_flush_temp(keyrec->uidbuf);
@@ -332,20 +328,11 @@ print_keyrec (ctrl_t ctrl, int number,struct keyrec *keyrec)
       es_printf ("key %s",keystr(keyrec->desc.u.kid));
       break;
 
-      /* If it gave us a PGP 2.x fingerprint, not much we can do
-	 beyond displaying it. */
-    case KEYDB_SEARCH_MODE_FPR16:
-      es_printf ("key ");
-      for(i=0;i<16;i++)
-	es_printf ("%02X",keyrec->desc.u.fpr[i]);
-      break;
-
-      /* If we get a modern fingerprint, we have the most
-	 flexibility. */
-    case KEYDB_SEARCH_MODE_FPR20:
+    case KEYDB_SEARCH_MODE_FPR:
       {
 	u32 kid[2];
-	keyid_from_fingerprint (ctrl, keyrec->desc.u.fpr,20,kid);
+	keyid_from_fingerprint (ctrl, keyrec->desc.u.fpr, keyrec->desc.fprlen,
+                                kid);
 	es_printf("key %s",keystr(kid));
       }
       break;
@@ -436,8 +423,7 @@ parse_keyrec(char *keystring)
       err = classify_user_id (tok, &work->desc, 1);
       if (err || (work->desc.mode    != KEYDB_SEARCH_MODE_SHORT_KID
                   && work->desc.mode != KEYDB_SEARCH_MODE_LONG_KID
-                  && work->desc.mode != KEYDB_SEARCH_MODE_FPR16
-                  && work->desc.mode != KEYDB_SEARCH_MODE_FPR20))
+                  && work->desc.mode != KEYDB_SEARCH_MODE_FPR))
 	{
 	  work->desc.mode=KEYDB_SEARCH_MODE_NONE;
 	  return ret;
@@ -818,8 +804,7 @@ keyserver_export (ctrl_t ctrl, strlist_t users)
       err = classify_user_id (users->d, &desc, 1);
       if (err || (desc.mode    != KEYDB_SEARCH_MODE_SHORT_KID
                   && desc.mode != KEYDB_SEARCH_MODE_LONG_KID
-                  && desc.mode != KEYDB_SEARCH_MODE_FPR16
-                  && desc.mode != KEYDB_SEARCH_MODE_FPR20))
+                  && desc.mode != KEYDB_SEARCH_MODE_FPR))
 	{
 	  log_error(_("\"%s\" not a key ID: skipping\n"),users->d);
 	  continue;
@@ -888,14 +873,10 @@ keyserver_retrieval_screener (kbnode_t keyblock, void *opaque)
       /* Compare requested and returned fingerprints if available. */
       for (n = 0; n < ndesc; n++)
         {
-          if (desc[n].mode == KEYDB_SEARCH_MODE_FPR20)
+          if (desc[n].mode == KEYDB_SEARCH_MODE_FPR)
             {
-              if (fpr_len == 20 && !memcmp (fpr, desc[n].u.fpr, 20))
-                return 0;
-            }
-          else if (desc[n].mode == KEYDB_SEARCH_MODE_FPR16)
-            {
-              if (fpr_len == 16 && !memcmp (fpr, desc[n].u.fpr, 16))
+              if (fpr_len == desc[n].fprlen
+                  && !memcmp (fpr, desc[n].u.fpr, desc[n].fprlen))
                 return 0;
             }
           else if (desc[n].mode == KEYDB_SEARCH_MODE_LONG_KID)
@@ -933,8 +914,7 @@ keyserver_import (ctrl_t ctrl, strlist_t users)
       err = classify_user_id (users->d, &desc[count], 1);
       if (err || (desc[count].mode    != KEYDB_SEARCH_MODE_SHORT_KID
                   && desc[count].mode != KEYDB_SEARCH_MODE_LONG_KID
-                  && desc[count].mode != KEYDB_SEARCH_MODE_FPR16
-                  && desc[count].mode != KEYDB_SEARCH_MODE_FPR20))
+                  && desc[count].mode != KEYDB_SEARCH_MODE_FPR))
 	{
 	  log_error (_("\"%s\" not a key ID: skipping\n"), users->d);
 	  continue;
@@ -1004,14 +984,13 @@ keyserver_import_fprint (ctrl_t ctrl, const byte *fprint, size_t fprint_len,
 
   memset (&desc, 0, sizeof(desc));
 
-  if(fprint_len==16)
-    desc.mode=KEYDB_SEARCH_MODE_FPR16;
-  else if(fprint_len==20)
-    desc.mode=KEYDB_SEARCH_MODE_FPR20;
+  if (fprint_len == 16 || fprint_len == 20 || fprint_len == 32)
+    desc.mode = KEYDB_SEARCH_MODE_FPR;
   else
     return gpg_error (GPG_ERR_INV_ARG);
 
   memcpy (desc.u.fpr, fprint, fprint_len);
+  desc.fprlen = fprint_len;
 
   return keyserver_get (ctrl, &desc, 1, keyserver, flags, NULL, NULL);
 }
@@ -1063,7 +1042,7 @@ keyidlist (ctrl_t ctrl, strlist_t users, KEYDB_SEARCH_DESC **klist,
 
   *klist=xmalloc(sizeof(KEYDB_SEARCH_DESC)*num);
 
-  kdbhd = keydb_new ();
+  kdbhd = keydb_new (ctrl);
   if (!kdbhd)
     {
       rc = gpg_error_from_syserror ();
@@ -1117,20 +1096,21 @@ keyidlist (ctrl_t ctrl, strlist_t users, KEYDB_SEARCH_DESC **klist,
              This is because it's easy to calculate any sort of keyid
              from a v4 fingerprint, but not a v3 fingerprint. */
 
-	  if(node->pkt->pkt.public_key->version<4)
+	  if (node->pkt->pkt.public_key->version < 4)
 	    {
 	      (*klist)[*count].mode=KEYDB_SEARCH_MODE_LONG_KID;
 	      keyid_from_pk(node->pkt->pkt.public_key,
 			    (*klist)[*count].u.kid);
 	    }
 	  else
-	    {
-	      size_t dummy;
+            {
+	      size_t fprlen;
 
-	      (*klist)[*count].mode=KEYDB_SEARCH_MODE_FPR20;
-	      fingerprint_from_pk(node->pkt->pkt.public_key,
-				  (*klist)[*count].u.fpr,&dummy);
-	    }
+	      fingerprint_from_pk (node->pkt->pkt.public_key,
+                                   (*klist)[*count].u.fpr, &fprlen);
+              (*klist)[*count].mode = KEYDB_SEARCH_MODE_FPR;
+              (*klist)[*count].fprlen = fprlen;
+            }
 
 	  /* This is a little hackish, using the skipfncvalue as a
 	     void* pointer to the keyserver spec, but we don't need
@@ -1397,10 +1377,9 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
     {
       int quiet = 0;
 
-      if (desc[idx].mode == KEYDB_SEARCH_MODE_FPR20
-          || desc[idx].mode == KEYDB_SEARCH_MODE_FPR16)
+      if (desc[idx].mode == KEYDB_SEARCH_MODE_FPR)
         {
-          n = 1+2+2*20;
+          n = 1+2+2*desc[idx].fprlen;
           if (idx && linelen + n > MAX_KS_GET_LINELEN)
             break; /* Declare end of this chunk.  */
           linelen += n;
@@ -1411,11 +1390,9 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
           else
             {
               strcpy (pattern[npat], "0x");
-              bin2hex (desc[idx].u.fpr,
-                       desc[idx].mode == KEYDB_SEARCH_MODE_FPR20? 20 : 16,
-                       pattern[npat]+2);
+              bin2hex (desc[idx].u.fpr, desc[idx].fprlen, pattern[npat]+2);
               npat++;
-              if (desc[idx].mode == KEYDB_SEARCH_MODE_FPR20)
+              if (desc[idx].fprlen == 20 || desc[idx].fprlen == 32)
                 npat_fpr++;
             }
         }
@@ -1508,7 +1485,7 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
         }
     }
 
-  /* Remember now many of search items were considered.  Note that
+  /* Remember how many of the search items were considered.  Note that
      this is different from NPAT.  */
   *r_ndesc_used = idx;
 
@@ -1541,13 +1518,17 @@ keyserver_get_chunk (ctrl_t ctrl, KEYDB_SEARCH_DESC *desc, int ndesc,
          never accept or send them but we better protect against rogue
          keyservers. */
 
-      /* For LDAP servers we reset IMPORT_SELF_SIGS_ONLY unless it has
-       * been set explicitly.  */
+      /* For LDAP servers we reset IMPORT_SELF_SIGS_ONLY and
+       * IMPORT_CLEAN unless they have been set explicitly.  */
       options = (opt.keyserver_options.import_options | IMPORT_NO_SECKEY);
       if (source && (!strncmp (source, "ldap:", 5)
-                     || !strncmp (source, "ldaps:", 6))
-          && !opt.flags.expl_import_self_sigs_only)
-        options &= ~IMPORT_SELF_SIGS_ONLY;
+                     || !strncmp (source, "ldaps:", 6)))
+        {
+          if (!opt.flags.expl_import_self_sigs_only)
+            options &= ~IMPORT_SELF_SIGS_ONLY;
+          if (!opt.flags.expl_import_clean)
+            options &= ~IMPORT_CLEAN;
+        }
 
       screenerarg.desc = desc;
       screenerarg.ndesc = *r_ndesc_used;
@@ -1825,39 +1806,6 @@ keyserver_import_cert (ctrl_t ctrl, const char *name, int dane_mode,
   return err;
 }
 
-/* Import key pointed to by a PKA record. Return the requested
-   fingerprint in fpr. */
-gpg_error_t
-keyserver_import_pka (ctrl_t ctrl, const char *name,
-                      unsigned char **fpr, size_t *fpr_len)
-{
-  gpg_error_t err;
-  char *url;
-
-  err = gpg_dirmngr_get_pka (ctrl, name, fpr, fpr_len, &url);
-  if (url && *url && fpr && fpr_len)
-    {
-      /* An URL is available.  Lookup the key. */
-      struct keyserver_spec *spec;
-      spec = parse_keyserver_uri (url, 1);
-      if (spec)
-	{
-	  err = keyserver_import_fprint (ctrl, *fpr, *fpr_len, spec, 0);
-	  free_keyserver_spec (spec);
-	}
-    }
-  xfree (url);
-
-  if (err)
-    {
-      xfree(*fpr);
-      *fpr = NULL;
-      *fpr_len = 0;
-    }
-
-  return err;
-}
-
 
 /* Import a key using the Web Key Directory protocol.  */
 gpg_error_t
@@ -1871,7 +1819,7 @@ keyserver_import_wkd (ctrl_t ctrl, const char *name, unsigned int flags,
 
   /* We want to work on the mbox.  That is what dirmngr will do anyway
    * and we need the mbox for the import filter anyway.  */
-  mbox = mailbox_from_userid (name);
+  mbox = mailbox_from_userid (name, 0);
   if (!mbox)
     {
       err = gpg_error_from_syserror ();

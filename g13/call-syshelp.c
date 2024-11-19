@@ -78,7 +78,6 @@ start_syshelp (ctrl_t ctrl, assuan_context_t *r_ctx)
   gpg_error_t err;
   assuan_context_t ctx;
   assuan_fd_t no_close_list[3];
-  int i;
 
   *r_ctx = NULL;
 
@@ -102,11 +101,8 @@ start_syshelp (ctrl_t ctrl, assuan_context_t *r_ctx)
       return err;
     }
 
-  i = 0;
-  if (log_get_fd () != -1)
-    no_close_list[i++] = assuan_fd_from_posix_fd (log_get_fd ());
-  no_close_list[i++] = assuan_fd_from_posix_fd (es_fileno (es_stderr));
-  no_close_list[i] = ASSUAN_INVALID_FD;
+  no_close_list[0] = assuan_fd_from_posix_fd (es_fileno (es_stderr));
+  no_close_list[1] = ASSUAN_INVALID_FD;
 
   err = assuan_new (&ctx);
   if (err)
@@ -174,7 +170,7 @@ call_syshelp_release (ctrl_t ctrl)
 
 
 
-/* Staus callback for call_syshelp_find_device.  */
+/* Status callback for call_syshelp_find_device.  */
 static gpg_error_t
 finddevice_status_cb (void *opaque, const char *line)
 {
@@ -437,10 +433,15 @@ static gpg_error_t
 mount_status_cb (void *opaque, const char *line)
 {
   struct mount_parm_s *parm = opaque;
+  const char *s;
 
-  /* Nothing right now.  */
   (void)parm;
-  (void)line;
+
+  if ((s=has_leading_keyword (line, "PLAINDEV")))
+    {
+      if (opt.verbose || opt.no_mount)
+        log_info ("Device: %s\n", s);
+    }
 
   return 0;
 }
@@ -501,7 +502,10 @@ call_syshelp_run_mount (ctrl_t ctrl, int conttype, const char *mountpoint,
     {
       ref_tupledesc (tuples);
       parm.keyblob = get_tupledesc_data (tuples, &parm.keybloblen);
-      err = assuan_transact (ctx, "MOUNT dm-crypt",
+      err = assuan_transact (ctx,
+                             (opt.no_mount
+                              ? "MOUNT --no-mount dm-crypt"
+                              : "MOUNT dm-crypt"),
                              NULL, NULL,
                              mount_inq_cb, &parm,
                              mount_status_cb, &parm);

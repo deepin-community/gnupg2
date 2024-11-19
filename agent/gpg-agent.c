@@ -21,14 +21,12 @@
  */
 
 #include <config.h>
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <stddef.h>
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 #include <time.h>
 #include <fcntl.h>
 #include <sys/stat.h>
@@ -61,6 +59,7 @@
 #include "../common/gc-opt-flags.h"
 #include "../common/exechelp.h"
 #include "../common/asshelp.h"
+#include "../common/comopt.h"
 #include "../common/init.h"
 
 
@@ -105,6 +104,7 @@ enum cmd_and_opt_values
   oLCmessages,
   oXauthority,
   oScdaemonProgram,
+  oTpm2daemonProgram,
   oDefCacheTTL,
   oDefCacheTTLSSH,
   oMaxCacheTTL,
@@ -138,12 +138,14 @@ enum cmd_and_opt_values
   oSSHSupport,
   oSSHFingerprintDigest,
   oPuttySupport,
+  oWin32OpenSSHSupport,
   oDisableScdaemon,
   oDisableCheckOwnSocket,
   oS2KCount,
   oS2KCalibration,
   oAutoExpandSecmem,
   oListenBacklog,
+  oInactivityTimeout,
 
   oWriteEnvFile,
 
@@ -155,7 +157,7 @@ enum cmd_and_opt_values
 # define ENAMETOOLONG EINVAL
 #endif
 
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
 
   ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
   ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
@@ -167,7 +169,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oDaemon,  "daemon", N_("run in daemon mode (background)")),
   ARGPARSE_s_n (oServer,  "server", N_("run in server mode (foreground)")),
 #ifndef HAVE_W32_SYSTEM
-  ARGPARSE_s_n (oSupervised,  "supervised", N_("run in supervised mode")),
+  ARGPARSE_s_n (oSupervised,  "supervised", "@"),
 #endif
   ARGPARSE_s_n (oNoDetach,  "no-detach", N_("do not detach from the console")),
   ARGPARSE_s_n (oSh,	  "sh",        N_("sh-style command output")),
@@ -182,7 +184,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oHomedir,    "homedir",      "@"),
   ARGPARSE_conffile (oOptions, "options", N_("|FILE|read options from FILE")),
   ARGPARSE_noconffile (oNoOptions, "no-options", "@"),
-
+  ARGPARSE_s_i (oInactivityTimeout, "inactivity-timeout", "@"),
 
   ARGPARSE_header ("Monitor", N_("Options controlling the diagnostic output")),
 
@@ -205,6 +207,8 @@ static ARGPARSE_OPTS opts[] = {
                 /* */             N_("do not use the SCdaemon") ),
   ARGPARSE_s_s (oScdaemonProgram, "scdaemon-program",
                 /* */             N_("|PGM|use PGM as the SCdaemon program") ),
+  ARGPARSE_s_s (oTpm2daemonProgram, "tpm2daemon-program",
+		/* */             N_("|PGM|use PGM as the tpm2daemon program") ),
   ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
 
   ARGPARSE_s_s (oExtraSocket, "extra-socket",
@@ -221,6 +225,13 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oPuttySupport, "enable-putty-support",
 #ifdef HAVE_W32_SYSTEM
                 /* */           N_("enable putty support")
+#else
+                /* */           "@"
+#endif
+                ),
+  ARGPARSE_o_s (oWin32OpenSSHSupport, "enable-win32-openssh-support",
+#ifdef HAVE_W32_SYSTEM
+                /* */           N_("enable Win32-OpenSSH support")
 #else
                 /* */           "@"
 #endif
@@ -283,7 +294,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_n (oGrab,   "grab",   N_("let PIN-Entry grab keyboard and mouse")),
   ARGPARSE_s_n (oNoGrab, "no-grab",   "@"),
   ARGPARSE_s_s (oPinentryProgram, "pinentry-program",
-                /* */             N_("|PGM|use PGM as the PIN-Entry program")),
+                N_("|PGM|use PGM as the PIN-Entry program")),
   ARGPARSE_s_s (oPinentryTouchFile, "pinentry-touch-file", "@"),
   ARGPARSE_s_s (oPinentryInvisibleChar, "pinentry-invisible-char", "@"),
   ARGPARSE_s_u (oPinentryTimeout, "pinentry-timeout",
@@ -292,6 +303,7 @@ static ARGPARSE_OPTS opts[] = {
                 "@"),
   ARGPARSE_s_n (oAllowEmacsPinentry,  "allow-emacs-pinentry",
                 N_("allow passphrase to be prompted through Emacs")),
+
 
   /* Dummy options for backward compatibility.  */
   ARGPARSE_o_s (oWriteEnvFile, "write-env-file", "@"),
@@ -331,17 +343,12 @@ static struct debug_flags_s debug_flags [] =
 
 /* The timer tick used for housekeeping stuff.  Note that on Windows
  * we use a SetWaitableTimer seems to signal earlier than about 2
- * seconds.  Thus we use 4 seconds on all platforms except for
- * Windowsce.  CHECK_OWN_SOCKET_INTERVAL defines how often we check
+ * seconds.  Thus we use 4 seconds on all platforms.
+ * CHECK_OWN_SOCKET_INTERVAL defines how often we check
  * our own socket in standard socket mode.  If that value is 0 we
  * don't check at all.  All values are in seconds. */
-#if defined(HAVE_W32CE_SYSTEM)
-# define TIMERTICK_INTERVAL         (60)
-# define CHECK_OWN_SOCKET_INTERVAL   (0)  /* Never */
-#else
-# define TIMERTICK_INTERVAL          (4)
-# define CHECK_OWN_SOCKET_INTERVAL  (60)
-#endif
+#define TIMERTICK_INTERVAL          (4)
+#define CHECK_OWN_SOCKET_INTERVAL  (60)
 
 
 /* Flag indicating that the ssh-agent subsystem has been enabled.  */
@@ -356,6 +363,10 @@ static int putty_support;
    value.  Putty currently (0.62) uses 8k, thus 16k should be enough
    for the foreseeable future.  */
 #define PUTTY_IPC_MAXLEN 16384
+
+/* Path to the pipe, which handles requests from Win32-OpenSSH.  */
+static const char *win32_openssh_support;
+#define W32_DEFAULT_AGENT_PIPE_NAME "\\\\.\\pipe\\openssh-ssh-agent"
 #endif /*HAVE_W32_SYSTEM*/
 
 /* The list of open file descriptors at startup.  Note that this list
@@ -429,8 +440,8 @@ static char *default_lc_ctype;
 static char *default_lc_messages;
 static char *default_xauthority;
 
-/* Name of a config file which was last read on startup or, if missing,
- * the name of the standard config file.  Any value here enables the
+/* Name of a config file which was last read on startup or if missing
+ * the name of the standard config file.  Any value here enabled the
  * rereading of the standard config files on SIGHUP. */
 static char *config_filename;
 
@@ -842,7 +853,7 @@ cleanup (void)
    PARGS, resets the options to the default.  REREAD should be set
    true if it is not the initial option parsing. */
 static int
-parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
+parse_rereadable_options (gpgrt_argparse_t *pargs, int reread)
 {
   int i;
 
@@ -853,13 +864,14 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.debug = 0;
       opt.no_grab = 1;
       opt.debug_pinentry = 0;
+      xfree (opt.pinentry_program);
       opt.pinentry_program = NULL;
       opt.pinentry_touch_file = NULL;
       xfree (opt.pinentry_invisible_char);
       opt.pinentry_invisible_char = NULL;
       opt.pinentry_timeout = 0;
       opt.pinentry_formatted_passphrase = 0;
-      opt.scdaemon_program = NULL;
+      memset (opt.daemon_program, 0, sizeof opt.daemon_program);
       opt.def_cache_ttl = DEFAULT_CACHE_TTL;
       opt.def_cache_ttl_ssh = DEFAULT_CACHE_TTL_SSH;
       opt.max_cache_ttl = MAX_CACHE_TTL;
@@ -877,10 +889,10 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.allow_external_cache = 1;
       opt.allow_loopback_pinentry = 1;
       opt.allow_emacs_pinentry = 0;
-      opt.disable_scdaemon = 0;
+      memset (opt.disable_daemon, 0, sizeof opt.disable_daemon);
       disable_check_own_socket = 0;
       /* Note: When changing the next line, change also gpgconf_list.  */
-      opt.ssh_fingerprint_digest = GCRY_MD_MD5;
+      opt.ssh_fingerprint_digest = GCRY_MD_SHA256;
       opt.s2k_count = 0;
       set_s2k_calibration_time (0);  /* Set to default.  */
       return 1;
@@ -900,7 +912,7 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 
     case oLogFile:
       if (!reread)
-        return 0; /* not handeld */
+        return 0; /* not handled */
       if (!current_logfile || !pargs->r.ret_str
           || strcmp (current_logfile, pargs->r.ret_str))
         {
@@ -913,7 +925,10 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
     case oNoGrab: opt.no_grab |= 1; break;
     case oGrab: opt.no_grab |= 2; break;
 
-    case oPinentryProgram: opt.pinentry_program = pargs->r.ret_str; break;
+    case oPinentryProgram:
+      xfree (opt.pinentry_program);
+      opt.pinentry_program = make_filename_try (pargs->r.ret_str, NULL);
+      break;
     case oPinentryTouchFile: opt.pinentry_touch_file = pargs->r.ret_str; break;
     case oPinentryInvisibleChar:
       xfree (opt.pinentry_invisible_char);
@@ -923,8 +938,15 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
     case oPinentryFormattedPassphrase:
       opt.pinentry_formatted_passphrase = 1;
       break;
-    case oScdaemonProgram: opt.scdaemon_program = pargs->r.ret_str; break;
-    case oDisableScdaemon: opt.disable_scdaemon = 1; break;
+
+    case oTpm2daemonProgram:
+      opt.daemon_program[DAEMON_TPM2D] = pargs->r.ret_str;
+      break;
+
+    case oScdaemonProgram:
+      opt.daemon_program[DAEMON_SCD] = pargs->r.ret_str;
+      break;
+    case oDisableScdaemon: opt.disable_daemon[DAEMON_SCD] = 1; break;
     case oDisableCheckOwnSocket: disable_check_own_socket = 1; break;
 
     case oDefCacheTTL: opt.def_cache_ttl = pargs->r.ret_ulong; break;
@@ -1038,16 +1060,16 @@ initialize_modules (void)
   assuan_set_system_hooks (ASSUAN_SYSTEM_NPTH);
   initialize_module_cache ();
   initialize_module_call_pinentry ();
-  initialize_module_call_scd ();
+  initialize_module_daemon ();
   initialize_module_trustlist ();
 }
 
 
 /* The main entry point.  */
 int
-main (int argc, char **argv )
+main (int argc, char **argv)
 {
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   int orig_argc;
   char **orig_argv;
   char *last_configname = NULL;
@@ -1078,7 +1100,7 @@ main (int argc, char **argv )
 #endif /*HAVE_SIGPROCMASK*/
 
   /* Set program name etc.  */
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
   /* Please note that we may running SUID(ROOT), so be very CAREFUL
      when adding any stuff between here and the call to INIT_SECMEM()
@@ -1153,7 +1175,7 @@ main (int argc, char **argv )
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= (ARGPARSE_FLAG_KEEP | ARGPARSE_FLAG_NOVERSION);
-  while (gnupg_argparse (NULL, &pargs, opts))
+  while (gpgrt_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -1182,8 +1204,9 @@ main (int argc, char **argv )
    *  Now we are now working under our real uid
    */
 
-  gnupg_set_confdir (GNUPG_CONFDIR_SYS, gnupg_sysconfdir ());
-  gnupg_set_confdir (GNUPG_CONFDIR_USER, gnupg_homedir ());
+  /* The configuraton directories for use by gpgrt_argparser.  */
+  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
 
   argc = orig_argc;
   argv = orig_argv;
@@ -1196,7 +1219,7 @@ main (int argc, char **argv )
                   | ARGPARSE_FLAG_SYS
                   | ARGPARSE_FLAG_USER);
 
-  while (gnupg_argparser (&pargs, opts, GPG_AGENT_NAME EXTSEP_S "conf"))
+  while (gpgrt_argparser (&pargs, opts, GPG_AGENT_NAME EXTSEP_S "conf"))
     {
       if (pargs.r_opt == ARGPARSE_CONFFILE)
         {
@@ -1271,6 +1294,15 @@ main (int argc, char **argv )
 #        endif
           break;
 
+        case oWin32OpenSSHSupport:
+#        ifdef HAVE_W32_SYSTEM
+          if (pargs.r_type)
+            win32_openssh_support = pargs.r.ret_str;
+          else
+            win32_openssh_support = W32_DEFAULT_AGENT_PIPE_NAME;
+#        endif
+          break;
+
         case oExtraSocket:
           opt.extra_socket = 1;  /* (1 = points into argv)  */
           socket_name_extra = pargs.r.ret_str;
@@ -1320,12 +1352,12 @@ main (int argc, char **argv )
           log_info (_("Note: '%s' is not considered an option\n"), argv[i]);
     }
 
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (!last_configname)
-    config_filename = make_filename (gnupg_homedir (),
-                                     GPG_AGENT_NAME EXTSEP_S "conf",
-                                     NULL);
+    config_filename = gpgrt_fnameconcat (gnupg_homedir (),
+                                         GPG_AGENT_NAME EXTSEP_S "conf",
+                                         NULL);
   else
     {
       config_filename = last_configname;
@@ -1337,6 +1369,12 @@ main (int argc, char **argv )
 
   finalize_rereadable_options ();
 
+  /* Get a default log file from common.conf.  */
+  if (!logfile && !parse_comopt (GNUPG_MODULE_NAME_AGENT, debug_argparser))
+    {
+      logfile = comopt.logfile;
+      comopt.logfile = NULL;
+    }
 
 #ifdef ENABLE_NLS
   /* gpg-agent usually does not output any messages because it runs in
@@ -1360,6 +1398,9 @@ main (int argc, char **argv )
       check_for_running_agent (0);
       agent_exit (0);
     }
+
+  if (is_supervised && !opt.quiet)
+    log_info(_("WARNING: \"%s\" is a deprecated option\n"), "--supervised");
 
   if (is_supervised)
     ;
@@ -1419,25 +1460,29 @@ main (int argc, char **argv )
     agent_exit (0);
   else if (gpgconf_list)
     {
+      /* Note: If an option is runtime changeable, please set the
+       * respective flag in the gpgconf-comp.c table.  */
       es_printf ("debug-level:%lu:\"none:\n", GC_OPT_FLAG_DEFAULT);
       es_printf ("default-cache-ttl:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT, DEFAULT_CACHE_TTL );
+                 GC_OPT_FLAG_DEFAULT, DEFAULT_CACHE_TTL );
       es_printf ("default-cache-ttl-ssh:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT, DEFAULT_CACHE_TTL_SSH );
+                 GC_OPT_FLAG_DEFAULT, DEFAULT_CACHE_TTL_SSH );
       es_printf ("max-cache-ttl:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT, MAX_CACHE_TTL );
+                 GC_OPT_FLAG_DEFAULT, MAX_CACHE_TTL );
       es_printf ("max-cache-ttl-ssh:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT, MAX_CACHE_TTL_SSH );
-      es_printf ("enforce-passphrase-constraints:%lu:\n",
-              GC_OPT_FLAG_NONE);
+                 GC_OPT_FLAG_DEFAULT, MAX_CACHE_TTL_SSH );
       es_printf ("min-passphrase-len:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT, MIN_PASSPHRASE_LEN );
+                 GC_OPT_FLAG_DEFAULT, MIN_PASSPHRASE_LEN );
       es_printf ("min-passphrase-nonalpha:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT, MIN_PASSPHRASE_NONALPHA);
+                 GC_OPT_FLAG_DEFAULT, MIN_PASSPHRASE_NONALPHA);
+      es_printf ("check-passphrase-pattern:%lu:\n",
+                 GC_OPT_FLAG_DEFAULT);
+      es_printf ("check-sym-passphrase-pattern:%lu:\n",
+                 GC_OPT_FLAG_DEFAULT);
       es_printf ("max-passphrase-days:%lu:%d:\n",
-              GC_OPT_FLAG_DEFAULT, MAX_PASSPHRASE_DAYS);
+                 GC_OPT_FLAG_DEFAULT, MAX_PASSPHRASE_DAYS);
       es_printf ("ssh-fingerprint-digest:%lu:\"%s:\n",
-                 GC_OPT_FLAG_DEFAULT, "md5");
+                 GC_OPT_FLAG_DEFAULT, "sha256");
 
       agent_exit (0);
     }
@@ -1486,6 +1531,17 @@ main (int argc, char **argv )
       agent_deinit_default_ctrl (ctrl);
       xfree (ctrl);
     }
+  else if (is_supervised && comopt.no_autostart)
+    {
+      /* If we are running on a server and the user has set
+       * no-autostart for gpg or gpgsm.  gpg-agent would anyway be
+       * started by the supervisor which has the bad effect that it
+       * will steal the socket from a remote server.  Note that
+       * systemd has no knowledge about the lock files we take during
+       * the start operation.  */
+      log_info ("%s %s not starting in supervised mode due to no-autostart.\n",
+                gpgrt_strusage(11), gpgrt_strusage(13) );
+    }
   else if (is_supervised)
     {
 #ifndef HAVE_W32_SYSTEM
@@ -1500,7 +1556,7 @@ main (int argc, char **argv )
         log_set_prefix (NULL, 0);
 
       log_info ("%s %s starting in supervised mode.\n",
-                strusage(11), strusage(13) );
+                gpgrt_strusage(11), gpgrt_strusage(13) );
 
       /* See below in "regular server mode" on why we remove certain
        * envvars.  */
@@ -1758,7 +1814,7 @@ main (int argc, char **argv )
 
           /* Unless we are running with a program given on the command
            * line we can assume that the inotify things works and thus
-           * we can avoid tye regular stat calls.  */
+           * we can avoid the regular stat calls.  */
           if (!argc)
             reliable_homedir_inotify = 1;
         }
@@ -1780,7 +1836,7 @@ main (int argc, char **argv )
           exit (1);
         }
 
-      log_info ("%s %s started\n", strusage(11), strusage(13) );
+      log_info ("%s %s started\n", gpgrt_strusage(11), gpgrt_strusage(13) );
       handle_connections (fd, fd_extra, fd_browser, fd_ssh);
       assuan_sock_close (fd);
     }
@@ -1907,7 +1963,7 @@ agent_set_progress_cb (void (*cb)(ctrl_t ctrl, const char *what,
 static void
 agent_init_default_ctrl (ctrl_t ctrl)
 {
-  assert (ctrl->session_env);
+  log_assert (ctrl->session_env);
 
   /* Note we ignore malloc errors because we can't do much about it
      and the request will fail anyway shortly after this
@@ -1937,7 +1993,10 @@ agent_deinit_default_ctrl (ctrl_t ctrl)
 {
   unregister_progress_cb ();
   session_env_release (ctrl->session_env);
+  clear_ephemeral_keys (ctrl);
 
+  xfree (ctrl->digest.data);
+  ctrl->digest.data = NULL;
   if (ctrl->lc_ctype)
     xfree (ctrl->lc_ctype);
   if (ctrl->lc_messages)
@@ -1985,14 +2044,15 @@ agent_copy_startup_env (ctrl_t ctrl)
    Fixme: Due to the way the argument parsing works, we create a
    memory leak here for all string type arguments.  There is currently
    no clean way to tell whether the memory for the argument has been
-   allocated or points into the process' original arguments.  Unless
+   allocated or points into the process's original arguments.  Unless
    we have a mechanism to tell this, we need to live on with this. */
 static void
 reread_configuration (void)
 {
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   char *twopart;
   int dummy;
+  int logfile_seen = 0;
 
   if (!config_filename)
     return; /* No config file. */
@@ -2010,7 +2070,7 @@ reread_configuration (void)
   pargs.flags = (ARGPARSE_FLAG_KEEP
                  |ARGPARSE_FLAG_SYS
                  |ARGPARSE_FLAG_USER);
-  while (gnupg_argparser (&pargs, opts, twopart))
+  while (gpgrt_argparser (&pargs, opts, twopart) )
     {
       if (pargs.r_opt == ARGPARSE_CONFFILE)
         {
@@ -2020,12 +2080,29 @@ reread_configuration (void)
       else if (pargs.r_opt < -1)
         pargs.err = ARGPARSE_PRINT_WARNING;
       else /* Try to parse this option - ignore unchangeable ones. */
-        parse_rereadable_options (&pargs, 1);
+        {
+          if (pargs.r_opt == oLogFile)
+            logfile_seen = 1;
+          parse_rereadable_options (&pargs, 1);
+        }
     }
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
   xfree (twopart);
+
   finalize_rereadable_options ();
   set_debug ();
+
+  /* Get a default log file from common.conf.  */
+  if (!logfile_seen && !parse_comopt (GNUPG_MODULE_NAME_AGENT, !!opt.debug))
+    {
+      if (!current_logfile || !comopt.logfile
+          || strcmp (current_logfile, comopt.logfile))
+        {
+          log_set_file (comopt.logfile);
+          xfree (current_logfile);
+          current_logfile = comopt.logfile? xtrystrdup (comopt.logfile) : NULL;
+        }
+    }
 }
 
 
@@ -2061,9 +2138,9 @@ get_agent_active_connection_count (void)
 /* Under W32, this function returns the handle of the scdaemon
    notification event.  Calling it the first time creates that
    event.  */
-#if defined(HAVE_W32_SYSTEM) && !defined(HAVE_W32CE_SYSTEM)
+#if defined(HAVE_W32_SYSTEM)
 void *
-get_agent_scd_notify_event (void)
+get_agent_daemon_notify_event (void)
 {
   static HANDLE the_event = INVALID_HANDLE_VALUE;
 
@@ -2098,7 +2175,7 @@ get_agent_scd_notify_event (void)
 
   return the_event;
 }
-#endif /*HAVE_W32_SYSTEM && !HAVE_W32CE_SYSTEM*/
+#endif /*HAVE_W32_SYSTEM*/
 
 
 
@@ -2186,8 +2263,8 @@ create_server_socket (char *name, int primary, int cygwin,
   len = SUN_LEN (unaddr);
   rc = assuan_sock_bind (fd, addr, len);
 
-  /* Our error code mapping on W32CE returns EEXIST thus we also test
-     for this. */
+  /* At least our error code mapping on Windows-CE used to return
+   * EEXIST thus we better test for this on Windows . */
   if (rc == -1
       && (errno == EADDRINUSE
 #ifdef HAVE_W32_SYSTEM
@@ -2363,9 +2440,6 @@ handle_tick (void)
   if (!last_minute)
     last_minute = time (NULL);
 
-  /* Check whether the scdaemon has died and cleanup in this case. */
-  agent_scd_check_aliveness ();
-
   /* If we are running as a child of another process, check whether
      the parent is still alive and shutdown if not. */
 #ifndef HAVE_W32_SYSTEM
@@ -2375,7 +2449,7 @@ handle_tick (void)
         {
           shutdown_pending = 2;
           log_info ("parent process died - shutting down\n");
-          log_info ("%s %s stopped\n", strusage(11), strusage(13) );
+          log_info ("%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
           cleanup ();
           agent_exit (0);
         }
@@ -2413,7 +2487,7 @@ agent_sighup_action (void)
   log_info ("SIGHUP received - "
             "re-reading configuration and flushing cache\n");
 
-  agent_flush_cache ();
+  agent_flush_cache (0);
   reread_configuration ();
   agent_reload_trustlist ();
   /* We flush the module name cache so that after installing a
@@ -2421,8 +2495,8 @@ agent_sighup_action (void)
      "pinentry-basic" fallback was in use.  */
   gnupg_module_name_flush_some ();
 
-  if (opt.disable_scdaemon)
-    agent_card_killscd ();
+  if (opt.disable_daemon[DAEMON_SCD])
+    agent_kill_daemon (DAEMON_SCD);
 }
 
 
@@ -2456,7 +2530,7 @@ handle_signal (int signo)
          logging system.  */
       /* pth_ctrl (PTH_CTRL_DUMPSTATE, log_get_stream ()); */
       agent_query_dump_state ();
-      agent_scd_dump_state ();
+      agent_daemon_dump_state ();
       break;
 
     case SIGUSR2:
@@ -2473,7 +2547,7 @@ handle_signal (int signo)
       if (shutdown_pending > 2)
         {
           log_info ("shutdown forced\n");
-          log_info ("%s %s stopped\n", strusage(11), strusage(13) );
+          log_info ("%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
           cleanup ();
           agent_exit (0);
 	}
@@ -2481,7 +2555,7 @@ handle_signal (int signo)
 
     case SIGINT:
       log_info ("SIGINT received - immediate shutdown\n");
-      log_info( "%s %s stopped\n", strusage(11), strusage(13));
+      log_info( "%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
       cleanup ();
       agent_exit (0);
       break;
@@ -2603,7 +2677,7 @@ putty_message_proc (HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
   if (!data)
     goto leave;
 
-  /* log_printhex (data, 20, "request:"); */
+  /* log_printhex ("request:", data, 20); */
 
   ctrl = xtrycalloc (1, sizeof *ctrl);
   if (!ctrl)
@@ -2624,7 +2698,7 @@ putty_message_proc (HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam)
   if (!serve_mmapped_ssh_request (ctrl, data, PUTTY_IPC_MAXLEN))
     ret = 1; /* Valid ssh message has been constructed.  */
   agent_deinit_default_ctrl (ctrl);
-  /* log_printhex (data, 20, "  reply:"); */
+  /* log_printhex ("  reply:", data, 20); */
 
  leave:
   xfree (ctrl);
@@ -2697,6 +2771,99 @@ putty_message_thread (void *arg)
     log_info ("putty message loop thread stopped\n");
   return NULL;
 }
+
+#define BUFSIZE (5 * 1024)
+
+/* The thread handling Win32-OpenSSH requests through NamedPipe.  */
+static void *
+win32_openssh_thread (void *arg)
+{
+  HANDLE pipe;
+
+  (void)arg;
+
+  if (opt.verbose)
+    log_info ("Win32-OpenSSH thread started\n");
+
+  while (1)
+    {
+      ctrl_t ctrl = NULL;
+      estream_t ssh_stream = NULL;
+      es_syshd_t syshd;
+
+      npth_unprotect ();
+      pipe = CreateNamedPipeA (win32_openssh_support, PIPE_ACCESS_DUPLEX,
+                               (PIPE_TYPE_BYTE | PIPE_READMODE_BYTE
+                                | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS),
+                               PIPE_UNLIMITED_INSTANCES,
+                               BUFSIZE, BUFSIZE, 0, NULL);
+
+      if (pipe == INVALID_HANDLE_VALUE)
+        {
+          npth_protect ();
+          log_error ("cannot create pipe: %ld\n", GetLastError ());
+          break;
+        }
+
+      if (ConnectNamedPipe (pipe, NULL) == 0)
+        {
+          npth_protect ();
+          CloseHandle (pipe);
+          log_error ("Error at ConnectNamedPipe: %ld\n", GetLastError ());
+          break;
+        }
+
+      npth_protect ();
+      ctrl = xtrycalloc (1, sizeof *ctrl);
+      if (!ctrl)
+        {
+          CloseHandle (pipe);
+          log_error ("error allocating connection control data: %s\n",
+                     strerror (errno));
+          break;
+        }
+
+#if _WIN32_WINNT >= 0x600
+      if (!GetNamedPipeClientProcessId (pipe, &ctrl->client_pid))
+        log_info ("failed to get client process id: %ld\n", GetLastError ());
+      else
+        ctrl->client_uid = -1;
+#endif
+
+      ctrl->session_env = session_env_new ();
+      if (!ctrl->session_env)
+        {
+          log_error ("error allocating session environment block: %s\n",
+                     strerror (errno));
+          agent_deinit_default_ctrl (ctrl);
+          xfree (ctrl);
+          CloseHandle (pipe);
+          break;
+        }
+      agent_init_default_ctrl (ctrl);
+
+      syshd.type = ES_SYSHD_HANDLE;
+      syshd.u.handle = pipe;
+      ssh_stream = es_sysopen (&syshd, "r+b");
+      if (!ssh_stream)
+        {
+          agent_deinit_default_ctrl (ctrl);
+          xfree (ctrl);
+          CloseHandle (pipe);
+          break;
+        }
+
+      start_command_handler_ssh_stream (ctrl, ssh_stream);
+
+      agent_deinit_default_ctrl (ctrl);
+      xfree (ctrl);
+      CloseHandle (pipe);
+    }
+
+  if (opt.verbose)
+    log_info ("Win32-OpenSSH thread stopped\n");
+  return NULL;
+}
 #endif /*HAVE_W32_SYSTEM*/
 
 
@@ -2705,12 +2872,12 @@ do_start_connection_thread (ctrl_t ctrl)
 {
   active_connections++;
   agent_init_default_ctrl (ctrl);
-  if (opt.verbose && !DBG_IPC)
+  if (opt.verbose > 1 && !DBG_IPC)
     log_info (_("handler 0x%lx for fd %d started\n"),
               (unsigned long) npth_self(), FD2INT(ctrl->thread_startup.fd));
 
   start_command_handler (ctrl, GNUPG_INVALID_FD, ctrl->thread_startup.fd);
-  if (opt.verbose && !DBG_IPC)
+  if (opt.verbose > 1 && !DBG_IPC)
     log_info (_("handler 0x%lx for fd %d terminated\n"),
               (unsigned long) npth_self(), FD2INT(ctrl->thread_startup.fd));
 
@@ -2854,14 +3021,8 @@ handle_connections (gnupg_fd_t listen_fd,
   npth_sigev_add (SIGTERM);
   npth_sigev_fini ();
 #else
-# ifdef HAVE_W32CE_SYSTEM
-  /* Use a dummy event. */
-  sigs = 0;
-  ev = pth_event (PTH_EVENT_SIGS, &sigs, &signo);
-# else
-  events[0] = get_agent_scd_notify_event ();
+  events[0] = get_agent_daemon_notify_event ();
   events[1] = INVALID_HANDLE_VALUE;
-# endif
 #endif
 
   if (disable_check_own_socket)
@@ -2895,9 +3056,16 @@ handle_connections (gnupg_fd_t listen_fd,
 
       ret = npth_create (&thread, &tattr, putty_message_thread, NULL);
       if (ret)
-        {
-          log_error ("error spawning putty message loop: %s\n", strerror (ret));
-        }
+        log_error ("error spawning putty message loop: %s\n", strerror (ret));
+    }
+
+  if (win32_openssh_support)
+    {
+      npth_t thread;
+
+      ret = npth_create (&thread, &tattr, win32_openssh_thread, NULL);
+      if (ret)
+        log_error ("error spawning Win32-OpenSSH loop: %s\n", strerror (ret));
     }
 #endif /*HAVE_W32_SYSTEM*/
 
@@ -3015,7 +3183,7 @@ handle_connections (gnupg_fd_t listen_fd,
 	{
           log_error (_("npth_pselect failed: %s - waiting 1s\n"),
                      strerror (saved_errno));
-          npth_sleep (1);
+          gnupg_sleep (1);
           continue;
 	}
       if (ret <= 0)
@@ -3101,7 +3269,7 @@ handle_connections (gnupg_fd_t listen_fd,
   if (home_inotify_fd != -1)
     close (home_inotify_fd);
   cleanup ();
-  log_info (_("%s %s stopped\n"), strusage(11), strusage(13));
+  log_info (_("%s %s stopped\n"), gpgrt_strusage(11), gpgrt_strusage(13));
   npth_attr_destroy (&tattr);
 }
 
@@ -3208,7 +3376,10 @@ check_own_socket (void)
 
   err = npth_attr_init (&tattr);
   if (err)
-    return;
+    {
+      xfree (sockname);
+      return;
+    }
   npth_attr_setdetachstate (&tattr, NPTH_CREATE_DETACHED);
   err = npth_create (&thread, &tattr, check_own_socket_thread, sockname);
   if (err)

@@ -1,7 +1,6 @@
 /* parse-packet.c  - read packets
- * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
- *               2007, 2009, 2010 Free Software Foundation, Inc.
- * Copyright (C) 2014 Werner Koch
+ * Copyright (C) 1998-2007, 2009-2010 Free Software Foundation, Inc.
+ * Copyright (C) 2014, 2018 Werner Koch
  * Copyright (C) 2015 g10 Code GmbH
  *
  * This file is part of GnuPG.
@@ -18,6 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0+
  */
 
 #include <config.h>
@@ -188,10 +188,10 @@ mpi_read (iobuf_t inp, unsigned int *ret_nread, int secure)
 }
 
 
-/* Read an external representation (which is possibly an SOS) and
-   return the MPI.  The external format is a 16-bit unsigned value
-   stored in network byte order giving information for the following
-   octets.
+/* Read an external representation of an SOS and return the opaque MPI
+   with GCRYMPI_FLAG_USER2.  The external format is a 16-bit unsigned
+   value stored in network byte order giving information for the
+   following octets.
 
    The caller must set *RET_NREAD to the maximum number of bytes to
    read from the pipeline INP.  This function sets *RET_NREAD to be
@@ -200,12 +200,11 @@ mpi_read (iobuf_t inp, unsigned int *ret_nread, int secure)
    If SECURE is true, the integer is stored in secure memory
    (allocated using gcry_xmalloc_secure).  */
 static gcry_mpi_t
-mpi_read_detect_0_removal (iobuf_t inp, unsigned int *ret_nread, int secure,
-                           u16 *r_csum_tweak)
+sos_read (iobuf_t inp, unsigned int *ret_nread, int secure)
 {
   int c, c1, c2, i;
   unsigned int nmax = *ret_nread;
-  unsigned int nbits, nbits1, nbytes;
+  unsigned int nbits, nbytes;
   size_t nread = 0;
   gcry_mpi_t a = NULL;
   byte *buf = NULL;
@@ -230,10 +229,8 @@ mpi_read_detect_0_removal (iobuf_t inp, unsigned int *ret_nread, int secure,
     }
 
   nbytes = (nbits + 7) / 8;
-  buf = secure ? gcry_xmalloc_secure (nbytes + 2) : gcry_xmalloc (nbytes + 2);
+  buf = secure ? gcry_xmalloc_secure (nbytes) : gcry_xmalloc (nbytes);
   p = buf;
-  p[0] = c1;
-  p[1] = c2;
   for (i = 0; i < nbytes; i++)
     {
       if (nread == nmax)
@@ -243,29 +240,13 @@ mpi_read_detect_0_removal (iobuf_t inp, unsigned int *ret_nread, int secure,
       if (c == -1)
         goto leave;
 
-      p[i + 2] = c;
-
+      p[i] = c;
       nread ++;
     }
 
-  if (gcry_mpi_scan (&a, GCRYMPI_FMT_PGP, buf, nread, &nread))
-    a = NULL;
-
-  /* Possibly, it has leading zeros.  */
-  if (a)
-    {
-      nbits1 = gcry_mpi_get_nbits (a);
-      if (nbits > nbits1)
-        {
-          *r_csum_tweak -= (nbits >> 8);
-          *r_csum_tweak -= (nbits & 0xff);
-          *r_csum_tweak += (nbits1 >> 8);
-          *r_csum_tweak += (nbits1 & 0xff);
-        }
-    }
-
+  a = gcry_mpi_set_opaque (NULL, buf, nbits);
+  gcry_mpi_set_flag (a, GCRYMPI_FLAG_USER2);
   *ret_nread = nread;
-  gcry_free(buf);
   return a;
 
  overflow:
@@ -287,9 +268,7 @@ register_known_notation (const char *string)
     {
       sl = add_to_strlist (&known_notations_list,
                            "preferred-email-encoding@pgp.com");
-      sl->flags = 32;
-      sl = add_to_strlist (&known_notations_list, "pka-address@gnupg.org");
-      sl->flags = 21;
+      sl->flags = 32;  /* Length of the string.  */
     }
   if (!string)
     return; /* Only initialized the default known notations.  */
@@ -1326,7 +1305,7 @@ parse_symkeyenc (IOBUF inp, int pkttype, unsigned long pktlen,
     {
       es_fprintf (listfp,
                   ":symkey enc packet: version %d, cipher %d, aead %d,"
-                  "s2k %d, hash %d",
+                  " s2k %d, hash %d",
                   version, cipher_algo, aead_algo, s2kmode, hash_algo);
       if (seskeylen)
         {
@@ -1417,11 +1396,22 @@ parse_pubkeyenc (IOBUF inp, int pkttype, unsigned long pktlen,
     {
       for (i = 0; i < ndata; i++)
         {
-          if (k->pubkey_algo == PUBKEY_ALGO_ECDH && i == 1)
+          if (k->pubkey_algo == PUBKEY_ALGO_ECDH)
             {
-              size_t n;
-	      rc = read_size_body (inp, pktlen, &n, k->data+i);
-              pktlen -= n;
+              if (i == 1)
+                {
+                  size_t n;
+                  rc = read_size_body (inp, pktlen, &n, k->data+i);
+                  pktlen -= n;
+                }
+              else
+                {
+                  int n = pktlen;
+                  k->data[i] = sos_read (inp, &n, 0);
+                  pktlen -= n;
+                  if (!k->data[i])
+                    rc = gpg_error (GPG_ERR_INV_PACKET);
+                }
             }
           else
             {
@@ -1449,17 +1439,20 @@ parse_pubkeyenc (IOBUF inp, int pkttype, unsigned long pktlen,
 
 
 /* Dump a subpacket to LISTFP.  BUFFER contains the subpacket in
-   question and points to the type field in the subpacket header (not
-   the start of the header).  TYPE is the subpacket's type with the
-   critical bit cleared.  CRITICAL is the value of the CRITICAL bit.
-   BUFLEN is the length of the buffer and LENGTH is the length of the
-   subpacket according to the subpacket's header.  */
+ * question and points to the type field in the subpacket header (not
+ * the start of the header).  TYPE is the subpacket's type with the
+ * critical bit cleared.  CRITICAL is the value of the CRITICAL bit.
+ * BUFLEN is the length of the buffer and LENGTH is the length of the
+ * subpacket according to the subpacket's header.  DIGEST_ALGO is the
+ * digest algo of the signature.  */
 static void
 dump_sig_subpkt (int hashed, int type, int critical,
-		 const byte * buffer, size_t buflen, size_t length)
+		 const byte * buffer, size_t buflen, size_t length,
+                 int digest_algo)
 {
   const char *p = NULL;
   int i;
+  int nprinted;
 
   /* The CERT has warning out with explains how to use GNUPG to detect
    * the ARRs - we print our old message here when it is a faked ARR
@@ -1477,9 +1470,11 @@ dump_sig_subpkt (int hashed, int type, int critical,
   buffer++;
   length--;
 
-  es_fprintf (listfp, "\t%s%ssubpkt %d len %u (",	/*) */
-              critical ? "critical " : "",
-              hashed ? "hashed " : "", type, (unsigned) length);
+  nprinted = es_fprintf (listfp, "\t%s%ssubpkt %d len %u (",	/*) */
+                         critical ? "critical " : "",
+                         hashed ? "hashed " : "", type, (unsigned) length);
+  if (nprinted < 1)
+    nprinted = 1; /*(we use (nprinted-1) later.)*/
   if (length > buflen)
     {
       es_fprintf (listfp, "too short: buffer is only %u)\n", (unsigned) buflen);
@@ -1675,6 +1670,30 @@ dump_sig_subpkt (int hashed, int type, int critical,
                     buffer[0] == 3 ? buffer[16] : buffer[3]);
       break;
 
+    case SIGSUBPKT_ATTST_SIGS:
+      {
+        unsigned int hlen;
+
+	es_fputs ("attst-sigs: ", listfp);
+        hlen = gcry_md_get_algo_dlen (map_md_openpgp_to_gcry (digest_algo));
+	if (!hlen)
+	  p = "[unknown digest algo]";
+        else if ((length % hlen))
+	  p = "[invalid length]";
+	else
+	  {
+            es_fprintf (listfp, "%u", (unsigned int)length/hlen);
+            while (length)
+              {
+                es_fprintf (listfp, "\n\t%*s", nprinted-1, "");
+                es_write_hexstring (listfp, buffer, hlen, 0, NULL);
+                buffer += hlen;
+                length -= hlen;
+              }
+	  }
+      }
+      break;
+
     case SIGSUBPKT_KEY_BLOCK:
       es_fputs ("key-block: ", listfp);
       if (length && buffer[0])
@@ -1691,6 +1710,7 @@ dump_sig_subpkt (int hashed, int type, int critical,
           es_fprintf (listfp, "[%u octets]", (unsigned int)length-1);
         }
       break;
+
 
     default:
       if (type >= 100 && type <= 110)
@@ -1734,6 +1754,7 @@ parse_one_sig_subpkt (const byte * buffer, size_t n, int type)
     case SIGSUBPKT_PREF_KS:
     case SIGSUBPKT_FEATURES:
     case SIGSUBPKT_REGEXP:
+    case SIGSUBPKT_ATTST_SIGS:
       return 0;
     case SIGSUBPKT_SIGNATURE:
     case SIGSUBPKT_EXPORTABLE:
@@ -1746,7 +1767,7 @@ parse_one_sig_subpkt (const byte * buffer, size_t n, int type)
       if (n < 8)
 	break;
       return 0;
-    case SIGSUBPKT_ISSUER_FPR:	/* issuer key ID */
+    case SIGSUBPKT_ISSUER_FPR:	/* issuer key fingerprint */
       if (n < 21)
 	break;
       return 0;
@@ -1826,6 +1847,7 @@ can_handle_critical (const byte * buffer, size_t n, int type)
     case SIGSUBPKT_ISSUER:	/* issuer key ID */
     case SIGSUBPKT_ISSUER_FPR:	/* issuer fingerprint */
     case SIGSUBPKT_PREF_SYM:
+    case SIGSUBPKT_PREF_AEAD:
     case SIGSUBPKT_PREF_HASH:
     case SIGSUBPKT_PREF_COMPR:
     case SIGSUBPKT_KEY_FLAGS:
@@ -1833,6 +1855,7 @@ can_handle_critical (const byte * buffer, size_t n, int type)
     case SIGSUBPKT_FEATURES:
     case SIGSUBPKT_TRUST:
     case SIGSUBPKT_REGEXP:
+    case SIGSUBPKT_ATTST_SIGS:
       /* Is it enough to show the policy or keyserver? */
     case SIGSUBPKT_POLICY:
     case SIGSUBPKT_PREF_KS:
@@ -1852,8 +1875,8 @@ can_handle_critical (const byte * buffer, size_t n, int type)
 
 
 const byte *
-enum_sig_subpkt (const subpktarea_t * pktbuf, sigsubpkttype_t reqtype,
-		 size_t * ret_n, int *start, int *critical)
+enum_sig_subpkt (PKT_signature *sig, int want_hashed, sigsubpkttype_t reqtype,
+		 size_t *ret_n, int *start, int *critical)
 {
   const byte *buffer;
   int buflen;
@@ -1861,6 +1884,7 @@ enum_sig_subpkt (const subpktarea_t * pktbuf, sigsubpkttype_t reqtype,
   int critical_dummy;
   int offset;
   size_t n;
+  const subpktarea_t *pktbuf = want_hashed? sig->hashed : sig->unhashed;
   int seq = 0;
   int reqseq = start ? *start : 0;
 
@@ -1929,7 +1953,7 @@ enum_sig_subpkt (const subpktarea_t * pktbuf, sigsubpkttype_t reqtype,
 	}
       else if (reqtype < 0) /* List packets.  */
 	dump_sig_subpkt (reqtype == SIGSUBPKT_LIST_HASHED,
-			 type, *critical, buffer, buflen, n);
+			 type, *critical, buffer, buflen, n, sig->digest_algo);
       else if (type == reqtype) /* Found.  */
 	{
 	  buffer++;
@@ -1969,8 +1993,14 @@ enum_sig_subpkt (const subpktarea_t * pktbuf, sigsubpkttype_t reqtype,
   return NULL;	/* End of packets; not found.  */
 
  too_short:
-  if (opt.verbose && !glo_ctrl.silence_parse_warnings)
-    log_info ("buffer shorter than subpacket\n");
+  if (opt.debug && !glo_ctrl.silence_parse_warnings)
+    {
+      es_fflush (es_stdout);
+      log_printhex (pktbuf->data, pktbuf->len > 16? 16 : pktbuf->len,
+                    "buffer shorter than subpacket (%zu/%d/%zu); dump:",
+                    pktbuf->len, buflen, n);
+    }
+
   if (start)
     *start = -1;
   return NULL;
@@ -1985,21 +2015,21 @@ enum_sig_subpkt (const subpktarea_t * pktbuf, sigsubpkttype_t reqtype,
 
 
 const byte *
-parse_sig_subpkt (const subpktarea_t * buffer, sigsubpkttype_t reqtype,
-		  size_t * ret_n)
+parse_sig_subpkt (PKT_signature *sig, int want_hashed, sigsubpkttype_t reqtype,
+		  size_t *ret_n)
 {
-  return enum_sig_subpkt (buffer, reqtype, ret_n, NULL, NULL);
+  return enum_sig_subpkt (sig, want_hashed, reqtype, ret_n, NULL, NULL);
 }
 
 
 const byte *
-parse_sig_subpkt2 (PKT_signature * sig, sigsubpkttype_t reqtype)
+parse_sig_subpkt2 (PKT_signature *sig, sigsubpkttype_t reqtype)
 {
   const byte *p;
 
-  p = parse_sig_subpkt (sig->hashed, reqtype, NULL);
+  p = parse_sig_subpkt (sig, 1, reqtype, NULL);
   if (!p)
-    p = parse_sig_subpkt (sig->unhashed, reqtype, NULL);
+    p = parse_sig_subpkt (sig, 0, reqtype, NULL);
   return p;
 }
 
@@ -2015,24 +2045,26 @@ parse_revkeys (PKT_signature * sig)
   if (sig->sig_class != 0x1F)
     return;
 
-  while ((revkey = enum_sig_subpkt (sig->hashed, SIGSUBPKT_REV_KEY,
-				    &len, &seq, NULL)))
+  while ((revkey = enum_sig_subpkt (sig, 1, SIGSUBPKT_REV_KEY,
+                                    &len, &seq, NULL)))
     {
-      if (/* The only valid length is 22 bytes.  See RFC 4880
-	     5.2.3.15.  */
-	  len == 22
-	  /* 0x80 bit must be set on the class.  */
+      /* Consider only valid packets.  They must have a length of
+       * either 2+20 or 2+32 octets and bit 7 of the class octet must
+       * be set.  */
+      if ((len == 22 || len == 34)
           && (revkey[0] & 0x80))
 	{
 	  sig->revkey = xrealloc (sig->revkey,
 				  sizeof (struct revocation_key) *
 				  (sig->numrevkeys + 1));
 
-	  /* Copy the individual fields.  */
 	  sig->revkey[sig->numrevkeys].class = revkey[0];
 	  sig->revkey[sig->numrevkeys].algid = revkey[1];
-	  memcpy (sig->revkey[sig->numrevkeys].fpr, &revkey[2], 20);
-
+          len -= 2;
+	  sig->revkey[sig->numrevkeys].fprlen = len;
+	  memcpy (sig->revkey[sig->numrevkeys].fpr, revkey+2, len);
+	  memset (sig->revkey[sig->numrevkeys].fpr+len, 0,
+                  sizeof (sig->revkey[sig->numrevkeys].fpr) - len);
 	  sig->numrevkeys++;
 	}
     }
@@ -2045,7 +2077,7 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
 {
   int md5_len = 0;
   unsigned n;
-  int is_v4 = 0;
+  int is_v4or5 = 0;
   int rc = 0;
   int i, ndata;
 
@@ -2058,8 +2090,8 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
     }
   sig->version = iobuf_get_noeof (inp);
   pktlen--;
-  if (sig->version == 4)
-    is_v4 = 1;
+  if (sig->version == 4 || sig->version == 5)
+    is_v4or5 = 1;
   else if (sig->version != 2 && sig->version != 3)
     {
       log_error ("packet(%d) with unknown version %d\n",
@@ -2070,7 +2102,7 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
       goto leave;
     }
 
-  if (!is_v4)
+  if (!is_v4or5)
     {
       if (pktlen == 0)
 	goto underflow;
@@ -2081,7 +2113,7 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
     goto underflow;
   sig->sig_class = iobuf_get_noeof (inp);
   pktlen--;
-  if (!is_v4)
+  if (!is_v4or5)
     {
       if (pktlen < 12)
 	goto underflow;
@@ -2100,7 +2132,7 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
   pktlen--;
   sig->flags.exportable = 1;
   sig->flags.revocable = 1;
-  if (is_v4) /* Read subpackets.  */
+  if (is_v4or5) /* Read subpackets.  */
     {
       if (pktlen < 2)
 	goto underflow;
@@ -2171,28 +2203,28 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
   sig->digest_start[1] = iobuf_get_noeof (inp);
   pktlen--;
 
-  if (is_v4 && sig->pubkey_algo)  /* Extract required information.  */
+  if (is_v4or5 && sig->pubkey_algo)  /* Extract required information.  */
     {
       const byte *p;
       size_t len;
 
       /* Set sig->flags.unknown_critical if there is a critical bit
        * set for packets which we do not understand.  */
-      if (!parse_sig_subpkt (sig->hashed, SIGSUBPKT_TEST_CRITICAL, NULL)
-	  || !parse_sig_subpkt (sig->unhashed, SIGSUBPKT_TEST_CRITICAL, NULL))
+      if (!parse_sig_subpkt (sig, 1, SIGSUBPKT_TEST_CRITICAL, NULL)
+	  || !parse_sig_subpkt (sig, 0, SIGSUBPKT_TEST_CRITICAL, NULL))
 	sig->flags.unknown_critical = 1;
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_SIG_CREATED, NULL);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_SIG_CREATED, NULL);
       if (p)
 	sig->timestamp = buf32_to_u32 (p);
       else if (!(sig->pubkey_algo >= 100 && sig->pubkey_algo <= 110)
-	       && opt.verbose && !glo_ctrl.silence_parse_warnings)
-	log_info ("signature packet without timestamp\n");
+	       && opt.verbose > 1 && !glo_ctrl.silence_parse_warnings)
+        log_info ("signature packet without timestamp\n");
 
       /* Set the key id.  We first try the issuer fingerprint and if
-       * this is not found fallback to the issuer.  Note that
+       * it is a v4 signature the fallback to the issuer.  Note that
        * only the issuer packet is also searched in the unhashed area.  */
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_ISSUER_FPR, &len);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_ISSUER_FPR, &len);
       if (p && len == 21 && p[0] == 4)
         {
           sig->keyid[0] = buf32_to_u32 (p + 1 + 12);
@@ -2204,29 +2236,29 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
 	  sig->keyid[1] = buf32_to_u32 (p + 1 + 4);
 	}
       else if ((p = parse_sig_subpkt2 (sig, SIGSUBPKT_ISSUER)))
-	{
-	  sig->keyid[0] = buf32_to_u32 (p);
+        {
+          sig->keyid[0] = buf32_to_u32 (p);
 	  sig->keyid[1] = buf32_to_u32 (p + 4);
 	}
       else if (!(sig->pubkey_algo >= 100 && sig->pubkey_algo <= 110)
-	       && opt.verbose && !glo_ctrl.silence_parse_warnings)
+	       && opt.verbose > 1 && !glo_ctrl.silence_parse_warnings)
 	log_info ("signature packet without keyid\n");
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_SIG_EXPIRE, NULL);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_SIG_EXPIRE, NULL);
       if (p && buf32_to_u32 (p))
 	sig->expiredate = sig->timestamp + buf32_to_u32 (p);
       if (sig->expiredate && sig->expiredate <= make_timestamp ())
 	sig->flags.expired = 1;
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_POLICY, NULL);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_POLICY, NULL);
       if (p)
 	sig->flags.policy_url = 1;
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_PREF_KS, NULL);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_PREF_KS, NULL);
       if (p)
 	sig->flags.pref_ks = 1;
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_SIGNERS_UID, &len);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_SIGNERS_UID, &len);
       if (p && len)
         {
           char *mbox;
@@ -2237,7 +2269,7 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
               rc = gpg_error_from_syserror ();
               goto leave;
             }
-          mbox = mailbox_from_userid (sig->signers_uid);
+          mbox = mailbox_from_userid (sig->signers_uid, 0);
           if (mbox)
             {
               xfree (sig->signers_uid);
@@ -2245,19 +2277,19 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
             }
         }
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_NOTATION, NULL);
-      if (p)
-	sig->flags.notation = 1;
-
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_KEY_BLOCK, NULL);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_KEY_BLOCK, NULL);
       if (p)
         sig->flags.key_block = 1;
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_REVOCABLE, NULL);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_NOTATION, NULL);
+      if (p)
+	sig->flags.notation = 1;
+
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_REVOCABLE, NULL);
       if (p && *p == 0)
 	sig->flags.revocable = 0;
 
-      p = parse_sig_subpkt (sig->hashed, SIGSUBPKT_TRUST, &len);
+      p = parse_sig_subpkt (sig, 1, SIGSUBPKT_TRUST, &len);
       if (p && len == 2)
 	{
 	  sig->trust_depth = p[0];
@@ -2266,7 +2298,7 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
 	  /* Only look for a regexp if there is also a trust
 	     subpacket. */
 	  sig->trust_regexp =
-	    parse_sig_subpkt (sig->hashed, SIGSUBPKT_REGEXP, &len);
+	    parse_sig_subpkt (sig, 1, SIGSUBPKT_REGEXP, &len);
 
 	  /* If the regular expression is of 0 length, there is no
 	     regular expression. */
@@ -2297,10 +2329,10 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
                   (ulong) sig->keyid[0], (ulong) sig->keyid[1],
                   sig->version, (ulong) sig->timestamp, md5_len, sig->sig_class,
                   sig->digest_algo, sig->digest_start[0], sig->digest_start[1]);
-      if (is_v4)
+      if (is_v4or5)
 	{
-	  parse_sig_subpkt (sig->hashed, SIGSUBPKT_LIST_HASHED, NULL);
-	  parse_sig_subpkt (sig->unhashed, SIGSUBPKT_LIST_UNHASHED, NULL);
+	  parse_sig_subpkt (sig, 1, SIGSUBPKT_LIST_HASHED, NULL);
+	  parse_sig_subpkt (sig, 0, SIGSUBPKT_LIST_UNHASHED, NULL);
 	}
     }
 
@@ -2334,7 +2366,11 @@ parse_signature (IOBUF inp, int pkttype, unsigned long pktlen,
       for (i = 0; i < ndata; i++)
 	{
 	  n = pktlen;
-	  sig->data[i] = mpi_read (inp, &n, 0);
+          if (sig->pubkey_algo == PUBKEY_ALGO_ECDSA
+              || sig->pubkey_algo == PUBKEY_ALGO_EDDSA)
+            sig->data[i] = sos_read (inp, &n, 0);
+          else
+            sig->data[i] = mpi_read (inp, &n, 0);
 	  pktlen -= n;
 	  if (list_mode)
 	    {
@@ -2425,6 +2461,9 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
   int npkey, nskey;
   u32 keyid[2];
   PKT_public_key *pk;
+  int is_v5;
+  unsigned int pkbytes; /* For v5 keys: Number of bytes in the public
+                         * key material.  For v4 keys: 0.  */
 
   (void) hdr;
 
@@ -2456,10 +2495,9 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
       return 0;
     }
   else if (version == 4)
-    {
-      /* The only supported version.  Use an older gpg
-         version (i.e. gpg 1.4) to parse v3 packets.  */
-    }
+    is_v5 = 0;
+  else if (version == 5)
+    is_v5 = 1;
   else if (version == 2 || version == 3)
     {
       /* Not anymore supported since 2.1.  Use an older gpg version
@@ -2477,11 +2515,11 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
       log_error ("packet(%d) with unknown version %d\n", pkttype, version);
       if (list_mode)
         es_fputs (":key packet: [unknown version]\n", listfp);
-      err = gpg_error (GPG_ERR_UNKNOWN_VERSION);
+      err = gpg_error (GPG_ERR_INV_PACKET);
       goto leave;
     }
 
-  if (pktlen < 11)
+  if (pktlen < (is_v5? 15:11))
     {
       log_error ("packet(%d) too short\n", pkttype);
       if (list_mode)
@@ -2493,7 +2531,7 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
     {
       log_error ("packet(%d) too large\n", pkttype);
       if (list_mode)
-        es_fputs (":key packet: [too larget]\n", listfp);
+        es_fputs (":key packet: [too large]\n", listfp);
       err = gpg_error (GPG_ERR_INV_PACKET);
       goto leave;
     }
@@ -2504,14 +2542,28 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
   max_expiredate = 0;
   algorithm = iobuf_get_noeof (inp);
   pktlen--;
+  if (is_v5)
+    {
+      pkbytes = read_32 (inp);
+      pktlen -= 4;
+    }
+  else
+    pkbytes = 0;
+
   if (list_mode)
-    es_fprintf (listfp, ":%s key packet:\n"
-                "\tversion %d, algo %d, created %lu, expires %lu\n",
-                pkttype == PKT_PUBLIC_KEY ? "public" :
-                pkttype == PKT_SECRET_KEY ? "secret" :
-                pkttype == PKT_PUBLIC_SUBKEY ? "public sub" :
-                pkttype == PKT_SECRET_SUBKEY ? "secret sub" : "??",
-                version, algorithm, timestamp, expiredate);
+    {
+      es_fprintf (listfp, ":%s key packet:\n"
+                  "\tversion %d, algo %d, created %lu, expires %lu",
+                  pkttype == PKT_PUBLIC_KEY ? "public" :
+                  pkttype == PKT_SECRET_KEY ? "secret" :
+                  pkttype == PKT_PUBLIC_SUBKEY ? "public sub" :
+                  pkttype == PKT_SECRET_SUBKEY ? "secret sub" : "??",
+                  version, algorithm, timestamp, expiredate);
+      if (is_v5)
+        es_fprintf (listfp, ", pkbytes %u\n", pkbytes);
+      else
+        es_fprintf (listfp, "\n");
+    }
 
   pk->timestamp = timestamp;
   pk->expiredate = expiredate;
@@ -2548,7 +2600,7 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
                || (algorithm == PUBKEY_ALGO_EDDSA && (i == 0))
                || (algorithm == PUBKEY_ALGO_ECDH  && (i == 0 || i == 2)))
             {
-              /* Read the OID (i==1) or the KDF params (i==2).  */
+              /* Read the OID (i==0) or the KDF params (i==2).  */
               size_t n;
 	      err = read_size_body (inp, pktlen, &n, pk->pkey+i);
               pktlen -= n;
@@ -2556,7 +2608,12 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
           else
             {
               unsigned int n = pktlen;
-              pk->pkey[i] = mpi_read (inp, &n, 0);
+              if (algorithm == PUBKEY_ALGO_ECDSA
+                  || algorithm == PUBKEY_ALGO_EDDSA
+                  || algorithm == PUBKEY_ALGO_ECDH)
+                pk->pkey[i] = sos_read (inp, &n, 0);
+              else
+                pk->pkey[i] = mpi_read (inp, &n, 0);
               pktlen -= n;
               if (!pk->pkey[i])
                 err = gpg_error (GPG_ERR_INV_PACKET);
@@ -2588,6 +2645,7 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
       struct seckey_info *ski;
       byte temp[16];
       size_t snlen = 0;
+      unsigned int skbytes;
 
       if (pktlen < 1)
         {
@@ -2604,23 +2662,51 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 
       ski->algo = iobuf_get_noeof (inp);
       pktlen--;
+
+      if (is_v5)
+        {
+          unsigned int protcount = 0;
+
+          /* Read the one octet count of the following key-protection
+           * material.  Only required in case of unknown values. */
+          if (!pktlen)
+            {
+              err = gpg_error (GPG_ERR_INV_PACKET);
+              goto leave;
+            }
+          protcount = iobuf_get_noeof (inp);
+          pktlen--;
+          if (list_mode)
+            es_fprintf (listfp, "\tprotbytes: %u\n", protcount);
+        }
+
       if (ski->algo)
 	{
 	  ski->is_protected = 1;
 	  ski->s2k.count = 0;
-	  if (ski->algo == 254 || ski->algo == 255)
+	  if (ski->algo == 253)
 	    {
-	      if (pktlen < 3)
+              if (list_mode)
+                es_fprintf (listfp,
+                            "\tS2K pseudo algo %d is not yet supported\n",
+                            ski->algo);
+              err = gpg_error (GPG_ERR_NOT_IMPLEMENTED);
+              goto leave;
+            }
+          else if (ski->algo == 254 || ski->algo == 255)
+	    {
+              if (pktlen < 3)
 		{
 		  err = gpg_error (GPG_ERR_INV_PACKET);
 		  goto leave;
 		}
-	      ski->sha1chk = (ski->algo == 254);
+
+              ski->sha1chk = (ski->algo == 254);
 	      ski->algo = iobuf_get_noeof (inp);
 	      pktlen--;
 	      /* Note that a ski->algo > 110 is illegal, but I'm not
-	         erroring on it here as otherwise there would be no
-	         way to delete such a key.  */
+	       * erroring out here as otherwise there would be no way
+	       * to delete such a key.  */
 	      ski->s2k.mode = iobuf_get_noeof (inp);
 	      pktlen--;
 	      ski->s2k.hash_algo = iobuf_get_noeof (inp);
@@ -2646,10 +2732,8 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 		}
 
               /* Read the salt.  */
-	      switch (ski->s2k.mode)
+	      if (ski->s2k.mode == 3 || ski->s2k.mode == 1)
 		{
-		case 1:
-		case 3:
 		  for (i = 0; i < 8 && pktlen; i++, pktlen--)
 		    temp[i] = iobuf_get_noeof (inp);
                   if (i < 8)
@@ -2658,7 +2742,6 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 		      goto leave;
                     }
 		  memcpy (ski->s2k.salt, temp, 8);
-		  break;
 		}
 
               /* Check the mode.  */
@@ -2678,11 +2761,15 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 		  break;
 		case 1001:
 		  if (list_mode)
-		    es_fprintf (listfp, "\tgnu-dummy S2K");
+		    es_fprintf (listfp, "\tgnu-dummy");
 		  break;
 		case 1002:
 		  if (list_mode)
-		    es_fprintf (listfp, "\tgnu-divert-to-card S2K");
+		    es_fprintf (listfp, "\tgnu-divert-to-card");
+		  break;
+		case 1003:
+		  if (list_mode)
+		    es_fprintf (listfp, "\tgnu-mode1003");
 		  break;
 		default:
 		  if (list_mode)
@@ -2694,7 +2781,7 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 		}
 
               /* Print some info.  */
-	      if (list_mode)
+	      if (list_mode && ski->s2k.mode != 1003)
 		{
 		  es_fprintf (listfp, ", algo: %d,%s hash: %d",
                               ski->algo,
@@ -2705,8 +2792,9 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 		      es_fprintf (listfp, ", salt: ");
                       es_write_hexstring (listfp, ski->s2k.salt, 8, 0, NULL);
 		    }
-		  es_putc ('\n', listfp);
-		}
+                }
+              if (list_mode)
+                es_putc ('\n', listfp);
 
               /* Read remaining protection parameters.  */
 	      if (ski->s2k.mode == 3)
@@ -2758,11 +2846,13 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 	   *   ski->ivlen = cipher_get_blocksize (ski->algo);
 	   * won't work.  The only solution I see is to hardwire it.
 	   * NOTE: if you change the ivlen above 16, don't forget to
-	   * enlarge temp.  */
+	   * enlarge temp.
+           * FIXME: For v5 keys we can deduce this info!
+           */
 	  ski->ivlen = openpgp_cipher_blocklen (ski->algo);
 	  log_assert (ski->ivlen <= sizeof (temp));
 
-	  if (ski->s2k.mode == 1001)
+	  if (ski->s2k.mode == 1001 || ski->s2k.mode == 1003)
 	    ski->ivlen = 0;
 	  else if (ski->s2k.mode == 1002)
 	    ski->ivlen = snlen < 16 ? snlen : 16;
@@ -2774,7 +2864,7 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 	    }
 	  for (i = 0; i < ski->ivlen; i++, pktlen--)
 	    temp[i] = iobuf_get_noeof (inp);
-	  if (list_mode)
+	  if (list_mode && ski->s2k.mode != 1003)
 	    {
 	      es_fprintf (listfp,
                           ski->s2k.mode == 1002 ? "\tserial-number: "
@@ -2785,6 +2875,20 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 	    }
 	  memcpy (ski->iv, temp, ski->ivlen);
 	}
+
+      /* Skip count of secret key material.  */
+      if (is_v5)
+        {
+          if (pktlen < 4)
+            {
+              err = gpg_error (GPG_ERR_INV_PACKET);
+              goto leave;
+            }
+          skbytes = read_32 (inp);
+          pktlen -= 4;
+          if (list_mode)
+            es_fprintf (listfp, "\tskbytes: %u\n", skbytes);
+        }
 
       /* It does not make sense to read it into secure memory.
        * If the user is so careless, not to protect his secret key,
@@ -2798,6 +2902,35 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 						 10 * 8);
 	  pktlen = 0;
 	}
+      else if (ski->s2k.mode == 1003)
+	{
+          void *tmpp;
+
+	  if (pktlen < 2) /* At least two bytes for parenthesis.  */
+	    {
+              err = gpg_error (GPG_ERR_INV_PACKET);
+	      goto leave;
+	    }
+
+          tmpp = read_rest (inp, pktlen);
+          if (list_mode)
+            {
+              if (mpi_print_mode)
+                {
+                  char *tmpsxp = canon_sexp_to_string (tmpp, pktlen);
+                  es_fprintf (listfp, "\tskey[%d]: %s\n", npkey,
+                              tmpsxp? trim_trailing_spaces (tmpsxp)
+                              /*  */: "[invalid S-expression]");
+                  xfree (tmpsxp);
+                }
+              else
+                es_fprintf (listfp, "\tskey[%d]: [s-expression %lu octets]\n",
+                            npkey, pktlen);
+            }
+	  pk->pkey[npkey] = gcry_mpi_set_opaque (NULL,
+						 tmpp, tmpp? pktlen * 8 : 0);
+          pktlen = 0;
+	}
       else if (ski->is_protected)
 	{
           void *tmpp;
@@ -2810,14 +2943,15 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 
 	  /* Ugly: The length is encrypted too, so we read all stuff
 	   * up to the end of the packet into the first SKEY
-	   * element.  */
+	   * element.
+           * FIXME: We can do better for v5 keys.  */
 
           tmpp = read_rest (inp, pktlen);
 	  pk->pkey[npkey] = gcry_mpi_set_opaque (NULL,
 						 tmpp, tmpp? pktlen * 8 : 0);
           /* Mark that MPI as protected - we need this information for
-             importing a key.  The OPAQUE flag can't be used because
-             we also store public EdDSA values in opaque MPIs.  */
+           * importing a key.  The OPAQUE flag can't be used because
+           * we also store public EdDSA values in opaque MPIs.  */
           if (pk->pkey[npkey])
             gcry_mpi_set_flag (pk->pkey[npkey], GCRYMPI_FLAG_USER1);
 	  pktlen = 0;
@@ -2826,8 +2960,6 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 	}
       else
 	{
-          u16 csum_tweak = 0;
-
           /* Not encrypted.  */
 	  for (i = npkey; i < nskey; i++)
 	    {
@@ -2839,9 +2971,10 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
                   goto leave;
                 }
               n = pktlen;
-              if (algorithm == PUBKEY_ALGO_EDDSA)
-                pk->pkey[i] = mpi_read_detect_0_removal (inp, &n, 0,
-                                                         &csum_tweak);
+              if (algorithm == PUBKEY_ALGO_ECDSA
+                  || algorithm == PUBKEY_ALGO_EDDSA
+                  || algorithm == PUBKEY_ALGO_ECDH)
+                pk->pkey[i] = sos_read (inp, &n, 0);
               else
                 pk->pkey[i] = mpi_read (inp, &n, 0);
               pktlen -= n;
@@ -2864,7 +2997,6 @@ parse_key (IOBUF inp, int pkttype, unsigned long pktlen,
 	      goto leave;
 	    }
 	  ski->csum = read_16 (inp);
-          ski->csum += csum_tweak;
 	  pktlen -= 2;
 	  if (list_mode)
             es_fprintf (listfp, "\tchecksum: %04hx\n", ski->csum);
@@ -3334,7 +3466,7 @@ parse_plaintext (IOBUF inp, int pkttype, unsigned long pktlen,
 	  pt->name[i] = c;
     }
   /* Fill up NAME so that a check with valgrind won't complain about
-   * reading from uninitalized memory.  This case may be triggred by
+   * reading from uninitialized memory.  This case may be triggred by
    * corrupted packets.  */
   for (; i < namelen; i++)
     pt->name[i] = 0;
@@ -3661,11 +3793,13 @@ create_gpg_control (ctrlpkttype_t type, const byte * data, size_t datalen)
   PACKET *packet;
   byte *p;
 
+  if (!data)
+    datalen = 0;
+
   packet = xmalloc (sizeof *packet);
   init_packet (packet);
   packet->pkttype = PKT_GPG_CONTROL;
-  packet->pkt.gpg_control = xmalloc (sizeof *packet->pkt.gpg_control
-				     + datalen - 1);
+  packet->pkt.gpg_control = xmalloc (sizeof *packet->pkt.gpg_control + datalen);
   packet->pkt.gpg_control->control = type;
   packet->pkt.gpg_control->datalen = datalen;
   p = packet->pkt.gpg_control->data;

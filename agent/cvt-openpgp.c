@@ -22,7 +22,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 
 #include "agent.h"
 #include "../common/i18n.h"
@@ -158,7 +157,7 @@ convert_secret_key (gcry_sexp_t *r_key, int pubkey_algo, gcry_mpi_t *skey,
           if (!strcmp (curve, "Ed25519"))
             /* Do not store the OID as name but the real name and the
                EdDSA flag.  */
-            format = "(private-key(ecc(curve %s)(flags eddsa)(q%m)(d%M)))";
+            format = "(private-key(ecc(curve %s)(flags eddsa)(q%m)(d%m)))";
           else if (!strcmp (curve, "Curve25519"))
             format = "(private-key(ecc(curve %s)(flags djb-tweak)(q%m)(d%m)))";
           else
@@ -375,6 +374,38 @@ prepare_unprotect (int pubkey_algo, gcry_mpi_t *skey, size_t skeysize,
 }
 
 
+/* Scan octet string in the PGP format (length-in-two-octet octets) */
+static int
+scan_pgp_format (gcry_mpi_t *r_mpi, int pubkey_algo,
+                 const unsigned char *buffer,
+                 size_t buflen, size_t *r_nbytes)
+{
+  /* Using gcry_mpi_scan with GCRYMPI_FLAG_PGP can be used if it is
+     MPI, but it will be "normalized" removing leading zeros.  */
+  unsigned int nbits, nbytes;
+
+  if (pubkey_algo != GCRY_PK_ECC)
+    return gcry_mpi_scan (r_mpi, GCRYMPI_FMT_PGP, buffer, buflen, r_nbytes);
+
+  /* It's ECC, where we use SOS.  */
+
+  if (buflen < 2)
+    return GPG_ERR_INV_OBJ;
+
+  nbits = (buffer[0] << 8) | buffer[1];
+  if (nbits >= 16384)
+    return GPG_ERR_INV_OBJ;
+
+  nbytes = (nbits + 7) / 8;
+  if (buflen < nbytes + 2)
+    return GPG_ERR_INV_OBJ;
+
+  *r_nbytes = nbytes + 2;
+  *r_mpi = gcry_mpi_set_opaque_copy (NULL, buffer+2, nbits);
+  return 0;
+}
+
+
 /* Note that this function modifies SKEY.  SKEYSIZE is the allocated
    size of the array including the NULL item; this is used for a
    bounds check.  On success a converted key is stored at R_KEY.  */
@@ -408,29 +439,43 @@ do_unprotect (const char *passphrase,
       actual_csum = 0;
       for (i=npkey; i < nskey; i++)
         {
+          unsigned char *buffer;
+
           if (!skey[i] || gcry_mpi_get_flag (skey[i], GCRYMPI_FLAG_USER1))
             return gpg_error (GPG_ERR_BAD_SECKEY);
 
           if (gcry_mpi_get_flag (skey[i], GCRYMPI_FLAG_OPAQUE))
             {
               unsigned int nbits;
-              const unsigned char *buffer;
               buffer = gcry_mpi_get_opaque (skey[i], &nbits);
               nbytes = (nbits+7)/8;
+
+              nbits = nbytes * 8;
+              if (*buffer)
+                if (nbits >= 8 && !(*buffer & 0x80))
+                  if (--nbits >= 7 && !(*buffer & 0x40))
+                    if (--nbits >= 6 && !(*buffer & 0x20))
+                      if (--nbits >= 5 && !(*buffer & 0x10))
+                        if (--nbits >= 4 && !(*buffer & 0x08))
+                          if (--nbits >= 3 && !(*buffer & 0x04))
+                            if (--nbits >= 2 && !(*buffer & 0x02))
+                              if (--nbits >= 1 && !(*buffer & 0x01))
+                                --nbits;
+
+              actual_csum += (nbits >> 8);
+              actual_csum += (nbits & 0xff);
               actual_csum += checksum (buffer, nbytes);
             }
           else
             {
-              unsigned char *buffer;
-
               err = gcry_mpi_aprint (GCRYMPI_FMT_PGP, &buffer, &nbytes,
                                      skey[i]);
-              if (!err)
-                actual_csum += checksum (buffer, nbytes);
+              if (err)
+                return err;
+
+              actual_csum += checksum (buffer, nbytes);
               xfree (buffer);
             }
-          if (err)
-            return err;
         }
 
       if (actual_csum != desired_csum)
@@ -487,13 +532,14 @@ do_unprotect (const char *passphrase,
       const unsigned char *p;
       unsigned char *data;
       u16 csum_pgp7 = 0;
+      gcry_mpi_t skey_encrypted = skey[npkey];
 
-      if (!gcry_mpi_get_flag (skey[npkey], GCRYMPI_FLAG_OPAQUE ))
+      if (!gcry_mpi_get_flag (skey_encrypted, GCRYMPI_FLAG_USER1))
         {
           gcry_cipher_close (cipher_hd);
           return gpg_error (GPG_ERR_BAD_SECKEY);
         }
-      p = gcry_mpi_get_opaque (skey[npkey], &ndatabits);
+      p = gcry_mpi_get_opaque (skey_encrypted, &ndatabits);
       ndata = (ndatabits+7)/8;
 
       if (ndata > 1)
@@ -555,40 +601,55 @@ do_unprotect (const char *passphrase,
          because the length may have an arbitrary value.  */
       if (desired_csum == actual_csum)
         {
-          for (i=npkey; i < nskey; i++ )
+          for (i = npkey; i < nskey; i++)
             {
-              if (gcry_mpi_scan (&tmpmpi, GCRYMPI_FMT_PGP, p, ndata, &nbytes))
-                {
-                  /* Checksum was okay, but not correctly decrypted.  */
-                  desired_csum = 0;
-                  actual_csum = 1;   /* Mark checksum bad.  */
-                  break;
-                }
-              gcry_mpi_release (skey[i]);
+              if (scan_pgp_format (&tmpmpi, pubkey_algo, p, ndata, &nbytes))
+                break;
               skey[i] = tmpmpi;
               ndata -= nbytes;
               p += nbytes;
             }
-          skey[i] = NULL;
-          skeylen = i;
-          assert (skeylen <= skeysize);
 
-          /* Note: at this point NDATA should be 2 for a simple
-             checksum or 20 for the sha1 digest.  */
+          if (i == nskey)
+            {
+              skey[nskey] = NULL;
+              skeylen = nskey;
+              gcry_mpi_release (skey_encrypted);
+
+              log_assert (skeylen <= skeysize);
+              /* Note: at this point NDATA should be 2 for a simple
+                 checksum or 20 for the sha1 digest.  */
+            }
+          else
+            {
+              /* Checksum was okay, but not correctly decrypted.  */
+              desired_csum = 0;
+              actual_csum = 1;   /* Mark checksum bad.  */
+
+              /* Recover encrypted SKEY.  */
+              for (--i; i >= npkey; i--)
+                {
+                  gcry_mpi_release (skey[i]);
+                  skey[i] = NULL;
+                }
+              skey[npkey] = skey_encrypted;
+            }
         }
       xfree(data);
     }
   else /* Packet version <= 3.  */
     {
       unsigned char *buffer;
+      gcry_mpi_t skey_tmpmpi[10];
 
+      log_assert (nskey - npkey <= 10);
       for (i = npkey; i < nskey; i++)
         {
           const unsigned char *p;
           size_t ndata;
           unsigned int ndatabits;
 
-          if (!skey[i] || !gcry_mpi_get_flag (skey[i], GCRYMPI_FLAG_OPAQUE))
+          if (!skey[i] || !gcry_mpi_get_flag (skey[i], GCRYMPI_FLAG_USER1))
             {
               gcry_cipher_close (cipher_hd);
               return gpg_error (GPG_ERR_BAD_SECKEY);
@@ -615,17 +676,29 @@ do_unprotect (const char *passphrase,
           buffer[1] = p[1];
           gcry_cipher_decrypt (cipher_hd, buffer+2, ndata-2, p+2, ndata-2);
           actual_csum += checksum (buffer, ndata);
-          err = gcry_mpi_scan (&tmpmpi, GCRYMPI_FMT_PGP, buffer, ndata, &ndata);
+          err = scan_pgp_format (&tmpmpi, pubkey_algo, buffer, ndata, &nbytes);
           xfree (buffer);
           if (err)
+            break;
+          skey_tmpmpi[i - npkey] = tmpmpi;
+        }
+
+      if (i == nskey)
+        {
+          for (i = npkey; i < nskey; i++)
             {
-              /* Checksum was okay, but not correctly decrypted.  */
-              desired_csum = 0;
-              actual_csum = 1;   /* Mark checksum bad.  */
-              break;
+              gcry_mpi_release (skey[i]);
+              skey[i] = skey_tmpmpi[i - npkey];
             }
-          gcry_mpi_release (skey[i]);
-          skey[i] = tmpmpi;
+        }
+      else
+        {
+          /* Checksum was okay, but not correctly decrypted.  */
+          desired_csum = 0;
+          actual_csum = 1;   /* Mark checksum bad.  */
+
+          for (--i; i >= npkey; i--)
+            gcry_mpi_release (skey_tmpmpi[i - npkey]);
         }
     }
   gcry_cipher_close (cipher_hd);
@@ -729,9 +802,10 @@ convert_from_openpgp_main (ctrl_t ctrl, gcry_sexp_t s_pgp, int dontcare_exist,
   if (!list)
     goto bad_seckey;
   value = gcry_sexp_nth_data (list, 1, &valuelen);
-  if (!value || valuelen != 1 || !(value[0] == '3' || value[0] == '4'))
+  if (!value || valuelen != 1
+      || !(value[0] == '3' || value[0] == '4' || value[0] == '5'))
     goto bad_seckey;
-  is_v4 = (value[0] == '4');
+  is_v4 = (value[0] == '4' || value[0] == '5');
 
   gcry_sexp_release (list);
   list = gcry_sexp_find_token (top_list, "protection", 0);
@@ -838,13 +912,14 @@ convert_from_openpgp_main (ctrl_t ctrl, gcry_sexp_t s_pgp, int dontcare_exist,
       value = gcry_sexp_nth_data (list, ++idx, &valuelen);
       if (!value || !valuelen)
         goto bad_seckey;
-      if (is_enc)
+      if (is_enc || npkey == 1 /* This is ECC */)
         {
-          /* Encrypted parameters need to be stored as opaque.  */
           skey[skeyidx] = gcry_mpi_set_opaque_copy (NULL, value, valuelen*8);
           if (!skey[skeyidx])
             goto outofmem;
-          gcry_mpi_set_flag (skey[skeyidx], GCRYMPI_FLAG_USER1);
+          if (is_enc)
+            /* Encrypted parameters need to have a USER1 flag.  */
+            gcry_mpi_set_flag (skey[skeyidx], GCRYMPI_FLAG_USER1);
         }
       else
         {
@@ -874,7 +949,7 @@ convert_from_openpgp_main (ctrl_t ctrl, gcry_sexp_t s_pgp, int dontcare_exist,
   gcry_sexp_release (top_list); top_list = NULL;
 
 #if 0
-  log_debug ("XXX is_v4=%d\n", is_v4);
+  log_debug ("XXX is v4_or_later=%d\n", is_v4);
   log_debug ("XXX pubkey_algo=%d\n", pubkey_algo);
   log_debug ("XXX is_protected=%d\n", is_protected);
   log_debug ("XXX protect_algo=%d\n", protect_algo);
@@ -894,7 +969,7 @@ convert_from_openpgp_main (ctrl_t ctrl, gcry_sexp_t s_pgp, int dontcare_exist,
   if (err)
     goto leave;
 
-  if (!dontcare_exist && !from_native && !agent_key_available (grip))
+  if (!dontcare_exist && !from_native && !agent_key_available (ctrl, grip))
     {
       err = gpg_error (GPG_ERR_EEXIST);
       goto leave;
@@ -918,7 +993,10 @@ convert_from_openpgp_main (ctrl_t ctrl, gcry_sexp_t s_pgp, int dontcare_exist,
 
       pi = xtrycalloc_secure (1, sizeof (*pi) + MAX_PASSPHRASE_LEN + 1);
       if (!pi)
-        return gpg_error_from_syserror ();
+        {
+          err = gpg_error_from_syserror ();
+          goto leave;
+        }
       pi->max_length = MAX_PASSPHRASE_LEN + 1;
       pi->min_digits = 0;  /* We want a real passphrase.  */
       pi->max_digits = 16;
@@ -1069,17 +1147,19 @@ convert_from_openpgp_native (ctrl_t ctrl,
           if (!agent_protect (*r_key, passphrase,
                               &protectedkey, &protectedkeylen,
                               ctrl->s2k_count))
-            agent_write_private_key (grip, protectedkey, protectedkeylen,
-                                     1/*force*/, 0, NULL, NULL, NULL, 0);
+            agent_write_private_key (ctrl, grip,
+                                     protectedkey,
+                                     protectedkeylen,
+                                     1, NULL, NULL, NULL, 0);
           xfree (protectedkey);
         }
       else
         {
           /* Empty passphrase: write key without protection.  */
-          agent_write_private_key (grip,
+          agent_write_private_key (ctrl, grip,
                                    *r_key,
                                    gcry_sexp_canon_len (*r_key, 0, NULL,NULL),
-                                   1/*force*/, 0, NULL, NULL, NULL, 0);
+                                   1, NULL, NULL, NULL, 0);
         }
     }
 
@@ -1107,22 +1187,39 @@ apply_protection (gcry_mpi_t *array, int npkey, int nskey,
   int ndata;
   unsigned char *p, *data;
 
-  assert (npkey < nskey);
-  assert (nskey < DIM (bufarr));
+  log_assert (npkey < nskey);
+  log_assert (nskey < DIM (bufarr));
 
   /* Collect only the secret key parameters into BUFARR et al and
      compute the required size of the data buffer.  */
   ndata = 20; /* Space for the SHA-1 checksum.  */
   for (i = npkey, j = 0; i < nskey; i++, j++ )
     {
-      err = gcry_mpi_aprint (GCRYMPI_FMT_USG, bufarr+j, narr+j, array[i]);
+      if (gcry_mpi_get_flag (array[i], GCRYMPI_FLAG_OPAQUE))
+        {
+          p = gcry_mpi_get_opaque (array[i], &nbits[j]);
+          narr[j] = (nbits[j] + 7)/8;
+          data = xtrymalloc_secure (narr[j]);
+          if (!data)
+            err = gpg_error_from_syserror ();
+          else
+            {
+              memcpy (data, p, narr[j]);
+              bufarr[j] = data;
+              err = 0;
+            }
+        }
+      else
+        {
+          err = gcry_mpi_aprint (GCRYMPI_FMT_USG, bufarr+j, narr+j, array[i]);
+          nbits[j] = gcry_mpi_get_nbits (array[i]);
+        }
       if (err)
         {
           for (i = 0; i < j; i++)
             xfree (bufarr[i]);
           return err;
         }
-      nbits[j] = gcry_mpi_get_nbits (array[i]);
       ndata += 2 + narr[j];
     }
 
@@ -1145,7 +1242,7 @@ apply_protection (gcry_mpi_t *array, int npkey, int nskey,
       xfree (bufarr[i]);
       bufarr[i] = NULL;
     }
-  assert (p == data + ndata - 20);
+  log_assert (p == data + ndata - 20);
 
   /* Append a hash of the secret key parameters.  */
   gcry_md_hash_buffer (GCRY_MD_SHA1, p, data, ndata - 20);
@@ -1174,6 +1271,7 @@ apply_protection (gcry_mpi_t *array, int npkey, int nskey,
       array[i] = NULL;
     }
   array[npkey] = gcry_mpi_set_opaque (NULL, data, ndata*8);
+  gcry_mpi_set_flag (array[npkey], GCRYMPI_FLAG_USER1);
   return 0;
 }
 
@@ -1202,7 +1300,7 @@ extract_private_key (gcry_sexp_t s_key, int req_private_key_data,
   gpg_error_t err;
   gcry_sexp_t list, l2;
   char *name;
-  const char *algoname, *format;
+  const char *algoname, *format, *elems;
   int npkey, nskey;
   gcry_sexp_t curve = NULL;
   gcry_sexp_t flags = NULL;
@@ -1247,7 +1345,7 @@ extract_private_key (gcry_sexp_t s_key, int req_private_key_data,
   if (!strcmp (name, "rsa"))
     {
       algoname = "rsa";
-      format = "ned?p?q?u?";
+      format = elems = "ned?p?q?u?";
       npkey = 2;
       nskey = 6;
       err = gcry_sexp_extract_param (list, NULL, format,
@@ -1257,7 +1355,7 @@ extract_private_key (gcry_sexp_t s_key, int req_private_key_data,
   else if (!strcmp (name, "elg"))
     {
       algoname = "elg";
-      format = "pgyx?";
+      format = elems = "pgyx?";
       npkey = 3;
       nskey = 4;
       err = gcry_sexp_extract_param (list, NULL, format,
@@ -1267,7 +1365,7 @@ extract_private_key (gcry_sexp_t s_key, int req_private_key_data,
   else if (!strcmp (name, "dsa"))
     {
       algoname = "dsa";
-      format = "pqgyx?";
+      format = elems = "pqgyx?";
       npkey = 4;
       nskey = 5;
       err = gcry_sexp_extract_param (list, NULL, format,
@@ -1277,7 +1375,8 @@ extract_private_key (gcry_sexp_t s_key, int req_private_key_data,
   else if (!strcmp (name, "ecc") || !strcmp (name, "ecdsa"))
     {
       algoname = "ecc";
-      format = "qd?";
+      format = "/qd?";
+      elems = "qd?";
       npkey = 1;
       nskey = 2;
       curve = gcry_sexp_find_token (list, "curve", 0);
@@ -1301,7 +1400,7 @@ extract_private_key (gcry_sexp_t s_key, int req_private_key_data,
     {
       *r_algoname = algoname;
       if (r_elems)
-        *r_elems = format;
+        *r_elems = elems;
       *r_npkey = npkey;
       if (r_nskey)
         *r_nskey = nskey;

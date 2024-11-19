@@ -23,20 +23,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(GNUPG_SCD_MAIN_HEADER)
-#include GNUPG_SCD_MAIN_HEADER
-#elif GNUPG_MAJOR_VERSION == 1
-/* This is used with GnuPG version < 1.9.  The code has been source
-   copied from the current GnuPG >= 1.9  and is maintained over
-   there. */
-#include "options.h"
-#include "errors.h"
-#include "memory.h"
-#include "../common/util.h"
-#include "../common/i18n.h"
-#else /* GNUPG_MAJOR_VERSION != 1 */
-#include "scdaemon.h"
-#endif /* GNUPG_MAJOR_VERSION != 1 */
+#if defined(GNUPG_MAJOR_VERSION)
+# include "scdaemon.h"
+#endif /*GNUPG_MAJOR_VERSION*/
 
 #include "iso7816.h"
 #include "apdu.h"
@@ -69,6 +58,7 @@ map_sw (int sw)
     case SW_EEPROM_FAILURE: ec = GPG_ERR_HARDWARE; break;
     case SW_TERM_STATE:     ec = GPG_ERR_OBJ_TERM_STATE; break;
     case SW_WRONG_LENGTH:   ec = GPG_ERR_INV_VALUE; break;
+    case SW_ACK_TIMEOUT:    ec = GPG_ERR_TIMEOUT; break;
     case SW_SM_NOT_SUP:     ec = GPG_ERR_NOT_SUPPORTED; break;
     case SW_CC_NOT_SUP:     ec = GPG_ERR_NOT_SUPPORTED; break;
     case SW_FILE_STRUCT:    ec = GPG_ERR_CARD; break;
@@ -109,6 +99,8 @@ map_sw (int sw)
     case SW_HOST_USB_BUSY:       ec = GPG_ERR_EBUSY; break;
     case SW_HOST_USB_TIMEOUT:    ec = GPG_ERR_TIMEOUT; break;
     case SW_HOST_USB_OVERFLOW:   ec = GPG_ERR_EOVERFLOW; break;
+    case SW_HOST_UI_CANCELLED:   ec = GPG_ERR_CANCELED; break;
+    case SW_HOST_UI_TIMEOUT:     ec = GPG_ERR_TIMEOUT; break;
 
     default:
       if ((sw & 0x010000))
@@ -174,7 +166,7 @@ iso7816_select_mf (int slot)
 {
   int sw;
 
-  sw = apdu_send_simple (slot, 0, 0x00, CMD_SELECT_FILE, 0x000, 0x0c, -1, NULL);
+  sw = apdu_send_simple (slot, 0, 0x00, CMD_SELECT_FILE, 0x00, 0x0c, -1, NULL);
   return map_sw (sw);
 }
 
@@ -250,6 +242,39 @@ iso7816_list_directory (int slot, int list_dirs,
       *result = NULL;
       *resultlen = 0;
     }
+  return map_sw (sw);
+}
+
+
+/* Wrapper around apdu_send. RESULT can be NULL if no result is
+ * expected.  In addition to an gpg-error return code the actual
+ * status word is stored at R_SW unless that is NULL.  */
+gpg_error_t
+iso7816_send_apdu (int slot, int extended_mode,
+                   int class, int ins, int p0, int p1,
+                   int lc, const void *data,
+                   unsigned int *r_sw,
+                   unsigned char **result, size_t *resultlen)
+{
+  int sw;
+
+  if (result)
+    {
+      *result = NULL;
+      *resultlen = 0;
+    }
+
+  sw = apdu_send (slot, extended_mode, class, ins, p0, p1, lc, data,
+                  result, resultlen);
+  if (sw != SW_SUCCESS && result)
+    {
+      /* Make sure that pending buffers are released. */
+      xfree (*result);
+      *result = NULL;
+      *resultlen = 0;
+    }
+  if (r_sw)
+    *r_sw = sw;
   return map_sw (sw);
 }
 
@@ -523,6 +548,70 @@ iso7816_get_data (int slot, int extended_mode, int tag,
 }
 
 
+/* Perform a GET DATA command requesting TAG and storing the result in
+ * a newly allocated buffer at the address passed by RESULT.  Return
+ * the length of this data at the address of RESULTLEN.  This variant
+ * is needed for long (3 octet) tags. */
+gpg_error_t
+iso7816_get_data_odd (int slot, int extended_mode, unsigned int tag,
+                      unsigned char **result, size_t *resultlen)
+{
+  int sw;
+  int le;
+  int datalen;
+  unsigned char data[5];
+
+  if (!result || !resultlen)
+    return gpg_error (GPG_ERR_INV_VALUE);
+  *result = NULL;
+  *resultlen = 0;
+
+  if (extended_mode > 0 && extended_mode < 256)
+    le = 65534; /* Not 65535 in case it is used as some special flag.  */
+  else if (extended_mode > 0)
+    le = extended_mode;
+  else
+    le = 256;
+
+  data[0] = 0x5c;
+  if (tag <= 0xff)
+    {
+      data[1] = 1;
+      data[2] = tag;
+      datalen = 3;
+    }
+  else if (tag <= 0xffff)
+    {
+      data[1] = 2;
+      data[2] = (tag >> 8);
+      data[3] = tag;
+      datalen = 4;
+    }
+  else
+    {
+      data[1] = 3;
+      data[2] = (tag >> 16);
+      data[3] = (tag >> 8);
+      data[4] = tag;
+      datalen = 5;
+    }
+
+  sw = apdu_send_le (slot, extended_mode, 0x00, CMD_GET_DATA + 1,
+                     0x3f, 0xff, datalen, data, le,
+                     result, resultlen);
+  if (sw != SW_SUCCESS)
+    {
+      /* Make sure that pending buffers are released. */
+      xfree (*result);
+      *result = NULL;
+      *resultlen = 0;
+      return map_sw (sw);
+    }
+
+  return 0;
+}
+
+
 /* Perform a PUT DATA command on card in SLOT.  Write DATA of length
    DATALEN to TAG.  EXTENDED_MODE controls whether extended length
    headers or command chaining is used instead of single length
@@ -554,7 +643,7 @@ iso7816_put_data_odd (int slot, int extended_mode, int tag,
 
 /* Manage Security Environment.  This is a weird operation and there
    is no easy abstraction for it.  Furthermore, some card seem to have
-   a different interpreation of 7816-8 and thus we resort to let the
+   a different interpretation of 7816-8 and thus we resort to let the
    caller decide what to do. */
 gpg_error_t
 iso7816_manage_security_env (int slot, int p1, int p2,
@@ -572,7 +661,7 @@ iso7816_manage_security_env (int slot, int p1, int p2,
 
 
 /* Perform the security operation COMPUTE DIGITAL SIGANTURE.  On
-   success 0 is returned and the data is availavle in a newly
+   success 0 is returned and the data is available in a newly
    allocated buffer stored at RESULT with its length stored at
    RESULTLEN.  For LE see do_generate_keypair. */
 gpg_error_t

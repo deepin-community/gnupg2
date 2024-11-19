@@ -19,6 +19,7 @@
  */
 
 #include <config.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -102,13 +103,14 @@ enum cmd_and_opt_values {
   oWithColons,
   oDryRun,
   oNoDetach,
+  oNoMount,
 
   oNoRandomSeedFile,
   oFakedSystemTime
  };
 
 
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
 
   ARGPARSE_group (300, N_("@Commands:\n ")),
 
@@ -136,6 +138,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_s (oLogFile, "log-file",  N_("|FILE|write log output to FILE")),
   ARGPARSE_s_n (oNoLogFile, "no-log-file", "@"),
   ARGPARSE_s_i (oLoggerFD, "logger-fd", "@"),
+  ARGPARSE_s_n (oNoMount, "no-mount", N_("stop right before running mount")),
 
   ARGPARSE_s_n (oDryRun, "dry-run", N_("do not make any changes")),
 
@@ -338,9 +341,9 @@ set_cmd (enum cmd_and_opt_values *ret_cmd, enum cmd_and_opt_values new_cmd)
 
 
 int
-main ( int argc, char **argv)
+main (int argc, char **argv)
 {
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   int orig_argc;
   char **orig_argv;
   gpg_error_t err = 0;
@@ -361,9 +364,11 @@ main ( int argc, char **argv)
   struct server_control_s ctrl;
   strlist_t recipients = NULL;
 
+  /*mtrace();*/
+
   early_system_init ();
   gnupg_reopen_std (G13_NAME);
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
 
   log_set_prefix (G13_NAME, GPGRT_LOG_WITH_PREFIX);
@@ -393,9 +398,8 @@ main ( int argc, char **argv)
   orig_argv = argv;
   pargs.argc = &argc;
   pargs.argv = &argv;
-  pargs.flags= 1|(1<<6);  /* Do not remove the args, ignore version.  */
   pargs.flags= (ARGPARSE_FLAG_KEEP | ARGPARSE_FLAG_NOVERSION);
-  while (gnupg_argparse (NULL, &pargs, opts))
+  while (gpgrt_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -417,7 +421,7 @@ main ( int argc, char **argv)
   maybe_setuid = 0;
 
   /*
-   * Now we are now working under our real uid
+   *  Now we are now working under our real uid
    */
 
   /* Setup malloc hooks. */
@@ -442,19 +446,25 @@ main ( int argc, char **argv)
   ctrl.status_fd = -1; /* No status output. */
 
   /* The configuraton directories for use by gpgrt_argparser.  */
-  gnupg_set_confdir (GNUPG_CONFDIR_SYS, gnupg_sysconfdir ());
-  gnupg_set_confdir (GNUPG_CONFDIR_USER, gnupg_homedir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
 
+  /* We are re-using the struct, thus the reset flag.  We OR the
+   * flags so that the internal intialized flag won't be cleared. */
   argc        = orig_argc;
   argv        = orig_argv;
   pargs.argc  = &argc;
   pargs.argv  = &argv;
   pargs.flags |=  (ARGPARSE_FLAG_RESET
                    | ARGPARSE_FLAG_KEEP
+#if GPGRT_VERSION_NUMBER >= 0x013000 /* >= 1.48 */
+                   | ARGPARSE_FLAG_COMMAND
+#endif
                    | ARGPARSE_FLAG_SYS
                    | ARGPARSE_FLAG_USER);
+
   while (!no_more_options
-         && gnupg_argparser (&pargs, opts, G13_NAME EXTSEP_S "conf"))
+         && gpgrt_argparser (&pargs, opts, G13_NAME EXTSEP_S "conf"))
     {
       switch (pargs.r_opt)
         {
@@ -512,6 +522,8 @@ main ( int argc, char **argv)
         case oNoLogFile: logfile = NULL; break;
 
         case oNoDetach: /*nodetach = 1; */break;
+
+        case oNoMount: opt.no_mount = 1; break;
 
         case oDebug:
           if (parse_debug_flag (pargs.r.ret_str, &opt.debug, debug_flags))
@@ -581,7 +593,8 @@ main ( int argc, char **argv)
           break;
 	}
     }
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+
+  gpgrt_argparse (NULL, &pargs, NULL);
 
   /* Construct GPG arguments.  */
   {
@@ -594,9 +607,9 @@ main ( int argc, char **argv)
   }
 
   if (!last_configname)
-    opt.config_filename = make_filename (gnupg_homedir (),
-                                         G13_NAME EXTSEP_S "conf",
-                                         NULL);
+    opt.config_filename = gpgrt_fnameconcat (gnupg_homedir (),
+                                             G13_NAME EXTSEP_S "conf",
+                                             NULL);
   else
     {
       opt.config_filename = last_configname;
@@ -618,8 +631,8 @@ main ( int argc, char **argv)
   if (greeting)
     {
       fprintf (stderr, "%s %s; %s\n",
-               strusage(11), strusage(13), strusage(14) );
-      fprintf (stderr, "%s\n", strusage(15) );
+               gpgrt_strusage(11), gpgrt_strusage(13), gpgrt_strusage(14) );
+      fprintf (stderr, "%s\n", gpgrt_strusage(15));
     }
 
   if (may_coredump && !opt.quiet)
@@ -641,7 +654,7 @@ main ( int argc, char **argv)
       log_set_file (logfile);
       log_set_prefix (NULL, (GPGRT_LOG_WITH_PREFIX
                              | GPGRT_LOG_WITH_TIME
-                             | GPGRT_LOG_WITH_PID ));
+                             | GPGRT_LOG_WITH_PID));
     }
 
   if (gnupg_faked_time_p ())
@@ -885,14 +898,14 @@ handle_signal (int signo)
       if (shutdown_pending > 2)
         {
           log_info ("shutdown forced\n");
-          log_info ("%s %s stopped\n", strusage(11), strusage(13) );
+          log_info ("%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13) );
           g13_exit (0);
 	}
       break;
 
     case SIGINT:
       log_info ("SIGINT received - immediate shutdown\n");
-      log_info( "%s %s stopped\n", strusage(11), strusage(13));
+      log_info( "%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
       g13_exit (0);
       break;
 #endif /*!HAVE_W32_SYSTEM*/
@@ -990,7 +1003,7 @@ idle_task (void *dummy_arg)
       /* Here one would add processing of file descriptors.  */
     }
 
-  log_info (_("%s %s stopped\n"), strusage(11), strusage(13));
+  log_info (_("%s %s stopped\n"), gpgrt_strusage(11), gpgrt_strusage(13));
   return NULL;
 }
 

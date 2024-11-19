@@ -1,6 +1,7 @@
 /* keygen.c - Generate a key pair
  * Copyright (C) 1998-2007, 2009-2011  Free Software Foundation, Inc.
- * Copyright (C) 2014, 2015, 2016  Werner Koch
+ * Copyright (C) 2014, 2015, 2016, 2017, 2018  Werner Koch
+ * Copyright (C) 2020 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -46,10 +47,11 @@
 #include "../common/mbox-util.h"
 
 
-/* The default algorithms. You should also check that the value
-   is inside the bounds enforced by ask_keysize and gen_xxx.  See also
-   get_keysize_range which encodes the allowed ranges.  */
-#define DEFAULT_STD_KEY_PARAM  "rsa3072/cert,sign+rsa3072/encr"
+/* The default algorithms.  If you change them, you should ensure the
+   value is inside the bounds enforced by ask_keysize and gen_xxx.
+   See also get_keysize_range which encodes the allowed ranges.  The
+   default answer in ask_algo also needs to be adjusted.  */
+#define DEFAULT_STD_KEY_PARAM  "ed25519/cert,sign+cv25519/encr"
 #define FUTURE_STD_KEY_PARAM   "ed25519/cert,sign+cv25519/encr"
 
 /* When generating keys using the streamlined key generation dialog,
@@ -59,6 +61,7 @@ const char *default_expiration_interval = "3y";
 /* Flag bits used during key generation.  */
 #define KEYGEN_FLAG_NO_PROTECTION 1
 #define KEYGEN_FLAG_TRANSIENT_KEY 2
+#define KEYGEN_FLAG_CREATE_V5_KEY 4
 
 /* Maximum number of supported algorithm preferences.  */
 #define MAX_PREFS 30
@@ -83,7 +86,10 @@ enum para_name {
   pKEYCREATIONDATE, /* Same in seconds since epoch.  */
   pEXPIREDATE,
   pKEYEXPIRE, /* in n seconds */
+  pSUBKEYCREATIONDATE,
+  pSUBKEYEXPIREDATE,
   pSUBKEYEXPIRE, /* in n seconds */
+  pAUTHKEYCREATIONDATE,  /* Not yet used.  */
   pPASSPHRASE,
   pSERIALNO,
   pCARDBACKUPKEY,
@@ -91,6 +97,9 @@ enum para_name {
   pKEYSERVER,
   pKEYGRIP,
   pSUBKEYGRIP,
+  pVERSION,     /* Desired version of the key packet.  */
+  pSUBVERSION,  /* Ditto for the subpacket.  */
+  pCARDKEY      /* The keygrips have been taken from active card (bool).  */
 };
 
 struct para_data_s {
@@ -100,6 +109,7 @@ struct para_data_s {
     union {
         u32 expire;
         u32 creation;
+        int abool;
         unsigned int usage;
         struct revocation_key revkey;
         char value[1];
@@ -121,14 +131,21 @@ struct output_control_s
 };
 
 
-struct opaque_data_usage_and_pk
+/* An object to help communicating with the actual key generation
+ * code. */
+struct common_gen_cb_parm_s
 {
-  unsigned int usage;
-  const char *cpl_notation;
-  PKT_public_key *pk;
+  /* This variable set to the result of agent_genkey.  The callback
+   * may take a copy of this so that the result can be used after we
+   * are back from the deep key generation call stack.  */
+  gcry_sexp_t genkey_result;
 };
+typedef struct common_gen_cb_parm_s *common_gen_cb_parm_t;
 
 
+/* FIXME: These globals vars are ugly.  And using MAX_PREFS even for
+ * aeads is useless, given that we don't expects more than a very few
+ * algorithms.  */
 static int prefs_initialized = 0;
 static byte sym_prefs[MAX_PREFS];
 static int nsym_prefs;
@@ -136,28 +153,27 @@ static byte hash_prefs[MAX_PREFS];
 static int nhash_prefs;
 static byte zip_prefs[MAX_PREFS];
 static int nzip_prefs;
-static int mdc_available,ks_modify;
+static byte aead_prefs[MAX_PREFS];
+static int naead_prefs;
+static int mdc_available;
+static int ks_modify;
 static int aead_available;
-
 
 static gpg_error_t parse_algo_usage_expire (ctrl_t ctrl, int for_subkey,
                                      const char *algostr, const char *usagestr,
                                      const char *expirestr,
                                      int *r_algo, unsigned int *r_usage,
                                      u32 *r_expire, unsigned int *r_nbits,
-                                     const char **r_curve,
-                                     char **r_keygrip);
+                                     const char **r_curve, int *r_version,
+                                            char **r_keygrip, u32 *r_keytime);
 static void do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
                                  struct output_control_s *outctrl, int card );
 static int write_keyblock (iobuf_t out, kbnode_t node);
 static gpg_error_t gen_card_key (int keyno, int algo, int is_primary,
                                  kbnode_t pub_root, u32 *timestamp,
-                                 u32 expireval);
+                                 u32 expireval, int *keygen_flags);
 static unsigned int get_keysize_range (int algo,
                                        unsigned int *min, unsigned int *max);
-static void do_add_notation (PKT_signature *sig,
-                             const char *name, const char *value,
-                             int critical);
 
 
 
@@ -228,12 +244,13 @@ print_status_key_not_created (const char *handle)
 static gpg_error_t
 write_uid (kbnode_t root, const char *s)
 {
-  PACKET *pkt = xmalloc_clear (sizeof *pkt);
+  PACKET *pkt = NULL;
   size_t n = strlen (s);
 
   if (n > MAX_UID_PACKET_LENGTH - 10)
     return gpg_error (GPG_ERR_INV_USER_ID);
 
+  pkt = xmalloc_clear (sizeof *pkt);
   pkt->pkttype = PKT_USER_ID;
   pkt->pkt.user_id = xmalloc_clear (sizeof *pkt->pkt.user_id + n);
   pkt->pkt.user_id->len = n;
@@ -246,22 +263,27 @@ write_uid (kbnode_t root, const char *s)
 static void
 do_add_key_flags (PKT_signature *sig, unsigned int use)
 {
-    byte buf[1];
+  byte buf[2] = { 0, 0 };
 
-    buf[0] = 0;
+  /* The spec says that all primary keys MUST be able to certify. */
+  if ( sig->sig_class != 0x18 )
+    buf[0] |= 0x01;
 
-    /* The spec says that all primary keys MUST be able to certify. */
-    if(sig->sig_class!=0x18)
-      buf[0] |= 0x01;
+  if (use & PUBKEY_USAGE_SIG)
+    buf[0] |= 0x02;
+  if (use & PUBKEY_USAGE_ENC)
+    buf[0] |= 0x04 | 0x08;
+  if (use & PUBKEY_USAGE_AUTH)
+    buf[0] |= 0x20;
+  if (use & PUBKEY_USAGE_GROUP)
+    buf[0] |= 0x80;
 
-    if (use & PUBKEY_USAGE_SIG)
-      buf[0] |= 0x02;
-    if (use & PUBKEY_USAGE_ENC)
-        buf[0] |= 0x04 | 0x08;
-    if (use & PUBKEY_USAGE_AUTH)
-        buf[0] |= 0x20;
+  if (use & PUBKEY_USAGE_RENC)
+    buf[1] |= 0x04;
+  if (use & PUBKEY_USAGE_TIME)
+    buf[1] |= 0x08;
 
-    build_sig_subpkt (sig, SIGSUBPKT_KEY_FLAGS, buf, 1);
+  build_sig_subpkt (sig, SIGSUBPKT_KEY_FLAGS, buf, buf[1]? 2:1);
 }
 
 
@@ -308,17 +330,11 @@ keygen_add_key_flags (PKT_signature *sig, void *opaque)
 }
 
 
-/* This is only used to write the key binding signature.  It is not
- * used for the primary key.  */
-static int
+int
 keygen_add_key_flags_and_expire (PKT_signature *sig, void *opaque)
 {
-  struct opaque_data_usage_and_pk *oduap = opaque;
-
-  do_add_key_flags (sig, oduap->usage);
-  if (oduap->cpl_notation)
-    do_add_notation (sig, "cpl@gnupg.org", oduap->cpl_notation, 0);
-  return keygen_add_key_expire (sig, oduap->pk);
+  keygen_add_key_flags (sig, opaque);
+  return keygen_add_key_expire (sig, opaque);
 }
 
 
@@ -342,6 +358,8 @@ set_one_pref (int val, int type, const char *item, byte *buf, int *nbuf)
 	  log_info(_("too many digest preferences\n"));
 	else if(type==3)
 	  log_info(_("too many compression preferences\n"));
+	else if(type==4)
+	  log_info(_("too many AEAD preferences\n"));
 	else
 	  BUG();
 
@@ -362,14 +380,10 @@ set_one_pref (int val, int type, const char *item, byte *buf, int *nbuf)
 int
 keygen_set_std_prefs (const char *string,int personal)
 {
-    byte sym[MAX_PREFS], hash[MAX_PREFS], zip[MAX_PREFS];
-    int nsym=0, nhash=0, nzip=0, val, rc=0;
+    byte sym[MAX_PREFS], hash[MAX_PREFS], zip[MAX_PREFS], aead[MAX_PREFS];
+    int nsym=0, nhash=0, nzip=0, naead=0, val, rc=0;
     int mdc=1, modify=0; /* mdc defaults on, modify defaults off. */
-    int ocb;
-    char dummy_string[20*4+1]; /* Enough for 20 items. */
-
-    /* Use OCB as default in GnuPG and de-vs mode.  */
-    ocb = GNUPG;
+    char dummy_string[25*4+1]; /* Enough for 25 items. */
 
     if (!string || !ascii_strcasecmp (string, "default"))
       {
@@ -402,6 +416,9 @@ keygen_set_std_prefs (const char *string,int personal)
 	    if ( !openpgp_cipher_test_algo (CIPHER_ALGO_AES) )
 	      strcat(dummy_string,"S7 ");
 	    strcat(dummy_string,"S2 "); /* 3DES */
+
+            if (!openpgp_aead_test_algo (AEAD_ALGO_OCB))
+	      strcat(dummy_string,"A2 ");
 
             if (personal)
               {
@@ -456,7 +473,7 @@ keygen_set_std_prefs (const char *string,int personal)
               }
 
             /* In case we have no compress algo at all, declare that
-               we prefer no compresssion.  */
+               we prefer no compression.  */
             if (!any_compress)
               strcat(dummy_string,"Z0 ");
 
@@ -480,7 +497,9 @@ keygen_set_std_prefs (const char *string,int personal)
 
 	while((tok=strsep(&prefstring," ,")))
 	  {
-	    if((val=string_to_cipher_algo (tok)))
+            if (!*tok)
+              ;
+	    else if((val=string_to_cipher_algo (tok)))
 	      {
 		if(set_one_pref(val,1,tok,sym,&nsym))
 		  rc=-1;
@@ -494,6 +513,11 @@ keygen_set_std_prefs (const char *string,int personal)
 	      {
 		if(set_one_pref(val,3,tok,zip,&nzip))
 		  rc=-1;
+	      }
+	    else if ((val=string_to_aead_algo (tok)))
+	      {
+		if (set_one_pref (val, 4, tok, aead, &naead))
+		  rc = -1;
 	      }
 	    else if (!ascii_strcasecmp(tok, "mdc")
                      || !ascii_strcasecmp(tok, "[mdc]"))
@@ -509,10 +533,10 @@ keygen_set_std_prefs (const char *string,int personal)
 	      modify=0;
 	    else if (!ascii_strcasecmp(tok,"aead")
                      || !ascii_strcasecmp(tok,"[aead]"))
-              ocb = 1;
-	    else if (!ascii_strcasecmp(tok,"no-aead")
-                     || !ascii_strcasecmp(tok,"[no-aead]"))
-              ocb = 0;
+              {
+                /* Ignore because this is set from the preferences but
+                 * shown in the in the preferences/features list.  */
+              }
 	    else
 	      {
 		log_info (_("invalid item '%s' in preference string\n"),tok);
@@ -522,10 +546,6 @@ keygen_set_std_prefs (const char *string,int personal)
 
 	xfree (prefstringbuf);
       }
-
-    /* For now we require a compat flag to set OCB into the preferences.  */
-    if (!(opt.compat_flags & COMPAT_VSD_ALLOW_OCB))
-      ocb = 0;
 
     if(!rc)
       {
@@ -606,8 +626,9 @@ keygen_set_std_prefs (const char *string,int personal)
 	    memcpy (sym_prefs,  sym,  (nsym_prefs=nsym));
 	    memcpy (hash_prefs, hash, (nhash_prefs=nhash));
 	    memcpy (zip_prefs,  zip,  (nzip_prefs=nzip));
+	    memcpy (aead_prefs, aead,  (naead_prefs=naead));
 	    mdc_available = mdc;
-            aead_available = ocb;
+            aead_available = !!naead;
 	    ks_modify = modify;
 	    prefs_initialized = 1;
 	  }
@@ -630,13 +651,19 @@ keygen_get_std_prefs(void)
 
   uid->ref=1;
 
-  uid->prefs=xmalloc((sizeof(prefitem_t *)*
-		      (nsym_prefs+nhash_prefs+nzip_prefs+1)));
+  uid->prefs = xmalloc ((sizeof(prefitem_t *)*
+                         (nsym_prefs+naead_prefs+nhash_prefs+nzip_prefs+1)));
 
   for(i=0;i<nsym_prefs;i++,j++)
     {
       uid->prefs[j].type=PREFTYPE_SYM;
       uid->prefs[j].value=sym_prefs[i];
+    }
+
+  for (i=0; i < naead_prefs; i++, j++)
+    {
+      uid->prefs[j].type = PREFTYPE_AEAD;
+      uid->prefs[j].value = aead_prefs[i];
     }
 
   for(i=0;i<nhash_prefs;i++,j++)
@@ -654,9 +681,9 @@ keygen_get_std_prefs(void)
   uid->prefs[j].type=PREFTYPE_NONE;
   uid->prefs[j].value=0;
 
-  uid->flags.mdc=mdc_available;
-  uid->flags.aead=aead_available;
-  uid->flags.ks_modify=ks_modify;
+  uid->flags.mdc = mdc_available;
+  uid->flags.aead = aead_available;
+  uid->flags.ks_modify = ks_modify;
 
   return uid;
 }
@@ -669,7 +696,7 @@ add_feature_mdc (PKT_signature *sig,int enabled)
     int i;
     char *buf;
 
-    s = parse_sig_subpkt (sig->hashed, SIGSUBPKT_FEATURES, &n );
+    s = parse_sig_subpkt (sig, 1, SIGSUBPKT_FEATURES, &n );
     /* Already set or cleared */
     if (s && n &&
 	((enabled && (s[0] & 0x01)) || (!enabled && !(s[0] & 0x01))))
@@ -711,7 +738,7 @@ add_feature_aead (PKT_signature *sig, int enabled)
   int i;
   char *buf;
 
-  s = parse_sig_subpkt (sig->hashed, SIGSUBPKT_FEATURES, &n );
+  s = parse_sig_subpkt (sig, 1, SIGSUBPKT_FEATURES, &n );
   if (s && n && ((enabled && (s[0] & 0x02)) || (!enabled && !(s[0] & 0x02))))
     return; /* Already set or cleared */
 
@@ -746,6 +773,48 @@ add_feature_aead (PKT_signature *sig, int enabled)
 
 
 static void
+add_feature_v5 (PKT_signature *sig, int enabled)
+{
+  const byte *s;
+  size_t n;
+  int i;
+  char *buf;
+
+  s = parse_sig_subpkt (sig, 1, SIGSUBPKT_FEATURES, &n );
+  if (s && n && ((enabled && (s[0] & 0x04)) || (!enabled && !(s[0] & 0x04))))
+    return; /* Already set or cleared */
+
+  if (!s || !n)
+    { /* Create a new one */
+      n = 1;
+      buf = xmalloc_clear (n);
+    }
+  else
+    {
+      buf = xmalloc (n);
+      memcpy (buf, s, n);
+    }
+
+  if (enabled)
+    buf[0] |= 0x04; /* v5 key supported */
+  else
+    buf[0] &= ~0x04;
+
+  /* Are there any bits set? */
+  for (i=0; i < n; i++)
+    if (buf[i])
+      break;
+
+  if (i == n)
+    delete_sig_subpkt (sig->hashed, SIGSUBPKT_FEATURES);
+  else
+    build_sig_subpkt (sig, SIGSUBPKT_FEATURES, buf, n);
+
+  xfree (buf);
+}
+
+
+static void
 add_keyserver_modify (PKT_signature *sig,int enabled)
 {
   const byte *s;
@@ -756,7 +825,7 @@ add_keyserver_modify (PKT_signature *sig,int enabled)
   /* The keyserver modify flag is a negative flag (i.e. no-modify) */
   enabled=!enabled;
 
-  s = parse_sig_subpkt (sig->hashed, SIGSUBPKT_KS_FLAGS, &n );
+  s = parse_sig_subpkt (sig, 1, SIGSUBPKT_KS_FLAGS, &n );
   /* Already set or cleared */
   if (s && n &&
       ((enabled && (s[0] & 0x80)) || (!enabled && !(s[0] & 0x80))))
@@ -806,8 +875,8 @@ keygen_upd_std_prefs (PKT_signature *sig, void *opaque)
       delete_sig_subpkt (sig->unhashed, SIGSUBPKT_PREF_SYM);
     }
 
-  if (aead_available) /* The only preference is AEAD_ALGO_OCB. */
-    build_sig_subpkt (sig, SIGSUBPKT_PREF_AEAD, "\x02", 1);
+  if (naead_prefs)
+    build_sig_subpkt (sig, SIGSUBPKT_PREF_AEAD, aead_prefs, naead_prefs);
   else
     {
       delete_sig_subpkt (sig->hashed, SIGSUBPKT_PREF_AEAD);
@@ -830,9 +899,10 @@ keygen_upd_std_prefs (PKT_signature *sig, void *opaque)
       delete_sig_subpkt (sig->unhashed, SIGSUBPKT_PREF_COMPR);
     }
 
-  /* Make sure that the MDC and AEAD feature flags are set as needed.  */
+  /* Make sure that the MDC feature flag is set if needed.  */
   add_feature_mdc (sig,mdc_available);
   add_feature_aead (sig, aead_available);
+  add_feature_v5 (sig, 1);
   add_keyserver_modify (sig,ks_modify);
   keygen_add_keyserver_url(sig,NULL);
 
@@ -872,44 +942,6 @@ keygen_add_keyserver_url(PKT_signature *sig, void *opaque)
 
   return 0;
 }
-
-
-/* This function is used to add a notations to a signature.  In
- * general the caller should have cleared exiting notations before
- * adding new ones.  For example by calling:
- *
- *  delete_sig_subpkt(sig->hashed,SIGSUBPKT_NOTATION);
- *  delete_sig_subpkt(sig->unhashed,SIGSUBPKT_NOTATION);
- *
- * Only human readable notaions may be added.  NAME and value are
- * expected to be UTF-* strings.
- */
-static void
-do_add_notation (PKT_signature *sig, const char *name, const char *value,
-                 int critical)
-{
-  unsigned char *buf;
-  unsigned int n1,n2;
-
-  n1 = strlen (name);
-  n2 = strlen (value);
-
-  buf = xmalloc (8 + n1 + n2);
-
-  buf[0] = 0x80; /* human readable.  */
-  buf[1] = buf[2] = buf[3] = 0;
-  buf[4] = n1 >> 8;
-  buf[5] = n1;
-  buf[6] = n2 >> 8;
-  buf[7] = n2;
-  memcpy (buf+8, name, n1);
-  memcpy (buf+8+n1, value, n2);
-  build_sig_subpkt (sig,
-                    (SIGSUBPKT_NOTATION|(critical?SIGSUBPKT_FLAG_CRITICAL:0)),
-                    buf, 8+n1+n2 );
-  xfree (buf);
-}
-
 
 int
 keygen_add_notations(PKT_signature *sig,void *opaque)
@@ -960,18 +992,19 @@ keygen_add_notations(PKT_signature *sig,void *opaque)
   return 0;
 }
 
-
 int
 keygen_add_revkey (PKT_signature *sig, void *opaque)
 {
   struct revocation_key *revkey = opaque;
   byte buf[2+MAX_FINGERPRINT_LEN];
 
+  log_assert (revkey->fprlen <= MAX_FINGERPRINT_LEN);
   buf[0] = revkey->class;
   buf[1] = revkey->algid;
-  memcpy (&buf[2], revkey->fpr, MAX_FINGERPRINT_LEN);
+  memcpy (buf + 2, revkey->fpr, revkey->fprlen);
+  memset (buf + 2 + revkey->fprlen, 0, sizeof (revkey->fpr) - revkey->fprlen);
 
-  build_sig_subpkt (sig, SIGSUBPKT_REV_KEY, buf, 2+MAX_FINGERPRINT_LEN);
+  build_sig_subpkt (sig, SIGSUBPKT_REV_KEY, buf, 2+revkey->fprlen);
 
   /* All sigs with revocation keys set are nonrevocable.  */
   sig->flags.revocable = 0;
@@ -998,7 +1031,7 @@ make_backsig (ctrl_t ctrl, PKT_signature *sig, PKT_public_key *pk,
   cache_public_key (sub_pk);
 
   err = make_keysig_packet (ctrl, &backsig, pk, NULL, sub_pk, sub_psk, 0x19,
-                            0, timestamp, 0, NULL, NULL, cache_nonce);
+                            timestamp, 0, NULL, NULL, cache_nonce);
   if (err)
     log_error ("make_keysig_packet failed for backsig: %s\n",
                gpg_strerror (err));
@@ -1106,7 +1139,7 @@ write_direct_sig (ctrl_t ctrl, kbnode_t root, PKT_public_key *psk,
 
   /* Make the signature.  */
   err = make_keysig_packet (ctrl, &sig, pk, NULL,NULL, psk, 0x1F,
-                            0, timestamp, 0,
+                            timestamp, 0,
                             keygen_add_revkey, revkey, cache_nonce);
   if (err)
     {
@@ -1161,7 +1194,7 @@ write_selfsigs (ctrl_t ctrl, kbnode_t root, PKT_public_key *psk,
 
   /* Make the signature.  */
   err = make_keysig_packet (ctrl, &sig, pk, uid, NULL, psk, 0x13,
-                            0, timestamp, 0,
+                            timestamp, 0,
                             keygen_add_std_prefs, pk, cache_nonce);
   if (err)
     {
@@ -1192,7 +1225,6 @@ write_keybinding (ctrl_t ctrl, kbnode_t root,
   PKT_signature *sig;
   KBNODE node;
   PKT_public_key *pri_pk, *sub_pk;
-  struct opaque_data_usage_and_pk oduap;
 
   if (opt.verbose)
     log_info(_("writing key binding signature\n"));
@@ -1218,17 +1250,10 @@ write_keybinding (ctrl_t ctrl, kbnode_t root,
     BUG();
 
   /* Make the signature.  */
-  oduap.usage = use;
-  if ((use & PUBKEY_USAGE_ENC)
-      && opt.compliance == CO_DE_VS
-      && gnupg_rng_is_compliant (CO_DE_VS))
-    oduap.cpl_notation = "de-vs";
-  else
-    oduap.cpl_notation = NULL;
-  oduap.pk = sub_pk;
+  sub_pk->pubkey_usage = use;
   err = make_keysig_packet (ctrl, &sig, pri_pk, NULL, sub_pk, pri_psk, 0x18,
-                            0, timestamp, 0,
-                            keygen_add_key_flags_and_expire, &oduap,
+                            timestamp, 0,
+                            keygen_add_key_flags_and_expire, sub_pk,
                             cache_nonce);
   if (err)
     {
@@ -1250,6 +1275,39 @@ write_keybinding (ctrl_t ctrl, kbnode_t root,
   pkt->pkt.signature = sig;
   add_kbnode (root, new_kbnode (pkt) );
   return err;
+}
+
+
+/* Returns true if SEXP specified the curve ED448 or X448.  */
+static int
+curve_is_448 (gcry_sexp_t sexp)
+{
+  gcry_sexp_t list, l2;
+  char *curve;
+  int result;
+
+  list = gcry_sexp_find_token (sexp, "public-key", 0);
+  if (!list)
+    return 0;  /* Not a public key.  */
+  l2 = gcry_sexp_cadr (list);
+  gcry_sexp_release (list);
+  list = l2;
+  if (!list)
+    return 0; /* Bad public key.  */
+
+  l2 = gcry_sexp_find_token (list, "curve", 0);
+  gcry_sexp_release (list);
+  if (!l2)
+    return 0; /* No curve parameter.  */
+  curve = gcry_sexp_nth_string (l2, 1);
+  gcry_sexp_release (l2);
+  if (!curve)
+    return 0; /* Bad curve parameter.  */
+  result = (!ascii_strcasecmp (curve, "X448")
+            || !ascii_strcasecmp (curve, "Ed448")
+            || !ascii_strcasecmp (curve, "cv448"));
+  xfree (curve);
+  return result;
 }
 
 
@@ -1301,19 +1359,10 @@ ecckey_from_sexp (gcry_mpi_t *array, gcry_sexp_t sexp, int algo)
   if (err)
     goto leave;
 
-  l2 = gcry_sexp_find_token (list, "q", 0);
-  if (!l2)
-    {
-      err = gpg_error (GPG_ERR_NO_OBJ);
-      goto leave;
-    }
-  array[1] = gcry_sexp_nth_mpi (l2, 1, GCRYMPI_FMT_USG);
-  gcry_sexp_release (l2);
-  if (!array[1])
-    {
-      err = gpg_error (GPG_ERR_INV_OBJ);
-      goto leave;
-    }
+  err = sexp_extract_param_sos (list, "q", &array[1]);
+  if (err)
+    goto leave;
+
   gcry_sexp_release (list);
 
   if (algo == PUBKEY_ALGO_ECDH)
@@ -1394,11 +1443,13 @@ key_from_sexp (gcry_mpi_t *array, gcry_sexp_t sexp,
 
 
 /* Create a keyblock using the given KEYGRIP.  ALGO is the OpenPGP
-   algorithm of that keygrip.  */
+ * algorithm of that keygrip.  If CARDKEY is true the key is expected
+ * to already live on the active card.  */
 static int
-do_create_from_keygrip (ctrl_t ctrl, int algo, const char *hexkeygrip,
+do_create_from_keygrip (ctrl_t ctrl, int algo,
+                        const char *hexkeygrip, int cardkey,
                         kbnode_t pub_root, u32 timestamp, u32 expireval,
-                        int is_subkey)
+                        int is_subkey, int *keygen_flags)
 {
   int err;
   PACKET *pkt;
@@ -1422,18 +1473,29 @@ do_create_from_keygrip (ctrl_t ctrl, int algo, const char *hexkeygrip,
 
 
   /* Ask the agent for the public key matching HEXKEYGRIP.  */
-  {
-    unsigned char *public;
+  if (cardkey)
+    {
+      err = agent_scd_readkey (ctrl, hexkeygrip, &s_key, NULL);
+      if (err)
+        return err;
+    }
+  else
+    {
+      unsigned char *public;
 
-    err = agent_readkey (ctrl, 0, hexkeygrip, &public);
-    if (err)
-      return err;
-    err = gcry_sexp_sscan (&s_key, NULL,
-                           public, gcry_sexp_canon_len (public, 0, NULL, NULL));
-    xfree (public);
-    if (err)
-      return err;
-  }
+      err = agent_readkey (ctrl, 0, hexkeygrip, &public);
+      if (err)
+        return err;
+      err = gcry_sexp_sscan (&s_key, NULL, public,
+                               gcry_sexp_canon_len (public, 0, NULL, NULL));
+      xfree (public);
+      if (err)
+        return err;
+    }
+
+  /* For X448 we force the use of v5 packets.  */
+  if (curve_is_448 (s_key))
+    *keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
 
   /* Build a public key packet.  */
   pk = xtrycalloc (1, sizeof *pk);
@@ -1445,7 +1507,7 @@ do_create_from_keygrip (ctrl_t ctrl, int algo, const char *hexkeygrip,
     }
 
   pk->timestamp = timestamp;
-  pk->version = 4;
+  pk->version = (*keygen_flags & KEYGEN_FLAG_CREATE_V5_KEY)? 5 : 4;
   if (expireval)
     pk->expiredate = pk->timestamp + expireval;
   pk->pubkey_algo = algo;
@@ -1481,12 +1543,17 @@ do_create_from_keygrip (ctrl_t ctrl, int algo, const char *hexkeygrip,
 }
 
 
-/* Common code for the key generation function gen_xxx.  */
+/* Common code for the key generation function gen_xxx.  The optinal
+ * (COMMON_GEN_CB,COMMON_GEN_CB_PARM) can be used as communication
+ * object.
+ */
 static int
 common_gen (const char *keyparms, int algo, const char *algoelem,
             kbnode_t pub_root, u32 timestamp, u32 expireval, int is_subkey,
             int keygen_flags, const char *passphrase,
-            char **cache_nonce_addr, char **passwd_nonce_addr)
+            char **cache_nonce_addr, char **passwd_nonce_addr,
+            gpg_error_t (*common_gen_cb)(common_gen_cb_parm_t),
+            common_gen_cb_parm_t common_gen_cb_parm)
 {
   int err;
   PACKET *pkt;
@@ -1503,6 +1570,18 @@ common_gen (const char *keyparms, int algo, const char *algoelem,
       return err;
     }
 
+  if (common_gen_cb && common_gen_cb_parm)
+    {
+      common_gen_cb_parm->genkey_result = s_key;
+      err = common_gen_cb (common_gen_cb_parm);
+      common_gen_cb_parm->genkey_result = NULL;
+      if (err)
+        {
+          gcry_sexp_release (s_key);
+          return err;
+        }
+    }
+
   pk = xtrycalloc (1, sizeof *pk);
   if (!pk)
     {
@@ -1512,7 +1591,7 @@ common_gen (const char *keyparms, int algo, const char *algoelem,
     }
 
   pk->timestamp = timestamp;
-  pk->version = 4;
+  pk->version = (keygen_flags & KEYGEN_FLAG_CREATE_V5_KEY)? 5 : 4;
   if (expireval)
     pk->expiredate = pk->timestamp + expireval;
   pk->pubkey_algo = algo;
@@ -1555,7 +1634,9 @@ static int
 gen_elg (int algo, unsigned int nbits, KBNODE pub_root,
          u32 timestamp, u32 expireval, int is_subkey,
          int keygen_flags, const char *passphrase,
-         char **cache_nonce_addr, char **passwd_nonce_addr)
+         char **cache_nonce_addr, char **passwd_nonce_addr,
+         gpg_error_t (*common_gen_cb)(common_gen_cb_parm_t),
+         common_gen_cb_parm_t common_gen_cb_parm)
 {
   int err;
   char *keyparms;
@@ -1597,7 +1678,8 @@ gen_elg (int algo, unsigned int nbits, KBNODE pub_root,
       err = common_gen (keyparms, algo, "pgy",
                         pub_root, timestamp, expireval, is_subkey,
                         keygen_flags, passphrase,
-                        cache_nonce_addr, passwd_nonce_addr);
+                        cache_nonce_addr, passwd_nonce_addr,
+                        common_gen_cb, common_gen_cb_parm);
       xfree (keyparms);
     }
 
@@ -1612,7 +1694,9 @@ static gpg_error_t
 gen_dsa (unsigned int nbits, KBNODE pub_root,
          u32 timestamp, u32 expireval, int is_subkey,
          int keygen_flags, const char *passphrase,
-         char **cache_nonce_addr, char **passwd_nonce_addr)
+         char **cache_nonce_addr, char **passwd_nonce_addr,
+         gpg_error_t (*common_gen_cb)(common_gen_cb_parm_t),
+         common_gen_cb_parm_t common_gen_cb_parm)
 {
   int err;
   unsigned int qbits;
@@ -1686,7 +1770,8 @@ gen_dsa (unsigned int nbits, KBNODE pub_root,
       err = common_gen (keyparms, PUBKEY_ALGO_DSA, "pqgy",
                         pub_root, timestamp, expireval, is_subkey,
                         keygen_flags, passphrase,
-                        cache_nonce_addr, passwd_nonce_addr);
+                        cache_nonce_addr, passwd_nonce_addr,
+                        common_gen_cb, common_gen_cb_parm);
       xfree (keyparms);
     }
 
@@ -1696,13 +1781,17 @@ gen_dsa (unsigned int nbits, KBNODE pub_root,
 
 
 /*
- * Generate an ECC key
+ * Generate an ECC key.
+ * Note that KEYGEN_FLAGS might be updated by this function to
+ * indicate the forced creation of a v5 key.
  */
 static gpg_error_t
 gen_ecc (int algo, const char *curve, kbnode_t pub_root,
          u32 timestamp, u32 expireval, int is_subkey,
-         int keygen_flags, const char *passphrase,
-         char **cache_nonce_addr, char **passwd_nonce_addr)
+         int *keygen_flags, const char *passphrase,
+         char **cache_nonce_addr, char **passwd_nonce_addr,
+         gpg_error_t (*common_gen_cb)(common_gen_cb_parm_t),
+         common_gen_cb_parm_t common_gen_cb_parm)
 {
   gpg_error_t err;
   char *keyparms;
@@ -1720,30 +1809,60 @@ gen_ecc (int algo, const char *curve, kbnode_t pub_root,
     curve = "Curve25519";
   else if (!ascii_strcasecmp (curve, "ed25519"))
     curve = "Ed25519";
+  else if (!ascii_strcasecmp (curve, "cv448"))
+    curve = "X448";
+  else if (!ascii_strcasecmp (curve, "ed448"))
+    curve = "Ed448";
 
   /* Note that we use the "comp" flag with EdDSA to request the use of
      a 0x40 compression prefix octet.  */
-  if (algo == PUBKEY_ALGO_EDDSA)
-    keyparms = xtryasprintf
-      ("(genkey(ecc(curve %zu:%s)(flags eddsa comp%s)))",
-       strlen (curve), curve,
-       (((keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
-         && (keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
-        " transient-key" : ""));
+  if (algo == PUBKEY_ALGO_EDDSA && !strcmp (curve, "Ed25519"))
+    {
+      keyparms = xtryasprintf
+        ("(genkey(ecc(curve %zu:%s)(flags eddsa comp%s)))",
+         strlen (curve), curve,
+         (((*keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
+           && (*keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
+          " transient-key" : ""));
+    }
+  else if (algo == PUBKEY_ALGO_EDDSA && !strcmp (curve, "Ed448"))
+    {
+      *keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
+      keyparms = xtryasprintf
+        ("(genkey(ecc(curve %zu:%s)(flags comp%s)))",
+         strlen (curve), curve,
+         (((*keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
+           && (*keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
+          " transient-key" : ""));
+    }
   else if (algo == PUBKEY_ALGO_ECDH && !strcmp (curve, "Curve25519"))
-    keyparms = xtryasprintf
-      ("(genkey(ecc(curve %zu:%s)(flags djb-tweak comp%s)))",
+    {
+      keyparms = xtryasprintf
+        ("(genkey(ecc(curve %zu:%s)(flags djb-tweak comp%s)))",
        strlen (curve), curve,
-       (((keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
-         && (keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
-        " transient-key" : ""));
+         (((*keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
+           && (*keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
+          " transient-key" : ""));
+    }
+  else if (algo == PUBKEY_ALGO_ECDH && !strcmp (curve, "X448"))
+    {
+      *keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
+      keyparms = xtryasprintf
+        ("(genkey(ecc(curve %zu:%s)(flags comp%s)))",
+         strlen (curve), curve,
+         (((*keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
+           && (*keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
+          " transient-key" : ""));
+    }
   else
-    keyparms = xtryasprintf
-      ("(genkey(ecc(curve %zu:%s)(flags nocomp%s)))",
-       strlen (curve), curve,
-       (((keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
-         && (keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
-        " transient-key" : ""));
+    {
+      keyparms = xtryasprintf
+        ("(genkey(ecc(curve %zu:%s)(flags nocomp%s)))",
+         strlen (curve), curve,
+         (((*keygen_flags & KEYGEN_FLAG_TRANSIENT_KEY)
+           && (*keygen_flags & KEYGEN_FLAG_NO_PROTECTION))?
+          " transient-key" : ""));
+    }
 
   if (!keyparms)
     err = gpg_error_from_syserror ();
@@ -1751,8 +1870,9 @@ gen_ecc (int algo, const char *curve, kbnode_t pub_root,
     {
       err = common_gen (keyparms, algo, "",
                         pub_root, timestamp, expireval, is_subkey,
-                        keygen_flags, passphrase,
-                        cache_nonce_addr, passwd_nonce_addr);
+                        *keygen_flags, passphrase,
+                        cache_nonce_addr, passwd_nonce_addr,
+                        common_gen_cb, common_gen_cb_parm);
       xfree (keyparms);
     }
 
@@ -1767,7 +1887,9 @@ static int
 gen_rsa (int algo, unsigned int nbits, KBNODE pub_root,
          u32 timestamp, u32 expireval, int is_subkey,
          int keygen_flags, const char *passphrase,
-         char **cache_nonce_addr, char **passwd_nonce_addr)
+         char **cache_nonce_addr, char **passwd_nonce_addr,
+         gpg_error_t (*common_gen_cb)(common_gen_cb_parm_t),
+         common_gen_cb_parm_t common_gen_cb_parm)
 {
   int err;
   char *keyparms;
@@ -1809,7 +1931,8 @@ gen_rsa (int algo, unsigned int nbits, KBNODE pub_root,
       err = common_gen (keyparms, algo, "ne",
                         pub_root, timestamp, expireval, is_subkey,
                         keygen_flags, passphrase,
-                        cache_nonce_addr, passwd_nonce_addr);
+                        cache_nonce_addr, passwd_nonce_addr,
+                        common_gen_cb, common_gen_cb_parm);
       xfree (keyparms);
     }
 
@@ -1859,9 +1982,6 @@ print_key_flags(int flags)
 
   if(flags&PUBKEY_USAGE_AUTH)
     tty_printf("%s ",_("Authenticate"));
-
-  if(flags&PUBKEY_USAGE_RENC)
-    tty_printf("%s ", "RENC");
 }
 
 
@@ -1896,10 +2016,13 @@ ask_key_flags_with_mask (int algo, int subkey, unsigned int current,
 
   /* Mask the possible usage flags.  This is for example used for a
    * card based key.  For ECDH we need to allows additional usages if
-   * they are provided.  RENC is not directly poissible here but see
-   * below for a workaround. */
+   * they are provided. */
   possible = (openpgp_pk_algo_usage (algo) & mask);
-  possible &= ~PUBKEY_USAGE_RENC;
+  if (algo == PUBKEY_ALGO_ECDH)
+    possible |= (current & (PUBKEY_USAGE_ENC
+                            |PUBKEY_USAGE_CERT
+                            |PUBKEY_USAGE_SIG
+                            |PUBKEY_USAGE_AUTH));
 
   /* However, only primary keys may certify. */
   if (subkey)
@@ -1916,10 +2039,11 @@ ask_key_flags_with_mask (int algo, int subkey, unsigned int current,
   for (;;)
     {
       tty_printf("\n");
-      tty_printf(_("Possible actions for a %s key: "),
-                 (algo == PUBKEY_ALGO_ECDSA
+      tty_printf(_("Possible actions for this %s key: "),
+                 (algo == PUBKEY_ALGO_ECDH
+                  || algo == PUBKEY_ALGO_ECDSA
                   || algo == PUBKEY_ALGO_EDDSA)
-                 ? "ECDSA/EdDSA" : openpgp_pk_algo_name (algo));
+                 ? "ECC" : openpgp_pk_algo_name (algo));
       print_key_flags(possible);
       tty_printf("\n");
       tty_printf(_("Current allowed actions: "));
@@ -1961,12 +2085,6 @@ ask_key_flags_with_mask (int algo, int subkey, unsigned int current,
                      will be set anyway.  This is for folks who
                      want to experiment with a cert-only primary key.  */
                   current |= PUBKEY_USAGE_CERT;
-                }
-              else if ((*s == 'r' || *s == 'R') && (possible&PUBKEY_USAGE_ENC))
-                {
-                  /* Allow to set RENC or an encryption capable key.
-                   * This is on purpose not shown in the menu.  */
-                  current |= PUBKEY_USAGE_RENC;
                 }
             }
           break;
@@ -2037,7 +2155,7 @@ check_keygrip (ctrl_t ctrl, const char *hexgrip)
   algo = get_pk_algo_from_canon_sexp (public, publiclen);
   xfree (public);
 
-  return map_pk_gcry_to_openpgp (algo);
+  return map_gcry_pk_to_openpgp (algo);
 }
 
 
@@ -2049,17 +2167,20 @@ check_keygrip (ctrl_t ctrl, const char *hexgrip)
  * algorithm is stored at R_SUBKEY_ALGO.  If R_KEYGRIP is given, the
  * user has the choice to enter the keygrip of an existing key.  That
  * keygrip is then stored at this address.  The caller needs to free
- * it. */
+ * it.  If R_CARDKEY is not NULL and the keygrip has been taken from
+ * an active card, true is stored there; if R_KEYTIME is not NULL the
+ * creation time of that key is then stored there.  */
 static int
 ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
-          char **r_keygrip)
+          char **r_keygrip, int *r_cardkey, u32 *r_keytime)
 {
   gpg_error_t err;
   char *keygrip = NULL;
+  u32 keytime = 0;
   char *answer = NULL;
+  int cardkey = 0;
   int algo;
   int dummy_algo;
-  char *p;
 
   if (!r_subkey_algo)
     r_subkey_algo = &dummy_algo;
@@ -2068,50 +2189,49 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
 
 #if GPG_USE_RSA
   if (!addmode)
-    tty_printf (_("   (%d) RSA and RSA (default)\n"), 1 );
+    tty_printf (_("   (%d) RSA and RSA%s\n"), 1, "");
 #endif
 
   if (!addmode && opt.compliance != CO_DE_VS)
-    tty_printf (_("   (%d) DSA and Elgamal\n"), 2 );
+    tty_printf (_("   (%d) DSA and Elgamal%s\n"), 2, "");
 
   if (opt.compliance != CO_DE_VS)
-    tty_printf (_("   (%d) DSA (sign only)\n"), 3 );
+    tty_printf (_("   (%d) DSA (sign only)%s\n"), 3, "");
 #if GPG_USE_RSA
-  tty_printf (_("   (%d) RSA (sign only)\n"), 4 );
+  tty_printf (_("   (%d) RSA (sign only)%s\n"), 4, "");
 #endif
 
   if (addmode)
     {
       if (opt.compliance != CO_DE_VS)
-        tty_printf (_("   (%d) Elgamal (encrypt only)\n"), 5 );
+        tty_printf (_("   (%d) Elgamal (encrypt only)%s\n"), 5, "");
 #if GPG_USE_RSA
-      tty_printf (_("   (%d) RSA (encrypt only)\n"), 6 );
+      tty_printf (_("   (%d) RSA (encrypt only)%s\n"), 6, "");
 #endif
     }
   if (opt.expert)
     {
       if (opt.compliance != CO_DE_VS)
-        tty_printf (_("   (%d) DSA (set your own capabilities)\n"), 7 );
+        tty_printf (_("   (%d) DSA (set your own capabilities)%s\n"), 7, "");
 #if GPG_USE_RSA
-      tty_printf (_("   (%d) RSA (set your own capabilities)\n"), 8 );
+      tty_printf (_("   (%d) RSA (set your own capabilities)%s\n"), 8, "");
 #endif
     }
 
 #if GPG_USE_ECDSA || GPG_USE_ECDH || GPG_USE_EDDSA
-  if (opt.expert && !addmode)
-    tty_printf (_("   (%d) ECC and ECC\n"), 9 );
+  if (!addmode)
+    tty_printf (_("   (%d) ECC (sign and encrypt)%s\n"), 9, _(" *default*") );
+  tty_printf (_("  (%d) ECC (sign only)\n"), 10 );
   if (opt.expert)
-    tty_printf (_("  (%d) ECC (sign only)\n"), 10 );
-  if (opt.expert)
-    tty_printf (_("  (%d) ECC (set your own capabilities)\n"), 11 );
-  if (opt.expert && addmode)
-    tty_printf (_("  (%d) ECC (encrypt only)\n"), 12 );
+    tty_printf (_("  (%d) ECC (set your own capabilities)%s\n"), 11, "");
+  if (addmode)
+    tty_printf (_("  (%d) ECC (encrypt only)%s\n"), 12, "");
 #endif
 
   if (opt.expert && r_keygrip)
-    tty_printf (_("  (%d) Existing key\n"), 13 );
+    tty_printf (_("  (%d) Existing key%s\n"), 13, "");
   if (r_keygrip)
-    tty_printf (_("  (%d) Existing key from card\n"), 14 );
+    tty_printf (_("  (%d) Existing key from card%s\n"), 14, "");
 
   for (;;)
     {
@@ -2120,7 +2240,7 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
       xfree (answer);
       answer = cpr_get ("keygen.algo", _("Your selection? "));
       cpr_kill_prompt ();
-      algo = *answer? atoi (answer) : 1;
+      algo = *answer? atoi (answer) : 9;  /* Default algo is 9 */
 
       if (opt.compliance == CO_DE_VS
           && (algo == 2 || algo == 3 || algo == 5 || algo == 7))
@@ -2176,13 +2296,13 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
           break;
 	}
       else if ((algo == 9 || !strcmp (answer, "ecc+ecc"))
-               && opt.expert && !addmode)
+               && !addmode)
         {
           algo = PUBKEY_ALGO_ECDSA;
           *r_subkey_algo = PUBKEY_ALGO_ECDH;
           break;
 	}
-      else if ((algo == 10 || !strcmp (answer, "ecc/s")) && opt.expert)
+      else if ((algo == 10 || !strcmp (answer, "ecc/s")))
         {
           algo = PUBKEY_ALGO_ECDSA;
           *r_usage = PUBKEY_USAGE_SIG;
@@ -2195,7 +2315,7 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
           break;
 	}
       else if ((algo == 12 || !strcmp (answer, "ecc/e"))
-               && opt.expert && addmode)
+               && addmode)
         {
           algo = PUBKEY_ALGO_ECDH;
           *r_usage = PUBKEY_USAGE_ENC;
@@ -2235,7 +2355,7 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
       else if ((algo == 14 || !strcmp (answer, "cardkey")) && r_keygrip)
         {
           char *serialno;
-          strlist_t keypairlist, sl;
+          keypair_info_t keypairlist, kpi;
           int count, selection;
 
           err = agent_scd_serialno (&serialno, NULL);
@@ -2248,7 +2368,7 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
           tty_printf (_("Serial number of the card: %s\n"), serialno);
           xfree (serialno);
 
-          err = agent_scd_keypairinfo (ctrl, &keypairlist);
+          err = agent_scd_keypairinfo (ctrl, NULL, &keypairlist);
           if (err)
             {
               tty_printf (_("error reading the card: %s\n"),
@@ -2258,65 +2378,79 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
 
           do
             {
+              char *authkeyref, *encrkeyref, *signkeyref;
+
+              agent_scd_getattr_one ("$AUTHKEYID", &authkeyref);
+              agent_scd_getattr_one ("$ENCRKEYID", &encrkeyref);
+              agent_scd_getattr_one ("$SIGNKEYID", &signkeyref);
+
               tty_printf (_("Available keys:\n"));
-              for (count=1,sl=keypairlist; sl; sl = sl->next, count++)
+              for (count=1, kpi=keypairlist; kpi; kpi = kpi->next, count++)
                 {
                   gcry_sexp_t s_pkey;
                   char *algostr = NULL;
                   enum gcry_pk_algos algoid = 0;
-                  const char *keyref;
+                  const char *keyref = kpi->idstr;
                   int any = 0;
 
-                  keyref = strchr (sl->d, ' ');
-                  if (keyref)
+                  if (keyref
+                      && !agent_scd_readkey (ctrl, keyref, &s_pkey, NULL))
                     {
-                      keyref++;
-                      if (!agent_scd_readkey (keyref, &s_pkey))
-                        {
-                          algostr = pubkey_algo_string (s_pkey, &algoid);
-                          gcry_sexp_release (s_pkey);
-                        }
+                      algostr = pubkey_algo_string (s_pkey, &algoid);
+                      gcry_sexp_release (s_pkey);
                     }
-                  /* We use the flags also encode the algo for use
-                   * below.  We need to tweak the algo in case
-                   * GCRY_PK_ECC is returned becuase pubkey_algo_string
-                   * is not aware of the OpenPGP algo mapping.
-                   * FIXME: This is an ugly hack. */
-                  sl->flags &= 0xff;
-                  if (algoid == GCRY_PK_ECC
-                      && algostr && !strncmp (algostr, "nistp", 5)
-                      && !(sl->flags & GCRY_PK_USAGE_ENCR))
-                    sl->flags |= (PUBKEY_ALGO_ECDSA << 8);
-                  else if (algoid == GCRY_PK_ECC
-                      && algostr && !strncmp (algostr, "brainpool", 9)
-                      && !(sl->flags & GCRY_PK_USAGE_ENCR))
-                    sl->flags |= (PUBKEY_ALGO_ECDSA << 8);
-                  else if (algoid == GCRY_PK_ECC
-                           && algostr && !strcmp (algostr, "ed25519")
-                           && !(sl->flags & GCRY_PK_USAGE_ENCR))
-                    sl->flags = (PUBKEY_ALGO_EDDSA << 8);
-                  else
-                    sl->flags |= (map_pk_gcry_to_openpgp (algoid) << 8);
 
-                  tty_printf ("   (%d) %s %s", count, sl->d, algostr);
-                  if ((sl->flags & GCRY_PK_USAGE_CERT))
+                  /* We need to tweak the algo in case GCRY_PK_ECC is
+                   * returned because pubkey_algo_string is not aware
+                   * of the OpenPGP algo mapping.  We need to
+                   * distinguish between ECDH and ECDSA but we can do
+                   * that only if we got usage flags.
+                   * Note: Keep this in sync with parse_key_parameter_part.
+                   */
+                  if (algoid == GCRY_PK_ECC && algostr)
+                    {
+                      if (!strcmp (algostr, "ed25519"))
+                        kpi->algo = PUBKEY_ALGO_EDDSA;
+                      else if (!strcmp (algostr, "ed448"))
+                        kpi->algo = PUBKEY_ALGO_EDDSA;
+                      else if (!strcmp (algostr, "cv25519"))
+                        kpi->algo = PUBKEY_ALGO_ECDH;
+                      else if (!strcmp (algostr, "cv448"))
+                        kpi->algo = PUBKEY_ALGO_ECDH;
+                      else if ((kpi->usage & GCRY_PK_USAGE_ENCR))
+                        kpi->algo = PUBKEY_ALGO_ECDH;
+                      else
+                        kpi->algo = PUBKEY_ALGO_ECDSA;
+                    }
+                  else
+                    kpi->algo = map_gcry_pk_to_openpgp (algoid);
+
+                  tty_printf ("   (%d) %s %s %s",
+                              count, kpi->keygrip, keyref, algostr);
+                  if ((kpi->usage & GCRY_PK_USAGE_CERT))
                     {
                       tty_printf ("%scert", any?",":" (");
                       any = 1;
                     }
-                  if ((sl->flags & GCRY_PK_USAGE_SIGN))
+                  if ((kpi->usage & GCRY_PK_USAGE_SIGN))
                     {
-                      tty_printf ("%ssign", any?",":" (");
+                      tty_printf ("%ssign%s", any?",":" (",
+                                  (signkeyref && keyref
+                                   && !strcmp (signkeyref, keyref))? "*":"");
                       any = 1;
                     }
-                  if ((sl->flags & GCRY_PK_USAGE_AUTH))
+                  if ((kpi->usage & GCRY_PK_USAGE_AUTH))
                     {
-                      tty_printf ("%sauth", any?",":" (");
+                      tty_printf ("%sauth%s", any?",":" (",
+                                  (authkeyref && keyref
+                                   && !strcmp (authkeyref, keyref))? "*":"");
                       any = 1;
                     }
-                  if ((sl->flags & GCRY_PK_USAGE_ENCR))
+                  if ((kpi->usage & GCRY_PK_USAGE_ENCR))
                     {
-                      tty_printf ("%sencr", any?",":" (");
+                      tty_printf ("%sencr%s", any?",":" (",
+                                  (encrkeyref && keyref
+                                   && !strcmp (encrkeyref, keyref))? "*":"");
                       any = 1;
                     }
                   tty_printf ("%s\n", any?")":"");
@@ -2328,35 +2462,39 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
               cpr_kill_prompt ();
               trim_spaces (answer);
               selection = atoi (answer);
+              xfree (authkeyref);
+              xfree (encrkeyref);
+              xfree (signkeyref);
             }
           while (!(selection > 0 && selection < count));
 
-          for (count=1,sl=keypairlist; sl; sl = sl->next, count++)
+          for (count=1,kpi=keypairlist; kpi; kpi = kpi->next, count++)
             if (count == selection)
               break;
-          if (!sl)
+          if (!kpi)
             {
               /* Just in case COUNT is zero (no keys).  */
-              free_strlist (keypairlist);
+              free_keypair_info (keypairlist);
               goto ask_again;
             }
 
           xfree (keygrip);
-          keygrip = xstrdup (sl->d);
-          if ((p = strchr (keygrip, ' ')))
-            *p = 0;
-          algo = (sl->flags >>8);
+          keygrip = xstrdup (kpi->keygrip);
+          cardkey = 1;
+          algo = kpi->algo;
+          keytime = kpi->keytime;
+
+          /* In expert mode allow to change the usage flags.  */
           if (opt.expert)
             *r_usage = ask_key_flags_with_mask (algo, addmode,
-                                                (sl->flags & 0xff),
-                                                (sl->flags & 0xff));
+                                                kpi->usage, kpi->usage);
           else
             {
-              *r_usage = (sl->flags & 0xff);
+              *r_usage = kpi->usage;
               if (addmode)
                 *r_usage &= ~GCRY_PK_USAGE_CERT;
             }
-          free_strlist (keypairlist);
+          free_keypair_info (keypairlist);
           break;
 	}
       else
@@ -2369,6 +2507,10 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
   xfree(answer);
   if (r_keygrip)
     *r_keygrip = keygrip;
+  if (r_cardkey)
+    *r_cardkey = cardkey;
+  if (r_keytime)
+    *r_keytime = keytime;
   return algo;
 }
 
@@ -2546,11 +2688,11 @@ ask_curve (int *algo, int *subkey_algo, const char *current)
 # define MY_USE_ECDSADH 0
 #endif
     { "Curve25519",      "Ed25519", "Curve 25519", !!GPG_USE_EDDSA, 0, 0, 0 },
-    { "Curve448",        "Ed448",   "Curve 448",   0/*reserved*/  , 0, 1, 0 },
+    { "X448",            "Ed448",   "Curve 448",   !!GPG_USE_EDDSA, 0, 1, 0 },
     { "NIST P-256",      NULL, NULL,               MY_USE_ECDSADH,  0, 1, 0 },
     { "NIST P-384",      NULL, NULL,               MY_USE_ECDSADH,  0, 0, 0 },
     { "NIST P-521",      NULL, NULL,               MY_USE_ECDSADH,  0, 1, 0 },
-    { "brainpoolP256r1", NULL, "Brainpool P-256",  MY_USE_ECDSADH,  1, 1, 0 },
+    { "brainpoolP256r1", NULL, "Brainpool P-256",  MY_USE_ECDSADH,  1, 0, 0 },
     { "brainpoolP384r1", NULL, "Brainpool P-384",  MY_USE_ECDSADH,  1, 1, 0 },
     { "brainpoolP512r1", NULL, "Brainpool P-512",  MY_USE_ECDSADH,  1, 1, 0 },
     { "secp256k1",       NULL, NULL,               MY_USE_ECDSADH,  0, 1, 0 },
@@ -2606,9 +2748,10 @@ ask_curve (int *algo, int *subkey_algo, const char *current)
         }
 
       curves[idx].available = 1;
-      tty_printf ("   (%d) %s\n", idx + 1,
+      tty_printf ("   (%d) %s%s\n", idx + 1,
                   curves[idx].pretty_name?
-                  curves[idx].pretty_name:curves[idx].name);
+                  curves[idx].pretty_name:curves[idx].name,
+                  idx == 0? _(" *default*"):"");
     }
   gcry_sexp_release (keyparms);
 
@@ -2690,15 +2833,20 @@ ask_curve (int *algo, int *subkey_algo, const char *current)
  * just cope for the next few years until we get a 64-bit time_t or
  * similar.
  */
-u32
-parse_expire_string (const char *string)
+static u32
+parse_expire_string_with_ct (const char *string, u32 creation_time)
 {
   int mult;
   u32 seconds;
   u32 abs_date = 0;
-  u32 curtime = make_timestamp ();
-  uint64_t tt;
+  time_t tt;
   uint64_t tmp64;
+  u32 curtime;
+
+  if (creation_time == (u32)-1)
+    curtime = make_timestamp ();
+  else
+    curtime = creation_time;
 
   if (!string || !*string || !strcmp (string, "none")
       || !strcmp (string, "never") || !strcmp (string, "-"))
@@ -2729,6 +2877,13 @@ parse_expire_string (const char *string)
 
   return seconds;
 }
+
+u32
+parse_expire_string ( const char *string )
+{
+  return parse_expire_string_with_ct (string, (u32)-1);
+}
+
 
 /* Parse a Creation-Date string which is either "1986-04-26" or
    "19860426T042640".  Returns 0 on error. */
@@ -2811,7 +2966,10 @@ ask_expire_interval(int object,const char *def_expire)
 	    xfree(prompt);
 
 	    if(*answer=='\0')
-	      answer=xstrdup(def_expire);
+              {
+                xfree (answer);
+	        answer = xstrdup (def_expire);
+              }
 	  }
 	cpr_kill_prompt();
 	trim_spaces(answer);
@@ -2859,7 +3017,7 @@ ask_expire_interval(int object,const char *def_expire)
 }
 
 u32
-ask_expiredate()
+ask_expiredate (void)
 {
     u32 x = ask_expire_interval(0,NULL);
     return x? make_timestamp() + x : 0;
@@ -2964,13 +3122,6 @@ ask_user_id (int mode, int full, KBNODE keyblock)
 		    tty_printf(_("Invalid character in name\n"));
 		    tty_printf(_("The characters '%s' and '%s' may not "
                                  "appear in name\n"), "<", ">");
-                  }
-		else if( digitp(aname) )
-		    tty_printf(_("Name may not start with a digit\n"));
-		else if (*aname && strlen (aname) < 5)
-                  {
-		    tty_printf(_("Name must be at least 5 characters long\n"));
-                    /* However, we allow an empty name.  */
                   }
 		else
 		    break;
@@ -3141,12 +3292,15 @@ ask_user_id (int mode, int full, KBNODE keyblock)
 
 
 /* Basic key generation.  Here we divert to the actual generation
-   routines based on the requested algorithm.  */
+ * routines based on the requested algorithm.  KEYGEN_FLAGS might be
+ * updated by this function.  */
 static int
-do_create (int algo, unsigned int nbits, const char *curve, KBNODE pub_root,
+do_create (int algo, unsigned int nbits, const char *curve, kbnode_t pub_root,
            u32 timestamp, u32 expiredate, int is_subkey,
-           int keygen_flags, const char *passphrase,
-           char **cache_nonce_addr, char **passwd_nonce_addr)
+           int *keygen_flags, const char *passphrase,
+           char **cache_nonce_addr, char **passwd_nonce_addr,
+           gpg_error_t (*common_gen_cb)(common_gen_cb_parm_t),
+           common_gen_cb_parm_t common_gen_cb_parm)
 {
   gpg_error_t err;
 
@@ -3161,22 +3315,26 @@ do_create (int algo, unsigned int nbits, const char *curve, KBNODE pub_root,
 
   if (algo == PUBKEY_ALGO_ELGAMAL_E)
     err = gen_elg (algo, nbits, pub_root, timestamp, expiredate, is_subkey,
-                   keygen_flags, passphrase,
-                   cache_nonce_addr, passwd_nonce_addr);
+                   *keygen_flags, passphrase,
+                   cache_nonce_addr, passwd_nonce_addr,
+                   common_gen_cb, common_gen_cb_parm);
   else if (algo == PUBKEY_ALGO_DSA)
     err = gen_dsa (nbits, pub_root, timestamp, expiredate, is_subkey,
-                   keygen_flags, passphrase,
-                   cache_nonce_addr, passwd_nonce_addr);
+                   *keygen_flags, passphrase,
+                   cache_nonce_addr, passwd_nonce_addr,
+                   common_gen_cb, common_gen_cb_parm);
   else if (algo == PUBKEY_ALGO_ECDSA
            || algo == PUBKEY_ALGO_EDDSA
            || algo == PUBKEY_ALGO_ECDH)
     err = gen_ecc (algo, curve, pub_root, timestamp, expiredate, is_subkey,
                    keygen_flags, passphrase,
-                   cache_nonce_addr, passwd_nonce_addr);
+                   cache_nonce_addr, passwd_nonce_addr,
+                   common_gen_cb, common_gen_cb_parm);
   else if (algo == PUBKEY_ALGO_RSA)
     err = gen_rsa (algo, nbits, pub_root, timestamp, expiredate, is_subkey,
-                   keygen_flags, passphrase,
-                   cache_nonce_addr, passwd_nonce_addr);
+                   *keygen_flags, passphrase,
+                   cache_nonce_addr, passwd_nonce_addr,
+                   common_gen_cb, common_gen_cb_parm);
   else
     BUG();
 
@@ -3215,21 +3373,25 @@ generate_user_id (KBNODE keyblock, const char *uidstr)
 }
 
 
-/* Helper for parse_key_parameter_string for one part of the
+/* Helper for parse_key_parameter_part_parameter_string for one part of the
  * specification string; i.e.  ALGO/FLAGS.  If STRING is NULL or empty
  * success is returned.  On error an error code is returned.  Note
  * that STRING may be modified by this function.  NULL may be passed
  * for any parameter.  FOR_SUBKEY shall be true if this is used as a
  * subkey.  If CLEAR_CERT is set a default CERT usage will be cleared;
  * this is useful if for example the default algorithm is used for a
- * subkey.  */
+ * subkey.  If R_KEYVERSION is not NULL it will receive the version of
+ * the key; this is currently 4 but can be changed with the flag "v5"
+ * to create a v5 key.  If R_KEYTIME is not NULL and the key has been
+ * taken from active OpenPGP card, its creation time is stored
+ * there.  */
 static gpg_error_t
 parse_key_parameter_part (ctrl_t ctrl,
                           char *string, int for_subkey, int clear_cert,
                           int *r_algo, unsigned int *r_size,
                           unsigned int *r_keyuse,
-                          char const **r_curve,
-                          char **r_keygrip)
+                          char const **r_curve, int *r_keyversion,
+                          char **r_keygrip, u32 *r_keytime)
 {
   gpg_error_t err;
   char *flags;
@@ -3239,10 +3401,13 @@ parse_key_parameter_part (ctrl_t ctrl,
   int ecdh_or_ecdsa = 0;
   unsigned int size;
   int keyuse;
+  int keyversion = 0;           /* Not specified.  */
   int i;
   const char *s;
   int from_card = 0;
   char *keygrip = NULL;
+  u32 keytime = 0;
+  int is_448 = 0;
 
   if (!string || !*string)
     return 0; /* Success.  */
@@ -3284,6 +3449,8 @@ parse_key_parameter_part (ctrl_t ctrl,
           algo = PUBKEY_ALGO_ECDH; /* Default ECC algorithm.  */
           ecdh_or_ecdsa = 1;       /* We may need to switch the algo.  */
         }
+      if (curve && (!strcmp (curve, "X448") || !strcmp (curve, "Ed448")))
+        is_448 = 1;
     }
   else
     return gpg_error (GPG_ERR_UNKNOWN_CURVE);
@@ -3344,6 +3511,10 @@ parse_key_parameter_part (ctrl_t ctrl,
                   return gpg_error (GPG_ERR_INV_FLAG);
                 }
             }
+          else if (!ascii_strcasecmp (s, "v5"))
+            keyversion = 5;
+          else if (!ascii_strcasecmp (s, "v4"))
+            keyversion = 4;
           else
             {
               xfree (tokens);
@@ -3358,7 +3529,7 @@ parse_key_parameter_part (ctrl_t ctrl,
    * to read the algo from the current card.  */
   if (from_card)
     {
-      strlist_t keypairlist, sl;
+      keypair_info_t keypairlist, kpi;
       char *reqkeyref;
 
       if (!keyuse)
@@ -3380,7 +3551,7 @@ parse_key_parameter_part (ctrl_t ctrl,
         xfree (serialno);
       }
 
-      err = agent_scd_keypairinfo (ctrl, &keypairlist);
+      err = agent_scd_keypairinfo (ctrl, NULL, &keypairlist);
       if (err)
         {
           log_error (_("error reading the card: %s\n"), gpg_strerror (err));
@@ -3390,70 +3561,82 @@ parse_key_parameter_part (ctrl_t ctrl,
                              ? "$SIGNKEYID":"$ENCRKEYID", &reqkeyref);
 
       algo = 0; /* Should already be the case.  */
-      for (sl=keypairlist; sl && !algo; sl = sl->next)
+      for (kpi=keypairlist; kpi && !algo; kpi = kpi->next)
         {
           gcry_sexp_t s_pkey;
           char *algostr = NULL;
           enum gcry_pk_algos algoid = 0;
-          const char *keyref;
+          const char *keyref = kpi->idstr;
 
           if (!reqkeyref)
             continue; /* Card does not provide the info (skip all).  */
 
-          keyref = strchr (sl->d, ' ');
           if (!keyref)
             continue; /* Ooops.  */
-          keyref++;
           if (strcmp (reqkeyref, keyref))
             continue;  /* This is not the requested keyref.  */
 
           if ((keyuse & (PUBKEY_USAGE_SIG|PUBKEY_USAGE_CERT))
-              && (sl->flags & (GCRY_PK_USAGE_SIGN|GCRY_PK_USAGE_CERT)))
+              && (kpi->usage & (GCRY_PK_USAGE_SIGN|GCRY_PK_USAGE_CERT)))
             ; /* Okay */
           else if ((keyuse & PUBKEY_USAGE_ENC)
-                   && (sl->flags & GCRY_PK_USAGE_ENCR))
+                   && (kpi->usage & GCRY_PK_USAGE_ENCR))
             ; /* Okay */
           else
             continue; /* Not usable for us.  */
 
-          if (agent_scd_readkey (keyref, &s_pkey))
+          if (agent_scd_readkey (ctrl, keyref, &s_pkey, NULL))
             continue;  /* Could not read the key.  */
 
           algostr = pubkey_algo_string (s_pkey, &algoid);
           gcry_sexp_release (s_pkey);
 
-
           /* Map to OpenPGP algo number.
-           * We need to tweak the algo in case GCRY_PK_ECC is returned
-           * because pubkey_algo_string is not aware of the OpenPGP
-           * algo mapping.  FIXME: This is an ugly hack. */
-          if (algoid == GCRY_PK_ECC
-              && algostr && !strncmp (algostr, "nistp", 5)
-              && !(sl->flags & GCRY_PK_USAGE_ENCR))
-            algo = PUBKEY_ALGO_ECDSA;
-          else if (algoid == GCRY_PK_ECC
-                   && algostr && !strcmp (algostr, "ed25519")
-                   && !(sl->flags & GCRY_PK_USAGE_ENCR))
-            algo = PUBKEY_ALGO_EDDSA;
+           * We need to tweak the algo in case GCRY_PK_ECC is
+           * returned because pubkey_algo_string is not aware
+           * of the OpenPGP algo mapping.  We need to
+           * distinguish between ECDH and ECDSA but we can do
+           * that only if we got usage flags.
+           * Note: Keep this in sync with ask_algo.  */
+          if (algoid == GCRY_PK_ECC && algostr)
+            {
+              if (!strcmp (algostr, "ed25519"))
+                algo = PUBKEY_ALGO_EDDSA;
+              else if (!strcmp (algostr, "ed448"))
+                {
+                  algo = PUBKEY_ALGO_EDDSA;
+                  is_448 = 1;
+                }
+              else if (!strcmp (algostr, "cv25519"))
+                algo = PUBKEY_ALGO_ECDH;
+              else if (!strcmp (algostr, "cv448"))
+                {
+                  algo = PUBKEY_ALGO_ECDH;
+                  is_448 = 1;
+                }
+              else if ((kpi->usage & GCRY_PK_USAGE_ENCR))
+                algo = PUBKEY_ALGO_ECDH;
+              else
+                algo = PUBKEY_ALGO_ECDSA;
+            }
           else
-            algo = map_pk_gcry_to_openpgp (algoid);
+            algo = map_gcry_pk_to_openpgp (algoid);
 
           xfree (algostr);
           xfree (keygrip);
-          keygrip = xtrystrdup (sl->d);
+          keygrip = xtrystrdup (kpi->keygrip);
           if (!keygrip)
             {
               err = gpg_error_from_syserror ();
               xfree (reqkeyref);
-              free_strlist (keypairlist);
+              free_keypair_info (keypairlist);
               return err;
             }
-          if ((endp = strchr (keygrip, ' ')))
-            *endp = 0;
+          keytime = kpi->keytime;
         }
 
       xfree (reqkeyref);
-      free_strlist (keypairlist);
+      free_keypair_info (keypairlist);
       if (!algo || !keygrip)
         {
           err = gpg_error (GPG_ERR_PUBKEY_ALGO);
@@ -3507,6 +3690,17 @@ parse_key_parameter_part (ctrl_t ctrl,
       return gpg_error (GPG_ERR_WRONG_KEY_USAGE);
     }
 
+  /* Ed448 and X448 must only be used as v5 keys.  */
+  if (is_448)
+    {
+      if (keyversion == 4)
+        log_info (_("WARNING: v4 is specified, but overridden by v5.\n"));
+
+      keyversion = 5;
+    }
+  else if (keyversion == 0)
+    keyversion = 4;
+
   /* Return values.  */
   if (r_algo)
     *r_algo = algo;
@@ -3530,14 +3724,20 @@ parse_key_parameter_part (ctrl_t ctrl,
     *r_keyuse = keyuse;
   if (r_curve)
     *r_curve = curve;
+  if (r_keyversion)
+    *r_keyversion = keyversion;
 
   if (r_keygrip)
     *r_keygrip = keygrip;
   else
     xfree (keygrip);
 
+  if (r_keytime)
+    *r_keytime = keytime;
+
   return 0;
 }
+
 
 /* Parse and return the standard key generation parameter.
  * The string is expected to be in this format:
@@ -3551,7 +3751,9 @@ parse_key_parameter_part (ctrl_t ctrl,
  *   dsa2048 := DSA with 2048 bit.
  *   elg2048 := Elgamal with 2048 bit.
  *   ed25519 := EDDSA using curve Ed25519.
+ *   ed448   := EDDSA using curve Ed448.
  *   cv25519 := ECDH using curve Curve25519.
+ *   cv448   := ECDH using curve X448.
  *   nistp256:= ECDSA or ECDH using curve NIST P-256
  *
  * All strings with an unknown prefix are considered an elliptic
@@ -3569,6 +3771,7 @@ parse_key_parameter_part (ctrl_t ctrl,
  *   ecdsa := Use algorithm ECDSA.
  *   eddsa := Use algorithm EdDSA.
  *   ecdh  := Use algorithm ECDH.
+ *   v5    := Create version 5 key
  *
  * There are several defaults and fallbacks depending on the
  * algorithm.  PART can be used to select which part of STRING is
@@ -3588,11 +3791,15 @@ parse_key_parameter_string (ctrl_t ctrl,
                             int *r_algo, unsigned int *r_size,
                             unsigned int *r_keyuse,
                             char const **r_curve,
+                            int *r_version,
                             char **r_keygrip,
+                            u32 *r_keytime,
                             int *r_subalgo, unsigned int *r_subsize,
                             unsigned int *r_subkeyuse,
                             char const **r_subcurve,
-                            char **r_subkeygrip)
+                            int *r_subversion,
+                            char **r_subkeygrip,
+                            u32 *r_subkeytime)
 {
   gpg_error_t err = 0;
   char *primary, *secondary;
@@ -3605,8 +3812,12 @@ parse_key_parameter_string (ctrl_t ctrl,
     *r_keyuse = 0;
   if (r_curve)
     *r_curve = NULL;
+  if (r_version)
+    *r_version = 4;
   if (r_keygrip)
     *r_keygrip = NULL;
+  if (r_keytime)
+    *r_keytime = 0;
   if (r_subalgo)
     *r_subalgo = 0;
   if (r_subsize)
@@ -3615,8 +3826,12 @@ parse_key_parameter_string (ctrl_t ctrl,
     *r_subkeyuse = 0;
   if (r_subcurve)
     *r_subcurve = NULL;
+  if (r_subversion)
+    *r_subversion = 4;
   if (r_subkeygrip)
     *r_subkeygrip = NULL;
+  if (r_subkeytime)
+    *r_subkeytime = 0;
 
   if (!string || !*string
       || !ascii_strcasecmp (string, "default") || !strcmp (string, "-"))
@@ -3635,12 +3850,13 @@ parse_key_parameter_string (ctrl_t ctrl,
     {
       err = parse_key_parameter_part (ctrl, primary,
                                       0, 0, r_algo, r_size,
-                                      r_keyuse, r_curve, r_keygrip);
+                                      r_keyuse, r_curve, r_version,
+                                      r_keygrip, r_keytime);
       if (!err && part == -1)
         err = parse_key_parameter_part (ctrl, secondary,
                                         1, 0, r_subalgo, r_subsize,
-                                        r_subkeyuse, r_subcurve,
-                                        r_subkeygrip);
+                                        r_subkeyuse, r_subcurve, r_subversion,
+                                        r_subkeygrip, r_subkeytime);
     }
   else if (part == 1)
     {
@@ -3648,25 +3864,25 @@ parse_key_parameter_string (ctrl_t ctrl,
        * part consider this to be the subkey algo.  In case a
        * SUGGESTED_USE has been given and the usage of the secondary
        * part does not match SUGGESTED_USE try again using the primary
-       * part.  Noet thar when falling back to the primary key we need
+       * part.  Note that when falling back to the primary key we need
        * to force clearing the cert usage. */
       if (secondary)
         {
           err = parse_key_parameter_part (ctrl, secondary,
                                           1, 0,
                                           r_algo, r_size, r_keyuse, r_curve,
-                                          r_keygrip);
+                                          r_version, r_keygrip, r_keytime);
           if (!err && suggested_use && r_keyuse && !(suggested_use & *r_keyuse))
             err = parse_key_parameter_part (ctrl, primary,
                                             1, 1 /*(clear cert)*/,
                                             r_algo, r_size, r_keyuse, r_curve,
-                                            r_keygrip);
+                                            r_version, r_keygrip, r_keytime);
         }
       else
         err = parse_key_parameter_part (ctrl, primary,
                                         1, 0,
                                         r_algo, r_size, r_keyuse, r_curve,
-                                        r_keygrip);
+                                        r_version, r_keygrip, r_keytime);
     }
 
   xfree (primary);
@@ -3769,8 +3985,8 @@ get_parameter_algo (ctrl_t ctrl, struct para_data_s *para, enum para_name key,
        * compatibility with the batch key generation.  It would be
        * better to make full use of parse_key_parameter_string.  */
       parse_key_parameter_string (ctrl, NULL, 0, 0,
-                                  &i, NULL, NULL, NULL, NULL,
-                                  NULL, NULL, NULL, NULL, NULL);
+                                  &i, NULL, NULL, NULL, NULL, NULL, NULL,
+                                  NULL, NULL, NULL, NULL, NULL, NULL, NULL);
       if (r_default)
         *r_default = 1;
     }
@@ -3786,7 +4002,7 @@ get_parameter_algo (ctrl_t ctrl, struct para_data_s *para, enum para_name key,
   else if (!ascii_strcasecmp (r->u.value, "ECDH"))
     i = PUBKEY_ALGO_ECDH;
   else
-    i = map_pk_gcry_to_openpgp (gcry_pk_map_name (r->u.value));
+    i = map_gcry_pk_to_openpgp (gcry_pk_map_name (r->u.value));
 
   if (i == PUBKEY_ALGO_RSA_E || i == PUBKEY_ALGO_RSA_S)
     i = 0; /* we don't want to allow generation of these algorithms */
@@ -3908,13 +4124,14 @@ prepare_desig_revoker (ctrl_t ctrl, const char *name)
     goto leave;
 
   fingerprint_from_pk (revoker_pk, revkey.fpr, &fprlen);
-  if (fprlen != 20)
+  if (fprlen != 20 && fprlen != 32)
     {
       log_info (_("cannot appoint a PGP 2.x style key as a "
                   "designated revoker\n"));
       err = gpg_error (GPG_ERR_UNUSABLE_PUBKEY);
       goto leave;
     }
+  revkey.fprlen = fprlen;
   revkey.class = 0x80;
   if (sensitive)
     revkey.class |= 0x40;
@@ -3961,7 +4178,7 @@ parse_revocation_key (const char *fname,
 
   pn++;
 
-  for(i=0;i<MAX_FINGERPRINT_LEN && *pn;i++,pn+=2)
+  for(i=0;i<MAX_FINGERPRINT_LEN && *pn && !spacep (pn);i++,pn+=2)
     {
       int c=hextobyte(pn);
       if(c==-1)
@@ -3969,6 +4186,10 @@ parse_revocation_key (const char *fname,
 
       revkey.fpr[i]=c;
     }
+  if (i != 20 && i != 32)
+    goto fail;
+
+  revkey.fprlen = i;
 
   /* skip to the tag */
   while(*pn && *pn!='s' && *pn!='S')
@@ -3981,7 +4202,7 @@ parse_revocation_key (const char *fname,
 
   return 0;
 
-  fail:
+ fail:
   log_error("%s:%d: invalid revocation key\n", fname, r->lnr );
   return -1; /* error */
 }
@@ -3994,7 +4215,8 @@ get_parameter_u32( struct para_data_s *para, enum para_name key )
 
   if( !r )
     return 0;
-  if( r->key == pKEYCREATIONDATE )
+  if (r->key == pKEYCREATIONDATE || r->key == pSUBKEYCREATIONDATE
+      || r->key == pAUTHKEYCREATIONDATE)
     return r->u.creation;
   if( r->key == pKEYEXPIRE || r->key == pSUBKEYEXPIRE )
     return r->u.expire;
@@ -4019,6 +4241,14 @@ get_parameter_revkey (struct para_data_s *para, enum para_name key,
 }
 
 static int
+get_parameter_bool (struct para_data_s *para, enum para_name key)
+{
+  struct para_data_s *r = get_parameter (para, key);
+  return (r && r->u.abool);
+}
+
+
+static int
 proc_parameter_file (ctrl_t ctrl, struct para_data_s *para, const char *fname,
                      struct output_control_s *outctrl, int card )
 {
@@ -4030,6 +4260,7 @@ proc_parameter_file (ctrl_t ctrl, struct para_data_s *para, const char *fname,
   int is_default = 0;
   int have_user_id = 0;
   int err, algo;
+  u32 creation_time = (u32)-1;
 
   /* Check that we have all required parameters. */
   r = get_parameter( para, pKEYTYPE );
@@ -4088,12 +4319,13 @@ proc_parameter_file (ctrl_t ctrl, struct para_data_s *para, const char *fname,
       if (!err)
 	{
 	  /* Default to algo capabilities if subkey-usage is not
-	     provided */
+	     provided.  Take care not to include RENC. */
 	  r = xmalloc_clear (sizeof(*r));
 	  r->key = pSUBKEYUSAGE;
 	  r->u.usage = (is_default
                         ? PUBKEY_USAGE_ENC
-                        : openpgp_pk_algo_usage (algo));
+                        : (openpgp_pk_algo_usage (algo)
+                           & ~PUBKEY_USAGE_RENC)       );
           append_to_parameter (para, r);
 	}
       else if (err == -1)
@@ -4177,7 +4409,7 @@ proc_parameter_file (ctrl_t ctrl, struct para_data_s *para, const char *fname,
   if (parse_revocation_key (fname, para, pREVOKER))
     return -1;
 
-  /* Check and append revokers from the config file.  */
+  /* Check and appened revokers from the config file.  */
   for (sl = opt.desig_revokers; sl; sl = sl->next)
     {
       r = prepare_desig_revoker (ctrl, sl->d);
@@ -4187,19 +4419,21 @@ proc_parameter_file (ctrl_t ctrl, struct para_data_s *para, const char *fname,
      }
 
 
-  /* Make KEYCREATIONDATE from Creation-Date.  */
+  /* Make KEYCREATIONDATE from Creation-Date.  We ignore this if the
+   * key has been taken from a card and a keycreationtime has already
+   * been set.  This is so that we don't generate a key with a
+   * fingerprint different from the one stored on the OpenPGP card. */
   r = get_parameter (para, pCREATIONDATE);
-  if (r && *r->u.value)
+  if (r && *r->u.value && !(get_parameter_bool (para, pCARDKEY)
+                            && get_parameter_u32 (para, pKEYCREATIONDATE)))
     {
-      u32 seconds;
-
-      seconds = parse_creation_string (r->u.value);
-      if (!seconds)
+      creation_time = parse_creation_string (r->u.value);
+      if (!creation_time)
 	{
 	  log_error ("%s:%d: invalid creation date\n", fname, r->lnr );
 	  return -1;
 	}
-      r->u.creation = seconds;
+      r->u.creation = creation_time;
       r->key = pKEYCREATIONDATE;  /* Change that entry. */
     }
 
@@ -4209,19 +4443,36 @@ proc_parameter_file (ctrl_t ctrl, struct para_data_s *para, const char *fname,
     {
       u32 seconds;
 
-      seconds = parse_expire_string( r->u.value );
+      seconds = parse_expire_string_with_ct (r->u.value, creation_time);
       if( seconds == (u32)-1 )
 	{
 	  log_error("%s:%d: invalid expire date\n", fname, r->lnr );
 	  return -1;
 	}
       r->u.expire = seconds;
-      r->key = pKEYEXPIRE;  /* change hat entry */
-      /* also set it for the subkey */
-      r = xmalloc_clear( sizeof *r + 20 );
-      r->key = pSUBKEYEXPIRE;
-      r->u.expire = seconds;
-      append_to_parameter (para, r);
+      r->key = pKEYEXPIRE;  /* change that entry */
+
+      /* Make SUBKEYEXPIRE from Subkey-Expire-Date, if any.  */
+      r = get_parameter( para, pSUBKEYEXPIREDATE );
+      if( r && *r->u.value )
+        {
+          seconds = parse_expire_string_with_ct (r->u.value, creation_time);
+          if( seconds == (u32)-1 )
+            {
+              log_error("%s:%d: invalid subkey expire date\n", fname, r->lnr );
+              return -1;
+            }
+          r->key = pSUBKEYEXPIRE;  /* change that entry */
+          r->u.expire = seconds;
+        }
+      else
+        {
+          /* Or else, set Expire-Date for the subkey */
+          r = xmalloc_clear( sizeof *r + 20 );
+          r->key = pSUBKEYEXPIRE;
+          r->u.expire = seconds;
+          append_to_parameter (para, r);
+        }
     }
 
   do_generate_keypair (ctrl, para, outctrl, card );
@@ -4252,6 +4503,7 @@ read_parameter_file (ctrl_t ctrl, const char *fname )
 	{ "Name-Email",     pNAMEEMAIL },
 	{ "Name-Comment",   pNAMECOMMENT },
 	{ "Expire-Date",    pEXPIREDATE },
+	{ "Subkey-Expire-Date", pSUBKEYEXPIREDATE },
 	{ "Creation-Date",  pCREATIONDATE },
 	{ "Passphrase",     pPASSPHRASE },
 	{ "Preferences",    pPREFERENCES },
@@ -4261,6 +4513,8 @@ read_parameter_file (ctrl_t ctrl, const char *fname )
         { "Keygrip",        pKEYGRIP },
         { "Key-Grip",       pKEYGRIP },
         { "Subkey-grip",    pSUBKEYGRIP },
+        { "Key-Version",    pVERSION },
+        { "Subkey-Version", pSUBVERSION },
         { NULL, 0 }
     };
     IOBUF fp;
@@ -4406,12 +4660,19 @@ read_parameter_file (ctrl_t ctrl, const char *fname )
 		break;
 	    }
 	}
-	r = xmalloc_clear( sizeof *r + strlen( value ) );
-	r->lnr = lnr;
-	r->key = keywords[i].key;
-	strcpy( r->u.value, value );
-	r->next = para;
-	para = r;
+
+        if ((keywords[i].key == pVERSION
+             || keywords[i].key == pSUBVERSION))
+          ; /* Ignore version.  */
+        else
+          {
+            r = xmalloc_clear( sizeof *r + strlen( value ) );
+            r->lnr = lnr;
+            r->key = keywords[i].key;
+            strcpy( r->u.value, value );
+            r->next = para;
+            para = r;
+          }
     }
     if( err )
 	log_error("%s:%d: %s\n", fname, lnr, err );
@@ -4447,7 +4708,7 @@ read_parameter_file (ctrl_t ctrl, const char *fname )
 static struct para_data_s *
 quickgen_set_para (struct para_data_s *para, int for_subkey,
                    int algo, int nbits, const char *curve, unsigned int use,
-                   const char *keygrip)
+                   int version, const char *keygrip, u32 keytime)
 {
   struct para_data_s *r;
 
@@ -4495,6 +4756,22 @@ quickgen_set_para (struct para_data_s *para, int for_subkey,
       sprintf (r->u.value, "%u", nbits);
       r->next = para;
       para = r;
+    }
+
+  r = xmalloc_clear (sizeof *r + 20);
+  r->key = for_subkey? pSUBVERSION : pVERSION;
+  snprintf (r->u.value, 20, "%d", version);
+  r->next = para;
+  para = r;
+
+  if (keytime)
+    {
+      r = xmalloc_clear (sizeof *r);
+      r->key = for_subkey? pSUBKEYCREATIONDATE : pKEYCREATIONDATE;
+      r->u.creation = keytime;
+      r->next = para;
+      para = r;
+
     }
 
   return para;
@@ -4556,7 +4833,7 @@ quick_generate_keypair (ctrl_t ctrl, const char *uid, const char *algostr,
     desc.mode = KEYDB_SEARCH_MODE_EXACT;
     desc.u.name = uid;
 
-    kdbhd = keydb_new ();
+    kdbhd = keydb_new (ctrl);
     if (!kdbhd)
       goto leave;
 
@@ -4590,29 +4867,31 @@ quick_generate_keypair (ctrl_t ctrl, const char *uid, const char *algostr,
           || !strcmp (usagestr, "-")))
     {
       /* Use default key parameters.  */
-      int algo, subalgo;
+      int algo, subalgo, version, subversion;
       unsigned int size, subsize;
       unsigned int keyuse, subkeyuse;
       const char *curve, *subcurve;
       char *keygrip, *subkeygrip;
+      u32 keytime, subkeytime;
 
       err = parse_key_parameter_string (ctrl, algostr, -1, 0,
-                                        &algo, &size, &keyuse, &curve,
-                                        &keygrip,
+                                        &algo, &size, &keyuse, &curve, &version,
+                                        &keygrip, &keytime,
                                         &subalgo, &subsize, &subkeyuse,
-                                        &subcurve, &subkeygrip);
+                                        &subcurve, &subversion,
+                                        &subkeygrip, &subkeytime);
       if (err)
         {
           log_error (_("Key generation failed: %s\n"), gpg_strerror (err));
           goto leave;
         }
 
-      para = quickgen_set_para (para, 0, algo, size, curve, keyuse,
-                                keygrip);
+      para = quickgen_set_para (para, 0, algo, size, curve, keyuse, version,
+                                keygrip, keytime);
       if (subalgo)
         para = quickgen_set_para (para, 1,
                                   subalgo, subsize, subcurve, subkeyuse,
-                                  subkeygrip);
+                                  subversion, subkeygrip, subkeytime);
       if (*expirestr)
         {
           u32 expire;
@@ -4637,24 +4916,25 @@ quick_generate_keypair (ctrl_t ctrl, const char *uid, const char *algostr,
   else
     {
       /* Extended unattended mode.  Creates only the primary key. */
-      int algo;
+      int algo, version;
       unsigned int use;
       u32 expire;
       unsigned int nbits;
       const char *curve;
       char *keygrip;
+      u32 keytime;
 
       err = parse_algo_usage_expire (ctrl, 0, algostr, usagestr, expirestr,
                                      &algo, &use, &expire, &nbits, &curve,
-                                     &keygrip);
+                                     &version, &keygrip, &keytime);
       if (err)
         {
           log_error (_("Key generation failed: %s\n"), gpg_strerror (err) );
           goto leave;
         }
 
-      para = quickgen_set_para (para, 0, algo, nbits, curve, use,
-                                keygrip);
+      para = quickgen_set_para (para, 0, algo, nbits, curve, use, version,
+                                keygrip, keytime);
       r = xmalloc_clear (sizeof *r + 20);
       r->key = pKEYEXPIRE;
       r->u.expire = expire;
@@ -4675,6 +4955,16 @@ quick_generate_keypair (ctrl_t ctrl, const char *uid, const char *algostr,
       r = xmalloc_clear (sizeof *r + strlen (s));
       r->key = pPASSPHRASE;
       strcpy (r->u.value, s);
+      r->next = para;
+      para = r;
+    }
+
+  if (!ascii_strcasecmp (algostr, "card")
+      || !ascii_strncasecmp (algostr, "card/", 5))
+    {
+      r = xmalloc_clear (sizeof *r);
+      r->key = pCARDKEY;
+      r->u.abool = 1;
       r->next = para;
       para = r;
     }
@@ -4811,8 +5101,11 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
     {
       int subkey_algo;
       char *key_from_hexgrip = NULL;
+      int cardkey;
+      u32 keytime;
 
-      algo = ask_algo (ctrl, 0, &subkey_algo, &use, &key_from_hexgrip);
+      algo = ask_algo (ctrl, 0, &subkey_algo, &use,
+                       &key_from_hexgrip, &cardkey, &keytime);
       if (key_from_hexgrip)
         {
           r = xmalloc_clear( sizeof *r + 20 );
@@ -4838,6 +5131,21 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
           strcpy (r->u.value, key_from_hexgrip);
           r->next = para;
           para = r;
+
+          r = xmalloc_clear (sizeof *r);
+          r->key = pCARDKEY;
+          r->u.abool = cardkey;
+          r->next = para;
+          para = r;
+
+          if (cardkey)
+            {
+              r = xmalloc_clear (sizeof *r);
+              r->key = pKEYCREATIONDATE;
+              r->u.creation = keytime;
+              r->next = para;
+              para = r;
+            }
 
           xfree (key_from_hexgrip);
         }
@@ -4865,6 +5173,14 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
                   strcpy (r->u.value, curve);
                   r->next = para;
                   para = r;
+                  if (!strcmp (curve, "X448") || !strcmp (curve, "Ed448"))
+                    {
+                      r = xmalloc_clear (sizeof *r + 20);
+                      r->key = pVERSION;
+                      snprintf (r->u.value, 20, "%d", 5);
+                      r->next = para;
+                      para = r;
+                    }
                 }
               else
                 {
@@ -4906,7 +5222,17 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
                     {
                       /* Need to switch to a different curve for the
                          encryption key.  */
-                      curve = "Curve25519";
+                      if (!strcmp (curve, "Ed25519"))
+                        curve = "Curve25519";
+                      else
+                        {
+                          curve = "X448";
+                          r = xmalloc_clear (sizeof *r + 20);
+                          r->key = pSUBVERSION;
+                          snprintf (r->u.value, 20, "%d", 5);
+                          r->next = para;
+                          para = r;
+                        }
                     }
                   r = xmalloc_clear (sizeof *r + strlen (curve));
                   r->key = pSUBKEYCURVE;
@@ -4929,6 +5255,14 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
                   strcpy (r->u.value, curve);
                   r->next = para;
                   para = r;
+                   if (!strcmp (curve, "X448") || !strcmp (curve, "Ed448"))
+                    {
+                      r = xmalloc_clear (sizeof *r + 20);
+                      r->key = pVERSION;
+                      snprintf (r->u.value, 20, "%d", 5);
+                      r->next = para;
+                      para = r;
+                    }
                 }
 
               r = xmalloc_clear( sizeof *r + 20 );
@@ -4970,11 +5304,12 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
     }
   else /* Default key generation.  */
     {
-      int subalgo;
+      int subalgo, version, subversion;
       unsigned int size, subsize;
       unsigned int keyuse, subkeyuse;
       const char *curve, *subcurve;
       char *keygrip, *subkeygrip;
+      u32 keytime, subkeytime;
 
       tty_printf ( _("Note: Use \"%s %s\""
                      " for a full featured key generation dialog.\n"),
@@ -4986,11 +5321,11 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
                    , "--full-generate-key" );
 
       err = parse_key_parameter_string (ctrl, NULL, -1, 0,
-                                        &algo, &size, &keyuse, &curve,
-                                        &keygrip,
+                                        &algo, &size, &keyuse, &curve, &version,
+                                        &keygrip, &keytime,
                                         &subalgo, &subsize,
-                                        &subkeyuse, &subcurve,
-                                        &subkeygrip);
+                                        &subkeyuse, &subcurve, &subversion,
+                                        &subkeygrip, &subkeytime);
       if (err)
         {
           log_error (_("Key generation failed: %s\n"), gpg_strerror (err));
@@ -4998,11 +5333,11 @@ generate_keypair (ctrl_t ctrl, int full, const char *fname,
         }
       para = quickgen_set_para (para, 0,
                                 algo, size, curve, keyuse,
-                                keygrip);
+                                version, keygrip, keytime);
       if (subalgo)
         para = quickgen_set_para (para, 1,
                                   subalgo, subsize, subcurve, subkeyuse,
-                                  subkeygrip);
+                                  subversion, subkeygrip, subkeytime);
 
       xfree (keygrip);
       xfree (subkeygrip);
@@ -5156,12 +5491,13 @@ card_store_key_with_backup (ctrl_t ctrl, PKT_public_key *sub_psk,
           return gpg_error_from_syserror ();
         }
     }
+
   err = hexkeygrip_from_pk (sk, &hexgrip);
   if (err)
     {
       xfree (ecdh_param_str);
       free_public_key (sk);
-      return err;
+      goto leave;
     }
 
   memset(&info, 0, sizeof (info));
@@ -5170,7 +5506,8 @@ card_store_key_with_backup (ctrl_t ctrl, PKT_public_key *sub_psk,
     {
       xfree (ecdh_param_str);
       free_public_key (sk);
-      return (gpg_error_t)rc;
+      err = (gpg_error_t)rc;
+      goto leave;
     }
 
   rc = agent_keytocard (hexgrip, 2, 1, info.serialno,
@@ -5200,8 +5537,8 @@ card_store_key_with_backup (ctrl_t ctrl, PKT_public_key *sub_psk,
       goto leave;
     }
 
-  err = receive_seckey_from_agent (ctrl, cipherhd, 0,
-                                   &cache_nonce, hexgrip, sk);
+  err = receive_seckey_from_agent (ctrl, cipherhd, 0, 0,
+                                   &cache_nonce, hexgrip, sk, NULL);
   if (err)
     {
       log_error ("error getting secret key from agent: %s\n",
@@ -5213,11 +5550,8 @@ card_store_key_with_backup (ctrl_t ctrl, PKT_public_key *sub_psk,
   if (err)
     log_error ("writing card key to backup file: %s\n", gpg_strerror (err));
   else
-    {
-      /* Remove secret key data in agent side.  We use force 2 here to
-       * allow overwriting of the temporary private key.  */
-      agent_scd_learn (NULL, 2);
-    }
+    /* Remove secret key data in agent side.  */
+    agent_scd_learn (NULL, 1);
 
  leave:
   xfree (ecdh_param_str);
@@ -5241,11 +5575,13 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
   PKT_public_key *sub_psk = NULL;
   struct revocation_key *revkey;
   int did_sub = 0;
-  u32 timestamp;
+  u32 keytimestamp, subkeytimestamp, authkeytimestamp, signtimestamp;
   char *cache_nonce = NULL;
   int algo;
   u32 expire;
   const char *key_from_hexgrip = NULL;
+  int cardkey;
+  unsigned int keygen_flags;
   unsigned int idx;
 
   if (outctrl->dryrun)
@@ -5299,11 +5635,35 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
 
   start_tree (&pub_root);
 
-  timestamp = get_parameter_u32 (para, pKEYCREATIONDATE);
-  if (!timestamp)
-    timestamp = make_timestamp ();
+  cardkey = get_parameter_bool (para, pCARDKEY);
 
-  /* Note that, depending on the backend (i.e. the used scdaemon
+  /* In the case that the keys are created from the card we need to
+   * take the timestamps from the card.  Only in this case a
+   * pSUBKEYCREATIONDATE or pAUTHKEYCREATIONDATE might be defined and
+   * then we need to use that so that the fingerprint of the subkey
+   * also matches the pre-computed and stored one on the card.  In
+   * this case we also use the current time to create the
+   * self-signatures.  */
+  keytimestamp = get_parameter_u32 (para, pKEYCREATIONDATE);
+  if (!keytimestamp)
+    keytimestamp = make_timestamp ();
+  subkeytimestamp = cardkey? get_parameter_u32 (para, pSUBKEYCREATIONDATE) : 0;
+  if (!subkeytimestamp)
+    subkeytimestamp = keytimestamp;
+  authkeytimestamp = cardkey? get_parameter_u32 (para, pAUTHKEYCREATIONDATE): 0;
+  if (!authkeytimestamp)
+    authkeytimestamp = keytimestamp;
+
+  signtimestamp = cardkey? make_timestamp () : keytimestamp;
+
+  /* log_debug ("XXX: cardkey ..: %d\n", cardkey); */
+  /* log_debug ("XXX: keytime ..: %s\n", isotimestamp (keytimestamp)); */
+  /* log_debug ("XXX: subkeytime: %s\n", isotimestamp (subkeytimestamp)); */
+  /* log_debug ("XXX: authkeytim: %s\n", isotimestamp (authkeytimestamp)); */
+  /* log_debug ("XXX: signtime .: %s\n", isotimestamp (signtimestamp)); */
+
+  /* Fixme: Check that this comment is still valid:
+     Note that, depending on the backend (i.e. the used scdaemon
      version), the card key generation may update TIMESTAMP for each
      key.  Thus we need to pass TIMESTAMP to all signing function to
      make sure that the binding signature is done using the timestamp
@@ -5315,23 +5675,33 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
   algo = get_parameter_algo (ctrl, para, pKEYTYPE, NULL );
   expire = get_parameter_u32( para, pKEYEXPIRE );
   key_from_hexgrip = get_parameter_value (para, pKEYGRIP);
+  if (cardkey && !key_from_hexgrip)
+    BUG ();
+
+  keygen_flags = outctrl->keygen_flags;
+  if (get_parameter_uint (para, pVERSION) == 5)
+    keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
+
   if (key_from_hexgrip)
-    err = do_create_from_keygrip (ctrl, algo, key_from_hexgrip,
-                                  pub_root, timestamp, expire, 0);
+    err = do_create_from_keygrip (ctrl, algo, key_from_hexgrip, cardkey,
+                                  pub_root,
+                                  keytimestamp,
+                                  expire, 0, &keygen_flags);
   else if (!card)
     err = do_create (algo,
                      get_parameter_uint( para, pKEYLENGTH ),
                      get_parameter_value (para, pKEYCURVE),
                      pub_root,
-                     timestamp,
+                     keytimestamp,
                      expire, 0,
-                     outctrl->keygen_flags,
+                     &keygen_flags,
                      get_parameter_passphrase (para),
-                     &cache_nonce, NULL);
+                     &cache_nonce, NULL,
+                     NULL, NULL);
   else
     err = gen_card_key (1, algo,
-                        1, pub_root, &timestamp,
-                        expire);
+                        1, pub_root, &keytimestamp,
+                        expire, &keygen_flags);
 
   /* Get the pointer to the generated public key packet.  */
   if (!err)
@@ -5353,15 +5723,15 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
        !err && (revkey = get_parameter_revkey (para, pREVOKER, idx));
        idx++)
     err = write_direct_sig (ctrl, pub_root, pri_psk,
-                            revkey, timestamp, cache_nonce);
+                            revkey, signtimestamp, cache_nonce);
 
   if (!err && (s = get_parameter_value (para, pUSERID)))
     {
       err = write_uid (pub_root, s );
       if (!err)
         err = write_selfsigs (ctrl, pub_root, pri_psk,
-                              get_parameter_uint (para, pKEYUSAGE), timestamp,
-                              cache_nonce);
+                              get_parameter_uint (para, pKEYUSAGE),
+                              signtimestamp, cache_nonce);
     }
 
   /* Write the auth key to the card before the encryption key.  This
@@ -5375,35 +5745,80 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
     {
       err = gen_card_key (3, get_parameter_algo (ctrl, para,
                                                  pAUTHKEYTYPE, NULL ),
-                          0, pub_root, &timestamp, expire);
+                          0, pub_root, &authkeytimestamp, expire,
+                          &keygen_flags);
       if (!err)
         err = write_keybinding (ctrl, pub_root, pri_psk, NULL,
-                                PUBKEY_USAGE_AUTH, timestamp, cache_nonce);
+                                PUBKEY_USAGE_AUTH, signtimestamp, cache_nonce);
     }
 
   if (!err && get_parameter (para, pSUBKEYTYPE))
     {
       int subkey_algo = get_parameter_algo (ctrl, para, pSUBKEYTYPE, NULL);
 
-      s = NULL;
       key_from_hexgrip = get_parameter_value (para, pSUBKEYGRIP);
+
+      keygen_flags = outctrl->keygen_flags;
+      if (get_parameter_uint (para, pSUBVERSION) == 5)
+        keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
+
       if (key_from_hexgrip)
-        err = do_create_from_keygrip (ctrl, subkey_algo, key_from_hexgrip,
-                                      pub_root, timestamp,
+        err = do_create_from_keygrip (ctrl, subkey_algo,
+                                      key_from_hexgrip, cardkey,
+                                      pub_root, subkeytimestamp,
                                       get_parameter_u32 (para, pSUBKEYEXPIRE),
-                                      1);
-      else if (!card || (s = get_parameter_value (para, pCARDBACKUPKEY)))
+                                      1, &keygen_flags);
+      else if (get_parameter_value (para, pCARDBACKUPKEY))
+        {
+          int lastmode;
+          unsigned int mykeygenflags = KEYGEN_FLAG_NO_PROTECTION;
+
+          err = agent_set_ephemeral_mode (ctrl, 1, &lastmode);
+          if (err)
+            log_error ("error switching to ephemeral mode: %s\n",
+                       gpg_strerror (err));
+          else
+            {
+              err = do_create (subkey_algo,
+                               get_parameter_uint (para, pSUBKEYLENGTH),
+                               get_parameter_value (para, pSUBKEYCURVE),
+                               pub_root,
+                               subkeytimestamp,
+                               get_parameter_u32 (para, pSUBKEYEXPIRE), 1,
+                               &mykeygenflags,
+                               get_parameter_passphrase (para),
+                               &cache_nonce, NULL,
+                               NULL, NULL);
+              /* Get the pointer to the generated public subkey packet.  */
+              if (!err)
+                {
+                  kbnode_t node;
+
+                  for (node = pub_root; node; node = node->next)
+                    if (node->pkt->pkttype == PKT_PUBLIC_SUBKEY)
+                      sub_psk = node->pkt->pkt.public_key;
+                  log_assert (sub_psk);
+                  err = card_store_key_with_backup (ctrl,
+                                                    sub_psk, gnupg_homedir ());
+                }
+
+              /* Reset the ephemeral mode as needed.  */
+              if (!lastmode && agent_set_ephemeral_mode (ctrl, 0, NULL))
+                log_error ("error clearing the ephemeral mode\n");
+            }
+        }
+      else if (!card)
         {
           err = do_create (subkey_algo,
                            get_parameter_uint (para, pSUBKEYLENGTH),
                            get_parameter_value (para, pSUBKEYCURVE),
                            pub_root,
-                           timestamp,
+                           subkeytimestamp,
                            get_parameter_u32 (para, pSUBKEYEXPIRE), 1,
-                           s ? KEYGEN_FLAG_NO_PROTECTION : outctrl->keygen_flags,
+                           &keygen_flags,
                            get_parameter_passphrase (para),
-                           &cache_nonce, NULL);
-          /* Get the pointer to the generated public subkey packet.  */
+                           &cache_nonce, NULL,
+                           NULL, NULL);
           if (!err)
             {
               kbnode_t node;
@@ -5412,21 +5827,18 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
                 if (node->pkt->pkttype == PKT_PUBLIC_SUBKEY)
                   sub_psk = node->pkt->pkt.public_key;
               log_assert (sub_psk);
-
-              if (s)
-                err = card_store_key_with_backup (ctrl,
-                                                  sub_psk, gnupg_homedir ());
             }
         }
       else
         {
-          err = gen_card_key (2, subkey_algo, 0, pub_root, &timestamp, expire);
+          err = gen_card_key (2, subkey_algo, 0, pub_root,
+                              &subkeytimestamp, expire, &keygen_flags);
         }
 
       if (!err)
         err = write_keybinding (ctrl, pub_root, pri_psk, sub_psk,
                                 get_parameter_uint (para, pSUBKEYUSAGE),
-                                timestamp, cache_nonce);
+                                signtimestamp, cache_nonce);
       did_sub = 1;
     }
 
@@ -5440,7 +5852,7 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
     {
       KEYDB_HANDLE pub_hd;
 
-      pub_hd = keydb_new ();
+      pub_hd = keydb_new (ctrl);
       if (!pub_hd)
         err = gpg_error_from_syserror ();
       else
@@ -5480,9 +5892,10 @@ do_generate_keypair (ctrl_t ctrl, struct para_data_s *para,
 
           pk = find_kbnode (pub_root, PKT_PUBLIC_KEY)->pkt->pkt.public_key;
 
-	  update_ownertrust (ctrl, pk,
-                             ((get_ownertrust (ctrl, pk) & ~TRUST_MASK)
-                              | TRUST_ULTIMATE ));
+          if (!opt.flags.no_auto_trust_new_key)
+            update_ownertrust (ctrl, pk,
+                               ((get_ownertrust (ctrl, pk) & ~TRUST_MASK)
+                                | TRUST_ULTIMATE ));
 
           gen_standard_revoke (ctrl, pk, cache_nonce);
 
@@ -5543,18 +5956,21 @@ parse_algo_usage_expire (ctrl_t ctrl, int for_subkey,
                          const char *expirestr,
                          int *r_algo, unsigned int *r_usage, u32 *r_expire,
                          unsigned int *r_nbits, const char **r_curve,
-                         char **r_keygrip)
+                         int *r_version, char **r_keygrip, u32 *r_keytime)
 {
   gpg_error_t err;
   int algo;
   unsigned int use, nbits;
   u32 expire;
   int wantuse;
+  int version = 4;
   const char *curve = NULL;
 
   *r_curve = NULL;
   if (r_keygrip)
     *r_keygrip = NULL;
+  if (r_keytime)
+    *r_keytime = 0;
 
   nbits = 0;
 
@@ -5569,9 +5985,9 @@ parse_algo_usage_expire (ctrl_t ctrl, int for_subkey,
 
   err = parse_key_parameter_string (ctrl, algostr, for_subkey? 1 : 0,
                                     usagestr? parse_usagestr (usagestr):0,
-                                    &algo, &nbits, &use, &curve,
-                                    r_keygrip,
-                                    NULL, NULL, NULL, NULL, NULL);
+                                    &algo, &nbits, &use, &curve, &version,
+                                    r_keygrip, r_keytime,
+                                    NULL, NULL, NULL, NULL, NULL, NULL, NULL);
   if (err)
     {
       if (r_keygrip)
@@ -5637,6 +6053,7 @@ parse_algo_usage_expire (ctrl_t ctrl, int for_subkey,
   *r_usage = use;
   *r_expire = expire;
   *r_nbits = nbits;
+  *r_version = version;
   return 0;
 }
 
@@ -5660,10 +6077,13 @@ generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock, const char *algostr,
   const char *curve = NULL;
   u32 cur_time;
   char *key_from_hexgrip = NULL;
+  u32 keytime = 0;
+  int cardkey = 0;
   char *hexgrip = NULL;
   char *serialno = NULL;
   char *cache_nonce = NULL;
   char *passwd_nonce = NULL;
+  int keygen_flags = 0;
 
   interactive = (!algostr || !usagestr || !expirestr);
 
@@ -5723,7 +6143,8 @@ generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock, const char *algostr,
 
   if (interactive)
     {
-      algo = ask_algo (ctrl, 1, NULL, &use, &key_from_hexgrip);
+      algo = ask_algo (ctrl, 1, NULL, &use, &key_from_hexgrip, &cardkey,
+                       &keytime);
       log_assert (algo);
 
       if (key_from_hexgrip)
@@ -5731,7 +6152,12 @@ generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock, const char *algostr,
       else if (algo == PUBKEY_ALGO_ECDSA
                || algo == PUBKEY_ALGO_EDDSA
                || algo == PUBKEY_ALGO_ECDH)
-        curve = ask_curve (&algo, NULL, NULL);
+        {
+          curve = ask_curve (&algo, NULL, NULL);
+
+          if (curve && (!strcmp (curve, "X448") || !strcmp (curve, "Ed448")))
+            keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
+        }
       else
         nbits = ask_keysize (algo, 0);
 
@@ -5745,11 +6171,16 @@ generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock, const char *algostr,
     }
   else /* Unattended mode.  */
     {
+      int version;
+
       err = parse_algo_usage_expire (ctrl, 1, algostr, usagestr, expirestr,
                                      &algo, &use, &expire, &nbits, &curve,
-                                     &key_from_hexgrip);
+                                     &version, &key_from_hexgrip, &keytime);
       if (err)
         goto leave;
+
+      if (version == 5)
+        keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
     }
 
   /* Verify the passphrase now so that we get a cache item for the
@@ -5771,8 +6202,11 @@ generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock, const char *algostr,
   /* Start creation.  */
   if (key_from_hexgrip)
     {
-      err = do_create_from_keygrip (ctrl, algo, key_from_hexgrip,
-                                    keyblock, cur_time, expire, 1);
+      err = do_create_from_keygrip (ctrl, algo, key_from_hexgrip, cardkey,
+                                    keyblock,
+                                    keytime? keytime : cur_time,
+                                    expire, 1,
+                                    &keygen_flags);
     }
   else
     {
@@ -5788,8 +6222,8 @@ generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock, const char *algostr,
         passwd = NULL;
 
       err = do_create (algo, nbits, curve,
-                       keyblock, cur_time, expire, 1, 0,
-                       passwd, &cache_nonce, &passwd_nonce);
+                       keyblock, cur_time, expire, 1, &keygen_flags,
+                       passwd, &cache_nonce, &passwd_nonce, NULL, NULL);
     }
   if (err)
     goto leave;
@@ -5815,7 +6249,11 @@ generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock, const char *algostr,
   xfree (cache_nonce);
   xfree (passwd_nonce);
   if (err)
-    log_error (_("Key generation failed: %s\n"), gpg_strerror (err) );
+    {
+      log_error (_("Key generation failed: %s\n"), gpg_strerror (err) );
+      write_status_error (cardkey? "card_key_generate":"key_generate", err);
+      print_status_key_not_created ( NULL );
+    }
   return err;
 }
 
@@ -5836,6 +6274,7 @@ generate_card_subkeypair (ctrl_t ctrl, kbnode_t pub_keyblock,
   PKT_public_key *sub_pk = NULL;
   int algo;
   struct agent_card_info_s info;
+  int keygen_flags = 0;  /* FIXME!!! */
 
   log_assert (keyno >= 1 && keyno <= 3);
 
@@ -5906,7 +6345,8 @@ generate_card_subkeypair (ctrl_t ctrl, kbnode_t pub_keyblock,
 
   /* Note, that depending on the backend, the card key generation may
      update CUR_TIME.  */
-  err = gen_card_key (keyno, algo, 0, pub_keyblock, &cur_time, expire);
+  err = gen_card_key (keyno, algo, 0, pub_keyblock, &cur_time, expire,
+                      &keygen_flags);
   /* Get the pointer to the generated public subkey packet.  */
   if (!err)
     {
@@ -5955,7 +6395,7 @@ write_keyblock( IOBUF out, KBNODE node )
 /* Note that timestamp is an in/out arg. */
 static gpg_error_t
 gen_card_key (int keyno, int algo, int is_primary, kbnode_t pub_root,
-              u32 *timestamp, u32 expireval)
+              u32 *timestamp, u32 expireval, int *keygen_flags)
 {
 #ifdef ENABLE_CARD_SUPPORT
   gpg_error_t err;
@@ -6004,12 +6444,24 @@ gen_card_key (int keyno, int algo, int is_primary, kbnode_t pub_root,
      the self-signatures. */
   err = agent_readkey (NULL, 1, keyid, &public);
   if (err)
-    return err;
+    {
+      xfree (pkt);
+      xfree (pk);
+      return err;
+    }
   err = gcry_sexp_sscan (&s_key, NULL, public,
                          gcry_sexp_canon_len (public, 0, NULL, NULL));
   xfree (public);
   if (err)
-    return err;
+    {
+      xfree (pkt);
+      xfree (pk);
+      return err;
+    }
+
+  /* Force creation of v5 keys for X448.  */
+  if (curve_is_448 (s_key))
+    *keygen_flags |= KEYGEN_FLAG_CREATE_V5_KEY;
 
   if (algo == PUBKEY_ALGO_RSA)
     err = key_from_sexp (pk->pkey, s_key, "public-key", "ne");
@@ -6029,7 +6481,7 @@ gen_card_key (int keyno, int algo, int is_primary, kbnode_t pub_root,
     }
 
   pk->timestamp = *timestamp;
-  pk->version = 4;
+  pk->version = (*keygen_flags & KEYGEN_FLAG_CREATE_V5_KEY)? 5 : 4;
   if (expireval)
     pk->expiredate = pk->timestamp + expireval;
   pk->pubkey_algo = algo;

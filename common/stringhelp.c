@@ -191,29 +191,30 @@ gnupg_memstr (const void *buffer, size_t buflen, const char *sub)
 
 
 /* This function is similar to strncpy().  However it won't copy more
-   than N - 1 characters and makes sure that a '\0' is appended. With
-   N given as 0, nothing will happen.  With DEST given as NULL, memory
-   will be allocated using xmalloc (i.e. if it runs out of core
-   the function terminates).  Returns DES or a pointer to the
-   allocated memory.
+ * than N - 1 characters and makes sure that a '\0' is appended. With
+ * N given as 0, nothing will happen.  With DEST given as NULL, memory
+ * will be allocated using xmalloc (i.e. if it runs out of core the
+ * function terminates).  Returns DEST or a pointer to the allocated
+ * memory.
  */
 char *
-mem2str( char *dest , const void *src , size_t n )
+mem2str (char *dest, const void *src, size_t n)
 {
-    char *d;
-    const char *s;
+  char *d;
+  const char *s;
 
-    if( n ) {
-	if( !dest )
-	    dest = xmalloc( n ) ;
-	d = dest;
-	s = src ;
-	for(n--; n && *s; n-- )
-	    *d++ = *s++;
-	*d = '\0' ;
+  if (n)
+    {
+      if (!dest)
+        dest = xmalloc (n);
+      d = dest;
+      s = src ;
+      for (n--; n && *s; n--)
+        *d++ = *s++;
+      *d = '\0' ;
     }
 
-    return dest ;
+  return dest;
 }
 
 
@@ -811,11 +812,6 @@ w32_strerror (int ec)
 
   if (ec == -1)
     ec = (int)GetLastError ();
-#ifdef HAVE_W32CE_SYSTEM
-  /* There is only a wchar_t FormatMessage.  It does not make much
-     sense to play the conversion game; we print only the code.  */
-  snprintf (strerr, sizeof strerr, "ec=%d", (int)GetLastError ());
-#else
   FormatMessage (FORMAT_MESSAGE_FROM_SYSTEM, NULL, ec,
                  MAKELANGID (LANG_NEUTRAL, SUBLANG_DEFAULT),
                  strerr, DIM (strerr)-1, NULL);
@@ -825,7 +821,6 @@ w32_strerror (int ec)
     if (n > 2 && strerr[n-2] == '\r' && strerr[n-1] == '\n' )
       strerr[n-2] = 0;
   }
-#endif
   return strerr;
 }
 #endif /*HAVE_W32_SYSTEM*/
@@ -1421,10 +1416,11 @@ strtokenize_nt (const char *string, const char *delim)
  *   foo (fields[1]);
  */
 int
-split_fields (char *string, char **array, int arraysize)
+split_fields (char *string, const char **array, int arraysize)
 {
   int n = 0;
-  char *p, *pend;
+  const char *p;
+  char *pend;
 
   for (p = string; *p == ' '; p++)
     ;
@@ -1459,10 +1455,11 @@ split_fields (char *string, char **array, int arraysize)
  *   foo (fields[1]);
  */
 int
-split_fields_colon (char *string, char **array, int arraysize)
+split_fields_colon (char *string, const char **array, int arraysize)
 {
   int n = 0;
-  char *p, *pend;
+  const char *p;
+  char *pend;
 
   p = string;
   do
@@ -1507,7 +1504,7 @@ parse_version_number (const char *s, int *number)
 
 
 /* This function breaks up the complete string-representation of the
-   version number S, which is of the following struture: <major
+   version number S, which is of the following structure: <major
    number>.<minor number>[.<micro number>]<patch level>.  The major,
    minor, and micro number components will be stored in *MAJOR, *MINOR
    and *MICRO.  If MICRO is not given 0 is used instead.

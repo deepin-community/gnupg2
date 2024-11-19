@@ -54,13 +54,9 @@
 
 /* The time we wait until the agent or the dirmngr are ready for
    operation after we started them before giving up.  */
-#ifdef HAVE_W32CE_SYSTEM
-# define SECS_TO_WAIT_FOR_AGENT 30
-# define SECS_TO_WAIT_FOR_DIRMNGR 30
-#else
-# define SECS_TO_WAIT_FOR_AGENT 5
-# define SECS_TO_WAIT_FOR_DIRMNGR 5
-#endif
+#define SECS_TO_WAIT_FOR_AGENT 5
+#define SECS_TO_WAIT_FOR_KEYBOXD 5
+#define SECS_TO_WAIT_FOR_DIRMNGR 5
 
 /* A bitfield that specifies the assuan categories to log.  This is
    identical to the default log handler of libassuan.  We need to do
@@ -93,7 +89,7 @@ my_libassuan_log_handler (assuan_context_t ctx, void *hook,
     return 0; /* Temporary disabled.  */
 
   if (msg)
-    log_string (GPGRT_LOG_DEBUG, msg);
+    log_string (GPGRT_LOGLVL_DEBUG, msg);
 
   return 1;
 }
@@ -276,6 +272,7 @@ lock_spawning (lock_spawn_t *lock, const char *homedir, const char *name,
     (homedir,
      !strcmp (name, "agent")?   "gnupg_spawn_agent_sentinel":
      !strcmp (name, "dirmngr")? "gnupg_spawn_dirmngr_sentinel":
+     !strcmp (name, "keyboxd")? "gnupg_spawn_keyboxd_sentinel":
      /*                    */   "gnupg_spawn_unknown_sentinel",
      NULL);
   if (!fname)
@@ -307,8 +304,17 @@ unlock_spawning (lock_spawn_t *lock, const char *name)
     }
 }
 
+
+/* Helper to start a service.  SECS gives the number of seconds to
+ * wait.  SOCKNAME is the name of the socket to connect.  VERBOSE is
+ * the usual verbose flag.  CTX is the assuan context.  CONNECT_FLAGS
+ * are the assuan connect flags.  DID_SUCCESS_MSG will be set to 1 if
+ * a success messages has been printed.
+ */
 static gpg_error_t
-wait_for_sock (int secs, const char *name, const char *sockname, int verbose, assuan_context_t ctx, int *did_success_msg)
+wait_for_sock (int secs, int module_name_id, const char *sockname,
+               unsigned int connect_flags,
+               int verbose, assuan_context_t ctx, int *did_success_msg)
 {
   gpg_error_t err = 0;
   int target_us = secs * 1000000;
@@ -332,20 +338,27 @@ wait_for_sock (int secs, const char *name, const char *sockname, int verbose, as
           /*            next_sleep_us); */
           if (secsleft < lastalert)
             {
-              log_info (_("waiting for the %s to come up ... (%ds)\n"),
-                        name, secsleft);
+              log_info (module_name_id == GNUPG_MODULE_NAME_DIRMNGR?
+                        _("waiting for the dirmngr to come up ... (%ds)\n"):
+                        module_name_id == GNUPG_MODULE_NAME_KEYBOXD?
+                        _("waiting for the keyboxd to come up ... (%ds)\n"):
+                        _("waiting for the agent to come up ... (%ds)\n"),
+                        secsleft);
               lastalert = secsleft;
             }
         }
       gnupg_usleep (next_sleep_us);
       elapsed_us += next_sleep_us;
-      err = assuan_socket_connect (ctx, sockname, 0, 0);
+      err = assuan_socket_connect (ctx, sockname, 0, connect_flags);
       if (!err)
         {
           if (verbose)
             {
-              log_info (_("connection to %s established\n"),
-                        name);
+              log_info (module_name_id == GNUPG_MODULE_NAME_DIRMNGR?
+                        _("connection to the dirmngr established\n"):
+                        module_name_id == GNUPG_MODULE_NAME_KEYBOXD?
+                        _("connection to the keyboxd established\n"):
+                        _("connection to the agent established\n"));
               *did_success_msg = 1;
             }
           break;
@@ -357,25 +370,36 @@ wait_for_sock (int secs, const char *name, const char *sockname, int verbose, as
   return err;
 }
 
-/* Try to connect to the agent via socket or start it if it is not
-   running and AUTOSTART is set.  Handle the server's initial
-   greeting.  Returns a new assuan context at R_CTX or an error
-   code. */
-gpg_error_t
-start_new_gpg_agent (assuan_context_t *r_ctx,
-                     gpg_err_source_t errsource,
-                     const char *agent_program,
-                     const char *opt_lc_ctype,
-                     const char *opt_lc_messages,
-                     session_env_t session_env,
-                     int autostart, int verbose, int debug,
-                     gpg_error_t (*status_cb)(ctrl_t, int, ...),
-                     ctrl_t status_cb_arg)
+
+/* Try to connect to a new service via socket or start it if it is not
+ * running and AUTOSTART is set.  Handle the server's initial
+ * greeting.  Returns a new assuan context at R_CTX or an error code.
+ * MODULE_NAME_ID is one of:
+ *     GNUPG_MODULE_NAME_AGENT
+ *     GNUPG_MODULE_NAME_DIRMNGR
+ */
+static gpg_error_t
+start_new_service (assuan_context_t *r_ctx,
+                   int module_name_id,
+                   gpg_err_source_t errsource,
+                   const char *program_name,
+                   const char *opt_lc_ctype,
+                   const char *opt_lc_messages,
+                   session_env_t session_env,
+                   int autostart, int verbose, int debug,
+                   gpg_error_t (*status_cb)(ctrl_t, int, ...),
+                   ctrl_t status_cb_arg)
 {
   gpg_error_t err;
   assuan_context_t ctx;
   int did_success_msg = 0;
   char *sockname;
+  const char *printed_name;
+  const char *lock_name;
+  const char *status_start_line;
+  int no_service_err;
+  int seconds_to_wait;
+  unsigned int connect_flags = 0;
   const char *argv[6];
 
   *r_ctx = NULL;
@@ -387,15 +411,40 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
       return err;
     }
 
-  sockname = make_filename_try (gnupg_socketdir (), GPG_AGENT_SOCK_NAME, NULL);
-  if (!sockname)
+  switch (module_name_id)
     {
-      err = gpg_err_make (errsource, gpg_err_code_from_syserror ());
+    case GNUPG_MODULE_NAME_AGENT:
+      sockname = make_filename (gnupg_socketdir (), GPG_AGENT_SOCK_NAME, NULL);
+      lock_name = "agent";
+      printed_name = "gpg-agent";
+      status_start_line = "starting_agent ? 0 0";
+      no_service_err = GPG_ERR_NO_AGENT;
+      seconds_to_wait = SECS_TO_WAIT_FOR_AGENT;
+      break;
+    case GNUPG_MODULE_NAME_DIRMNGR:
+      sockname = make_filename (gnupg_socketdir (), DIRMNGR_SOCK_NAME, NULL);
+      lock_name = "dirmngr";
+      printed_name = "dirmngr";
+      status_start_line = "starting_dirmngr ? 0 0";
+      no_service_err = GPG_ERR_NO_DIRMNGR;
+      seconds_to_wait = SECS_TO_WAIT_FOR_DIRMNGR;
+      break;
+    case GNUPG_MODULE_NAME_KEYBOXD:
+      sockname = make_filename (gnupg_socketdir (), KEYBOXD_SOCK_NAME, NULL);
+      lock_name = "keyboxd";
+      printed_name = "keyboxd";
+      status_start_line = "starting_keyboxd ? 0 0";
+      no_service_err = GPG_ERR_NO_KEYBOXD;
+      seconds_to_wait = SECS_TO_WAIT_FOR_KEYBOXD;
+      connect_flags |= ASSUAN_SOCKET_CONNECT_FDPASSING;
+      break;
+    default:
+      err = gpg_error (GPG_ERR_INV_ARG);
       assuan_release (ctx);
       return err;
     }
 
-  err = assuan_socket_connect (ctx, sockname, 0, 0);
+  err = assuan_socket_connect (ctx, sockname, 0, connect_flags);
   if (err && autostart)
     {
       char *abs_homedir;
@@ -407,12 +456,12 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
       int i;
 
       /* With no success start a new server.  */
-      if (!agent_program || !*agent_program)
-        agent_program = gnupg_module_name (GNUPG_MODULE_NAME_AGENT);
-      else if ((s=strchr (agent_program, '|')) && s[1] == '-' && s[2]=='-')
+      if (!program_name || !*program_name)
+        program_name = gnupg_module_name (module_name_id);
+      else if ((s=strchr (program_name, '|')) && s[1] == '-' && s[2]=='-')
         {
           /* Hack to insert an additional option on the command line.  */
-          program = xtrystrdup (agent_program);
+          program = xtrystrdup (program_name);
           if (!program)
             {
               gpg_error_t tmperr = gpg_err_make (errsource,
@@ -427,22 +476,21 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
         }
 
       if (verbose)
-        log_info (_("no running gpg-agent - starting '%s'\n"),
-                  agent_program);
+        log_info (_("no running %s - starting '%s'\n"),
+                  printed_name, program_name);
 
       if (status_cb)
-        status_cb (status_cb_arg, STATUS_PROGRESS,
-                   "starting_agent ? 0 0", NULL);
+        status_cb (status_cb_arg, STATUS_PROGRESS, status_start_line, NULL);
 
-      /* We better pass an absolute home directory to the agent just
-         in case gpg-agent does not convert the passed name to an
-         absolute one (which it should do).  */
+      /* We better pass an absolute home directory to the service just
+       * in case the service does not convert the passed name to an
+       * absolute one (which it should do).  */
       abs_homedir = make_absfilename_try (gnupg_homedir (), NULL);
       if (!abs_homedir)
         {
           gpg_error_t tmperr = gpg_err_make (errsource,
                                              gpg_err_code_from_syserror ());
-          log_error ("error building filename: %s\n",gpg_strerror (tmperr));
+          log_error ("error building filename: %s\n", gpg_strerror (tmperr));
           xfree (sockname);
           assuan_release (ctx);
           xfree (program);
@@ -453,8 +501,7 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
         {
           gpg_error_t tmperr = gpg_err_make (errsource,
                                              gpg_err_code_from_syserror ());
-          log_error ("error flushing pending output: %s\n",
-                     strerror (errno));
+          log_error ("error flushing pending output: %s\n", strerror (errno));
           xfree (sockname);
           assuan_release (ctx);
           xfree (abs_homedir);
@@ -462,32 +509,42 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
           return tmperr;
         }
 
-      /* If the agent has been configured for use with a standard
-         socket, an environment variable is not required and thus
-         we can safely start the agent here.  */
       i = 0;
       argv[i++] = "--homedir";
       argv[i++] = abs_homedir;
-      argv[i++] = "--use-standard-socket";
+      if (module_name_id == GNUPG_MODULE_NAME_AGENT)
+        argv[i++] = "--use-standard-socket";
       if (program_arg)
         argv[i++] = program_arg;
       argv[i++] = "--daemon";
       argv[i++] = NULL;
 
-      if (!(err = lock_spawning (&lock, gnupg_homedir (), "agent", verbose))
-          && assuan_socket_connect (ctx, sockname, 0, 0))
+      if (!(err = lock_spawning (&lock, gnupg_homedir (), lock_name, verbose))
+          && assuan_socket_connect (ctx, sockname, 0, connect_flags))
         {
-          err = gnupg_spawn_process_detached (program? program : agent_program,
+#ifdef HAVE_W32_SYSTEM
+          err = gnupg_spawn_process_detached (program? program : program_name,
                                               argv, NULL);
+#else /*!W32*/
+          pid_t pid;
+
+          err = gnupg_spawn_process_fd (program? program : program_name,
+                                        argv, -1, -1, -1, &pid);
+          if (!err)
+            err = gnupg_wait_process (program? program : program_name,
+                                      pid, 1, NULL);
+#endif /*!W32*/
           if (err)
-            log_error ("failed to start agent '%s': %s\n",
-                       agent_program, gpg_strerror (err));
+            log_error ("failed to start %s '%s': %s\n",
+                       printed_name, program? program : program_name,
+                       gpg_strerror (err));
           else
-            err = wait_for_sock (SECS_TO_WAIT_FOR_AGENT, "agent",
-                                 sockname, verbose, ctx, &did_success_msg);
+            err = wait_for_sock (seconds_to_wait, module_name_id,
+                                 sockname, connect_flags,
+                                 verbose, ctx, &did_success_msg);
         }
 
-      unlock_spawning (&lock, "agent");
+      unlock_spawning (&lock, lock_name);
       xfree (abs_homedir);
       xfree (program);
     }
@@ -495,17 +552,21 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
   if (err)
     {
       if (autostart || gpg_err_code (err) != GPG_ERR_ASS_CONNECT_FAILED)
-        log_error ("can't connect to the agent: %s\n", gpg_strerror (err));
+        log_error ("can't connect to the %s: %s\n",
+                   printed_name, gpg_strerror (err));
       assuan_release (ctx);
-      return gpg_err_make (errsource, GPG_ERR_NO_AGENT);
+      return gpg_err_make (errsource, no_service_err);
     }
 
   if (debug && !did_success_msg)
-    log_debug ("connection to agent established\n");
+    log_debug ("connection to the %s established\n", printed_name);
 
-  err = assuan_transact (ctx, "RESET",
-                         NULL, NULL, NULL, NULL, NULL, NULL);
-  if (!err)
+  if (module_name_id == GNUPG_MODULE_NAME_AGENT)
+    err = assuan_transact (ctx, "RESET",
+                           NULL, NULL, NULL, NULL, NULL, NULL);
+
+  if (!err
+      && module_name_id == GNUPG_MODULE_NAME_AGENT)
     {
       err = send_pinentry_environment (ctx, errsource,
                                        opt_lc_ctype, opt_lc_messages,
@@ -513,12 +574,12 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
       if (gpg_err_code (err) == GPG_ERR_FORBIDDEN
           && gpg_err_source (err) == GPG_ERR_SOURCE_GPGAGENT)
         {
-          /* Check whether we are in restricted mode.  */
+          /* Check whether the agent is in restricted mode.  */
           if (!assuan_transact (ctx, "GETINFO restricted",
                                 NULL, NULL, NULL, NULL, NULL, NULL))
             {
               if (verbose)
-                log_info (_("connection to agent is in restricted mode\n"));
+                log_info (_("connection to the agent is in restricted mode\n"));
               err = 0;
             }
         }
@@ -534,6 +595,45 @@ start_new_gpg_agent (assuan_context_t *r_ctx,
 }
 
 
+/* Try to connect to the agent or start a new one.  */
+gpg_error_t
+start_new_gpg_agent (assuan_context_t *r_ctx,
+                     gpg_err_source_t errsource,
+                     const char *agent_program,
+                     const char *opt_lc_ctype,
+                     const char *opt_lc_messages,
+                     session_env_t session_env,
+                     int autostart, int verbose, int debug,
+                     gpg_error_t (*status_cb)(ctrl_t, int, ...),
+                     ctrl_t status_cb_arg)
+{
+  return start_new_service (r_ctx, GNUPG_MODULE_NAME_AGENT,
+                            errsource, agent_program,
+                            opt_lc_ctype, opt_lc_messages, session_env,
+                            autostart, verbose, debug,
+                            status_cb, status_cb_arg);
+}
+
+
+/* Try to connect to the dirmngr via a socket.  On platforms
+   supporting it, start it up if needed and if AUTOSTART is true.
+   Returns a new assuan context at R_CTX or an error code. */
+gpg_error_t
+start_new_keyboxd (assuan_context_t *r_ctx,
+                   gpg_err_source_t errsource,
+                   const char *keyboxd_program,
+                   int autostart, int verbose, int debug,
+                   gpg_error_t (*status_cb)(ctrl_t, int, ...),
+                   ctrl_t status_cb_arg)
+{
+  return start_new_service (r_ctx, GNUPG_MODULE_NAME_KEYBOXD,
+                            errsource, keyboxd_program,
+                            NULL, NULL, NULL,
+                            autostart, verbose, debug,
+                            status_cb, status_cb_arg);
+}
+
+
 /* Try to connect to the dirmngr via a socket.  On platforms
    supporting it, start it up if needed and if AUTOSTART is true.
    Returns a new assuan context at R_CTX or an error code. */
@@ -541,110 +641,18 @@ gpg_error_t
 start_new_dirmngr (assuan_context_t *r_ctx,
                    gpg_err_source_t errsource,
                    const char *dirmngr_program,
-                   int autostart,
-                   int verbose, int debug,
+                   int autostart, int verbose, int debug,
                    gpg_error_t (*status_cb)(ctrl_t, int, ...),
                    ctrl_t status_cb_arg)
 {
-  gpg_error_t err;
-  assuan_context_t ctx;
-  const char *sockname;
-  int did_success_msg = 0;
-
-  *r_ctx = NULL;
-
-  err = assuan_new (&ctx);
-  if (err)
-    {
-      log_error ("error allocating assuan context: %s\n", gpg_strerror (err));
-      return err;
-    }
-
-  sockname = dirmngr_socket_name ();
-  err = assuan_socket_connect (ctx, sockname, 0, 0);
-
-#ifdef USE_DIRMNGR_AUTO_START
-  if (err && autostart)
-    {
-      lock_spawn_t lock;
-      const char *argv[4];
-      char *abs_homedir;
-
-      /* No connection: Try start a new Dirmngr.  */
-      if (!dirmngr_program || !*dirmngr_program)
-        dirmngr_program = gnupg_module_name (GNUPG_MODULE_NAME_DIRMNGR);
-
-      if (verbose)
-        log_info (_("no running Dirmngr - starting '%s'\n"),
-                  dirmngr_program);
-
-      if (status_cb)
-        status_cb (status_cb_arg, STATUS_PROGRESS,
-                   "starting_dirmngr ? 0 0", NULL);
-
-      abs_homedir = make_absfilename (gnupg_homedir (), NULL);
-      if (!abs_homedir)
-        {
-          gpg_error_t tmperr = gpg_err_make (errsource,
-                                             gpg_err_code_from_syserror ());
-          log_error ("error building filename: %s\n",gpg_strerror (tmperr));
-          assuan_release (ctx);
-          return tmperr;
-        }
-
-      if (fflush (NULL))
-        {
-          gpg_error_t tmperr = gpg_err_make (errsource,
-                                             gpg_err_code_from_syserror ());
-          log_error ("error flushing pending output: %s\n",
-                     strerror (errno));
-          assuan_release (ctx);
-          return tmperr;
-        }
-
-      argv[0] = "--daemon";
-      /* Try starting the daemon.  Versions of dirmngr < 2.1.15 do
-       * this only if the home directory is given on the command line.  */
-      argv[1] = "--homedir";
-      argv[2] = abs_homedir;
-      argv[3] = NULL;
-
-      if (!(err = lock_spawning (&lock, gnupg_homedir (), "dirmngr", verbose))
-          && assuan_socket_connect (ctx, sockname, 0, 0))
-        {
-          err = gnupg_spawn_process_detached (dirmngr_program, argv, NULL);
-          if (err)
-            log_error ("failed to start the dirmngr '%s': %s\n",
-                       dirmngr_program, gpg_strerror (err));
-          else
-            err = wait_for_sock (SECS_TO_WAIT_FOR_DIRMNGR, "dirmngr",
-                                 sockname, verbose, ctx, &did_success_msg);
-        }
-
-      unlock_spawning (&lock, "dirmngr");
-      xfree (abs_homedir);
-    }
-#else
-  (void)dirmngr_program;
-  (void)verbose;
-  (void)status_cb;
-  (void)status_cb_arg;
-#endif /*USE_DIRMNGR_AUTO_START*/
-
-  if (err)
-    {
-      if (autostart || gpg_err_code (err) != GPG_ERR_ASS_CONNECT_FAILED)
-        log_error ("connecting dirmngr at '%s' failed: %s\n",
-                   sockname, gpg_strerror (err));
-      assuan_release (ctx);
-      return gpg_err_make (errsource, GPG_ERR_NO_DIRMNGR);
-    }
-
-  if (debug && !did_success_msg)
-    log_debug ("connection to the dirmngr established\n");
-
-  *r_ctx = ctx;
-  return 0;
+#ifndef USE_DIRMNGR_AUTO_START
+  autostart = 0;
+#endif
+  return start_new_service (r_ctx, GNUPG_MODULE_NAME_DIRMNGR,
+                            errsource, dirmngr_program,
+                            NULL, NULL, NULL,
+                            autostart, verbose, debug,
+                            status_cb, status_cb_arg);
 }
 
 
@@ -681,5 +689,59 @@ get_assuan_server_version (assuan_context_t ctx, int mode, char **r_version)
       if (!*r_version)
         err = gpg_error_from_syserror ();
     }
+  return err;
+}
+
+
+/* Print a warning if the server's version number is less than our
+ * version number.  Returns an error code on a connection problem.
+ * CTX is the Assuan context, SERVERNAME is the name of teh server,
+ * STATUS_FUNC and STATUS_FUNC_DATA is a callback to emit status
+ * messages.  If PRINT_HINTS is set additional hints are printed.  For
+ * MODE see get_assuan_server_version.  */
+gpg_error_t
+warn_server_version_mismatch (assuan_context_t ctx,
+                              const char *servername, int mode,
+                              gpg_error_t (*status_func)(ctrl_t ctrl,
+                                                         int status_no,
+                                                         ...),
+                              void *status_func_ctrl,
+                              int print_hints)
+{
+  gpg_error_t err;
+  char *serverversion;
+  const char *myversion = gpgrt_strusage (13);
+
+  err = get_assuan_server_version (ctx, mode, &serverversion);
+  if (err)
+    log_log (gpg_err_code (err) == GPG_ERR_NOT_SUPPORTED?
+             GPGRT_LOGLVL_INFO : GPGRT_LOGLVL_ERROR,
+             _("error getting version from '%s': %s\n"),
+             servername, gpg_strerror (err));
+  else if (compare_version_strings (serverversion, myversion) < 0)
+    {
+      char *warn;
+
+      warn = xtryasprintf (_("server '%s' is older than us (%s < %s)"),
+                           servername, serverversion, myversion);
+      if (!warn)
+        err = gpg_error_from_syserror ();
+      else
+        {
+          log_info (_("WARNING: %s\n"), warn);
+          if (print_hints)
+            {
+              log_info (_("Note: Outdated servers may lack important"
+                          " security fixes.\n"));
+              log_info (_("Note: Use the command \"%s\" to restart them.\n"),
+                        "gpgconf --kill all");
+            }
+          if (status_func)
+            status_func (status_func_ctrl, STATUS_WARNING,
+                         "server_version_mismatch 0", warn, NULL);
+          xfree (warn);
+        }
+    }
+  xfree (serverversion);
   return err;
 }

@@ -39,9 +39,8 @@
   - stpcpy is required
   - fixme: list other requirements.
 
-
-  - With HTTP_USE_NTBTLS or HTTP_USE_GNUTLS support for https is
-    provided (this also requires estream).
+  - Either HTTP_USE_NTBTLS or HTTP_USE_GNUTLS must be defined to select
+    which TLS library to use.
 
   - With HTTP_NO_WSASTARTUP the socket initialization is not done
     under Windows.  This is useful if the socket layer has already
@@ -139,13 +138,10 @@
 
 #if HTTP_USE_NTBTLS
 typedef ntbtls_t         tls_session_t;
-# define USE_TLS 1
 #elif HTTP_USE_GNUTLS
 typedef gnutls_session_t tls_session_t;
-# define USE_TLS 1
 #else
-typedef void *tls_session_t;
-# undef USE_TLS
+# error building without TLS is not supported
 #endif
 
 static gpg_err_code_t do_parse_uri (parsed_uri_t uri, int only_local_part,
@@ -156,14 +152,15 @@ static int remove_escapes (char *string);
 static int insert_escapes (char *buffer, const char *string,
                            const char *special);
 static uri_tuple_t parse_tuple (char *string);
-static gpg_error_t send_request (http_t hd, const char *httphost,
+static gpg_error_t send_request (ctrl_t ctrl, http_t hd, const char *httphost,
                                  const char *auth,const char *proxy,
 				 const char *srvtag, unsigned int timeout,
                                  strlist_t headers);
 static char *build_rel_path (parsed_uri_t uri);
 static gpg_error_t parse_response (http_t hd);
 
-static gpg_error_t connect_server (const char *server, unsigned short port,
+static gpg_error_t connect_server (ctrl_t ctrl,
+                                   const char *server, unsigned short port,
                                    unsigned int flags, const char *srvtag,
                                    unsigned int timeout, assuan_fd_t *r_sock);
 static gpgrt_ssize_t read_server (assuan_fd_t sock, void *buffer, size_t size);
@@ -289,10 +286,7 @@ struct http_session_s
   unsigned long magic;
 
   int refcount;    /* Number of references to this object.  */
-#ifdef HTTP_USE_GNUTLS
-  gnutls_certificate_credentials_t certcred;
-#endif /*HTTP_USE_GNUTLS*/
-#ifdef USE_TLS
+
   tls_session_t tls_session;
   struct {
     int done;      /* Verifciation has been done.  */
@@ -300,7 +294,7 @@ struct http_session_s
     unsigned int status; /* Verification status.  */
   } verify;
   char *servername; /* Malloced server name.  */
-#endif /*USE_TLS*/
+
   /* A callback function to log details of TLS certifciates.  */
   void (*cert_log_cb) (http_session_t, gpg_error_t, const char *,
                        const void **, size_t *);
@@ -314,6 +308,10 @@ struct http_session_s
 
   /* The connect timeout */
   unsigned int connect_timeout;
+
+#ifdef HTTP_USE_GNUTLS
+  gnutls_certificate_credentials_t certcred;
+#endif /*HTTP_USE_GNUTLS*/
 };
 
 
@@ -492,20 +490,48 @@ static ssize_t
 my_gnutls_read (gnutls_transport_ptr_t ptr, void *buffer, size_t size)
 {
   my_socket_t sock = ptr;
-#if USE_NPTH
+#ifdef HAVE_W32_SYSTEM
+  /* Under Windows we need to use recv for a socket.  */
+  int nread;
+# if USE_NPTH
+  npth_unprotect ();
+# endif
+  nread = recv (FD2INT (sock->fd), buffer, size, 0);
+# if USE_NPTH
+  npth_protect ();
+# endif
+  return nread;
+
+#else  /* !HAVE_W32_SYSTEM */
+# if USE_NPTH
   return npth_read (sock->fd, buffer, size);
-#else
+# else
   return read (sock->fd, buffer, size);
+# endif
 #endif
 }
 static ssize_t
 my_gnutls_write (gnutls_transport_ptr_t ptr, const void *buffer, size_t size)
 {
   my_socket_t sock = ptr;
-#if USE_NPTH
+#ifdef HAVE_W32_SYSTEM
+  int nwritten;
+# if USE_NPTH
+  npth_unprotect ();
+# endif
+  nwritten = send (FD2INT (sock->fd), buffer, size, 0);
+# if USE_NPTH
+  npth_protect ();
+# endif
+  return nwritten;
+
+#else /*!HAVE_W32_SYSTEM*/
+
+# if USE_NPTH
   return npth_write (sock->fd, buffer, size);
-#else
+# else
   return write (sock->fd, buffer, size);
+# endif
 #endif
 }
 #endif /*HTTP_USE_GNUTLS*/
@@ -699,31 +725,29 @@ notify_netactivity (void)
 
 
 
-#ifdef USE_TLS
 /* Free the TLS session associated with SESS, if any.  */
 static void
 close_tls_session (http_session_t sess)
 {
   if (sess->tls_session)
     {
-# if HTTP_USE_NTBTLS
+#if HTTP_USE_NTBTLS
       /* FIXME!!
          Possibly, ntbtls_get_transport and close those streams.
          Somehow get SOCK to call my_socket_unref.
       */
       ntbtls_release (sess->tls_session);
-# elif HTTP_USE_GNUTLS
+#elif HTTP_USE_GNUTLS
       my_socket_t sock = gnutls_transport_get_ptr (sess->tls_session);
       my_socket_unref (sock, NULL, NULL);
       gnutls_deinit (sess->tls_session);
       if (sess->certcred)
         gnutls_certificate_free_credentials (sess->certcred);
-# endif /*HTTP_USE_GNUTLS*/
+#endif /*HTTP_USE_GNUTLS*/
       xfree (sess->servername);
       sess->tls_session = NULL;
     }
 }
-#endif /*USE_TLS*/
 
 
 /* Release a session.  Take care not to release it while it is being
@@ -743,14 +767,13 @@ session_unref (int lnr, http_session_t sess)
   if (sess->refcount)
     return;
 
-#ifdef USE_TLS
   close_tls_session (sess);
-#endif /*USE_TLS*/
 
   sess->magic = 0xdeadbeef;
   xfree (sess);
 }
 #define http_session_unref(a) session_unref (__LINE__, (a))
+
 
 void
 http_session_release (http_session_t sess)
@@ -877,7 +900,7 @@ http_session_new (http_session_t *r_session,
         goto leave;
       }
 
-    /* Disabled for 2.2.19 to due problems with the standard hkps pool.  */
+    /* Disabled for 2.3.2 to due problems with the standard hkps pool.  */
     /* is_hkps_pool = (intended_hostname */
     /*                 && !ascii_strcasecmp (intended_hostname, */
     /*                                       get_default_keyserver (1))); */
@@ -885,7 +908,7 @@ http_session_new (http_session_t *r_session,
 
     /* If we are looking for the hkps pool from sks-keyservers.net,
      * then forcefully use its dedicated certificate authority.  */
-    /* Disabled for 2.2.29 because the service had to be shutdown.  */
+    /* Disabled for 2.3.2 because the service had to be shutdown.  */
     /* if (is_hkps_pool) */
     /*   { */
     /*     char *pemname = make_filename_try (gnupg_datadir (), */
@@ -1001,9 +1024,7 @@ http_session_new (http_session_t *r_session,
     log_debug ("http.c:session_new: sess %p created\n", sess);
   err = 0;
 
-#if USE_TLS
  leave:
-#endif /*USE_TLS*/
   if (err)
     http_session_unref (sess);
   else
@@ -1055,7 +1076,7 @@ http_session_set_timeout (http_session_t sess, unsigned int timeout)
    If HTTPHOST is not NULL it is used for the Host header instead of a
    Host header derived from the URL. */
 gpg_error_t
-http_open (http_t *r_hd, http_req_t reqtype, const char *url,
+http_open (ctrl_t ctrl, http_t *r_hd, http_req_t reqtype, const char *url,
            const char *httphost,
            const char *auth, unsigned int flags, const char *proxy,
            http_session_t session, const char *srvtag, strlist_t headers)
@@ -1079,7 +1100,7 @@ http_open (http_t *r_hd, http_req_t reqtype, const char *url,
 
   err = parse_uri (&hd->uri, url, 0, !!(flags & HTTP_FLAG_FORCE_TLS));
   if (!err)
-    err = send_request (hd, httphost, auth, proxy, srvtag,
+    err = send_request (ctrl, hd, httphost, auth, proxy, srvtag,
                         hd->session? hd->session->connect_timeout : 0,
                         headers);
 
@@ -1103,7 +1124,8 @@ http_open (http_t *r_hd, http_req_t reqtype, const char *url,
    this http abstraction layer.  This has the advantage of providing
    service tags and an estream interface.  TIMEOUT is in milliseconds. */
 gpg_error_t
-http_raw_connect (http_t *r_hd, const char *server, unsigned short port,
+http_raw_connect (ctrl_t ctrl, http_t *r_hd,
+                  const char *server, unsigned short port,
                   unsigned int flags, const char *srvtag, unsigned int timeout)
 {
   gpg_error_t err = 0;
@@ -1138,7 +1160,8 @@ http_raw_connect (http_t *r_hd, const char *server, unsigned short port,
   {
     assuan_fd_t sock;
 
-    err = connect_server (server, port, hd->flags, srvtag, timeout, &sock);
+    err = connect_server (ctrl, server, port,
+                          hd->flags, srvtag, timeout, &sock);
     if (err)
       {
         xfree (hd);
@@ -1261,14 +1284,14 @@ http_wait_response (http_t hd)
    be used as an HTTP proxy and any enabled $http_proxy gets
    ignored. */
 gpg_error_t
-http_open_document (http_t *r_hd, const char *document,
+http_open_document (ctrl_t ctrl, http_t *r_hd, const char *document,
                     const char *auth, unsigned int flags, const char *proxy,
                     http_session_t session,
                     const char *srvtag, strlist_t headers)
 {
   gpg_error_t err;
 
-  err = http_open (r_hd, HTTP_REQ_GET, document, NULL, auth, flags,
+  err = http_open (ctrl, r_hd, HTTP_REQ_GET, document, NULL, auth, flags,
                    proxy, session, srvtag, headers);
   if (err)
     return err;
@@ -1429,6 +1452,7 @@ do_parse_uri (parsed_uri_t uri, int only_local_part,
   uri->params = uri->query = NULL;
   uri->use_tls = 0;
   uri->is_http = 0;
+  uri->is_ldap = 0;
   uri->opaque = 0;
   uri->v6lit = 0;
   uri->onion = 0;
@@ -1460,7 +1484,6 @@ do_parse_uri (parsed_uri_t uri, int only_local_part,
           uri->port = 11371;
           uri->is_http = 1;
         }
-#ifdef USE_TLS
       else if (!strcmp (uri->scheme, "https") || !strcmp (uri->scheme,"hkps")
                || (force_tls && (!strcmp (uri->scheme, "http")
                                  || !strcmp (uri->scheme,"hkp"))))
@@ -1469,7 +1492,6 @@ do_parse_uri (parsed_uri_t uri, int only_local_part,
           uri->is_http = 1;
           uri->use_tls = 1;
         }
-#endif /*USE_TLS*/
       else if (!strcmp (uri->scheme, "opaque"))
         {
           uri->opaque = 1;
@@ -1477,7 +1499,24 @@ do_parse_uri (parsed_uri_t uri, int only_local_part,
           return 0;
         }
       else if (!no_scheme_check)
-	return GPG_ERR_INV_URI; /* Unsupported scheme */
+	return GPG_ERR_INV_URI; /* Not an http style scheme.  */
+      else if (!strcmp (uri->scheme, "ldap") && !force_tls)
+        {
+          uri->port = 389;
+          uri->is_ldap = 1;
+        }
+      else if (!strcmp (uri->scheme, "ldaps")
+               || (force_tls && (!strcmp (uri->scheme, "ldap"))))
+        {
+          uri->port = 636;
+          uri->is_ldap = 1;
+          uri->use_tls = 1;
+        }
+      else if (!strcmp (uri->scheme, "ldapi"))  /* LDAP via IPC.  */
+        {
+          uri->port = 0;
+          uri->is_ldap = 1;
+        }
 
       p = p2;
 
@@ -1543,8 +1582,8 @@ do_parse_uri (parsed_uri_t uri, int only_local_part,
 	    return GPG_ERR_BAD_URI;	/* Hostname includes a Nul. */
 	  p = p2 ? p2 : NULL;
 	}
-      else if (uri->is_http)
-	return GPG_ERR_INV_URI; /* No Leading double slash for HTTP.  */
+      else if (!no_scheme_check && (uri->is_http || uri->is_ldap))
+	return GPG_ERR_INV_URI; /* HTTP or LDAP w/o leading double slash. */
       else
         {
           uri->opaque = 1;
@@ -2078,7 +2117,6 @@ send_request_basic_checks (http_t hd)
       log_error ("TLS requested but no session object provided\n");
       return gpg_error (GPG_ERR_INTERNAL);
     }
-#ifdef USE_TLS
   if (hd->uri->use_tls && !hd->session->tls_session)
     {
       log_error ("TLS requested but no TLS context available\n");
@@ -2086,15 +2124,12 @@ send_request_basic_checks (http_t hd)
     }
   if (opt_debug)
     log_debug ("Using TLS library: %s %s\n",
-# if HTTP_USE_NTBTLS
+#if HTTP_USE_NTBTLS
                "NTBTLS", ntbtls_check_version (NULL)
-# elif HTTP_USE_GNUTLS
+#elif HTTP_USE_GNUTLS
                "GNUTLS", gnutls_check_version (NULL)
-# else
-               "?", "?"
-# endif /*HTTP_USE_*TLS*/
+#endif /*HTTP_USE_GNUTLS*/
                );
-#endif /*USE_TLS*/
 
   if ((hd->flags & HTTP_FLAG_FORCE_TOR)
       && (assuan_sock_get_flag (ASSUAN_INVALID_FD, "tor-mode", &mode) || !mode))
@@ -2117,7 +2152,6 @@ send_request_set_sni (http_t hd, const char *name)
 # endif
 
   /* Try to use SNI.  */
-#ifdef USE_TLS
   if (hd->uri->use_tls)
     {
       xfree (hd->session->servername);
@@ -2128,7 +2162,7 @@ send_request_set_sni (http_t hd, const char *name)
           goto leave;
         }
 
-# if HTTP_USE_NTBTLS
+#if HTTP_USE_NTBTLS
       err = ntbtls_set_hostname (hd->session->tls_session,
                                  hd->session->servername);
       if (err)
@@ -2136,16 +2170,15 @@ send_request_set_sni (http_t hd, const char *name)
           log_info ("ntbtls_set_hostname failed: %s\n", gpg_strerror (err));
           goto leave;
         }
-# elif HTTP_USE_GNUTLS
+#elif HTTP_USE_GNUTLS
       rc = gnutls_server_name_set (hd->session->tls_session,
                                    GNUTLS_NAME_DNS,
                                    hd->session->servername,
                                    strlen (hd->session->servername));
       if (rc < 0)
         log_info ("gnutls_server_name_set failed: %s\n", gnutls_strerror (rc));
-# endif /*HTTP_USE_GNUTLS*/
+#endif /*HTTP_USE_GNUTLS*/
     }
-#endif /*USE_TLS*/
 
  leave:
   return err;
@@ -2166,24 +2199,24 @@ run_ntbtls_handshake (http_t hd)
 
       /* Until we support send/recv in estream under Windows we need
        * to use es_fopencookie.  */
-#ifdef HAVE_W32_SYSTEM
+# ifdef HAVE_W32_SYSTEM
       in = es_fopencookie ((void*)(unsigned int)hd->sock->fd, "rb",
                            simple_cookie_functions);
-#else
+# else
       in = es_fdopen_nc (hd->sock->fd, "rb");
-#endif
+# endif
       if (!in)
         {
           err = gpg_error_from_syserror ();
           goto leave;
         }
 
-#ifdef HAVE_W32_SYSTEM
+# ifdef HAVE_W32_SYSTEM
       out = es_fopencookie ((void*)(unsigned int)hd->sock->fd, "wb",
                             simple_cookie_functions);
-#else
+# else
       out = es_fdopen_nc (hd->sock->fd, "wb");
-#endif
+# endif
       if (!out)
         {
           err = gpg_error_from_syserror ();
@@ -2550,7 +2583,7 @@ run_proxy_connect (http_t hd, proxy_info_t proxy,
     }
 
   if (opt_debug || (hd->flags & HTTP_FLAG_LOG_RESP))
-    log_debug_with_string (request, "http.c:proxy:request:");
+    log_debug_string (request, "http.c:proxy:request:");
 
   if (!hd->fp_write)
     {
@@ -2803,7 +2836,8 @@ mk_std_request (http_t hd,
  * Returns 0 if the request was successful
  */
 static gpg_error_t
-send_request (http_t hd, const char *httphost, const char *auth,
+send_request (ctrl_t ctrl,
+              http_t hd, const char *httphost, const char *auth,
 	      const char *override_proxy,
               const char *srvtag, unsigned int timeout,
               strlist_t headers)
@@ -2842,14 +2876,16 @@ send_request (http_t hd, const char *httphost, const char *auth,
 
   if (proxy && proxy->is_http_proxy)
     {
-      use_http_proxy = 1;  /* We want to use a proxy for the conenction.  */
-      err = connect_server (*proxy->uri->host ? proxy->uri->host : "localhost",
+      use_http_proxy = 1;  /* We want to use a proxy for the connection.  */
+      err = connect_server (ctrl,
+                            *proxy->uri->host ? proxy->uri->host : "localhost",
                             proxy->uri->port ? proxy->uri->port : 80,
                             hd->flags, NULL, timeout, &sock);
     }
   else
     {
-      err = connect_server (server, port, hd->flags, srvtag, timeout, &sock);
+      err = connect_server (ctrl,
+                            server, port, hd->flags, srvtag, timeout, &sock);
     }
   if (err)
     goto leave;
@@ -2932,7 +2968,7 @@ send_request (http_t hd, const char *httphost, const char *auth,
     goto leave;
 
   if (opt_debug || (hd->flags & HTTP_FLAG_LOG_RESP))
-    log_debug_with_string (request, "http.c:request:");
+    log_debug_string (request, "http.c:request:");
 
   /* First setup estream so that we can write even the first line
      using estream.  This is also required for the sake of gnutls. */
@@ -2949,7 +2985,7 @@ send_request (http_t hd, const char *httphost, const char *auth,
   for (;headers; headers=headers->next)
     {
       if (opt_debug || (hd->flags & HTTP_FLAG_LOG_RESP))
-        log_debug_with_string (headers->d, "http.c:request-header:");
+        log_debug_string (headers->d, "http.c:request-header:");
       if ((es_fputs (headers->d, hd->fp_write) || es_fflush (hd->fp_write))
             || (es_fputs("\r\n",hd->fp_write) || es_fflush(hd->fp_write)))
         {
@@ -3184,7 +3220,7 @@ http_get_header_names (http_t hd)
  * Parse the response from a server.
  * Returns: Errorcode and sets some files in the handle
  */
-static gpg_err_code_t
+static gpg_error_t
 parse_response (http_t hd)
 {
   char *line, *p, *p2;
@@ -3208,14 +3244,14 @@ parse_response (http_t hd)
       len = es_read_line (hd->fp_read, &hd->buffer, &hd->buffer_size, &maxlen);
       line = hd->buffer;
       if (!line)
-	return gpg_err_code_from_syserror (); /* Out of core. */
+	return gpg_error_from_syserror (); /* Out of core. */
       if (!maxlen)
-	return GPG_ERR_TRUNCATED; /* Line has been truncated. */
+	return gpg_error (GPG_ERR_TRUNCATED); /* Line has been truncated. */
       if (!len)
-	return GPG_ERR_EOF;
+	return gpg_error (GPG_ERR_EOF);
 
       if (opt_debug || (hd->flags & HTTP_FLAG_LOG_RESP))
-        log_debug_with_string (line, "http.c:response:\n");
+        log_debug_string (line, "http.c:response:\n");
     }
   while (!*line);
 
@@ -3252,10 +3288,10 @@ parse_response (http_t hd)
       len = es_read_line (hd->fp_read, &hd->buffer, &hd->buffer_size, &maxlen);
       line = hd->buffer;
       if (!line)
-	return gpg_err_code_from_syserror (); /* Out of core. */
+	return gpg_error_from_syserror (); /* Out of core. */
       /* Note, that we can silently ignore truncated lines. */
       if (!len)
-	return GPG_ERR_EOF;
+	return gpg_error (GPG_ERR_EOF);
       /* Trim line endings of empty lines. */
       if ((*line == '\r' && line[1] == '\n') || *line == '\n')
 	*line = 0;
@@ -3266,7 +3302,7 @@ parse_response (http_t hd)
         {
           gpg_err_code_t ec = store_header (hd, line);
           if (ec)
-            return ec;
+            return gpg_error (ec);
         }
     }
   while (len && *line);
@@ -3548,7 +3584,7 @@ connect_with_timeout (assuan_fd_t sock,
        * because the caller is expected to close the socket.  */
       return gpg_err_make (default_errsource, GPG_ERR_ETIMEDOUT);
     }
-  if (!FD_ISSET (sock, &rset) && !FD_ISSET (sock, &wset))
+  if (!FD_ISSET (FD2INT (sock), &rset) && !FD_ISSET (FD2INT (sock), &wset))
     {
       /* select misbehaved.  */
       return gpg_err_make (default_errsource, GPG_ERR_SYSTEM_BUG);
@@ -3581,7 +3617,7 @@ connect_with_timeout (assuan_fd_t sock,
  * function tries to connect to all known addresses and the timeout is
  * for each one. */
 static gpg_error_t
-connect_server (const char *server, unsigned short port,
+connect_server (ctrl_t ctrl, const char *server, unsigned short port,
                 unsigned int flags, const char *srvtag, unsigned int timeout,
                 assuan_fd_t *r_sock)
 {
@@ -3636,7 +3672,7 @@ connect_server (const char *server, unsigned short port,
   /* Do the SRV thing */
   if (srvtag)
     {
-      err = get_dns_srv (server, srvtag, NULL, &serverlist, &srvcount);
+      err = get_dns_srv (ctrl, server, srvtag, NULL, &serverlist, &srvcount);
       if (err)
         log_info ("getting '%s' SRV for '%s' failed: %s\n",
                   srvtag, server, gpg_strerror (err));
@@ -3666,7 +3702,8 @@ connect_server (const char *server, unsigned short port,
       if (opt_debug)
         log_debug ("http.c:connect_server: trying name='%s' port=%hu\n",
                    serverlist[srv].target, port);
-      err = resolve_dns_name (serverlist[srv].target, port, 0, SOCK_STREAM,
+      err = resolve_dns_name (ctrl,
+                              serverlist[srv].target, port, 0, SOCK_STREAM,
                               &aibuf, NULL);
       if (err)
         {
@@ -4296,6 +4333,7 @@ http_verify_server_credentials (http_session_t sess)
 #endif
 }
 
+
 /* Return the first query variable with the specified key.  If there
    is no such variable, return NULL.  */
 struct uri_tuple_s *
@@ -4365,7 +4403,7 @@ same_host_p (parsed_uri_t a, parsed_uri_t b)
     }
 
   /* Also consider hosts the same if they differ only in a subdomain;
-   * in both direction.  This allows to have redirection between the
+   * in both direction.  This allows one to have redirection between the
    * WKD advanced and direct lookup methods. */
   for (i=0; i < DIM (subdomains); i++)
     {
@@ -4455,7 +4493,6 @@ http_prepare_redirect (http_redir_info_t *info, unsigned int status_code,
       if (!newurl)
         {
           err = gpg_error_from_syserror ();
-          http_release_parsed_uri (locuri);
           return err;
         }
     }
@@ -4464,21 +4501,21 @@ http_prepare_redirect (http_redir_info_t *info, unsigned int status_code,
       http_release_parsed_uri (locuri);
       return err;
     }
-  else if (same_host_p (origuri, locuri))
+  else if (!info->restrict_redir || same_host_p (origuri, locuri))
     {
-      /* The host is the same or on an exception list and thus we can
-       * take the location verbatim.  */
+      /* Take the syntactically correct location or if restrict_redir
+       * is set the host is the same or on an exception list and thus
+       * we can take the location verbatim.  */
       http_release_parsed_uri (origuri);
       http_release_parsed_uri (locuri);
       newurl = xtrystrdup (location);
       if (!newurl)
         {
           err = gpg_error_from_syserror ();
-          http_release_parsed_uri (locuri);
           return err;
         }
     }
-  else
+  else /* Strictly rectricted redirection which we used in the past.  */
     {
       /* We take only the host and port from the URL given in the
        * Location.  This limits the effects of redirection attacks by

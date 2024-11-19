@@ -41,7 +41,6 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <limits.h>
-#include <assert.h>
 
 #include "t-support.h"
 #include "sysutils.h"
@@ -84,10 +83,6 @@ mygetcwd (void)
   for (;;)
     {
       buffer = xmalloc (size+1);
-#ifdef HAVE_W32CE_SYSTEM
-      strcpy (buffer, "/");  /* Always "/".  */
-      return buffer;
-#else
       if (getcwd (buffer, size) == buffer)
         {
 #ifdef HAVE_W32_SYSTEM
@@ -106,7 +101,6 @@ mygetcwd (void)
           exit (2);
         }
       size *= 2;
-#endif
     }
 }
 
@@ -865,14 +859,14 @@ test_split_fields (void)
   };
 
   int tidx;
-  char *fields[10];
+  const char *fields[10];
   int field_count_expected, nfields, field_count, i;
   char *s2;
 
   for (tidx = 0; tidx < DIM(tv); tidx++)
     {
       nfields = tv[tidx].nfields;
-      assert (nfields <= DIM (fields));
+      log_assert (nfields <= DIM (fields));
 
       /* Count the fields.  */
       for (field_count_expected = 0;
@@ -940,14 +934,14 @@ test_split_fields_colon (void)
   };
 
   int tidx;
-  char *fields[10];
+  const char *fields[10];
   int field_count_expected, nfields, field_count, i;
   char *s2;
 
   for (tidx = 0; tidx < DIM(tv); tidx++)
     {
       nfields = tv[tidx].nfields;
-      assert (nfields <= DIM (fields));
+      log_assert (nfields <= DIM (fields));
 
       /* Count the fields.  */
       for (field_count_expected = 0;

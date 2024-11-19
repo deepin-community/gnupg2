@@ -1,6 +1,6 @@
 /* dirmngr.c - Keyserver and X.509 LDAP access
  * Copyright (C) 2002 Klarälvdalens Datakonsult AB
- * Copyright (C) 2003-2004, 2006-2007, 2008, 2010-2011, 2020-2021 g10 Code GmbH
+ * Copyright (C) 2003-2004, 2006-2007, 2008, 2010-2011, 2020 g10 Code GmbH
  * Copyright (C) 2014 Werner Koch
  *
  * This file is part of GnuPG.
@@ -71,6 +71,7 @@
 #if USE_LDAP
 # include "ldap-wrapper.h"
 #endif
+#include "../common/comopt.h"
 #include "../common/init.h"
 #include "../common/gc-opt-flags.h"
 #include "dns-stuff.h"
@@ -158,13 +159,14 @@ enum cmd_and_opt_values {
   oConnectTimeout,
   oConnectQuickTimeout,
   oListenBacklog,
+  oFakeCRL,
   oCompatibilityFlags,
   aTest
 };
 
 
 
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
 
   ARGPARSE_c (aGPGConfList, "gpgconf-list", "@"),
   ARGPARSE_c (aGPGConfTest, "gpgconf-test", "@"),
@@ -175,7 +177,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_c (aServer,   "server",  N_("run in server mode (foreground)") ),
   ARGPARSE_c (aDaemon,   "daemon",  N_("run in daemon mode (background)") ),
 #ifndef HAVE_W32_SYSTEM
-  ARGPARSE_c (aSupervised,  "supervised", N_("run in supervised mode")),
+  ARGPARSE_c (aSupervised,  "supervised", "@"),
 #endif
   ARGPARSE_c (aListCRLs, "list-crls", N_("list the contents of the CRL cache")),
   ARGPARSE_c (aLoadCRL,  "load-crl", N_("|FILE|load CRL from FILE into cache")),
@@ -219,7 +221,7 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_i (oListenBacklog, "listen-backlog", "@"),
   ARGPARSE_s_i (oMaxReplies, "max-replies",
                 N_("|N|do not return more than N items in one query")),
-  ARGPARSE_s_u (oFakedSystemTime, "faked-system-time", "@"), /*(epoch time)*/
+  ARGPARSE_s_s (oFakedSystemTime, "faked-system-time", "@"),
   ARGPARSE_s_n (oDisableCheckOwnSocket, "disable-check-own-socket", "@"),
   ARGPARSE_s_s (oIgnoreCert,"ignore-cert", "@"),
   ARGPARSE_s_s (oIgnoreCertExtension,"ignore-cert-extension", "@"),
@@ -240,14 +242,6 @@ static ARGPARSE_OPTS opts[] = {
   ARGPARSE_s_i (oConnectQuickTimeout, "connect-quick-timeout", "@"),
 
 
-  ARGPARSE_header ("Keyserver", N_("Configuration for Keyservers")),
-
-  ARGPARSE_s_s (oKeyServer, "keyserver",
-                N_("|URL|use keyserver at URL")),
-  ARGPARSE_s_s (oHkpCaCert, "hkp-cacert",
-                N_("|FILE|use the CA certificates in FILE for HKP over TLS")),
-
-
   ARGPARSE_header ("HTTP", N_("Configuration for HTTP servers")),
 
   ARGPARSE_s_n (oDisableHTTP, "disable-http", N_("inhibit the use of HTTP")),
@@ -259,8 +253,14 @@ static ARGPARSE_OPTS opts[] = {
                 N_("use system's HTTP proxy setting")),
   ARGPARSE_s_s (oLDAPWrapperProgram, "ldap-wrapper-program", "@"),
 
+  ARGPARSE_header ("Keyserver", N_("Configuration for OpenPGP servers")),
 
-  ARGPARSE_header ("LDAP", N_("Configuration of LDAP servers to use")),
+  ARGPARSE_s_s (oKeyServer, "keyserver",
+                N_("|URL|use keyserver at URL")),
+  ARGPARSE_s_s (oHkpCaCert, "hkp-cacert",
+                N_("|FILE|use the CA certificates in FILE for HKP over TLS")),
+
+  ARGPARSE_header ("LDAP", N_("Configuration for X.509 servers")),
 
   ARGPARSE_s_n (oDisableLDAP, "disable-ldap", N_("inhibit the use of LDAP")),
   ARGPARSE_s_n (oIgnoreLDAPDP,"ignore-ldap-dp",
@@ -278,7 +278,7 @@ static ARGPARSE_OPTS opts[] = {
                    " points to serverlist")),
   ARGPARSE_s_i (oLDAPTimeout, "ldaptimeout",
                 N_("|N|set LDAP timeout to N seconds")),
-
+  ARGPARSE_s_s (oFakeCRL, "fake-crl", "@"),
 
   ARGPARSE_header ("OCSP", N_("Configuration for OCSP")),
 
@@ -329,12 +329,14 @@ static struct debug_flags_s debug_flags [] =
     { DBG_NETWORK_VALUE, "network" },
     { DBG_LOOKUP_VALUE , "lookup"  },
     { DBG_EXTPROG_VALUE, "extprog" },
+    { DBG_KEEPTMP_VALUE, "keeptmp" },
     { 77, NULL } /* 77 := Do not exit on "help" or "?".  */
   };
 
 /* The list of compatibility flags.  */
 static struct compatibility_flags_s compatibility_flags [] =
   {
+    { COMPAT_RESTRICT_HTTP_REDIR, "restrict-http-redir" },
     { 0, NULL }
   };
 
@@ -399,7 +401,7 @@ static int active_connections;
  * thread to run background network tasks.  */
 static int network_activity_seen;
 
-/* A list of filenames registred with --hkp-cacert.  */
+/* A list of filenames registered with --hkp-cacert.  */
 static strlist_t hkp_cacert_filenames;
 
 /* A flag used to clear the list of ldapservers iff --ldapserver is
@@ -483,7 +485,7 @@ my_strusage( int level )
 
 /* Callback from libksba to hash a provided buffer.  Our current
    implementation does only allow SHA-1 for hashing. This may be
-   extended by mapping the name, testing for algorithm availibility
+   extended by mapping the name, testing for algorithm availability
    and adjust the length checks accordingly. */
 static gpg_error_t
 my_ksba_hash_buffer (void *arg, const char *oid,
@@ -546,7 +548,7 @@ set_debug (void)
          select the highest debug value and would then clutter their
          disk with debug files which may reveal confidential data.  */
       if (numok)
-        opt.debug &= ~(DBG_HASHING_VALUE);
+        opt.debug &= ~(DBG_HASHING_VALUE|DBG_KEEPTMP_VALUE);
     }
   else
     {
@@ -592,7 +594,7 @@ set_tor_mode (void)
 {
   if (dirmngr_use_tor ())
     {
-      /* Enable Tor mode and when called again force a new curcuit
+      /* Enable Tor mode and when called again force a new circuit
        * (e.g. on SIGHUP).  */
       enable_dns_tormode (1);
       if (assuan_sock_set_flag (ASSUAN_INVALID_FD, "tor-mode", 1))
@@ -669,7 +671,7 @@ shutdown_reaper (void)
    PARGS, resets the options to the default.  REREAD should be set
    true if it is not the initial option parsing. */
 static int
-parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
+parse_rereadable_options (gpgrt_argparse_t *pargs, int reread)
 {
   if (!pargs)
     { /* Reset mode. */
@@ -721,6 +723,8 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.ldaptimeout = DEFAULT_LDAP_TIMEOUT;
       ldapserver_list_needs_reset = 1;
       opt.debug_cache_expired_certs = 0;
+      xfree (opt.fake_crl);
+      opt.fake_crl = NULL;
       opt.compat_flags = 0;
       return 1;
     }
@@ -888,6 +892,11 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
       opt.debug_cache_expired_certs = 0;
       break;
 
+    case oFakeCRL:
+      xfree (opt.fake_crl);
+      opt.fake_crl = *pargs->r.ret_str? xstrdup (pargs->r.ret_str) : NULL;
+      break;
+
     case oCompatibilityFlags:
       if (parse_compatibility_flags (pargs->r.ret_str, &opt.compat_flags,
                                      compatibility_flags))
@@ -910,7 +919,7 @@ parse_rereadable_options (ARGPARSE_ARGS *pargs, int reread)
 }
 
 
-/* This fucntion is called after option parsing to adjust some values
+/* This function is called after option parsing to adjust some values
  * and call option setup functions.  */
 static void
 post_option_parsing (enum cmd_and_opt_values cmd)
@@ -956,12 +965,12 @@ my_ntbtls_log_handler (void *opaque, int level, const char *fmt, va_list argv)
   (void)opaque;
 
   if (level == -1)
-    log_logv_with_prefix (GPGRT_LOG_INFO, "ntbtls: ", fmt, argv);
+    log_logv_prefix (GPGRT_LOGLVL_INFO, "ntbtls: ", fmt, argv);
   else
     {
       char prefix[10+20];
       snprintf (prefix, sizeof prefix, "ntbtls(%d): ", level);
-      log_logv_with_prefix (GPGRT_LOG_DEBUG, prefix, fmt, argv);
+      log_logv_prefix (GPGRT_LOGLVL_DEBUG, prefix, fmt, argv);
     }
 }
 #endif
@@ -989,7 +998,7 @@ int
 main (int argc, char **argv)
 {
   enum cmd_and_opt_values cmd = 0;
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   int orig_argc;
   char **orig_argv;
   char *last_configname = NULL;
@@ -1009,7 +1018,7 @@ main (int argc, char **argv)
   struct assuan_malloc_hooks malloc_hooks;
 
   early_system_init ();
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   log_set_prefix (DIRMNGR_NAME, GPGRT_LOG_WITH_PREFIX | GPGRT_LOG_WITH_PID);
 
   /* Make sure that our subsystems are ready.  */
@@ -1078,7 +1087,7 @@ main (int argc, char **argv)
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= (ARGPARSE_FLAG_KEEP | ARGPARSE_FLAG_NOVERSION);
-  while (gnupg_argparse (NULL, &pargs, opts))
+  while (gpgrt_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -1097,8 +1106,8 @@ main (int argc, char **argv)
   socket_name = dirmngr_socket_name ();
 
   /* The configuraton directories for use by gpgrt_argparser.  */
-  gnupg_set_confdir (GNUPG_CONFDIR_SYS, gnupg_sysconfdir ());
-  gnupg_set_confdir (GNUPG_CONFDIR_USER, gnupg_homedir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_SYS, gnupg_sysconfdir ());
+  gpgrt_set_confdir (GPGRT_CONFDIR_USER, gnupg_homedir ());
 
   /* We are re-using the struct, thus the reset flag.  We OR the
    * flags so that the internal intialized flag won't be cleared. */
@@ -1110,7 +1119,7 @@ main (int argc, char **argv)
                    | ARGPARSE_FLAG_KEEP
                    | ARGPARSE_FLAG_SYS
                    | ARGPARSE_FLAG_USER);
-  while (gnupg_argparser (&pargs, opts, DIRMNGR_NAME EXTSEP_S "conf"))
+  while (gpgrt_argparser (&pargs, opts, DIRMNGR_NAME EXTSEP_S "conf"))
     {
       if (pargs.r_opt == ARGPARSE_CONFFILE)
         {
@@ -1167,7 +1176,12 @@ main (int argc, char **argv)
 	case oLDAPAddServers: opt.add_new_ldapservers = 1; break;
 
         case oFakedSystemTime:
-          gnupg_set_time ((time_t)pargs.r.ret_ulong, 0);
+          {
+            time_t faked_time = isotime2epoch (pargs.r.ret_str);
+            if (faked_time == (time_t)(-1))
+              faked_time = (time_t)strtoul (pargs.r.ret_str, NULL, 10);
+            gnupg_set_time (faked_time, 0);
+          }
           break;
 
         case oForce: opt.force = 1; break;
@@ -1186,12 +1200,12 @@ main (int argc, char **argv)
           break;
 	}
     }
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
 
   if (!last_configname)
-    opt.config_filename = make_filename (gnupg_homedir (),
-                                         DIRMNGR_NAME EXTSEP_S "conf",
-                                         NULL);
+    opt.config_filename = gpgrt_fnameconcat (gnupg_homedir (),
+                                             DIRMNGR_NAME EXTSEP_S "conf",
+                                             NULL);
   else
     {
       opt.config_filename = last_configname;
@@ -1200,6 +1214,14 @@ main (int argc, char **argv)
 
   if (log_get_errorcount(0))
     exit(2);
+
+  /* Get a default log file from common.conf.  */
+  if (!logfile && !parse_comopt (GNUPG_MODULE_NAME_DIRMNGR, debug_argparser))
+    {
+      logfile = comopt.logfile;
+      comopt.logfile = NULL;
+    }
+
   if (nogreeting )
     greeting = 0;
 
@@ -1209,8 +1231,8 @@ main (int argc, char **argv)
   if (greeting)
     {
       es_fprintf (es_stderr, "%s %s; %s\n",
-                  strusage(11), strusage(13), strusage(14) );
-      es_fprintf (es_stderr, "%s\n", strusage(15) );
+                  gpgrt_strusage(11), gpgrt_strusage(13), gpgrt_strusage(14));
+      es_fprintf (es_stderr, "%s\n", gpgrt_strusage(15));
     }
 
 #ifdef IS_DEVELOPMENT_VERSION
@@ -1300,6 +1322,7 @@ main (int argc, char **argv)
       thread_init ();
       cert_cache_init (hkp_cacert_filenames);
       crl_cache_init ();
+      ks_hkp_init ();
       http_register_netactivity_cb (netactivity_action);
       start_command_handler (ASSUAN_INVALID_FD, 0);
       shutdown_reaper ();
@@ -1307,12 +1330,16 @@ main (int argc, char **argv)
 #ifndef HAVE_W32_SYSTEM
   else if (cmd == aSupervised)
     {
+      struct stat statbuf;
+
+      if (!opt.quiet)
+        log_info(_("WARNING: \"%s\" is a deprecated option\n"), "--supervised");
+
       /* In supervised mode, we expect file descriptor 3 to be an
          already opened, listening socket.
 
          We will also not detach from the controlling process or close
          stderr; the supervisor should handle all of that.  */
-      struct stat statbuf;
       if (fstat (3, &statbuf) == -1 && errno == EBADF)
         {
           log_error ("file descriptor 3 must be validin --supervised mode\n");
@@ -1335,6 +1362,7 @@ main (int argc, char **argv)
       thread_init ();
       cert_cache_init (hkp_cacert_filenames);
       crl_cache_init ();
+      ks_hkp_init ();
       http_register_netactivity_cb (netactivity_action);
       handle_connections (3);
       shutdown_reaper ();
@@ -1560,6 +1588,7 @@ main (int argc, char **argv)
       thread_init ();
       cert_cache_init (hkp_cacert_filenames);
       crl_cache_init ();
+      ks_hkp_init ();
       http_register_netactivity_cb (netactivity_action);
       handle_connections (fd);
       shutdown_reaper ();
@@ -1582,6 +1611,7 @@ main (int argc, char **argv)
       thread_init ();
       cert_cache_init (hkp_cacert_filenames);
       crl_cache_init ();
+      ks_hkp_init ();
       if (!argc)
         rc = crl_cache_load (&ctrlbuf, NULL);
       else
@@ -1605,6 +1635,7 @@ main (int argc, char **argv)
       thread_init ();
       cert_cache_init (hkp_cacert_filenames);
       crl_cache_init ();
+      ks_hkp_init ();
       rc = crl_fetch (&ctrlbuf, argv[0], &reader);
       if (rc)
         log_error (_("fetching CRL from '%s' failed: %s\n"),
@@ -1714,7 +1745,7 @@ dirmngr_deinit_default_ctrl (ctrl_t ctrl)
 /* Create a list of LDAP servers from the file FILENAME. Returns the
    list or NULL in case of errors.
 
-   The format fo such a file is line oriented where empty lines and
+   The format of such a file is line oriented where empty lines and
    lines starting with a hash mark are ignored.  All other lines are
    assumed to be colon seprated with these fields:
 
@@ -1739,14 +1770,10 @@ parse_ldapserver_file (const char* filename, int ignore_enoent)
   fp = es_fopen (filename, "r");
   if (!fp)
     {
-      if (errno == ENOENT)
-        {
-          if (!ignore_enoent)
-            log_info ("No ldapserver file at: '%s'\n", filename);
-        }
+      if (ignore_enoent && gpg_err_code_from_syserror () == GPG_ERR_ENOENT)
+        ;
       else
-        log_error (_("error opening '%s': %s\n"), filename,
-                   strerror (errno));
+        log_info ("failed to open '%s': %s\n", filename, strerror (errno));
       return NULL;
     }
 
@@ -1944,17 +1971,18 @@ parse_fingerprint_item (const char *string,
    Fixme: Due to the way the argument parsing works, we create a
    memory leak here for all string type arguments.  There is currently
    no clean way to tell whether the memory for the argument has been
-   allocated or points into the process' original arguments.  Unless
+   allocated or points into the process's original arguments.  Unless
    we have a mechanism to tell this, we need to live on with this. */
 static void
 reread_configuration (void)
 {
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   char *twopart;
   int dummy;
+  int logfile_seen = 0;
 
   if (!opt.config_filename)
-    return; /* No config file. */
+    goto finish; /* No config file. */
 
   twopart = strconcat (DIRMNGR_NAME EXTSEP_S "conf" PATHSEP_S,
                        opt.config_filename, NULL);
@@ -1969,7 +1997,7 @@ reread_configuration (void)
   pargs.flags = (ARGPARSE_FLAG_KEEP
                  |ARGPARSE_FLAG_SYS
                  |ARGPARSE_FLAG_USER);
-  while (gnupg_argparser (&pargs, opts, twopart))
+  while (gpgrt_argparser (&pargs, opts, twopart))
     {
       if (pargs.r_opt == ARGPARSE_CONFFILE)
         {
@@ -1979,11 +2007,28 @@ reread_configuration (void)
       else if (pargs.r_opt < -1)
         pargs.err = ARGPARSE_PRINT_WARNING;
       else /* Try to parse this option - ignore unchangeable ones. */
-        parse_rereadable_options (&pargs, 1);
+        {
+          if (pargs.r_opt == oLogFile)
+            logfile_seen = 1;
+          parse_rereadable_options (&pargs, 1);
+        }
     }
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
   xfree (twopart);
   post_option_parsing (0);
+
+ finish:
+  /* Get a default log file from common.conf.  */
+  if (!logfile_seen && !parse_comopt (GNUPG_MODULE_NAME_DIRMNGR, !!opt.debug))
+    {
+      if (!current_logfile || !comopt.logfile
+          || strcmp (current_logfile, comopt.logfile))
+        {
+          log_set_file (comopt.logfile);
+          xfree (current_logfile);
+          current_logfile = comopt.logfile? xtrystrdup (comopt.logfile) : NULL;
+        }
+    }
 }
 
 
@@ -1995,6 +2040,7 @@ dirmngr_sighup_action (void)
   log_info (_("SIGHUP received - "
               "re-reading configuration and flushing caches\n"));
   reread_configuration ();
+  set_tor_mode ();
   cert_cache_deinit (0);
   crl_cache_deinit ();
   cert_cache_init (hkp_cacert_filenames);
@@ -2028,8 +2074,9 @@ handle_signal (int signo)
       break;
 
     case SIGUSR1:
-      cert_cache_print_stats ();
-      domaininfo_print_stats ();
+      /* See also cmd_getinfo:"stats".  */
+      cert_cache_print_stats (NULL);
+      domaininfo_print_stats (NULL);
       break;
 
     case SIGUSR2:
@@ -2046,7 +2093,7 @@ handle_signal (int signo)
       if (shutdown_pending > 2)
         {
           log_info (_("shutdown forced\n"));
-          log_info ("%s %s stopped\n", strusage(11), strusage(13) );
+          log_info ("%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
           cleanup ();
           dirmngr_exit (0);
 	}
@@ -2054,7 +2101,7 @@ handle_signal (int signo)
 
     case SIGINT:
       log_info (_("SIGINT received - immediate shutdown\n"));
-      log_info( "%s %s stopped\n", strusage(11), strusage(13));
+      log_info( "%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
       cleanup ();
       dirmngr_exit (0);
       break;
@@ -2111,9 +2158,14 @@ housekeeping_thread (void *arg)
 }
 
 
-#if GPGRT_GCC_HAVE_PUSH_PRAGMA
+/* We try to enable correct overflow handling for signed int (commonly
+ * used for time_t). With gcc 4.2 -fno-strict-overflow was introduced
+ * and used here as a pragma.  Later gcc versions (gcc 6?) removed
+ * this as a pragma and -fwrapv was then suggested as a replacement
+ * for -fno-strict-overflow.  */
+#if GPGRT_HAVE_PRAGMA_GCC_PUSH
 # pragma GCC push_options
-# pragma GCC optimize ("no-strict-overflow")
+# pragma GCC optimize ("wrapv")
 #endif
 static int
 time_for_housekeeping_p (time_t curtime)
@@ -2131,7 +2183,7 @@ time_for_housekeeping_p (time_t curtime)
     }
   return 0;
 }
-#if GPGRT_GCC_HAVE_PUSH_PRAGMA
+#if GPGRT_HAVE_PRAGMA_GCC_PUSH
 # pragma GCC pop_options
 #endif
 
@@ -2396,7 +2448,7 @@ handle_connections (assuan_fd_t listen_fd)
 	{
           log_error (_("npth_pselect failed: %s - waiting 1s\n"),
                      strerror (saved_errno));
-          npth_sleep (1);
+          gnupg_sleep (1);
           continue;
 	}
 
@@ -2465,7 +2517,7 @@ handle_connections (assuan_fd_t listen_fd)
   if (listen_fd != GNUPG_INVALID_FD)
     assuan_sock_close (listen_fd);
   cleanup ();
-  log_info ("%s %s stopped\n", strusage(11), strusage(13));
+  log_info ("%s %s stopped\n", gpgrt_strusage(11), gpgrt_strusage(13));
 }
 
 const char*

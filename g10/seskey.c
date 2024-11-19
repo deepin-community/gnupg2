@@ -82,7 +82,6 @@ encode_session_key (int openpgp_pk_algo, DEK *dek, unsigned int nbits)
   byte *frame;
   int i,n;
   u16 csum;
-  gcry_mpi_t a;
 
   if (DBG_CRYPTO)
     log_debug ("encode_session_key: encoding %d byte DEK", dek->keylen);
@@ -95,7 +94,7 @@ encode_session_key (int openpgp_pk_algo, DEK *dek, unsigned int nbits)
      output be a multiple of 8 bytes.  */
   if (openpgp_pk_algo == PUBKEY_ALGO_ECDH)
     {
-      /* Pad to 8 byte granulatiry; the padding byte is the number of
+      /* Pad to 8 byte granularity; the padding byte is the number of
        * padded bytes.
        *
        * A  DEK(k bytes)  CSUM(2 bytes) 0x 0x 0x 0x ... 0x
@@ -124,10 +123,7 @@ encode_session_key (int openpgp_pk_algo, DEK *dek, unsigned int nbits)
                    (int) nframe, frame[0], frame[1], frame[2],
                    frame[nframe-3], frame[nframe-2], frame[nframe-1]);
 
-      if (gcry_mpi_scan (&a, GCRYMPI_FMT_USG, frame, nframe, &nframe))
-        BUG();
-      xfree(frame);
-      return a;
+      return gcry_mpi_set_opaque (NULL, frame, 8*nframe);
     }
 
   /* The current limitation is that we can only use a session key
@@ -143,7 +139,7 @@ encode_session_key (int openpgp_pk_algo, DEK *dek, unsigned int nbits)
    *
    *	   0  2  RND(i bytes)  0  A  DEK(k bytes)  CSUM(2 bytes)
    *
-   * (But how can we store the leading 0 - the external representaion
+   * (But how can we store the leading 0 - the external representation
    *  of MPIs doesn't allow leading zeroes =:-)
    *
    * RND are (at least 1) non-zero random bytes.
@@ -195,10 +191,7 @@ encode_session_key (int openpgp_pk_algo, DEK *dek, unsigned int nbits)
   frame[n++] = csum >>8;
   frame[n++] = csum;
   log_assert (n == nframe);
-  if (gcry_mpi_scan( &a, GCRYMPI_FMT_USG, frame, n, &nframe))
-    BUG();
-  xfree (frame);
-  return a;
+  return gcry_mpi_set_opaque (NULL, frame, 8*n);
 }
 
 

@@ -74,7 +74,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <assert.h>
 #include <time.h>
 
 #include "scdaemon.h"
@@ -229,7 +228,7 @@ do_readcert (app_t app, const char *certid,
   else
     return gpg_error (GPG_ERR_INV_OBJ);
   totobjlen = objlen + hdrlen;
-  assert (totobjlen <= buflen);
+  log_assert (totobjlen <= buflen);
 
   err = parse_ber_header (&p, &n, &class, &tag, &constructed,
                           &ndef, &objlen, &hdrlen);
@@ -260,7 +259,7 @@ do_readcert (app_t app, const char *certid,
       if ( !(class == CLASS_UNIVERSAL && tag == TAG_SEQUENCE && constructed) )
         return gpg_error (GPG_ERR_INV_OBJ);
       totobjlen = objlen + hdrlen;
-      assert (save_p + totobjlen <= buffer + buflen);
+      log_assert (save_p + totobjlen <= buffer + buflen);
       memmove (buffer, save_p, totobjlen);
     }
 
@@ -419,7 +418,7 @@ do_sign (app_t app, ctrl_t ctrl, const char *keyidstr, int hashalgo,
       && indatalen != (15+20) && indatalen != (19+32))
     return gpg_error (GPG_ERR_INV_VALUE);
 
-  /* Check that the provided ID is vaid.  This is not really needed
+  /* Check that the provided ID is valid.  This is not really needed
      but we do it to enforce correct usage by the caller. */
   if (strncmp (keyidstr, "DINSIG.", 7) )
     return gpg_error (GPG_ERR_INV_ID);
@@ -559,6 +558,8 @@ app_select_dinsig (app_t app)
     {
       app->apptype = APPTYPE_DINSIG;
 
+      app->fnc.prep_reselect = NULL;
+      app->fnc.reselect = NULL;
       app->fnc.learn_status = do_learn_status;
       app->fnc.readcert = do_readcert;
       app->fnc.getattr = NULL;

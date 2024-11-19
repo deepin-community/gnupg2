@@ -3,7 +3,6 @@ po/stamp-po
 build-gpgv-static/
 build-gpgv-udeb/
 build-gpgv-win32/
-build-maintainer/
 doc/gnupg.info
 doc/gnupg.info-1
 doc/gnupg.info-2

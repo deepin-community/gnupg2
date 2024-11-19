@@ -31,7 +31,9 @@
    (i.e. uncompressed) rather than 1 (zip).  However, the real world
    issues of speed and size come into play here. */
 
-#if GPG_USE_AES128
+#if GPG_USE_AES256
+# define DEFAULT_CIPHER_ALGO     CIPHER_ALGO_AES256
+#elif GPG_USE_AES128
 # define DEFAULT_CIPHER_ALGO     CIPHER_ALGO_AES
 #elif GPG_USE_CAST5
 # define DEFAULT_CIPHER_ALGO     CIPHER_ALGO_CAST5
@@ -40,7 +42,7 @@
 #endif
 
 #define DEFAULT_DIGEST_ALGO     ((GNUPG)? DIGEST_ALGO_SHA256:DIGEST_ALGO_SHA1)
-#define DEFAULT_S2K_DIGEST_ALGO DIGEST_ALGO_SHA1
+#define DEFAULT_S2K_DIGEST_ALGO  DEFAULT_DIGEST_ALGO
 #ifdef HAVE_ZIP
 # define DEFAULT_COMPRESS_ALGO   COMPRESS_ALGO_ZIP
 #else
@@ -81,9 +83,11 @@ struct weakhash
 
 /*-- gpg.c --*/
 extern int g10_errors_seen;
+extern int assert_signer_true;
+extern int assert_pubkey_algo_false;
 
 #if __GNUC__ > 2 || (__GNUC__ == 2 && __GNUC_MINOR__ >= 5 )
-  void g10_exit(int rc) __attribute__ ((noreturn));
+  void g10_exit(int rc) __attribute__ ((__noreturn__));
 #else
   void g10_exit(int rc);
 #endif
@@ -107,7 +111,7 @@ void unregister_secured_file (const char *fname);
 int  is_secured_file (int fd);
 int  is_secured_filename (const char *fname);
 u16 checksum_u16( unsigned n );
-u16 checksum( byte *p, unsigned n );
+u16 checksum( const byte *p, unsigned n );
 u16 checksum_mpi( gcry_mpi_t a );
 u32 buffer_to_u32( const byte *buffer );
 const byte *get_session_marker( size_t *rlen );
@@ -131,7 +135,6 @@ gpg_error_t openpgp_aead_algo_info (aead_algo_t algo,
                                     enum gcry_cipher_modes *r_mode,
                                     unsigned int *r_noncelen);
 
-pubkey_algo_t map_pk_gcry_to_openpgp (enum gcry_pk_algos algo);
 int openpgp_pk_test_algo (pubkey_algo_t algo);
 int openpgp_pk_test_algo2 (pubkey_algo_t algo, unsigned int use);
 int openpgp_pk_algo_usage ( int algo );
@@ -151,7 +154,7 @@ struct expando_args
   const byte *namehash;
 };
 
-char *pct_expando(const char *string,struct expando_args *args);
+char *pct_expando (ctrl_t ctrl, const char *string,struct expando_args *args);
 void deprecated_warning(const char *configname,unsigned int configlineno,
 			const char *option,const char *repl1,const char *repl2);
 void deprecated_command (const char *name);
@@ -159,6 +162,7 @@ void obsolete_scdaemon_option (const char *configname,
                                unsigned int configlineno, const char *name);
 
 int string_to_cipher_algo (const char *string);
+aead_algo_t string_to_aead_algo (const char *string);
 int string_to_digest_algo (const char *string);
 
 const char *compress_algo_to_string(int algo);
@@ -206,6 +210,8 @@ void write_status_printf (int no, const char *format,
                           ...) GPGRT_ATTR_PRINTF(2,3);
 void write_status_strings (int no, const char *text,
                            ...) GPGRT_ATTR_SENTINEL(0);
+gpg_error_t write_status_strings2 (ctrl_t dummy, int no,
+                                   ...) GPGRT_ATTR_SENTINEL(0);
 void write_status_buffer ( int no,
                            const char *buffer, size_t len, int wrap );
 void write_status_text_and_buffer ( int no, const char *text,
@@ -231,8 +237,9 @@ int  cpr_get_answer_okay_cancel (const char *keyword,
 /*-- helptext.c --*/
 void display_online_help( const char *keyword );
 
-/*-- encode.c --*/
+/*-- encrypt.c --*/
 gpg_error_t setup_symkey (STRING2KEY **symkey_s2k,DEK **symkey_dek);
+aead_algo_t use_aead (pk_list_t pk_list, int algo);
 int use_mdc (pk_list_t pk_list,int algo);
 int encrypt_symmetric (const char *filename );
 int encrypt_store (const char *filename );
@@ -310,6 +317,7 @@ int keygen_set_std_prefs (const char *string,int personal);
 PKT_user_id *keygen_get_std_prefs (void);
 int keygen_add_key_expire( PKT_signature *sig, void *opaque );
 int keygen_add_key_flags (PKT_signature *sig, void *opaque);
+int keygen_add_key_flags_and_expire (PKT_signature *sig, void *opaque);
 int keygen_add_std_prefs( PKT_signature *sig, void *opaque );
 int keygen_upd_std_prefs( PKT_signature *sig, void *opaque );
 int keygen_add_keyserver_url(PKT_signature *sig, void *opaque);
@@ -333,7 +341,7 @@ gpg_error_t generate_card_subkeypair (ctrl_t ctrl, kbnode_t pub_keyblock,
 int overwrite_filep( const char *fname );
 char *make_outfile_name( const char *iname );
 char *ask_outfile_name( const char *name, size_t namelen );
-int open_outfile (int inp_fd, const char *iname, int mode,
+int open_outfile (int out_fd, const char *iname, int mode,
                   int restrictedperm, iobuf_t *a);
 char *get_matching_datafile (const char *sigfilename);
 iobuf_t open_sigfile (const char *sigfilename, progress_filter_context_t *pfx);
@@ -389,7 +397,8 @@ gpg_error_t transfer_secret_keys (ctrl_t ctrl, struct import_stats_s *stats,
                                   kbnode_t sec_keyblock, int batch, int force,
                                   int only_marked);
 
-int collapse_uids( KBNODE *keyblock );
+int collapse_uids (kbnode_t *keyblock);
+int collapse_subkeys (kbnode_t *keyblock);
 
 int get_revocation_reason (PKT_signature *sig, char **r_reason,
                            char **r_comment, size_t *r_commentlen);
@@ -425,15 +434,16 @@ gpg_error_t export_pubkey_buffer (ctrl_t ctrl, const char *keyspec,
                                   void **r_data, size_t *r_datalen);
 
 gpg_error_t receive_seckey_from_agent (ctrl_t ctrl, gcry_cipher_hd_t cipherhd,
-                                       int cleartext,
+                                       int cleartext, int mode1003,
                                        char **cache_nonce_addr,
                                        const char *hexgrip,
-                                       PKT_public_key *pk);
+                                       PKT_public_key *pk, gcry_sexp_t *r_key);
 
 gpg_error_t write_keyblock_to_output (kbnode_t keyblock,
                                       int with_armor, unsigned int options);
 
 gpg_error_t export_ssh_key (ctrl_t ctrl, const char *userid);
+gpg_error_t export_secret_ssh_key (ctrl_t ctrl, const char *userid);
 
 /*-- dearmor.c --*/
 int dearmor_file( const char *fname );
@@ -457,6 +467,7 @@ void release_revocation_reason_info (struct revocation_reason_info *reason);
 void public_key_list (ctrl_t ctrl, strlist_t list,
                       int locate_mode, int no_local);
 void secret_key_list (ctrl_t ctrl, strlist_t list );
+gpg_error_t parse_and_set_list_filter (const char *string);
 void print_subpackets_colon(PKT_signature *sig);
 void reorder_keyblock (KBNODE keyblock);
 void list_keyblock_direct (ctrl_t ctrl, kbnode_t keyblock, int secret,
@@ -471,9 +482,10 @@ void show_keyserver_url(PKT_signature *sig,int indent,int mode);
 void show_notation(PKT_signature *sig,int indent,int mode,int which);
 void dump_attribs (const PKT_user_id *uid, PKT_public_key *pk);
 void set_attrib_fd(int fd);
-char *format_seckey_info (ctrl_t ctrl, PKT_public_key *pk);
-void print_seckey_info (ctrl_t ctrl, PKT_public_key *pk);
-void print_pubkey_info (ctrl_t ctrl, estream_t fp, PKT_public_key *pk);
+void print_key_info (ctrl_t ctrl, estream_t fp, int indent,
+                     PKT_public_key *pk, int secret);
+void print_key_info_log (ctrl_t ctrl, int loglevel, int indent,
+                     PKT_public_key *pk, int secret);
 void print_card_key_info (estream_t fp, KBNODE keyblock);
 void print_key_line (ctrl_t ctrl, estream_t fp, PKT_public_key *pk, int secret);
 
@@ -482,6 +494,8 @@ void print_file_status( int status, const char *name, int what );
 int verify_signatures (ctrl_t ctrl, int nfiles, char **files );
 int verify_files (ctrl_t ctrl, int nfiles, char **files );
 int gpg_verify (ctrl_t ctrl, int sig_fd, int data_fd, estream_t out_fp);
+void check_assert_signer_list (const char *mainpkhex, const char *pkhex);
+void check_assert_pubkey_algo (const char *algostr, const char *pkhex);
 
 /*-- decrypt.c --*/
 int decrypt_message (ctrl_t ctrl, const char *filename );
@@ -508,8 +522,6 @@ void card_edit (ctrl_t ctrl, strlist_t commands);
 gpg_error_t  card_generate_subkey (ctrl_t ctrl, kbnode_t pub_keyblock);
 int  card_store_subkey (KBNODE node, int use, strlist_t *processed_keys);
 #endif
-
-#define S2K_DECODE_COUNT(_val) ((16ul + ((_val) & 15)) << (((_val) >> 4) + 6))
 
 /*-- migrate.c --*/
 void migrate_secring (ctrl_t ctrl);

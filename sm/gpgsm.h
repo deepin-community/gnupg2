@@ -36,8 +36,13 @@
 #include "../common/ksba-io-support.h"
 #include "../common/compliance.h"
 
+/* The maximum length of a binary fingerprints.  This is used to
+ * provide a static buffer and will be increased if we need to support
+ * longer fingerprints.  */
+#define MAX_FINGERPRINT_LEN 32
 
-#define MAX_DIGEST_LEN 64
+/* The maximum length of a binary digest.  */
+#define MAX_DIGEST_LEN 64     /* Fits for SHA-512 */
 
 
 /* A large struct named "opt" to keep global flags. */
@@ -52,21 +57,24 @@ struct
   int answer_no;    /* assume no on most questions */
   int dry_run;      /* don't change any persistent data */
   int no_homedir_creation;
+  int use_keyboxd;  /* Use the external keyboxd as storage backend.  */
 
   const char *config_filename; /* Name of the used config file. */
-  const char *agent_program;
+  char *agent_program;
+
+  char *keyboxd_program;
 
   session_env_t session_env;
   char *lc_ctype;
   char *lc_messages;
 
   int autostart;
-  const char *dirmngr_program;
+  char *dirmngr_program;
   int disable_dirmngr;        /* Do not do any dirmngr calls.  */
   const char *protect_tool_program;
   char *outfile;    /* name of output file */
 
-  int with_key_data;/* include raw key in the column delimted output */
+  int with_key_data;/* include raw key in the column delimited output */
 
   int fingerprint;  /* list fingerprints in all key listings */
 
@@ -74,6 +82,10 @@ struct
                                standard key listings. */
 
   int with_keygrip; /* Option --with-keygrip active.  */
+
+  int with_key_screening; /* Option  --with-key-screening active.  */
+
+  int no_pretty_dn;       /* Option --no-pretty-dn */
 
   int pinentry_mode;
   int request_origin;
@@ -91,6 +103,8 @@ struct
   int def_compress_algo;  /* Ditto for compress algorithm */
 
   int forced_digest_algo; /* User forced hash algorithm. */
+
+  int force_ecdh_sha1kdf; /* Only for debugging and testing.  */
 
   char *def_recipient;    /* userID of the default recipient */
   int def_recipient_self; /* The default recipient is the default key */
@@ -152,6 +166,21 @@ struct
    * for this.  */
   int always_trust;
 
+  /* Enable creation of authenticode signatures.  */
+  int authenticode;
+
+  /* A list of extra attributes put into a signed data object.  For a
+   * signed each attribute each string has the format:
+   *   <oid>:s:<hex_or_filename>
+   * and for an unsigned attribute
+   *   <oid>:u:<hex_or_filename>
+   * The OID is in the usual dotted decimal for. The HEX_OR_FILENAME
+   * is either a list of hex digits or a filename with the DER encoded
+   * value.  A filename is detected by the presence of a slash in the
+   * HEX_OR_FILENAME.  The actual value needs to be encoded as a SET OF
+   * attribute values.  */
+  strlist_t attributes;
+
   /* Compatibility flags (COMPAT_FLAG_xxxx).  */
   unsigned int compat_flags;
 } opt;
@@ -165,6 +194,8 @@ struct
 #define DBG_MEMSTAT_VALUE 128	/* show memory statistics */
 #define DBG_HASHING_VALUE 512	/* debug hashing operations */
 #define DBG_IPC_VALUE     1024  /* debug assuan communication */
+#define DBG_CLOCK_VALUE   4096
+#define DBG_LOOKUP_VALUE  8192	/* debug the key lookup */
 
 #define DBG_X509    (opt.debug & DBG_X509_VALUE)
 #define DBG_CRYPTO  (opt.debug & DBG_CRYPTO_VALUE)
@@ -172,6 +203,8 @@ struct
 #define DBG_CACHE   (opt.debug & DBG_CACHE_VALUE)
 #define DBG_HASHING (opt.debug & DBG_HASHING_VALUE)
 #define DBG_IPC     (opt.debug & DBG_IPC_VALUE)
+#define DBG_CLOCK   (opt.debug & DBG_CLOCK_VALUE)
+#define DBG_LOOKUP  (opt.debug & DBG_LOOKUP_VALUE)
 
 
 /* Compatibility flags */
@@ -183,11 +216,15 @@ struct
  *  policies: 1.3.6.1.4.1.7924.1.1:N:
  */
 #define COMPAT_ALLOW_KA_TO_ENCR   1
-#define COMPAT_ALLOW_ECC_ENCR     2
 
 
 /* Forward declaration for an object defined in server.c */
 struct server_local_s;
+
+/* Object used to keep state locally in keydb.c  */
+struct keydb_local_s;
+typedef struct keydb_local_s *keydb_local_t;
+
 
 /* Session control object.  This object is passed down to most
    functions.  Note that the default values for it are set by
@@ -197,6 +234,8 @@ struct server_control_s
   int no_server;      /* We are not running under server control */
   int  status_fd;     /* Only for non-server mode */
   struct server_local_s *server_local;
+
+  keydb_local_t keydb_local;  /* Local data for call-keyboxd.c  */
 
   audit_ctx_t audit;  /* NULL or a context for the audit subsystem.  */
   int agent_seen;     /* Flag indicating that the gpg-agent has been
@@ -237,6 +276,10 @@ struct server_control_s
 
   /* The current time.  Used as a helper in certchain.c.  */
   ksba_isotime_t current_time;
+
+  /* The revocation info.  Used as a helper inc ertchain.c */
+  gnupg_isotime_t revoked_at;
+  char *revocation_reason;
 };
 
 
@@ -272,6 +315,7 @@ extern int gpgsm_errors_seen;
 
 void gpgsm_exit (int rc);
 void gpgsm_init_default_ctrl (struct server_control_s *ctrl);
+void gpgsm_deinit_default_ctrl (ctrl_t ctrl);
 int  gpgsm_parse_validation_model (const char *model);
 
 /*-- server.c --*/
@@ -299,10 +343,12 @@ int  gpgsm_get_key_algo_info (ksba_cert_t cert, unsigned int *nbits,
                               char **r_curve);
 int   gpgsm_is_ecc_key (ksba_cert_t cert);
 char *gpgsm_pubkey_algo_string (ksba_cert_t cert, int *r_algoid);
+gcry_mpi_t gpgsm_get_rsa_modulus (ksba_cert_t cert);
 char *gpgsm_get_certid (ksba_cert_t cert);
 
 
 /*-- certdump.c --*/
+const void *gpgsm_get_serial (ksba_const_sexp_t sn, size_t *r_length);
 void gpgsm_print_serial (estream_t fp, ksba_const_sexp_t p);
 void gpgsm_print_serial_decimal (estream_t fp, ksba_const_sexp_t sn);
 void gpgsm_print_time (estream_t fp, ksba_isotime_t t);
@@ -348,8 +394,8 @@ int gpgsm_create_cms_signature (ctrl_t ctrl,
 #define VALIDATE_FLAG_STEED       4
 #define VALIDATE_FLAG_BYPASS      8  /* No actual validation.  */
 
-int gpgsm_walk_cert_chain (ctrl_t ctrl,
-                           ksba_cert_t start, ksba_cert_t *r_next);
+gpg_error_t gpgsm_walk_cert_chain (ctrl_t ctrl,
+                                   ksba_cert_t start, ksba_cert_t *r_next);
 int gpgsm_is_root_cert (ksba_cert_t cert);
 int gpgsm_validate_chain (ctrl_t ctrl, ksba_cert_t cert,
                           ksba_isotime_t checktime,
@@ -381,6 +427,8 @@ int gpgsm_find_cert (ctrl_t ctrl, const char *name, ksba_sexp_t keyid,
 /*-- keylist.c --*/
 gpg_error_t gpgsm_list_keys (ctrl_t ctrl, strlist_t names,
                              estream_t fp, unsigned int mode);
+gpg_error_t gpgsm_show_certs (ctrl_t ctrl, int nfiles, char **files,
+                              estream_t fp);
 
 /*-- import.c --*/
 int gpgsm_import (ctrl_t ctrl, int in_fd, int reimport_mode);
@@ -408,10 +456,10 @@ int gpgsm_encrypt (ctrl_t ctrl, certlist_t recplist,
                    int in_fd, estream_t out_fp);
 
 /*-- decrypt.c --*/
-gpg_error_t hash_ecc_cms_shared_info (gcry_md_hd_t hash_hd,
-                                      const char *wrap_algo_str,
-                                      unsigned int keylen,
-                                      const void *ukm, unsigned int ukmlen);
+gpg_error_t ecdh_derive_kek (unsigned char *key, unsigned int keylen,
+                             int hash_algo, const char *wrap_algo_str,
+                             const void *secret, unsigned int secretlen,
+                             const void *ukm, unsigned int ukmlen);
 int gpgsm_decrypt (ctrl_t ctrl, int in_fd, estream_t out_fp);
 
 /*-- certreqgen.c --*/
@@ -467,9 +515,11 @@ gpg_error_t gpgsm_agent_export_key (ctrl_t ctrl, const char *keygrip,
                                     size_t *r_resultlen);
 
 /*-- call-dirmngr.c --*/
-int gpgsm_dirmngr_isvalid (ctrl_t ctrl,
-                           ksba_cert_t cert, ksba_cert_t issuer_cert,
-                           int use_ocsp);
+gpg_error_t gpgsm_dirmngr_isvalid (ctrl_t ctrl,
+                                   ksba_cert_t cert, ksba_cert_t issuer_cert,
+                                   int use_ocsp,
+                                   gnupg_isotime_t r_revoked_at,
+                                   char **r_reason);
 int gpgsm_dirmngr_lookup (ctrl_t ctrl, strlist_t names, const char *uri,
                           int cache_only,
                           void (*cb)(void*, ksba_cert_t), void *cb_value);
@@ -478,6 +528,7 @@ int gpgsm_dirmngr_run_command (ctrl_t ctrl, const char *command,
 
 
 /*-- misc.c --*/
+void gpgsm_print_further_info (const char *format, ...) GPGRT_ATTR_PRINTF(1,2);
 void setup_pinentry_env (void);
 gpg_error_t transform_sigval (const unsigned char *sigval, size_t sigvallen,
                               int mdalgo,

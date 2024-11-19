@@ -20,12 +20,8 @@
 #ifndef KEYBOX_DEFS_H
 #define KEYBOX_DEFS_H 1
 
-#ifdef GPG_ERR_SOURCE_DEFAULT
-# if GPG_ERR_SOURCE_DEFAULT != GPG_ERR_SOURCE_KEYBOX
-#  error GPG_ERR_SOURCE_DEFAULT already defined
-# endif
-#else
-# define GPG_ERR_SOURCE_DEFAULT  GPG_ERR_SOURCE_KEYBOX
+#ifndef GPG_ERR_SOURCE_DEFAULT
+#define GPG_ERR_SOURCE_DEFAULT  GPG_ERR_SOURCE_KEYBOX
 #endif
 #include <gpg-error.h>
 #define map_assuan_err(a) \
@@ -99,10 +95,11 @@ struct _keybox_openpgp_key_info
 {
   struct _keybox_openpgp_key_info *next;
   int algo;
+  int version;
   unsigned char grip[20];
   unsigned char keyid[8];
-  int fprlen;  /* Either 16 or 20 */
-  unsigned char fpr[20];
+  int fprlen;  /* Either 16, 20 or 32 */
+  unsigned char fpr[32];
 };
 
 struct _keybox_openpgp_uid_info
@@ -156,6 +153,8 @@ gpg_error_t _keybox_create_openpgp_blob (KEYBOXBLOB *r_blob,
                                          const unsigned char *image,
                                          size_t imagelen,
                                          int as_ephemeral);
+char *_keybox_x509_email_kludge (const char *name);
+
 #ifdef KEYBOX_WITH_X509
 int _keybox_create_x509_blob (KEYBOXBLOB *r_blob, ksba_cert_t cert,
                               unsigned char *sha1_digest, int as_ephemeral);

@@ -255,6 +255,7 @@ check_revocations (ctrl_t ctrl, chain_item_t chain)
   int any_revoked = 0;
   int any_no_crl = 0;
   int any_crl_too_old = 0;
+  int any_not_trusted = 0;
   chain_item_t ci;
 
   log_assert (ctrl->check_revocations_nest_level >= 0);
@@ -266,7 +267,8 @@ check_revocations (ctrl_t ctrl, chain_item_t chain)
       return gpg_error(GPG_ERR_BAD_CERT_CHAIN);
     }
   ctrl->check_revocations_nest_level++;
-
+  if (opt.verbose)
+    log_info ("[%d] start checking CRLs\n", ctrl->check_revocations_nest_level);
 
   for (ci=chain; ci; ci = ci->next)
     {
@@ -293,17 +295,19 @@ check_revocations (ctrl_t ctrl, chain_item_t chain)
           if (!err)
             err = crl_cache_cert_isvalid (ctrl, ci->cert, 0);
         }
+      if (opt.verbose)
+        log_info ("[%d] result of checking this CRL: %s\n",
+                  ctrl->check_revocations_nest_level, gpg_strerror (err));
       switch (gpg_err_code (err))
         {
         case 0: err = 0; break;
         case GPG_ERR_CERT_REVOKED: any_revoked = 1; err = 0; break;
         case GPG_ERR_NO_CRL_KNOWN: any_no_crl = 1; err = 0; break;
+        case GPG_ERR_NOT_TRUSTED:  any_not_trusted = 1; err = 0; break;
         case GPG_ERR_CRL_TOO_OLD: any_crl_too_old = 1; err = 0; break;
         default: break;
         }
     }
-  ctrl->check_revocations_nest_level--;
-
 
   if (err)
     ;
@@ -311,10 +315,16 @@ check_revocations (ctrl_t ctrl, chain_item_t chain)
     err = gpg_error (GPG_ERR_CERT_REVOKED);
   else if (any_no_crl)
     err = gpg_error (GPG_ERR_NO_CRL_KNOWN);
+  else if (any_not_trusted)
+    err = gpg_error (GPG_ERR_NOT_TRUSTED);
   else if (any_crl_too_old)
     err = gpg_error (GPG_ERR_CRL_TOO_OLD);
   else
     err = 0;
+  if (opt.verbose)
+    log_info ("[%d] result of checking all CRLs: %s\n",
+              ctrl->check_revocations_nest_level, gpg_strerror (err));
+  ctrl->check_revocations_nest_level--;
   return err;
 }
 
@@ -551,14 +561,14 @@ validate_cert_chain (ctrl_t ctrl, ksba_cert_t cert, ksba_isotime_t r_exptime,
       /* Is this a self-signed certificate? */
       if (is_root_cert (subject_cert, issuer, subject))
         {
-          /* Yes, this is our trust anchor.  */
-          if (check_cert_sig (subject_cert, subject_cert) )
-            {
-              log_error (_("selfsigned certificate has a BAD signature"));
-              err = gpg_error (depth? GPG_ERR_BAD_CERT_CHAIN
-                                    : GPG_ERR_BAD_CERT);
-              goto leave;
-            }
+          /* There is no need to check the signature of the trust anchor.  */
+          /* if (check_cert_sig (subject_cert, subject_cert) ) */
+          /*   { */
+          /*     log_error (_("selfsigned certificate has a BAD signature")); */
+          /*     err = gpg_error (depth? GPG_ERR_BAD_CERT_CHAIN */
+          /*                           : GPG_ERR_BAD_CERT); */
+          /*     goto leave; */
+          /*   } */
 
           /* Is this certificate allowed to act as a CA.  */
           err = allowed_ca (subject_cert, NULL);
@@ -950,29 +960,21 @@ check_cert_sig (ksba_cert_t issuer_cert, ksba_cert_t cert)
   int algo;
   ksba_sexp_t p;
   size_t n;
-  gcry_sexp_t s_sig, s_hash, s_pkey;
+  gcry_sexp_t s_sig, s_pkey;
+  gcry_sexp_t s_hash = NULL;
   const char *algo_name; /* hash algorithm name converted to lower case. */
   int digestlen;
   unsigned char *digest;
   int use_pss = 0;
-  unsigned int saltlen;  /* (use is controlled by use_pss) */
+  unsigned int saltlen = 0;  /* (use is actually controlled by use_pss) */
 
   /* Hash the target certificate using the algorithm from that certificate.  */
   algoid = ksba_cert_get_digest_algo (cert);
   algo = gcry_md_map_name (algoid);
   if (!algo && algoid && !strcmp (algoid, "1.2.840.113549.1.1.10"))
     use_pss = 1;
-  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.1"))
-    algo = GCRY_MD_SHA224; /* ecdsa-with-sha224 */
-  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.2"))
-    algo = GCRY_MD_SHA256; /* ecdsa-with-sha256 */
-  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.3"))
-    algo = GCRY_MD_SHA384; /* ecdsa-with-sha384 */
-  else if (!algo && algoid && !strcmp (algoid, "1.2.840.10045.4.3.4"))
-    algo = GCRY_MD_SHA512; /* ecdsa-with-sha512 */
   else if (!algo)
     {
-      log_debug ("XXXXX %s\n", __func__);
       log_error (_("unknown hash algorithm '%s'\n"), algoid? algoid:"?");
       return gpg_error (GPG_ERR_GENERAL);
     }

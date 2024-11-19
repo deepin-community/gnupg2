@@ -55,6 +55,10 @@
 #include "stringhelp.h"
 #include "utf8conv.h"
 
+#ifdef HAVE_W32_SYSTEM
+#include <windows.h>
+#endif
+
 #ifndef MB_LEN_MAX
 #define MB_LEN_MAX 16
 #endif
@@ -166,10 +170,8 @@ set_native_charset (const char *newset)
          different one for console input.  Not sure how to cope with
          that.  If the console Code page is not known we fall back to
          the system code page.  */
-#ifndef HAVE_W32CE_SYSTEM
       cpno = GetConsoleOutputCP ();
       if (!cpno)
-#endif
         cpno = GetACP ();
       sprintf (codepage, "CP%u", cpno );
       /* Resolve alias.  We use a long string string and not the usual
@@ -297,7 +299,7 @@ set_native_charset (const char *newset)
 }
 
 const char *
-get_native_charset ()
+get_native_charset (void)
 {
   return active_charset_name;
 }
@@ -802,10 +804,8 @@ get_w32_codepage (void)
 
   if (!cp)
     {
-#ifndef HAVE_W32CE_SYSTEM
       cp = GetConsoleOutputCP ();
       if (!cp)
-#endif
         cp = GetACP ();
     }
   return cp;

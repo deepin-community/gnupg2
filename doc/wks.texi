@@ -136,14 +136,7 @@ The command @option{--print-wkd-url} prints the URLs used to fetch the
 key for the given user-ids from WKD.  The meanwhile preferred format
 with sub-domains is used here.
 
-@command{gpg-wks-client} is not commonly invoked directly and thus it
-is not installed in the bin directory.  Here is an example how it can
-be invoked manually to check for a Web Key Directory entry for
-@file{foo@@example.org}:
-
-@example
-$(gpgconf --list-dirs libexecdir)/gpg-wks-client --check foo@@example.net
-@end example
+All commands may also be given without the two leading dashes.
 
 @mansect options
 @noindent
@@ -198,7 +191,9 @@ fields are (future versions may specify additional fields):
 @itemx -o
 @opindex output
 Write the created mail to @var{file} instead of stdout.  Note that the
-value @code{-} for @var{file} is the same as writing to stdout.
+value @code{-} for @var{file} is the same as writing to stdout.  If
+this option is used with the @option{--check} command and a key was
+found it is written to the given file.
 
 @item --status-fd @var{n}
 @opindex status-fd
@@ -250,6 +245,21 @@ Display a brief help page and exit.
 
 @end table
 
+@noindent
+@mansect examples
+@chapheading Examples
+
+To use the services with clients lacking integrated support, the
+mailcap mechanism can be used.  Simply put:
+@example
+application/vnd.gnupg.wks; \
+  @value{BINDIR}/gpg-wks-client -v --read --send; \
+  needsterminal; \
+  description=WKS message
+@end example
+into the @file{/etc/mailcap}.  This assumes that a /usr/lib/sendmail
+is installed.  With this configuration any real mail programs will run
+gpg-wks-client for messages received from a Web Key Service.
 
 @mansect see also
 @ifset isman
@@ -305,7 +315,7 @@ Display a brief help page and exit.
 @end ifset
 
 @mansect description
-The @command{gpg-wks-server} is a server site implementation of the
+The @command{gpg-wks-server} is a server side implementation of the
 Web Key Service.  It receives requests for publication, sends
 confirmation requests, receives confirmations, and published the key.
 It also has features to ease the setup and maintenance of a Web Key
@@ -313,10 +323,10 @@ Directory.
 
 When used with the command @option{--receive} a single Web Key Service
 mail is processed.  Commonly this command is used with the option
-@option{--send} to directly send the crerated mails back.  See below
+@option{--send} to directly send the created mails back.  See below
 for an installation example.
 
-The command @option{--cron} is used for regualr cleanup tasks.  For
+The command @option{--cron} is used for regular cleanup tasks.  For
 example non-confirmed requested should be removed after their expire
 time.  It is best to run this command once a day from a cronjob.
 
@@ -445,7 +455,7 @@ be the same address for all configured domains, for example:
   $ echo key-submission@@example.net >submission-address
 @end example
 
-The protocol requires that the key to be published is send with an
+The protocol requires that the key to be published is sent with an
 encrypted mail to the service.  Thus you need to create a key for
 the submission address:
 
@@ -457,10 +467,11 @@ the submission address:
 The output of the last command looks similar to this:
 
 @example
-  sec   rsa2048 2016-08-30 [SC]
+  sec   rsa3072 2016-08-30 [SC]
         C0FCF8642D830C53246211400346653590B3795B
   uid           [ultimate] key-submission@@example.net
-  ssb   rsa2048 2016-08-30 [E]
+                bxzcxpxk8h87z1k7bzk86xn5aj47intu@@example.net
+  ssb   rsa3072 2016-08-30 [E]
 @end example
 
 Take the fingerprint from that output and manually publish the key:

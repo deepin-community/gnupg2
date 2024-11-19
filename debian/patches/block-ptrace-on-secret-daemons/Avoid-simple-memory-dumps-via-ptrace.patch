@@ -22,10 +22,10 @@ Upstream bug: https://dev.gnupg.org/T1211
  3 files changed, 18 insertions(+), 1 deletion(-)
 
 diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
-index c3b71b0..d747707 100644
+index 1db4227..33d35fd 100644
 --- a/agent/gpg-agent.c
 +++ b/agent/gpg-agent.c
-@@ -50,6 +50,9 @@
+@@ -48,6 +48,9 @@
  # include <signal.h>
  #endif
  #include <npth.h>
@@ -35,7 +35,7 @@ index c3b71b0..d747707 100644
  
  #define INCLUDED_BY_MAIN_MODULE 1
  #define GNUPG_COMMON_NEED_AFLOCAL
-@@ -1066,6 +1069,11 @@ main (int argc, char **argv )
+@@ -1084,6 +1087,11 @@ main (int argc, char **argv)
  
    early_system_init ();
  
@@ -48,10 +48,10 @@ index c3b71b0..d747707 100644
       file descriptors and the signal mask.  This info is required to
       do the exec call properly.  We don't need it on Windows.  */
 diff --git a/configure.ac b/configure.ac
-index 6d1e2ba..6962d20 100644
+index c31ae02..b9bc809 100644
 --- a/configure.ac
 +++ b/configure.ac
-@@ -1397,7 +1397,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
+@@ -1406,7 +1406,7 @@ AC_CHECK_FUNCS([atexit canonicalize_file_name clock_gettime ctermid  \
                  ftruncate funlockfile getaddrinfo getenv getpagesize \
                  getpwnam getpwuid getrlimit getrusage gettimeofday   \
                  gmtime_r inet_ntop inet_pton isascii lstat memicmp   \
@@ -61,10 +61,10 @@ index 6d1e2ba..6962d20 100644
                  stat stpcpy strcasecmp strerror strftime stricmp     \
                  strlwr strncasecmp strpbrk strsep strtol strtoul     \
 diff --git a/scd/scdaemon.c b/scd/scdaemon.c
-index b62f5b6..d804fcb 100644
+index e43769f..2066543 100644
 --- a/scd/scdaemon.c
 +++ b/scd/scdaemon.c
-@@ -38,6 +38,9 @@
+@@ -37,6 +37,9 @@
  #include <unistd.h>
  #include <signal.h>
  #include <npth.h>
@@ -74,8 +74,8 @@ index b62f5b6..d804fcb 100644
  
  #define INCLUDED_BY_MAIN_MODULE 1
  #define GNUPG_COMMON_NEED_AFLOCAL
-@@ -461,6 +464,12 @@ main (int argc, char **argv )
-   npth_t pipecon_handler;
+@@ -462,6 +465,12 @@ main (int argc, char **argv )
+   const char *application_priority = NULL;
  
    early_system_init ();
 +
@@ -84,6 +84,6 @@ index b62f5b6..d804fcb 100644
 +  prctl(PR_SET_DUMPABLE, 0);
 +#endif
 +
-   set_strusage (my_strusage);
+   gpgrt_set_strusage (my_strusage);
    gcry_control (GCRYCTL_SUSPEND_SECMEM_WARN);
    /* Please note that we may running SUID(ROOT), so be very CAREFUL

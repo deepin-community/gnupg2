@@ -1,0 +1,31 @@
+From d90f1e5fa4d18c5e6467f9f1450b869dad67c426 Mon Sep 17 00:00:00 2001
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Mon, 4 Sep 2023 12:00:29 +0900
+Subject: [PATCH 10/10] agent: Fix timer round-up check when inserting an entry
+ into cache.
+
+* agent/cache.c (insert_to_timer_list): Round up when >= a half second.
+
+--
+
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+---
+ agent/cache.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/agent/cache.c b/agent/cache.c
+index 0525e3b09..e8544205f 100644
+--- a/agent/cache.c
++++ b/agent/cache.c
+@@ -229,7 +229,7 @@ insert_to_timer_list (struct timespec *ts, ITEM entry)
+       if (the_timer_list)
+         {
+           the_timer_list->t.tv_sec += ts->tv_sec - entry->t.tv_sec;
+-          if (ts->tv_nsec)
++          if (ts->tv_nsec >= 500000000)
+             the_timer_list->t.tv_sec++;
+         }
+ 
+-- 
+2.39.2
+

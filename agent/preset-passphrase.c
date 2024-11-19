@@ -26,7 +26,6 @@
 #include <stdarg.h>
 #include <string.h>
 #include <errno.h>
-#include <assert.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #ifdef HAVE_LOCALE_H
@@ -64,13 +63,15 @@ enum cmd_and_opt_values
   oNoVerbose = 500,
 
   oHomedir,
+  oRestricted,
 
 aTest };
 
 
 static const char *opt_passphrase;
+static int opt_restricted;
 
-static ARGPARSE_OPTS opts[] = {
+static gpgrt_opt_t opts[] = {
 
   { 301, NULL, 0, N_("@Options:\n ") },
 
@@ -80,6 +81,7 @@ static ARGPARSE_OPTS opts[] = {
   { oForget,  "forget",  256, "forget passphrase"},
 
   { oHomedir, "homedir", 2, "@" },
+  { oRestricted,  "restricted", 0, "put into the restricted cache"},
 
   ARGPARSE_end ()
 };
@@ -91,7 +93,7 @@ my_strusage (int level)
   const char *p;
   switch (level)
     {
-    case  9: p = "GPL-3.0-or-later"; break;
+      case  9: p = "GPL-3.0-or-later"; break;
     case 11: p = "gpg-preset-passphrase (@GNUPG@)";
       break;
     case 13: p = VERSION; break;
@@ -157,7 +159,9 @@ preset_passphrase (const char *keygrip)
       return;
     }
 
-  rc = asprintf (&line, "PRESET_PASSPHRASE %s -1 %s\n", keygrip,
+  rc = asprintf (&line, "PRESET_PASSPHRASE %s%s -1 %s\n",
+                 opt_restricted? "--restricted ":"",
+                 keygrip,
 		 passphrase_esc);
   wipememory (passphrase_esc, strlen (passphrase_esc));
   xfree (passphrase_esc);
@@ -207,12 +211,12 @@ forget_passphrase (const char *keygrip)
 int
 main (int argc, char **argv)
 {
-  ARGPARSE_ARGS pargs;
+  gpgrt_argparse_t pargs;
   int cmd = 0;
   const char *keygrip = NULL;
 
   early_system_init ();
-  set_strusage (my_strusage);
+  gpgrt_set_strusage (my_strusage);
   log_set_prefix ("gpg-preset-passphrase", GPGRT_LOG_WITH_PREFIX);
 
   /* Make sure that our subsystems are ready.  */
@@ -222,7 +226,7 @@ main (int argc, char **argv)
   pargs.argc = &argc;
   pargs.argv = &argv;
   pargs.flags= ARGPARSE_FLAG_KEEP;
-  while (gnupg_argparse (NULL, &pargs, opts))
+  while (gpgrt_argparse (NULL, &pargs, opts))
     {
       switch (pargs.r_opt)
         {
@@ -233,17 +237,20 @@ main (int argc, char **argv)
         case oForget: cmd = oForget; break;
         case oPassphrase: opt_passphrase = pargs.r.ret_str; break;
 
+        case oRestricted: opt_restricted = 1; break;
+
         default : pargs.err = 2; break;
 	}
     }
-  gnupg_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+  gpgrt_argparse (NULL, &pargs, NULL);  /* Release internal state.  */
+
   if (log_get_errorcount(0))
     exit(2);
 
   if (argc == 1)
     keygrip = *argv;
   else
-    usage (1);
+    gpgrt_usage (1);
 
   /* Tell simple-pwquery about the standard socket name.  */
   {

@@ -1,0 +1,37 @@
+From 5e47d5edd8f854d4905985105991603f106ed16b Mon Sep 17 00:00:00 2001
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Fri, 1 Sep 2023 11:28:44 +0900
+Subject: [PATCH 8/9] agent: Fix timer list management.
+
+* agent/cache.c (insert_to_timer_list): Update TV_SEC of the top entry
+when inserted.
+
+--
+
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+---
+ agent/cache.c | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/agent/cache.c b/agent/cache.c
+index 16a21bd77..0525e3b09 100644
+--- a/agent/cache.c
++++ b/agent/cache.c
+@@ -226,8 +226,12 @@ insert_to_timer_list (struct timespec *ts, ITEM entry)
+ 
+   if (!the_timer_list || ts->tv_sec >= entry->t.tv_sec)
+     {
+-      if (the_timer_list && ts->tv_nsec)
+-        the_timer_list->t.tv_sec++;
++      if (the_timer_list)
++        {
++          the_timer_list->t.tv_sec += ts->tv_sec - entry->t.tv_sec;
++          if (ts->tv_nsec)
++            the_timer_list->t.tv_sec++;
++        }
+ 
+       ts->tv_sec = entry->t.tv_sec;
+       ts->tv_nsec = 0;
+-- 
+2.39.2
+

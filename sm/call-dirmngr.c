@@ -25,7 +25,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <time.h>
-#include <assert.h>
 #include <ctype.h>
 
 #include "gpgsm.h"
@@ -65,6 +64,8 @@ struct isvalid_status_parm_s {
   ctrl_t ctrl;
   int seen;
   unsigned char fpr[20];
+  gnupg_isotime_t revoked_at;
+  char *revocation_reason;  /* malloced or NULL */
 };
 
 
@@ -156,39 +157,9 @@ static gpg_error_t
 warn_version_mismatch (ctrl_t ctrl, assuan_context_t ctx,
                        const char *servername, int mode)
 {
-  gpg_error_t err;
-  char *serverversion;
-  const char *myversion = strusage (13);
-
-  err = get_assuan_server_version (ctx, mode, &serverversion);
-  if (err)
-    log_error (_("error getting version from '%s': %s\n"),
-               servername, gpg_strerror (err));
-  else if (compare_version_strings (serverversion, myversion) < 0)
-    {
-      char *warn;
-
-      warn = xtryasprintf (_("server '%s' is older than us (%s < %s)"),
-                           servername, serverversion, myversion);
-      if (!warn)
-        err = gpg_error_from_syserror ();
-      else
-        {
-          log_info (_("WARNING: %s\n"), warn);
-          if (!opt.quiet)
-            {
-              log_info (_("Note: Outdated servers may lack important"
-                          " security fixes.\n"));
-              log_info (_("Note: Use the command \"%s\" to restart them.\n"),
-                        "gpgconf --kill all");
-            }
-          gpgsm_status2 (ctrl, STATUS_WARNING, "server_version_mismatch 0",
-                         warn, NULL);
-          xfree (warn);
-        }
-    }
-  xfree (serverversion);
-  return err;
+  return warn_server_version_mismatch (ctx, servername, mode,
+                                       gpgsm_status2, ctrl,
+                                       !opt.quiet);
 }
 
 
@@ -283,7 +254,7 @@ start_dirmngr (ctrl_t ctrl)
 {
   gpg_error_t err;
 
-  assert (! dirmngr_ctx_locked);
+  log_assert (! dirmngr_ctx_locked);
   dirmngr_ctx_locked = 1;
 
   err = start_dirmngr_ext (ctrl, &dirmngr_ctx);
@@ -313,7 +284,7 @@ start_dirmngr2 (ctrl_t ctrl)
 {
   gpg_error_t err;
 
-  assert (! dirmngr2_ctx_locked);
+  log_assert (! dirmngr2_ctx_locked);
   dirmngr2_ctx_locked = 1;
 
   err = start_dirmngr_ext (ctrl, &dirmngr2_ctx);
@@ -456,6 +427,51 @@ unhexify_fpr (const char *hexstr, unsigned char *fpr)
 }
 
 
+/* This is a helper to print diagnostics from dirmngr indicated by
+ * WARNING or NOTE status lines.  Returns true if the status LINE was
+ * processed.  */
+static int
+warning_and_note_printer (const char *line)
+{
+  const char *s, *s2;
+  const char *warn = NULL;
+  int is_note = 0;
+
+  if ((s = has_leading_keyword (line, "WARNING")))
+    ;
+  else if ((is_note = !!(s = has_leading_keyword (line, "NOTE"))))
+    ;
+  else
+    return 0;  /* Nothing to process.  */
+
+  if ((s2 = has_leading_keyword (s, "no_crl_due_to_tor"))
+      || (s2 = has_leading_keyword (s, "no_ldap_due_to_tor"))
+      || (s2 = has_leading_keyword (s, "no_ocsp_due_to_tor")))
+    warn = _("Tor might be in use - network access is limited");
+  else
+    warn = NULL;
+
+  if (warn)
+    {
+      if (is_note)
+        log_info (_("Note: %s\n"), warn);
+      else
+        log_info (_("WARNING: %s\n"), warn);
+      if (s2)
+        {
+          while (*s2 && !spacep (s2))
+            s2++;
+          while (*s2 && spacep (s2))
+            s2++;
+          if (*s2)
+            gpgsm_print_further_info ("%s", s2);
+        }
+    }
+
+  return 1;  /* Status line processed.  */
+}
+
+
 static gpg_error_t
 isvalid_status_cb (void *opaque, const char *line)
 {
@@ -475,8 +491,25 @@ isvalid_status_cb (void *opaque, const char *line)
     {
       parm->seen++;
       if (!*s || !unhexify_fpr (s, parm->fpr))
-        parm->seen++; /* Bumb it to indicate an error. */
+        parm->seen++; /* Bump it to indicate an error. */
     }
+  else if ((s = has_leading_keyword (line, "REVOCATIONINFO")))
+    {
+      if (*s && strlen (s) >= 15)
+        {
+          memcpy (parm->revoked_at, s, 15);
+          parm->revoked_at[15] = 0;
+        }
+      s += 15;
+      while (*s && spacep (s))
+        s++;
+      xfree (parm->revocation_reason);
+      parm->revocation_reason = *s? xtrystrdup (s) : NULL;
+    }
+  else if (warning_and_note_printer (line))
+    {
+    }
+
   return 0;
 }
 
@@ -488,16 +521,22 @@ isvalid_status_cb (void *opaque, const char *line)
 
   GPG_ERR_CERTIFICATE_REVOKED
   GPG_ERR_NO_CRL_KNOWN
+  GPG_ERR_INV_CRL_OBJ
   GPG_ERR_CRL_TOO_OLD
 
   Values for USE_OCSP:
      0 = Do CRL check.
-     1 = Do an OCSP check but fallback to CRL unless CRLS are disabled.
-     2 = Do only an OCSP check using only the default responder.
+     1 = Do an OCSP check but fallback to CRL unless CRLs are disabled.
+     2 = Do only an OCSP check (used for the chain model).
+
+   If R_REVOKED_AT pr R_REASON are not NULL and the certificate has
+   been revoked the revocation time and the reason are copied to there.
+   The caller needs to free R_REASON.
  */
-int
+gpg_error_t
 gpgsm_dirmngr_isvalid (ctrl_t ctrl,
-                       ksba_cert_t cert, ksba_cert_t issuer_cert, int use_ocsp)
+                       ksba_cert_t cert, ksba_cert_t issuer_cert, int use_ocsp,
+                       gnupg_isotime_t r_revoked_at, char **r_reason)
 {
   static int did_options;
   int rc;
@@ -506,7 +545,10 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
   struct inq_certificate_parm_s parm;
   struct isvalid_status_parm_s stparm;
 
-  keydb_close_all_files ();
+  if (r_revoked_at)
+    *r_revoked_at = 0;
+  if (r_reason)
+    *r_reason = NULL;
 
   rc = start_dirmngr (ctrl);
   if (rc)
@@ -537,6 +579,8 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
   stparm.ctrl = ctrl;
   stparm.seen = 0;
   memset (stparm.fpr, 0, 20);
+  stparm.revoked_at[0] = 0;
+  stparm.revocation_reason = NULL;
 
   /* It is sufficient to send the options only once because we have
    * one connection per process only.  */
@@ -547,9 +591,8 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
                          NULL, NULL, NULL, NULL, NULL, NULL);
       did_options = 1;
     }
-  snprintf (line, DIM(line), "ISVALID%s%s %s%s%s",
-            use_ocsp == 2 || opt.no_crl_check ? " --only-ocsp":"",
-            use_ocsp == 2? " --force-default-responder":"",
+  snprintf (line, DIM(line), "ISVALID%s %s%s%s",
+            (use_ocsp == 2 || opt.no_crl_check) ? " --only-ocsp":"",
             certid,
             use_ocsp? " ":"",
             use_ocsp? certfpr:"");
@@ -561,6 +604,19 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
                         isvalid_status_cb, &stparm);
   if (opt.verbose > 1)
     log_info ("response of dirmngr: %s\n", rc? gpg_strerror (rc): "okay");
+
+  if (gpg_err_code (rc) == GPG_ERR_CERT_REVOKED
+      && !check_isotime (stparm.revoked_at))
+    {
+      if (r_revoked_at)
+        gnupg_copy_time (r_revoked_at, stparm.revoked_at);
+      if (r_reason)
+        {
+          *r_reason = stparm.revocation_reason;
+          stparm.revocation_reason = NULL;
+        }
+
+    }
 
   if (!rc && stparm.seen)
     {
@@ -580,7 +636,7 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
                  from the dirmngr.  Try our own cert store now.  */
               KEYDB_HANDLE kh;
 
-              kh = keydb_new ();
+              kh = keydb_new (ctrl);
               if (!kh)
                 rc = gpg_error (GPG_ERR_ENOMEM);
               if (!rc)
@@ -619,7 +675,9 @@ gpgsm_dirmngr_isvalid (ctrl_t ctrl,
           ksba_cert_release (rspcert);
         }
     }
+
   release_dirmngr (ctrl);
+  xfree (stparm.revocation_reason);
   return rc;
 }
 
@@ -755,6 +813,10 @@ lookup_status_cb (void *opaque, const char *line)
           gpgsm_status (parm->ctrl, STATUS_TRUNCATED, line);
         }
     }
+  else if (warning_and_note_printer (line))
+    {
+    }
+
   return 0;
 }
 
@@ -778,8 +840,6 @@ gpgsm_dirmngr_lookup (ctrl_t ctrl, strlist_t names, const char *uri,
 
   if ((names && uri) || (!names && !uri))
     return gpg_error (GPG_ERR_INV_ARG);
-
-  keydb_close_all_files ();
 
   /* The lookup function can be invoked from the callback of a lookup
      function, for example to walk the chain.  */
@@ -1056,6 +1116,10 @@ run_command_status_cb (void *opaque, const char *line)
             return gpg_error (GPG_ERR_ASS_CANCELED);
         }
     }
+  else if (warning_and_note_printer (line))
+    {
+    }
+
   return 0;
 }
 
@@ -1076,8 +1140,6 @@ gpgsm_dirmngr_run_command (ctrl_t ctrl, const char *command,
   char *line, *p;
   size_t len;
   struct run_command_parm_s parm;
-
-  keydb_close_all_files ();
 
   rc = start_dirmngr (ctrl);
   if (rc)

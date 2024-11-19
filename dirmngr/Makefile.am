@@ -27,6 +27,8 @@ EXTRA_DIST = OAUTHORS ONEWS ChangeLog-2011 tls-ca.pem \
              dirmngr-client-w32info.rc dirmngr-client.w32-manifest.in
 
 
+
+
 dist_pkgdata_DATA = sks-keyservers.netCA.pem
 
 bin_PROGRAMS = dirmngr dirmngr-client
@@ -74,6 +76,7 @@ endif
 noinst_HEADERS = dirmngr.h crlcache.h crlfetch.h misc.h
 
 dirmngr_SOURCES = dirmngr.c dirmngr.h server.c crlcache.c crlfetch.c	\
+        fakecrl.c \
 	certcache.c certcache.h \
 	domaininfo.c \
 	workqueue.c \
@@ -90,7 +93,7 @@ dirmngr_SOURCES += dns.c dns.h
 endif
 
 if USE_LDAP
-dirmngr_SOURCES += ldapserver.h ldapserver.c ldap.c w32-ldap-help.h \
+dirmngr_SOURCES += ldapserver.h ldapserver.c ldap.c \
                    ldap-wrapper.h ldap-parse-uri.c ldap-parse-uri.h \
                    ldap-misc.c ldap-misc.h \
                    ks-engine-ldap.c $(ldap_url) ldap-wrapper.c
@@ -105,10 +108,11 @@ dirmngr_LDADD = $(libcommonpth) \
 	$(KSBA_LIBS) $(NPTH_LIBS) $(NTBTLS_LIBS) $(LIBGNUTLS_LIBS) \
         $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) $(LIBINTL) $(LIBICONV) \
         $(NETLIBS) $(dirmngr_rc_objs)
+
 if USE_LDAP
 dirmngr_LDADD += $(ldaplibs) $(LBER_LIBS)
 endif
-dirmngr_LDFLAGS = $(extra_bin_ldflags)
+dirmngr_LDFLAGS =
 dirmngr_DEPENDENCIES = $(dirmngr_rc_objs)
 
 if USE_LDAP
@@ -130,11 +134,12 @@ dirmngr_client_LDADD = $(libcommon) \
 dirmngr_client_LDFLAGS =
 dirmngr_client_DEPENDENCIES = $(dirmngr_client_rc_objs)
 
+
 t_common_src = t-support.h t-support.c
 if USE_LIBDNS
 t_common_src += dns.c dns.h
 endif
-t_common_ldadd = $(libcommon) $(LIBASSUAN_LIBS) \
+t_common_ldadd = $(libcommon) $(LIBASSUAN_LIBS)  \
                  $(NTBTLS_LIBS) $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
                  $(LIBGNUTLS_LIBS) \
                  $(NETLIBS) $(DNSLIBS) $(LIBINTL) $(LIBICONV)
@@ -176,30 +181,30 @@ t_http_basic_CFLAGS  = -DWITHOUT_NPTH=1  $(USE_C99_CFLAGS) \
 	         $(LIBGCRYPT_CFLAGS) $(NTBTLS_CFLAGS) $(LIBGNUTLS_CFLAGS) \
                  $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS) $(KSBA_CFLAGS)
 t_http_basic_LDADD   = $(t_common_ldadd) \
-	               $(NTBTLS_LIBS) $(KSBA_LIBS) $(LIBGCRYPT_LIBS) \
-                       $(GPG_ERROR_LIBS) \
-                       $(LIBGNUTLS_LIBS) $(DNSLIBS)
+                 $(NTBTLS_LIBS) $(KSBA_LIBS) $(LIBGCRYPT_LIBS) \
+                 $(GPG_ERROR_LIBS) \
+                 $(LIBGNUTLS_LIBS) $(DNSLIBS)
 
 t_ldap_parse_uri_SOURCES = \
 	t-ldap-parse-uri.c ldap-parse-uri.c ldap-parse-uri.h \
         http.c http-common.c dns-stuff.c ldap-misc.c \
         $(ldap_url) $(t_common_src)
 t_ldap_parse_uri_CFLAGS = -DWITHOUT_NPTH=1  $(USE_C99_CFLAGS) \
-			  $(LIBGCRYPT_CFLAGS) $(NTBTLS_CFLAGS) \
-                          $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS) $(KSBA_CFLAGS)
+			  $(LIBGCRYPT_CFLAGS) \
+              $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS) $(KSBA_CFLAGS) \
+              $(NTBTLS_CFLAGS)
 t_ldap_parse_uri_LDADD = $(ldaplibs) $(t_common_ldadd) $(KSBA_LIBS) $(DNSLIBS)
 
 t_ldap_misc_SOURCES = t-ldap-misc.c ldap-misc.c ldap-misc.h $(ldap_url)
-t_ldap_misc_CFLAGS = -DWITHOUT_NPTH=1 $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS) \
-                     $(NTBTLS_CFLAGS)
+t_ldap_misc_CFLAGS = -DWITHOUT_NPTH=1 $(GPG_ERROR_CFLAGS) $(LIBGCRYPT_CFLAGS)
 t_ldap_misc_LDFLAGS =
 t_ldap_misc_LDADD = $(libcommon) $(NTBTLS_LIBS) $(LIBGCRYPT_LIBS) \
                     $(LDAPLIBS) $(LBER_LIBS) $(LIBINTL) \
-                    $(KSBA_LIBS) $(GPG_ERROR_LIBS) $(LIBICONV) $(NETLIBS)
+		    $(KSBA_LIBS) $(GPG_ERROR_LIBS) $(LIBICONV) $(NETLIBS)
 
 
 t_dns_stuff_CFLAGS = -DWITHOUT_NPTH=1  $(USE_C99_CFLAGS) \
-		     $(LIBGCRYPT_CFLAGS) $(NTBTLS_CFLAGS) \
+		     $(LIBGCRYPT_CFLAGS) \
 	             $(LIBASSUAN_CFLAGS) $(GPG_ERROR_CFLAGS)
 t_dns_stuff_SOURCES = $(t_common_src) t-dns-stuff.c dns-stuff.c
 t_dns_stuff_LDADD   = $(t_common_ldadd) $(DNSLIBS)
