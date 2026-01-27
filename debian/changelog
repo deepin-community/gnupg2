@@ -1,3 +1,9 @@
+gnupg2 (2.4.5-2deepin2) unstable; urgency=medium
+
+  * feat: add sw64 support.
+
+ -- lichenggang <lichenggang@deepin.org>  Tue, 27 Jan 2026 19:59:22 +0800
+
 gnupg2 (2.4.5-2deepin1) unstable; urgency=medium
 
   * Fix CVE-2025-68973 

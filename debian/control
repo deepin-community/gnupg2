@@ -34,14 +34,14 @@ Build-Depends:
  unicode-data,
  zlib1g-dev | libz-dev,
 Build-Depends-Indep:
- binutils-multiarch [!amd64 !i386],
- libassuan-mingw-w64-dev (>= 2.5.0),
- libgcrypt-mingw-w64-dev (>= 1.9.1),
- libgpg-error-mingw-w64-dev (>= 1.46),
- libksba-mingw-w64-dev (>= 1.6.3),
- libnpth-mingw-w64-dev (>= 1.2),
- libz-mingw-w64-dev,
- mingw-w64,
+ binutils-multiarch [!sw64 !amd64 !i386],
+ libassuan-mingw-w64-dev (>= 2.5.0) [!sw64],
+ libgcrypt-mingw-w64-dev (>= 1.9.1) [!sw64],
+ libgpg-error-mingw-w64-dev (>= 1.46) [!sw64],
+ libksba-mingw-w64-dev (>= 1.6.3) [!sw64],
+ libnpth-mingw-w64-dev (>= 1.2) [!sw64],
+ libz-mingw-w64-dev [!sw64],
+ mingw-w64 [!sw64],
 Vcs-Git: https://salsa.debian.org/debian/gnupg2.git
 Vcs-Browser: https://salsa.debian.org/debian/gnupg2
 Homepage: https://www.gnupg.org/
