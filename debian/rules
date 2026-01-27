@@ -16,7 +16,7 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 # avoid -pie for gpgv-static on kfreebsd-amd64, and x32
 # platforms, which cannot support it by default:
-ifeq (,$(filter $(DEB_HOST_ARCH), kfreebsd-amd64 x32))
+ifeq (,$(filter $(DEB_HOST_ARCH), kfreebsd-amd64 x32 sw64))
 GPGV_STATIC_HARDENING = "-pie"
 else
 GPGV_STATIC_HARDENING = ""
@@ -79,6 +79,7 @@ override_dh_auto_build-arch:
 
 override_dh_auto_build-indep:
 	mkdir -p build-gpgv-win32
+ifneq ($(DEB_HOST_ARCH), sw64)
 	cd build-gpgv-win32 && $(WIN32_FLAGS) ../configure \
 	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x)) \
 		$(foreach x, libgpg-error libgcrypt libassuan ksba npth, --with-$x-prefix=/usr/i686-w64-mingw32) \
@@ -96,7 +97,9 @@ override_dh_auto_build-indep:
 	cd build-gpgv-win32/regexp && $(WIN32_FLAGS) $(MAKE) libregexp.a
 	cd build-gpgv-win32/g10 && $(WIN32_FLAGS) $(MAKE) gpgv.exe
 	strip build-gpgv-win32/g10/gpgv.exe
-
+else
+	: > debian/gpgv-win32.install
+endif
 
 override_dh_auto_test:
 	dh_auto_test --builddirectory=build -- verbose=3 TESTFLAGS=$(AUTOTEST_FLAGS)
