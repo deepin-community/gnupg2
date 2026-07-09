@@ -1,3 +1,4 @@
+CVE-2026-57062.patch
 debian-packaging/avoid-beta-warning.patch
 debian-packaging/avoid-regenerating-defsincdate-use-shipped-file.patch
 debian-packaging/keep-systemd-support.patch
