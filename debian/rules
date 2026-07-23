@@ -79,7 +79,7 @@ override_dh_auto_build-arch:
 
 override_dh_auto_build-indep:
 	mkdir -p build-gpgv-win32
-ifneq (,$(filter $(DEB_HOST_ARCH), sw64 loong64))
+ifeq (,$(filter $(DEB_HOST_ARCH), sw64 loong64))
 	cd build-gpgv-win32 && $(WIN32_FLAGS) ../configure \
 	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x)) \
 		$(foreach x, libgpg-error libgcrypt libassuan ksba npth, --with-$x-prefix=/usr/i686-w64-mingw32) \
