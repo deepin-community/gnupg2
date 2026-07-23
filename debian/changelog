@@ -1,3 +1,9 @@
+gnupg2 (2.4.5-2deepin5) unstable; urgency=medium
+
+  * fix: correct loong64 win32 build guard in debian/rules.
+
+ -- lichenggang <lichenggang@uniontech.com>  Thu, 23 Jul 2026 20:30:17 +0800
+
 gnupg2 (2.4.5-2deepin4) unstable; urgency=medium
 
   * feat: add loong64 support.
