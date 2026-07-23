@@ -1,3 +1,9 @@
+gnupg2 (2.4.5-2deepin4) unstable; urgency=medium
+
+  * feat: add loong64 support.
+
+ -- lichenggang <lichenggang@uniontech.com>  Thu, 23 Jul 2026 17:29:33 +0800
+
 gnupg2 (2.4.5-2deepin3) unstable; urgency=medium
 
   * fix(cve): CVE-2026-57062
