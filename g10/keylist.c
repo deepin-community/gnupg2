@@ -1462,6 +1462,8 @@ list_keyblock_print (ctrl_t ctrl, kbnode_t keyblock, int secret, int fpr,
       es_putc ('\n', es_stdout);
     }
 
+  print_revokers (es_stdout, 0, pk);
+
   for (node = keyblock; node; node = node->next)
     {
       if (is_deleted_kbnode (node))
@@ -1687,28 +1689,43 @@ list_keyblock_simple (ctrl_t ctrl, kbnode_t keyblock)
 }
 
 
+/* Print the revoker records. */
 void
-print_revokers (estream_t fp, PKT_public_key * pk)
+print_revokers (estream_t fp, int colon_mode, PKT_public_key * pk)
 {
-  /* print the revoker record */
+  int i, j;
+  const byte *p;
+
   if (!pk->revkey && pk->numrevkeys)
     BUG ();
-  else
+
+  for (i = 0; i < pk->numrevkeys; i++)
     {
-      int i, j;
-
-      for (i = 0; i < pk->numrevkeys; i++)
-	{
-	  byte *p;
-
-	  es_fprintf (fp, "rvk:::%d::::::", pk->revkey[i].algid);
-	  p = pk->revkey[i].fpr;
-	  for (j = 0; j < pk->revkey[i].fprlen; j++, p++)
-	    es_fprintf (fp, "%02X", *p);
-	  es_fprintf (fp, ":%02x%s:\n",
+      if (colon_mode)
+        {
+          es_fprintf (fp, "rvk:::%d::::::", pk->revkey[i].algid);
+          p = pk->revkey[i].fpr;
+          for (j = 0; j < pk->revkey[i].fprlen; j++, p++)
+            es_fprintf (fp, "%02X", *p);
+          es_fprintf (fp, ":%02x%s:\n",
                       pk->revkey[i].class,
                       (pk->revkey[i].class & 0x40) ? "s" : "");
-	}
+        }
+      else
+        {
+          es_fprintf (fp, "%*s%s", 6, "", _("Revocable by: "));
+          p = pk->revkey[i].fpr;
+          es_write_hexstring (fp, pk->revkey[i].fpr, pk->revkey[i].fprlen,
+                              0, NULL);
+          if ((pk->revkey[i].class & 0x40))
+            es_fprintf (fp, " %s", _("(sensitive)"));
+          /* Class bit 7 must always be set, bit 6 indicates sensitive
+           * and all others bits are reserved.  */
+          if (!(pk->revkey[i].class & ~0x40)
+              || (pk->revkey[i].class & ~(0x40|0x80)))
+            es_fprintf (fp, " (unknown class %02x)", pk->revkey[i].class);
+	  es_fprintf (fp, "\n");
+        }
     }
 }
 
@@ -1870,7 +1887,7 @@ list_keyblock_colon (ctrl_t ctrl, kbnode_t keyblock,
   es_putc (':', es_stdout);		/* End of field 20 (origin). */
   es_putc ('\n', es_stdout);
 
-  print_revokers (es_stdout, pk);
+  print_revokers (es_stdout, 1, pk);
   print_fingerprint (ctrl, NULL, pk, 0);
   if (hexgrip)
     es_fprintf (es_stdout, "grp:::::::::%s:\n", hexgrip);
@@ -2520,6 +2537,11 @@ print_key_line (ctrl_t ctrl, estream_t fp, PKT_public_key *pk, int secret)
       tty_fprintf (fp, " [%s]", usagestr_from_pk (pk, 0));
     }
 
+  if (pk->flags.primary && (opt.list_options & LIST_SHOW_OWNERTRUST))
+    {
+      tty_fprintf (fp, " [%s]", get_ownertrust_string (ctrl, pk, 0));
+    }
+
   if (pk->flags.revoked)
     {
       tty_fprintf (fp, " [");
@@ -2539,20 +2561,13 @@ print_key_line (ctrl_t ctrl, estream_t fp, PKT_public_key *pk, int secret)
       tty_fprintf (fp, "]");
     }
 
-#if 0
-  /* I need to think about this some more.  It's easy enough to
-     include, but it looks sort of confusing in the listing... */
-  if (opt.list_options & LIST_SHOW_VALIDITY)
-    {
-      int validity = get_validity (ctrl, pk, NULL, NULL, 0);
-      tty_fprintf (fp, " [%s]", trust_value_to_string (validity));
-    }
-#endif
-
   if (pk->pubkey_algo >= 100)
     tty_fprintf (fp, " [experimental algorithm %d]", pk->pubkey_algo);
 
   tty_fprintf (fp, "\n");
+
+  if (pk->flags.primary && pk_is_disabled (pk))
+    es_fprintf (es_stdout, "      *** %s\n", _("This key has been disabled"));
 
   /* if the user hasn't explicitly asked for human-readable
      fingerprints, show compact fpr of primary key: */

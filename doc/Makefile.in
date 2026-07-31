@@ -141,8 +141,6 @@ host_triplet = @host@
 @GNUPG_DIRMNGR_PGM_TRUE@am__append_6 = -DGNUPG_DEFAULT_DIRMNGR="\"@GNUPG_DIRMNGR_PGM@\""
 @GNUPG_PROTECT_TOOL_PGM_TRUE@am__append_7 = -DGNUPG_DEFAULT_PROTECT_TOOL="\"@GNUPG_PROTECT_TOOL_PGM@\""
 @GNUPG_DIRMNGR_LDAP_PGM_TRUE@am__append_8 = -DGNUPG_DEFAULT_DIRMNGR_LDAP="\"@GNUPG_DIRMNGR_LDAP_PGM@\""
-@USE_GPG2_HACK_TRUE@am__append_9 = gpg2.1 gpgv2.1
-@USE_GPG2_HACK_FALSE@am__append_10 = gpg.1 gpgv.1
 subdir = doc
 ACLOCAL_M4 = $(top_srcdir)/aclocal.m4
 am__aclocal_m4_deps = $(top_srcdir)/m4/autobuild.m4 \
@@ -226,7 +224,8 @@ am__can_run_installinfo = \
   esac
 am__installdirs = "$(DESTDIR)$(infodir)" "$(DESTDIR)$(man1dir)" \
 	"$(DESTDIR)$(man7dir)" "$(DESTDIR)$(man8dir)" \
-	"$(DESTDIR)$(pkgdatadir)" "$(DESTDIR)$(docdir)"
+	"$(DESTDIR)$(manhdir)" "$(DESTDIR)$(pkgdatadir)" \
+	"$(DESTDIR)$(docdir)"
 am__vpath_adj_setup = srcdirstrip=`echo "$(srcdir)" | sed 's|.|.|g'`;
 am__vpath_adj = case $$p in \
     $(srcdir)/*) f=`echo "$$p" | sed "s|^$$srcdirstrip/||"`;; \
@@ -257,6 +256,7 @@ am__uninstall_files_from_dir = { \
 man1dir = $(mandir)/man1
 man7dir = $(mandir)/man7
 man8dir = $(mandir)/man8
+manhdir = $(mandir)/manh
 NROFF = nroff
 MANS = $(man_MANS)
 DATA = $(dist_pkgdata_DATA) $(nobase_dist_doc_DATA)
@@ -521,17 +521,28 @@ myman_sources = gnupg7.texi gpg.texi gpgsm.texi gpg-agent.texi \
 	        dirmngr.texi scdaemon.texi tools.texi wks.texi \
                 gpg-card.texi
 
-myman_pages = gpgsm.1 gpg-agent.1 dirmngr.8 scdaemon.1 watchgnupg.1 \
-	gpgconf.1 addgnupghome.8 gpg-preset-passphrase.1 \
-	gpg-connect-agent.1 gpgparsemail.1 gpgtar.1 \
-	applygnupgdefaults.8 gpg-wks-client.1 gpg-wks-server.1 \
-	dirmngr-client.1 gpg-card.1 gpg-check-pattern.1 \
-	$(am__append_9) $(am__append_10)
-man_MANS = $(myman_pages) gnupg.7
+myman_pages = gpg.1 gpgv.1 gpgsm.1 gpg-agent.1 dirmngr.8 scdaemon.1 \
+                watchgnupg.1 gpgconf.1 addgnupghome.8 gpg-preset-passphrase.1 \
+		gpg-connect-agent.1 gpgparsemail.1 gpgtar.1 gpg-mail-tube.1 \
+		applygnupgdefaults.8 gpg-wks-client.1 gpg-wks-server.1 \
+		dirmngr-client.1 gpg-card.1 gpg-check-pattern.1
+
+myhtmlman_pages = \
+                gpg.1.html gpgv.1.html gpgsm.1.html \
+                gpg-agent.1.html dirmngr.8.html scdaemon.1.html \
+                watchgnupg.1.html gpgconf.1.html addgnupghome.8.html \
+                gpg-preset-passphrase.1.html \
+		gpg-connect-agent.1.html gpgparsemail.1.html \
+                gpgtar.1.html gpg-mail-tube.1.html \
+		applygnupgdefaults.8.html gpg-wks-client.1.html \
+                gpg-wks-server.1.html \
+		dirmngr-client.1.html gpg-card.1.html gpg-check-pattern.1.html
+
+man_MANS = $(myman_pages) gnupg.7 gnupg.7.html
 watchgnupg_SOURCE = gnupg.texi
 CLEANFILES = yat2m mkdefsinc defs.inc
 DISTCLEANFILES = gnupg.tmp gnupg.ops yat2m-stamp.tmp yat2m-stamp \
-		 $(myman_pages) gnupg.7
+		 $(myman_pages) gnupg.7 gnupg.7.html $(myhtmlman_pages)
 
 all: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) all-am
@@ -838,6 +849,49 @@ uninstall-man8:
 	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^8][0-9a-z]*$$,8,;x' \
 	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
 	dir='$(DESTDIR)$(man8dir)'; $(am__uninstall_files_from_dir)
+install-manh: $(man_MANS)
+	@$(NORMAL_INSTALL)
+	@list1=''; \
+	list2='$(man_MANS)'; \
+	test -n "$(manhdir)" \
+	  && test -n "`echo $$list1$$list2`" \
+	  || exit 0; \
+	echo " $(MKDIR_P) '$(DESTDIR)$(manhdir)'"; \
+	$(MKDIR_P) "$(DESTDIR)$(manhdir)" || exit 1; \
+	{ for i in $$list1; do echo "$$i"; done;  \
+	if test -n "$$list2"; then \
+	  for i in $$list2; do echo "$$i"; done \
+	    | sed -n '/\.h[a-z]*$$/p'; \
+	fi; \
+	} | while read p; do \
+	  if test -f $$p; then d=; else d="$(srcdir)/"; fi; \
+	  echo "$$d$$p"; echo "$$p"; \
+	done | \
+	sed -e 'n;s,.*/,,;p;h;s,.*\.,,;s,^[^h][0-9a-z]*$$,h,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,' | \
+	sed 'N;N;s,\n, ,g' | { \
+	list=; while read file base inst; do \
+	  if test "$$base" = "$$inst"; then list="$$list $$file"; else \
+	    echo " $(INSTALL_DATA) '$$file' '$(DESTDIR)$(manhdir)/$$inst'"; \
+	    $(INSTALL_DATA) "$$file" "$(DESTDIR)$(manhdir)/$$inst" || exit $$?; \
+	  fi; \
+	done; \
+	for i in $$list; do echo "$$i"; done | $(am__base_list) | \
+	while read files; do \
+	  test -z "$$files" || { \
+	    echo " $(INSTALL_DATA) $$files '$(DESTDIR)$(manhdir)'"; \
+	    $(INSTALL_DATA) $$files "$(DESTDIR)$(manhdir)" || exit $$?; }; \
+	done; }
+
+uninstall-manh:
+	@$(NORMAL_UNINSTALL)
+	@list=''; test -n "$(manhdir)" || exit 0; \
+	files=`{ for i in $$list; do echo "$$i"; done; \
+	l2='$(man_MANS)'; for i in $$l2; do echo "$$i"; done | \
+	  sed -n '/\.h[a-z]*$$/p'; \
+	} | sed -e 's,.*/,,;h;s,.*\.,,;s,^[^h][0-9a-z]*$$,h,;x' \
+	      -e 's,\.[0-9a-z]*$$,,;$(transform);G;s,\n,.,'`; \
+	dir='$(DESTDIR)$(manhdir)'; $(am__uninstall_files_from_dir)
 install-dist_pkgdataDATA: $(dist_pkgdata_DATA)
 	@$(NORMAL_INSTALL)
 	@list='$(dist_pkgdata_DATA)'; test -n "$(pkgdatadir)" || list=; \
@@ -931,7 +985,7 @@ check: $(BUILT_SOURCES)
 	$(MAKE) $(AM_MAKEFLAGS) check-am
 all-am: Makefile $(INFO_DEPS) $(MANS) $(DATA)
 installdirs:
-	for dir in "$(DESTDIR)$(infodir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man7dir)" "$(DESTDIR)$(man8dir)" "$(DESTDIR)$(pkgdatadir)" "$(DESTDIR)$(docdir)"; do \
+	for dir in "$(DESTDIR)$(infodir)" "$(DESTDIR)$(man1dir)" "$(DESTDIR)$(man7dir)" "$(DESTDIR)$(man8dir)" "$(DESTDIR)$(manhdir)" "$(DESTDIR)$(pkgdatadir)" "$(DESTDIR)$(docdir)"; do \
 	  test -z "$$dir" || $(MKDIR_P) "$$dir"; \
 	done
 install: $(BUILT_SOURCES)
@@ -1073,7 +1127,7 @@ install-info-am: $(INFO_DEPS)
 	    install-info --info-dir="$(DESTDIR)$(infodir)" "$(DESTDIR)$(infodir)/$$relfile" || :;\
 	  done; \
 	else : ; fi
-install-man: install-man1 install-man7 install-man8
+install-man: install-man1 install-man7 install-man8 install-manh
 
 install-pdf: install-pdf-am
 
@@ -1130,7 +1184,8 @@ uninstall-am: uninstall-dist_pkgdataDATA uninstall-dvi-am \
 	uninstall-html-am uninstall-info-am uninstall-man \
 	uninstall-nobase_dist_docDATA uninstall-pdf-am uninstall-ps-am
 
-uninstall-man: uninstall-man1 uninstall-man7 uninstall-man8
+uninstall-man: uninstall-man1 uninstall-man7 uninstall-man8 \
+	uninstall-manh
 
 .MAKE: all check install install-am install-exec install-strip
 
@@ -1141,16 +1196,17 @@ uninstall-man: uninstall-man1 uninstall-man7 uninstall-man8
 	install-dist_pkgdataDATA install-dvi install-dvi-am \
 	install-exec install-exec-am install-html install-html-am \
 	install-info install-info-am install-man install-man1 \
-	install-man7 install-man8 install-nobase_dist_docDATA \
-	install-pdf install-pdf-am install-ps install-ps-am \
-	install-strip installcheck installcheck-am installdirs \
-	maintainer-clean maintainer-clean-aminfo \
-	maintainer-clean-generic mostlyclean mostlyclean-aminfo \
-	mostlyclean-generic pdf pdf-am ps ps-am tags-am uninstall \
-	uninstall-am uninstall-dist_pkgdataDATA uninstall-dvi-am \
-	uninstall-html-am uninstall-info-am uninstall-man \
-	uninstall-man1 uninstall-man7 uninstall-man8 \
-	uninstall-nobase_dist_docDATA uninstall-pdf-am uninstall-ps-am
+	install-man7 install-man8 install-manh \
+	install-nobase_dist_docDATA install-pdf install-pdf-am \
+	install-ps install-ps-am install-strip installcheck \
+	installcheck-am installdirs maintainer-clean \
+	maintainer-clean-aminfo maintainer-clean-generic mostlyclean \
+	mostlyclean-aminfo mostlyclean-generic pdf pdf-am ps ps-am \
+	tags-am uninstall uninstall-am uninstall-dist_pkgdataDATA \
+	uninstall-dvi-am uninstall-html-am uninstall-info-am \
+	uninstall-man uninstall-man1 uninstall-man7 uninstall-man8 \
+	uninstall-manh uninstall-nobase_dist_docDATA uninstall-pdf-am \
+	uninstall-ps-am
 
 .PRECIOUS: Makefile
 
@@ -1192,15 +1248,19 @@ yat2m-stamp: $(myman_sources) defs.inc
 	@rm -f yat2m-stamp.tmp
 	@touch yat2m-stamp.tmp
 	incd="`test -f defsincdate || echo '$(srcdir)/'`defsincdate"; \
-	for file in $(myman_sources) ; do \
+	for file in $(myman_sources); do \
               $(YAT2M) $(YAT2M_OPTIONS) --store \
                   --date "`cat $$incd 2>/dev/null`" \
-	          `test -f '$$file' || echo '$(srcdir)/'`$$file ; done
+	          `test -f '$$file' || echo '$(srcdir)/'`$$file ; \
+              $(YAT2M) $(YAT2M_OPTIONS) --store --html --gnupgorg \
+                  --date "`cat $$incd 2>/dev/null`" \
+	          `test -f '$$file' || echo '$(srcdir)/'`$$file ;\
+        done
 	@mv -f yat2m-stamp.tmp $@
 
 yat2m-stamp: $(YAT2M)
 
-$(myman_pages) gnupg.7 : yat2m-stamp defs.inc
+$(myman_pages) $(myhtmlman_pages) gnupg.7 gnupg.7.html : yat2m-stamp defs.inc
 	@if test -f $@; then :; else \
             trap 'rm -rf yat2m-stamp yat2m-lock' 1 2 13 15; \
                if mkdir yat2m-lock 2>/dev/null; then \

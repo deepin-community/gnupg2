@@ -1874,11 +1874,15 @@ static const char hlp_getinfo[] =
   "              - Return a list of active apps on all inserted cards.\n"
   "  cmd_has_option CMD OPT\n"
   "              - Returns OK if command CMD has option OPT.\n"
+  "  dump_state  - Dump internal infos to the log stream.\n"
+  "  manufacturer NUMBER\n"
+  "              - Return a description of the OpenPGP manufacturer id.\n"
   "  apdu_strerror NUMBER\n"
   "              - Return a string for a status word.\n";
 static gpg_error_t
 cmd_getinfo (assuan_context_t ctx, char *line)
 {
+  ctrl_t ctrl = assuan_get_pointer (ctx);
   int rc = 0;
   const char *s;
 
@@ -1898,6 +1902,7 @@ cmd_getinfo (assuan_context_t ctx, char *line)
            && (line[14] == ' ' || line[14] == '\t' || !line[14]))
     {
       char *cmd, *cmdopt;
+
       line += 14;
       while (*line == ' ' || *line == '\t')
         line++;
@@ -1943,7 +1948,6 @@ cmd_getinfo (assuan_context_t ctx, char *line)
     }
   else if (!strcmp (line, "status"))
     {
-      ctrl_t ctrl = assuan_get_pointer (ctx);
       char flag;
 
       if (open_card (ctrl))
@@ -1980,13 +1984,11 @@ cmd_getinfo (assuan_context_t ctx, char *line)
     }
   else if (!strcmp (line, "card_list"))
     {
-      ctrl_t ctrl = assuan_get_pointer (ctx);
 
       rc = app_send_card_list (ctrl);
     }
   else if (!strcmp (line, "active_apps"))
     {
-      ctrl_t ctrl = assuan_get_pointer (ctx);
       card_t card = card_get (ctrl, NULL);
 
       if (!card)
@@ -1999,14 +2001,23 @@ cmd_getinfo (assuan_context_t ctx, char *line)
     }
   else if (!strcmp (line, "all_active_apps"))
     {
-      ctrl_t ctrl = assuan_get_pointer (ctx);
       rc = app_send_active_apps (NULL, ctrl);
+    }
+  else if ((s=has_leading_keyword (line, "manufacturer")))
+    {
+      unsigned long ul = strtoul (s, NULL, 0);
+      s = app_openpgp_manufacturer (ul);
+      rc = assuan_send_data (ctx, s, strlen (s));
     }
   else if ((s=has_leading_keyword (line, "apdu_strerror")))
     {
       unsigned long ul = strtoul (s, NULL, 0);
       s = apdu_strerror (ul);
       rc = assuan_send_data (ctx, s, strlen (s));
+    }
+  else if (!strcmp (line, "dump_state"))
+    {
+      app_dump_state ();
     }
   else
     rc = set_error (GPG_ERR_ASS_PARAMETER, "unknown value for WHAT");
@@ -2472,9 +2483,8 @@ register_commands (assuan_context_t ctx)
 
 
 /* Startup the server.  If FD is given as -1 this is simple pipe
-   server, otherwise it is a regular server.  Returns true if there
-   are no more active asessions.  */
-int
+   server, otherwise it is a regular server.  */
+void
 scd_command_handler (ctrl_t ctrl, gnupg_fd_t fd)
 {
   int rc;
@@ -2573,9 +2583,6 @@ scd_command_handler (ctrl_t ctrl, gnupg_fd_t fd)
 
   if (stopme)
     scd_exit (0);
-
-  /* If there are no more sessions return true.  */
-  return !session_list;
 }
 
 

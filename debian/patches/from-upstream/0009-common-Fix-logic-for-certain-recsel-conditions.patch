@@ -1,0 +1,70 @@
+From: Werner Koch <wk@gnupg.org>
+Date: Wed, 30 Apr 2025 15:13:11 +0200
+Subject: [PATCH 09/10] common: Fix logic for certain recsel conditions.
+
+* common/recsel.c (recsel_select): Change processing of NULL values.
+* common/t-recsel.c (run_test_2): Adjust for this change.  Also a type
+fix for s/"letter"/"letters"/.
+--
+
+The getval function may return NULL which indicates that there is no
+useful value available.  For example because the propertyname is not
+defined for some external context (e.g. in gpg the packet type).  This
+also required to fix the test for boolean tests of a non existing
+property name.
+
+Reported-by: shniubobo at gnupg-users on 2025-04-18.
+(cherry picked from commit 3ea8cab6a40485ff9748a77bca3b26c63a788449)
+---
+ common/recsel.c   | 6 +++++-
+ common/t-recsel.c | 6 +++---
+ 2 files changed, 8 insertions(+), 4 deletions(-)
+
+diff --git a/common/recsel.c b/common/recsel.c
+index fa3deba..3be491c 100644
+--- a/common/recsel.c
++++ b/common/recsel.c
+@@ -506,7 +506,11 @@ recsel_select (recsel_expr_t selector,
+     {
+       value = getval? getval (cookie, se->name) : NULL;
+       if (!value)
+-        value = "";
++        {
++          se = se->next;
++          result = 0;
++          continue;
++        }
+ 
+       if (!*value)
+         {
+diff --git a/common/t-recsel.c b/common/t-recsel.c
+index 2d5a95d..72a2596 100644
+--- a/common/t-recsel.c
++++ b/common/t-recsel.c
+@@ -306,7 +306,7 @@ run_test_2 (void)
+ 
+   FREEEXPR();
+   ADDEXPR ("nothing -z");
+-  if (!recsel_select (se, test_2_getval, NULL))
++  if (recsel_select (se, test_2_getval, NULL))
+     fail (0, 0);
+   FREEEXPR();
+   ADDEXPR ("nothing -n");
+@@ -334,7 +334,7 @@ run_test_2 (void)
+ 
+   FREEEXPR();
+   ADDEXPR ("nothing -f");
+-  if (!recsel_select (se, test_2_getval, NULL))
++  if (recsel_select (se, test_2_getval, NULL))
+     fail (0, 0);
+   FREEEXPR();
+   ADDEXPR ("nothing -t");
+@@ -369,7 +369,7 @@ run_test_2 (void)
+     fail (0, 0);
+ 
+   FREEEXPR();
+-  ADDEXPR ("letter -f");
++  ADDEXPR ("letters -f");
+   if (!recsel_select (se, test_2_getval, NULL))
+     fail (0, 0);
+   FREEEXPR();

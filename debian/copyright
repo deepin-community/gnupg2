@@ -40,7 +40,7 @@ Copyright: 2008 Free Software Foundation, Inc.
 License: LGPL-2.1+
 
 Files: common/tlv-parser.c
-Copyright: 2023 g10 Code GmbH
+Copyright: 2023, 2024 g10 Code GmbH
 License: LGPL-2.1+
 
 Files: common/ksba-io-support.c
@@ -50,6 +50,11 @@ License: LGPL-3+ or GPL-2+
 
 Files: common/ksba-io-support.h
 Copyright: 2017  Werner Koch
+License: LGPL-3+ or GPL-2+
+
+Files: common/strlist.c
+Copyright: 1998, 2000, 2001, 2006 Free Software Foundation, Inc.
+ 2015, 2024  g10 Code GmbH
 License: LGPL-3+ or GPL-2+
 
 Files: dirmngr/dns.c
@@ -63,6 +68,12 @@ Copyright: 1999, 2001-2004, 2006, 2009, 2010,
  1999, 2001-2004, 2006, 2009, 2010, 2011, 2014 Werner Koch
  2015-2017, 2021, 2023 g10 Code GmbH
 License: LGPL-3+ or GPL-2+
+
+Files: g10/getkey.c
+Copyright: 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
+ 2007, 2008, 2010  Free Software Foundation, Inc.
+ 2015, 2016, 2024 g10 Code GmbH
+License: GPL-3+
 
 Files: g10/keyid.c
 Copyright: 1998, 1999, 2000, 2001, 2003,
@@ -85,7 +96,7 @@ Files: sm/minip12.c
 Copyright: 2002, 2003, 2004, 2006, 2011 Free Software Foundation, Inc.
  2014 Werner Koch
  2022 g10 Code GmbH
- 2022, 2023 g10 Code GmbH
+ 2022-2024 g10 Code GmbH
 License: GPL-3+
 
 Files: sm/t-minip12.c
@@ -100,6 +111,10 @@ License: GPL-3+ or BSD-3-clause
 Files: scd/app-piv.c
 Copyright: 2019, 2020, 2024 g10 Code GmbH
 License: GPL-3+
+
+Files: tools/gpg-mail-tube.c
+Copyright: 2024 g10 Code GmbH
+License: LGPL-2.1+
 
 Files: tools/rfc822parse.c
  tools/rfc822parse.h

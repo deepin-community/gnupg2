@@ -1,4 +1,5 @@
 debian/migrate-pubring-from-classic-gpg usr/bin
+debian/tmp/usr/bin/gpg-mail-tube
 debian/tmp/usr/bin/gpgparsemail
 debian/tmp/usr/bin/gpgsplit
 debian/tmp/usr/bin/gpgtar

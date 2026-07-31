@@ -13,8 +13,8 @@ gpg_args() {
 mkdir "$GPG_HOME"
 chmod 700 "$GPG_HOME"
 
-cat $(ls /usr/share/keyrings/debian-archive-*.gpg \
-	| grep -vE 'debian-archive-bookworm-stable.gpg|debian-archive-keyring.gpg') \
+cat $(ls /usr/share/keyrings/debian-archive-*.pgp \
+	| grep -vE 'debian-archive-bookworm-stable.pgp|debian-archive-keyring.pgp|debian-archive-trixie-stable.pgp') \
 	| gpg_args gpg1 --import
 gpg_args gpg1 --list-keys
 gpg_args gpg --list-keys > "$DIR/key.list.before"

@@ -22,7 +22,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 #include <npth.h>
+
+#ifndef HAVE_W32_SYSTEM
+#include <fcntl.h>		/* F_SETFD F_GETFL F_SETFL O_NONBLOCK fcntl(2) */
+#endif
 
 #include "scdaemon.h"
 #include "../common/exechelp.h"
@@ -49,8 +54,16 @@ struct mrsw_lock
   int num_readers_active;
   int num_writers_waiting;
   int writer_active;
-  npth_cond_t notify_cond;
+#ifdef HAVE_W32_SYSTEM
+  HANDLE events[2];
+  HANDLE the_event;
+#else
+  int notify_pipe[2];
+#endif
+  int notify_watchers;  /* Used only for W32 but let's define it always.  */
 };
+
+static npth_mutex_t new_card_lock;
 
 /* MRSW lock to protect the list of cards.
  *
@@ -366,18 +379,83 @@ card_list_w_unlock (void)
 static void
 card_list_signal (void)
 {
-  npth_cond_broadcast (&card_list_lock.notify_cond);
+#ifdef HAVE_W32_SYSTEM
+  if (SetEvent (card_list_lock.the_event) == 0)
+    log_error ("SetEvent for card_list_signal failed: %s\n",
+               w32_strerror (-1));
+#else
+  npth_mutex_lock (&card_list_lock.lock);
+  if (card_list_lock.notify_watchers)
+    write (card_list_lock.notify_pipe[1], "", 1);
+  npth_mutex_unlock (&card_list_lock.lock);
+#endif
 }
 
-static void
-card_list_wait (void)
+/* Wait for some card list event or input shutdown.
+   Return 1 on input shutdown, return 0 otherwise.  */
+static int
+card_list_wait (ctrl_t ctrl)
 {
+  gnupg_fd_t fd = ctrl->thread_startup.fd;
+  int nfd;
+  fd_set fdset;
+#ifdef HAVE_W32_SYSTEM
+  unsigned int events_set;
+#endif
+  int ret;
+
   npth_mutex_lock (&card_list_lock.lock);
   card_list_lock.writer_active--;
   npth_cond_broadcast (&card_list_lock.cond);
+  card_list_lock.notify_watchers++;
+  npth_mutex_unlock (&card_list_lock.lock);
 
-  npth_cond_wait (&card_list_lock.notify_cond, &card_list_lock.lock);
+  while (1)
+    {
+      FD_ZERO (&fdset);
+      FD_SET (FD2INT (fd), &fdset);
+      nfd = FD2INT (fd);
 
+#ifdef HAVE_W32_SYSTEM
+      ret = npth_eselect (nfd+1, &fdset, NULL, NULL, NULL,
+                          card_list_lock.events, &events_set);
+#else
+      FD_SET (card_list_lock.notify_pipe[0], &fdset);
+      if (nfd < card_list_lock.notify_pipe[0])
+        nfd = card_list_lock.notify_pipe[0];
+
+      ret = npth_pselect (nfd+1, &fdset, NULL, NULL, NULL,
+                          npth_sigev_sigmask ());
+#endif
+      if (ret <= 0)
+        continue;
+
+      if (FD_ISSET (fd, &fdset))
+        {
+          ret = 1;
+          break;
+        }
+
+#ifdef HAVE_W32_SYSTEM
+      if (events_set & 1)
+        {
+          ret = 0;
+          break;
+        }
+#else
+      if (FD_ISSET (card_list_lock.notify_pipe[0], &fdset))
+        {
+          char buf[256];
+
+          read (card_list_lock.notify_pipe[0], buf, sizeof buf);
+          ret = 0;
+          break;
+        }
+#endif
+    }
+
+  npth_mutex_lock (&card_list_lock.lock);
+  card_list_lock.notify_watchers--;
   card_list_lock.num_writers_waiting++;
   while (card_list_lock.num_readers_active
          || card_list_lock.writer_active)
@@ -386,6 +464,7 @@ card_list_wait (void)
 
   card_list_lock.writer_active++;
   npth_mutex_unlock (&card_list_lock.lock);
+  return ret;
 }
 
 
@@ -416,7 +495,7 @@ app_dump_state (void)
  *
  * With KEEP_LOOPING=0, it only outputs once.
  * With KEEP_LOOPING<0, it keeps looping, until it detects no device.
- * With KEEP_LOOPING>0, it keeps looping forever.
+ * With KEEP_LOOPING>0, it keeps looping forever (until connection close).
  */
 gpg_error_t
 app_send_devinfo (ctrl_t ctrl, int keep_looping)
@@ -424,6 +503,13 @@ app_send_devinfo (ctrl_t ctrl, int keep_looping)
   card_t c;
   app_t a;
   int no_device;
+
+  /* The connection from client should be by a socket.  This is needed
+     for Windows using the select function.  And it's not good to use
+     the primary pipe connection of gpg-agent for watching
+     devinfo.  */
+  if (keep_looping && ctrl->thread_startup.fd == GNUPG_INVALID_FD)
+    return gpg_error (GPG_ERR_INV_HANDLE);
 
   card_list_w_lock ();
   while (1)
@@ -451,7 +537,8 @@ app_send_devinfo (ctrl_t ctrl, int keep_looping)
       if (keep_looping == 0)
         break;
 
-      card_list_wait ();
+      if (card_list_wait (ctrl))
+        break;
     }
   card_list_w_unlock ();
 
@@ -855,8 +942,6 @@ select_application (ctrl_t ctrl, const char *name,
   gpg_error_t err = 0;
   card_t card, card_prev = NULL;
 
-  card_list_w_lock ();
-
   ctrl->card_ctx = NULL;
 
   if (scan || !card_top)
@@ -864,11 +949,12 @@ select_application (ctrl_t ctrl, const char *name,
       struct dev_list *l;
       int new_card = 0;
 
+      npth_mutex_lock (&new_card_lock);
       /* Scan the devices to find new device(s).  */
       err = apdu_dev_list_start (opt.reader_port, &l);
       if (err)
         {
-          card_list_w_unlock ();
+          npth_mutex_unlock (&new_card_lock);
           return err;
         }
 
@@ -889,8 +975,10 @@ select_application (ctrl_t ctrl, const char *name,
             }
           else
             {
+              card_list_w_lock ();
               err = app_new_register (slot, ctrl, name,
                                       periodical_check_needed_this);
+              card_list_w_unlock ();
               new_card++;
             }
 
@@ -902,12 +990,14 @@ select_application (ctrl_t ctrl, const char *name,
         }
 
       apdu_dev_list_finish (l);
+      npth_mutex_unlock (&new_card_lock);
 
       /* If new device(s), kick the scdaemon loop.  */
       if (new_card)
         scd_kick_the_loop ();
     }
 
+  card_list_w_lock ();
   for (card = card_top; card; card = card->next)
     {
       lock_card (card, ctrl);
@@ -954,7 +1044,6 @@ select_application (ctrl_t ctrl, const char *name,
     }
   else
     err = gpg_error (GPG_ERR_ENODEV);
-
   card_list_w_unlock ();
 
   return err;
@@ -2530,6 +2619,16 @@ gpg_error_t
 initialize_module_command (void)
 {
   gpg_error_t err;
+#ifndef HAVE_W32_SYSTEM
+  int ret;
+#endif
+
+  if (npth_mutex_init (&new_card_lock, NULL))
+    {
+      err = gpg_error_from_syserror ();
+      log_error ("app: error initializing mutex: %s\n", gpg_strerror (err));
+      return err;
+    }
 
   card_list_lock.num_readers_active = 0;
   card_list_lock.num_writers_waiting = 0;
@@ -2550,13 +2649,22 @@ initialize_module_command (void)
       return err;
     }
 
-  err = npth_cond_init (&card_list_lock.notify_cond, NULL);
-  if (err)
+#ifdef HAVE_W32_SYSTEM
+  scd_init_event (&card_list_lock.the_event, card_list_lock.events);
+#else
+  ret = gnupg_create_pipe (card_list_lock.notify_pipe);
+  if (ret)
     {
       err = gpg_error_from_syserror ();
-      log_error ("npth_cond_init failed: %s\n", gpg_strerror (err));
+      log_error ("pipe creation failed: %s\n", gpg_strerror (ret));
       return err;
     }
+  /* There may be multiple clients for DEVINFO --watch.
+   * O_NONBLOCK allows multiple accesses, not blocking at read(2).  */
+  if (fcntl (card_list_lock.notify_pipe[0], F_SETFL, O_NONBLOCK) < 0)
+    log_error ("fcntl failed: %s\n",
+               gpg_strerror (gpg_error_from_syserror ()));
+#endif
 
   return apdu_init ();
 }
@@ -2638,7 +2746,7 @@ send_serialno_and_app_status (card_t card, int with_apps, ctrl_t ctrl)
 
 /* Common code for app_send_card_list and app_send_active_apps.  */
 static gpg_error_t
-send_card_and_app_list (ctrl_t ctrl, card_t wantcard, int with_apps)
+send_card_and_app_list (ctrl_t ctrl, int with_apps)
 {
   gpg_error_t err;
   card_t c;
@@ -2665,9 +2773,11 @@ send_card_and_app_list (ctrl_t ctrl, card_t wantcard, int with_apps)
 
   for (n=0; n < ncardlist; n++)
     {
-      if (wantcard && wantcard != cardlist[n])
-        continue;
-      err = send_serialno_and_app_status (cardlist[n], with_apps, ctrl);
+      card_t card = cardlist[n];
+
+      lock_card (card, ctrl);
+      err = send_serialno_and_app_status (card, with_apps, ctrl);
+      unlock_card (card);
       if (err)
         goto leave;
     }
@@ -2685,7 +2795,7 @@ send_card_and_app_list (ctrl_t ctrl, card_t wantcard, int with_apps)
 gpg_error_t
 app_send_card_list (ctrl_t ctrl)
 {
-  return send_card_and_app_list (ctrl, NULL, 0);
+  return send_card_and_app_list (ctrl, 0);
 }
 
 
@@ -2694,7 +2804,10 @@ app_send_card_list (ctrl_t ctrl)
 gpg_error_t
 app_send_active_apps (card_t card, ctrl_t ctrl)
 {
-  return send_card_and_app_list (ctrl, card, 1);
+  if (!card)
+    return send_card_and_app_list (ctrl, 1);
+  else
+    return send_serialno_and_app_status (card, 1, ctrl);
 }
 
 

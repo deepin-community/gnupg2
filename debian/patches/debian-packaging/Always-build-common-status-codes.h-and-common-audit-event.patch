@@ -13,10 +13,10 @@ Forwarded: not-needed
  1 file changed, 2 deletions(-)
 
 diff --git a/common/Makefile.am b/common/Makefile.am
-index 65ce35b..3ccc137 100644
+index 91718f9..5f099c8 100644
 --- a/common/Makefile.am
 +++ b/common/Makefile.am
-@@ -140,7 +140,6 @@ endif
+@@ -133,7 +133,6 @@ libsimple_pwquery_a_CFLAGS = $(AM_CFLAGS) $(LIBASSUAN_CFLAGS)
  libgpgrl_a_SOURCES = \
          gpgrlhelp.c
  
@@ -24,7 +24,7 @@ index 65ce35b..3ccc137 100644
  # Note: Due to the dependency on Makefile, the file will always be
  # rebuilt, so we allow this only in maintainer mode.
  
-@@ -159,7 +158,6 @@ status-codes.h: Makefile.am mkstrtable.awk exstatus.awk status.h
+@@ -152,7 +151,6 @@ status-codes.h: Makefile.am mkstrtable.awk exstatus.awk status.h
  	$(AWK) -f $(srcdir)/exstatus.awk $(srcdir)/status.h \
  	  | $(AWK) -f $(srcdir)/mkstrtable.awk -v textidx=3 -v nogettext=1 \
  		   -v pkg_namespace=statusstr_  > $(srcdir)/status-codes.h

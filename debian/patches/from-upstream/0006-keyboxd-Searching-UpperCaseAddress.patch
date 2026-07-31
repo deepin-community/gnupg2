@@ -1,0 +1,67 @@
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Wed, 26 Mar 2025 14:26:54 +0900
+Subject: [PATCH 06/10] keyboxd: Searching UpperCaseAddress.
+
+* kbx/backend-sqlite.c (run_select_statement): Convert with
+ascii_strlwr when the mode is KEYDB_SEARCH_MODE_MAIL.
+
+--
+
+GnuPG-bug-id: 7576
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+(cherry picked from commit 0812ab2996730eecc180dceab5e7a7f0a706c467)
+---
+ kbx/backend-sqlite.c | 38 ++++++++++++++++++++++++++++----------
+ 1 file changed, 28 insertions(+), 10 deletions(-)
+
+diff --git a/kbx/backend-sqlite.c b/kbx/backend-sqlite.c
+index 50ab6f0..57613e2 100644
+--- a/kbx/backend-sqlite.c
++++ b/kbx/backend-sqlite.c
+@@ -956,18 +956,36 @@ run_select_statement (ctrl_t ctrl, be_sqlite_local_t ctx,
+                                extra, " ORDER BY p.ubid", &ctx->select_stmt);
+       if (!err)
+         {
+-          s = desc[descidx].u.name;
+-          if (s && *s == '<' && s[1])
+-            { /* It is common that the indicator for exact addrspec
+-               * search has not been removed.  We do this here.  */
+-              s++;
+-              n = strlen (s);
+-              if (n > 1 && s[n-1] == '>')
+-                n--;
++          if (desc[descidx].mode == KEYDB_SEARCH_MODE_MAIL)
++            {
++              char *mail = xtrystrdup (desc[descidx].u.name);
++
++              if (!mail)
++                err = gpg_error_from_syserror ();
++              else
++                {
++                  ascii_strlwr (mail);
++                  s = mail;
++                  if (*s == '<' && s[1])
++                    { /* It is common that the indicator for exact addrspec
++                       * search has not been removed.  We do this here.  */
++                      s++;
++                      n = strlen (s);
++                      if (n > 1 && s[n-1] == '>')
++                        n--;
++                    }
++                  else
++                    n = strlen (s);
++                  err = run_sql_bind_ntext (ctx->select_stmt, 1, s, n);
++                  xfree (mail);
++                }
+             }
+           else
+-            n = s? strlen (s):0;
+-          err = run_sql_bind_ntext (ctx->select_stmt, 1, s, n);
++            {
++              s = desc[descidx].u.name;
++              n = s? strlen (s):0;
++              err = run_sql_bind_ntext (ctx->select_stmt, 1, s, n);
++            }
+         }
+       break;
+ 

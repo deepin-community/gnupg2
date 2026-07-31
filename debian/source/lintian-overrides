@@ -2,3 +2,7 @@
 gnupg2 source: license-problem-non-free-RFC [doc/OpenPGP]
 # for the older version of lintian used on ftp-master
 gnupg2 source: license-problem-non-free-RFC doc/OpenPGP
+# FreePG patches contain gitlab CI we don't use
+gnupg2 source: patch-file-present-but-not-mentioned-in-series [debian/patches/freepg/0001-Add-gitlab-build-toolchain.patch]
+# FreePG patches contain README.md that is not a patch
+gnupg2 source: patch-file-present-but-not-mentioned-in-series [debian/patches/freepg/README.md]

@@ -1,6 +1,7 @@
 From: NIIBE Yutaka <gniibe@fsij.org>
 Date: Wed, 30 Aug 2023 14:08:33 +0900
 Subject: [PATCH 4/9] agent: Have a thread monitoring parent PID and homedir.
+
 Applied-Upstream: 7025375e8bec6f28e5750f724faa93e7d9f7d692
 Last-Update: 2023-09-04
 
@@ -19,14 +20,14 @@ loop.  Use PROBLEM_DETECTED variable.
 GnuPG-bug-id: 6693
 Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
 ---
- agent/gpg-agent.c | 126 ++++++++++++++++++++++++++++++++--------------
+ agent/gpg-agent.c | 126 +++++++++++++++++++++++++++++++++++++-----------------
  1 file changed, 87 insertions(+), 39 deletions(-)
 
-Index: gnupg2/agent/gpg-agent.c
-===================================================================
---- gnupg2.orig/agent/gpg-agent.c
-+++ gnupg2/agent/gpg-agent.c
-@@ -352,7 +352,7 @@ static struct debug_flags_s debug_flags
+diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
+index 422fa6f..ac99d79 100644
+--- a/agent/gpg-agent.c
++++ b/agent/gpg-agent.c
+@@ -352,7 +352,7 @@ static struct debug_flags_s debug_flags [] =
   * don't check at all.  All values are in seconds. */
  #define TIMERTICK_INTERVAL          (4)
  #define CHECK_OWN_SOCKET_INTERVAL  (60)
@@ -67,7 +68,7 @@ Index: gnupg2/agent/gpg-agent.c
  static pid_t parent_pid = (pid_t)(-1);
  
  /* This flag is true if the inotify mechanism for detecting the
-@@ -535,6 +543,7 @@ static int check_for_running_agent (int
+@@ -535,6 +543,7 @@ static int check_for_running_agent (int silent);
  #if CHECK_OWN_SOCKET_INTERVAL > 0
  static void *check_own_socket_thread (void *arg);
  #endif
@@ -75,7 +76,7 @@ Index: gnupg2/agent/gpg-agent.c
  
  /* Pth wrapper function definitions. */
  ASSUAN_SYSTEM_NPTH_IMPL;
-@@ -2453,35 +2462,8 @@ create_directories (void)
+@@ -2459,35 +2468,8 @@ create_directories (void)
  static void
  handle_tick (void)
  {
@@ -111,7 +112,7 @@ Index: gnupg2/agent/gpg-agent.c
  }
  
  
-@@ -3108,6 +3090,16 @@ handle_connections (gnupg_fd_t listen_fd
+@@ -3114,6 +3096,16 @@ handle_connections (gnupg_fd_t listen_fd,
      }
  #endif
  
@@ -128,7 +129,7 @@ Index: gnupg2/agent/gpg-agent.c
    /* On Windows we need to fire up a separate thread to listen for
       requests from Putty (an SSH client), so we can replace Putty's
       Pageant (its ssh-agent implementation). */
-@@ -3252,7 +3244,18 @@ handle_connections (gnupg_fd_t listen_fd
+@@ -3258,7 +3250,18 @@ handle_connections (gnupg_fd_t listen_fd,
            continue;
  	}
  
@@ -148,7 +149,7 @@ Index: gnupg2/agent/gpg-agent.c
          {
            /* We may not remove the socket as it is now in use by another
               server. */
-@@ -3261,6 +3264,12 @@ handle_connections (gnupg_fd_t listen_fd
+@@ -3267,6 +3270,12 @@ handle_connections (gnupg_fd_t listen_fd,
            log_info ("this process is useless - shutting down\n");
          }
  
@@ -161,7 +162,7 @@ Index: gnupg2/agent/gpg-agent.c
        if (ret <= 0)
  	/* Interrupt or timeout.  Will be handled when calculating the
  	   next timeout.  */
-@@ -3444,22 +3453,61 @@ check_own_socket_thread (void *arg)
+@@ -3450,22 +3459,61 @@ check_own_socket_thread (void *arg)
    if (!sockname)
      return NULL; /* Out of memory.  */
  

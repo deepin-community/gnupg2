@@ -1,4 +1,3 @@
-From 92de0387f04b1e87a4a49ed063323624f25ac3ef Mon Sep 17 00:00:00 2001
 From: NIIBE Yutaka <gniibe@fsij.org>
 Date: Thu, 31 Aug 2023 14:49:38 +0900
 Subject: [PATCH 6/9] agent: Introduce management of timer to expire cache
@@ -25,11 +24,11 @@ update_expiration for an entry in question.
 GnuPG-bug-id: 6681
 Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
 ---
- agent/cache.c | 368 ++++++++++++++++++++++++++++++++++++++------------
+ agent/cache.c | 368 ++++++++++++++++++++++++++++++++++++++++++++--------------
  1 file changed, 284 insertions(+), 84 deletions(-)
 
 diff --git a/agent/cache.c b/agent/cache.c
-index f900be6cc..9ed3cb195 100644
+index f900be6..9ed3cb1 100644
 --- a/agent/cache.c
 +++ b/agent/cache.c
 @@ -53,8 +53,20 @@ struct secret_data_s {
@@ -507,6 +506,3 @@ index f900be6cc..9ed3cb195 100644
            if (DBG_CACHE)
              log_debug ("... hit\n");
            if (r->pw->totallen < 32)
--- 
-2.39.2
-

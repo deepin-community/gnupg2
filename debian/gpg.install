@@ -1,1 +1,3 @@
 debian/tmp/usr/bin/gpg
+debian/tmp/usr/lib/gnupg/keyboxd
+doc/examples/systemd-user/keyboxd.s* /usr/lib/systemd/user

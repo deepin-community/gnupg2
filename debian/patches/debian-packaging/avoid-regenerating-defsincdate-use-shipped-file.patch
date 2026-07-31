@@ -18,10 +18,10 @@ the datestamp unreproducible.
  1 file changed, 9 deletions(-)
 
 diff --git a/doc/Makefile.am b/doc/Makefile.am
-index 390153c..325172e 100644
+index 1512785..e7d96e5 100644
 --- a/doc/Makefile.am
 +++ b/doc/Makefile.am
-@@ -158,15 +158,6 @@ $(myman_pages) gnupg.7 : yat2m-stamp defs.inc
+@@ -175,15 +175,6 @@ $(myman_pages) $(myhtmlman_pages) gnupg.7 gnupg.7.html : yat2m-stamp defs.inc
  
  dist-hook: defsincdate
  

@@ -1130,6 +1130,8 @@ cmd_genkey (assuan_context_t ctx, char *line)
   int c;
   unsigned int flags = 0;
 
+  init_membuf (&outbuf, 512);
+
   if (ctrl->restricted)
     return leave_cmd (ctx, gpg_error (GPG_ERR_FORBIDDEN));
 
@@ -1186,8 +1188,6 @@ cmd_genkey (assuan_context_t ctx, char *line)
   rc = assuan_inquire (ctx, "KEYPARAM", &value, &valuelen, MAXLEN_KEYPARAM);
   if (rc)
     goto leave;
-
-  init_membuf (&outbuf, 512);
 
   /* If requested, ask for the password to be used for the key.  If
      this is not used the regular Pinentry mechanism is used.  */
@@ -1418,7 +1418,9 @@ cmd_readkey (assuan_context_t ctx, char *line)
         goto leave;
 
       rc = agent_public_key_from_file (ctrl, grip, &s_pkey);
-      if (!rc)
+      if (rc)
+        goto leave;
+      else
         {
           if (opt_format_ssh)
             {
@@ -3249,6 +3251,12 @@ cmd_keytocard (assuan_context_t ctx, char *line)
   force = has_option (line, "--force");
   line = skip_options (line);
 
+  /* Need a copy of LINE, since it might inquire to the frontend which
+     resulted original buffer overwritten.  */
+  line = xtrystrdup (line);
+  if (!line)
+    return gpg_error_from_syserror ();
+
   argc = split_fields (line, argv, DIM (argv));
   if (argc < 3)
     {
@@ -3368,6 +3376,7 @@ cmd_keytocard (assuan_context_t ctx, char *line)
   xfree (keydata);
 
  leave:
+  xfree (line);
   xfree (ecdh_params);
   gcry_sexp_release (s_skey);
   xfree (shadow_info);

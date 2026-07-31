@@ -1,0 +1,33 @@
+From: Collin Funk <collin.funk1@gmail.com>
+Date: Wed, 30 Apr 2025 10:36:18 +0200
+Subject: [PATCH 07/10] Fix access to the bintoasc mapping in the libksba
+ support.
+
+* common/ksba-io-support.c (has_only_base64): Use memchr since calling
+strchr on a non-NUL terminated string is undefined behavior.
+
+--
+
+Signed-off-by: Collin Funk <collin.funk1@gmail.com>
+
+This patch has been stripped from Colin's original patch because this
+is not just about a warning but an actual bug.  That bug was
+introduced in 2003 by me.  - wk
+(cherry picked from commit 33d418fd34b55bdd30b0dc1a4ab2fe41cc6d2170)
+---
+ common/ksba-io-support.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/common/ksba-io-support.c b/common/ksba-io-support.c
+index 352485f..ff5e495 100644
+--- a/common/ksba-io-support.c
++++ b/common/ksba-io-support.c
+@@ -174,7 +174,7 @@ has_only_base64 (const unsigned char *line, int linelen)
+     {
+       if (*line == '\n' || (linelen > 1 && *line == '\r' && line[1] == '\n'))
+           break;
+-      if ( !strchr (bintoasc, *line) )
++      if ( !memchr (bintoasc, *line, sizeof (bintoasc)) )
+         return 0;
+     }
+   return 1;  /* yes */

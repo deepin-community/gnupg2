@@ -1,0 +1,210 @@
+#!/bin/bash
+
+# This script aims to run gpg in a number of standard ways to try to
+# ensure that by default it only generates OpenPGP-compatible
+# artifacts.
+
+# Author: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
+# License: GPL-3+
+
+
+if [ -n "$AUTOPKGTEST_ARTIFACTS" ]; then
+    WORKDIR="$AUTOPKGTEST_ARTIFACTS/workdir"
+    mkdir -p "$WORKDIR" || exit 1
+else
+    WORKDIR=$(mktemp -d)
+    cleanup() {
+        rm -rf "$WORKDIR"
+    }
+    trap cleanup EXIT
+fi
+
+errors=''
+
+add_error() {
+    printf "FAILURE: %s\n" "$@" >&2
+    errors="$errors$*
+"
+}
+
+GPG() {
+#    printf "GPG:  %s\n" "$@"
+    gpg --no-tty --pinentry-mode loopback --quiet --passphrase '' --batch --fixed-list-mode "$@"
+}
+
+mkdir "$WORKDIR/certs"
+
+# generate keys in a dedicated homedir:
+genkey() {
+    local profile="$1"
+    local expected="$2"
+    local GNUPGHOME="$WORKDIR/$profile"
+    export GNUPGHOME
+    mkdir -p -m 0700 "$GNUPGHOME"
+    if [[ "$profile" =~ default ]]; then
+        algo="$profile"
+        # this is a dummy placeholder:
+        extra_arg="--fixed-list-mode"
+    else
+        algo="default"
+        extra_arg="--default-new-key-algo=$profile"
+    fi
+    if GPG "$extra_arg" --quick-gen-key "$profile" "$algo"; then
+        if [ "$expected" = "fail" ]; then
+            add_error "Should have failed to generate key $1"
+            return
+        fi
+        fprs=$(GPG --list-keys | awk -F:  '/^fpr:/{print $10 }')
+        for fpr in $fprs; do
+            fprlen=$(printf "%s" "$fpr" | wc -c)
+            if [ "$fprlen" -ne 40 ]; then
+                add_error "Generated fingerprint ($fpr) should have had 40 chars, got $fprlen"
+            fi
+        done
+        mkdir -p "$(dirname "$WORKDIR/certs/$profile.cert")"
+        GPG --export > "$WORKDIR/certs/$profile.cert"
+    else
+        if [ "$expected" != "fail" ]; then
+            add_error "Should not have failed when generating $1"
+        fi
+    fi
+}
+
+
+# this is really gross and unprincipled.  We treat the output of
+# --list-packets as a machine-readable format, which upstream always
+# says we should not do.  Alas, without better inspection tooling
+# (which probably means an external dependency), this is the best i
+# can do for now.
+test_generated_key() {
+    local profile="$1"
+    local GNUPGHOME="$WORKDIR/$profile"
+    export GNUPGHOME
+    local dump="$WORKDIR/dumps/$profile.dump"
+    mkdir -p "$(dirname "$dump")"
+    GPG --list-packets > "$dump" < "$WORKDIR/certs/$profile.cert"
+    # FIXME Verify: that no advertising preferences for the
+    # LibrePGP bits are set on the new certs
+    # no 'version 4'
+    # known hashed subpackets:
+    #  2 (sig created)
+    #  9 (key expires)
+    #  11 (pref-sym-algos)
+    #  21 (pref-hash-algos)
+    #  22 (pref-zip-algos)
+    #  23 (keyserver preferences) -- accept only 80 (no-modify)
+    #  27 (key flags) -- accept only 03 (SC) and 0C (E)
+    #  30 (features) -- accept only 01 (v1 SEIPD)
+    #  33 (issuer fpr) -- look for v4
+
+    # Outright reject:
+    #   34 (pref-aead-algos)
+    local unknown_subpacket_types="$( < "$dump" awk '/hashed subpkt/ { print $3 }' | sort -n | uniq | egrep -v '^(2|9|11|21|22|23|27|30|33)$' )"
+    for p in $unknown_subpacket_types; do
+        add_error "Unknown Hashed Subpacket type $p emitted by profile $profile"
+    done
+    local bad_key_flags="$( < "$dump" awk '/hashed subpkt 27/ { print $8 }' | sort | uniq | egrep -v '^(03\)|0C\))$' )"
+    for k in $bad_key_flags; do
+        add_error "Unexpected key flags settings $k by profile $profile"
+    done
+    local bad_features="$( < "$dump" awk '/hashed subpkt 30/ { print $7 }' | sort | uniq | egrep -v '^01\)$' )"
+    for f in $bad_features; do
+        add_error "Unexpected feature flags $f by profile $profile"
+    done
+    local bad_fpr_versions="$(< "$dump" awk '/hashed subpkt 33/ { print $8 }' | sort | uniq | egrep -v '^v4$' )"
+    for f in $bad_fpr_versions; do
+        add_error "Unexpected issuer fingerprint $f by profile $profile"
+    done
+    local bad_versions="$(< "$dump" awk '/^[[:space:]]*version/ { print $2 }' | sort | uniq | egrep -v '^4,$')"
+    for f in $bad_versions; do
+        add_error "unexpected version $f in profile $profile"
+    done
+}
+
+librepgp() {
+    local profile="$1"
+    local GNUPGHOME="$WORKDIR/librepgp-$profile"
+    export GNUPGHOME
+    mkdir -p -m 0700 "$GNUPGHOME"
+    if [[ "$profile" =~ default ]]; then
+        algo="$profile"
+        # this is a dummy placeholder:
+        extra_arg="--fixed-list-mode"
+    else
+        algo="default"
+        extra_arg="--default-new-key-algo=$profile"
+    fi
+    if ! GPG --compliance=gnupg "$extra_arg" --quick-gen-key "librepgp-$profile" "$algo"; then
+        add_error "Failed to generate --compliance=gnupg $profile"
+        return
+    fi
+    mkdir -p "$(dirname "$WORKDIR/certs/librepgp-$profile.cert")"
+    GPG --export "$profile" > "$WORKDIR/certs/librepgp-$profile.cert"
+}
+
+# try encrypting to keys with LibrePGP settings set.
+test_encrypt() {
+    local profile="$1"
+    local GNUPGHOME="$WORKDIR/default"
+    export GNUPGHOME
+    GPG --import < "$WORKDIR/certs/librepgp-$profile.cert"
+
+# --- OpenPGP encryption output
+# +++ LibrePGP encryption output
+# @@ -2,7 +2,6 @@
+#  :pubkey enc packet: version 3, algo 18, keyid XXXX
+#  	data: [263 bits]
+#  	data: [392 bits]
+# -# off=96 ctb=d2 tag=18 hlen=2 plen=64 new-ctb
+# -:encrypted data packet:
+# -	length: 64
+# -	mdc_method: 2
+# +# off=96 ctb=d4 tag=20 hlen=2 plen=74 new-ctb
+# +:aead encrypted packet: cipher=9 aead=2 cb=16
+# +	length: 74
+
+
+#    diff -u <(echo test | GPG --trust-model=always -r "librepgp-$profile" --encrypt | GPG --list-packets) \
+#         <(echo test | GPG --trust-model=always --compliance=gnupg -r "librepgp-$profile" --encrypt | GPG --list-packets)
+    if echo test | GPG --trust-model=always -r "librepgp-$profile" --encrypt | \
+            GPG --list-packets 2>/dev/null | grep ':aead encrypted packet:'; then
+        add_error "generated AEAD packets when encrypting to librepgp-$profile"
+    fi
+}
+
+test_symmetric_encryption() {
+    mkdir -m 0700 -p "$WORKDIR/symmetric"
+    local GNUPGHOME="$WORKDIR/symmetric"
+    export GNUPGHOME
+    if echo test | GPG --passphrase abc123 "$@" --symmetric | \
+            GPG --list-packets 2>/dev/null | grep ':aead encrypted packet:'; then
+        add_error "generated AEAD packets from ($* --symmetric)"
+    fi
+}
+
+
+
+for x in default future-default rsa3072+rsa3072 ed25519+cv25519; do
+    genkey "$x" succeed
+    test_generated_key "$x"
+done
+
+for x in ed448 ed25519/v5+cv25519/v5 rsa/v5+rsa/v5; do
+    genkey "$x" fail
+done
+
+for x in default future-default ed25519/v5+cv25519/v5 ed448+cv448; do
+    librepgp "$x"
+# uncomment the lines below to see non-OpenPGP artifacts produces with --compliance=gnupg
+#    test_generated_key "librepgp-$x"
+    test_encrypt "$x"
+done
+
+test_symmetric_encryption
+test_symmetric_encryption --compliance=gnupg
+
+if [ -n "$errors" ]; then
+    printf "=== Errors ====\n%s" "$errors"
+    exit 1
+fi
+printf "Success!\n"

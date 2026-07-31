@@ -1,0 +1,144 @@
+From: Werner Koch <wk@gnupg.org>
+Date: Tue, 11 Feb 2025 14:44:23 +0100
+Subject: gpg: Lookup key for merging/inserting only by primary key.
+
+* g10/getkey.c (get_keyblock_byfpr_fast): Add arg primary_only and
+implement.
+* g10/import.c (import_one_real): Simplify filling the fpr buffer with
+zeroes.
+(import_one_real): Find key only by primary fingerprint.
+--
+
+This should have been done early: When looking up the original
+keyblock we want to update, we need to lookup it up only using the
+primary key.  This avoids to find a key which has the primary key also
+has a subkey.
+
+GnuPG-bug-id: 7527
+(cherry picked from commit 25d748c3dfc0102f9e54afea59ff26b3969bd8c1)
+---
+ g10/getkey.c | 27 ++++++++++++++++++++++-----
+ g10/import.c |  8 ++++----
+ g10/keydb.h  |  9 +++++----
+ 3 files changed, 31 insertions(+), 13 deletions(-)
+
+diff --git a/g10/getkey.c b/g10/getkey.c
+index 618ad13..20ae843 100644
+--- a/g10/getkey.c
++++ b/g10/getkey.c
+@@ -1946,7 +1946,7 @@ get_pubkey_byfprint_fast (ctrl_t ctrl, PKT_public_key * pk,
+   KBNODE keyblock;
+ 
+   err = get_keyblock_byfprint_fast (ctrl,
+-                                    &keyblock, NULL, fprint, fprint_len, 0);
++                                    &keyblock, NULL, 0, fprint, fprint_len, 0);
+   if (!err)
+     {
+       if (pk)
+@@ -1963,18 +1963,23 @@ get_pubkey_byfprint_fast (ctrl_t ctrl, PKT_public_key * pk,
+  * R_HD may be NULL.  If LOCK is set the handle has been opend in
+  * locked mode and keydb_disable_caching () has been called.  On error
+  * R_KEYBLOCK is set to NULL but R_HD must be released by the caller;
+- * it may have a value of NULL, though.  This allows one to do an insert
+- * operation on a locked keydb handle.  */
++ * it may have a value of NULL, though.  This allows one to do an
++ * insert operation on a locked keydb handle.  If PRIMARY_ONLY is set
++ * the function returns a keyblock which has the requested fingerprint
++ * has primary key.  */
+ gpg_error_t
+ get_keyblock_byfprint_fast (ctrl_t ctrl,
+-                            kbnode_t *r_keyblock, KEYDB_HANDLE *r_hd,
+-                            const byte *fprint, size_t fprint_len, int lock)
++                         kbnode_t *r_keyblock, KEYDB_HANDLE *r_hd,
++                         int primary_only,
++                         const byte *fprint, size_t fprint_len, int lock)
+ {
+   gpg_error_t err;
+   KEYDB_HANDLE hd;
+   kbnode_t keyblock;
+   byte fprbuf[MAX_FINGERPRINT_LEN];
+   int i;
++  byte tmpfpr[MAX_FINGERPRINT_LEN];
++  size_t tmpfprlen;
+ 
+   if (r_keyblock)
+     *r_keyblock = NULL;
+@@ -2006,6 +2011,7 @@ get_keyblock_byfprint_fast (ctrl_t ctrl,
+   if (r_hd)
+     *r_hd = hd;
+ 
++ again:
+   err = keydb_search_fpr (hd, fprbuf, fprint_len);
+   if (gpg_err_code (err) == GPG_ERR_NOT_FOUND)
+     {
+@@ -2025,6 +2031,17 @@ get_keyblock_byfprint_fast (ctrl_t ctrl,
+   log_assert (keyblock->pkt->pkttype == PKT_PUBLIC_KEY
+               || keyblock->pkt->pkttype == PKT_PUBLIC_SUBKEY);
+ 
++  if (primary_only)
++    {
++      fingerprint_from_pk (keyblock->pkt->pkt.public_key, tmpfpr, &tmpfprlen);
++      if (fprint_len != tmpfprlen || memcmp (fprint, tmpfpr, fprint_len))
++        {
++          release_kbnode (keyblock);
++          keyblock = NULL;
++          goto again;
++        }
++    }
++
+   /* Not caching key here since it won't have all of the fields
+      properly set. */
+ 
+diff --git a/g10/import.c b/g10/import.c
+index edd354a..99b32ba 100644
+--- a/g10/import.c
++++ b/g10/import.c
+@@ -1979,7 +1979,6 @@ import_one_real (ctrl_t ctrl,
+   int mod_key = 0;
+   int same_key = 0;
+   int non_self_or_utk = 0;
+-  size_t an;
+   char pkstrbuf[PUBKEY_STRING_SIZE];
+   int merge_keys_done = 0;
+   KEYDB_HANDLE hd = NULL;
+@@ -1999,8 +1998,8 @@ import_one_real (ctrl_t ctrl,
+   pk = node->pkt->pkt.public_key;
+ 
+   fingerprint_from_pk (pk, fpr2, &fpr2len);
+-  for (an = fpr2len; an < MAX_FINGERPRINT_LEN; an++)
+-    fpr2[an] = 0;
++  if (MAX_FINGERPRINT_LEN > fpr2len)
++    memset (fpr2+fpr2len, 0, MAX_FINGERPRINT_LEN - fpr2len);
+   keyid_from_pk( pk, keyid );
+   uidnode = find_next_kbnode( keyblock, PKT_USER_ID );
+ 
+@@ -2168,7 +2167,8 @@ import_one_real (ctrl_t ctrl,
+ 
+   /* Do we have this key already in one of our pubrings ? */
+   err = get_keyblock_byfprint_fast (ctrl, &keyblock_orig, &hd,
+-                                    fpr2, fpr2len, 1/*locked*/);
++                                 1 /*primary only */,
++                                 fpr2, fpr2len, 1/*locked*/);
+   if ((err
+        && gpg_err_code (err) != GPG_ERR_NO_PUBKEY
+        && gpg_err_code (err) != GPG_ERR_UNUSABLE_PUBKEY)
+diff --git a/g10/keydb.h b/g10/keydb.h
+index ac09536..658c85a 100644
+--- a/g10/keydb.h
++++ b/g10/keydb.h
+@@ -420,10 +420,11 @@ gpg_error_t get_pubkey_byfprint_fast (ctrl_t ctrl, PKT_public_key *pk,
+    merge the self-signed data into the public key and subkeys or into
+    the user ids.  */
+ gpg_error_t get_keyblock_byfprint_fast (ctrl_t ctrl,
+-                                        kbnode_t *r_keyblock,
+-                                        KEYDB_HANDLE *r_hd,
+-                                        const byte *fprint, size_t fprint_len,
+-                                        int lock);
++                                     kbnode_t *r_keyblock,
++                                     KEYDB_HANDLE *r_hd,
++                                     int primary_only,
++                                     const byte *fpr, size_t fprlen,
++                                     int lock);
+ 
+ 
+ /* Returns true if a secret key is available for the public key with

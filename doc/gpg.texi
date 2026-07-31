@@ -264,6 +264,11 @@ out the actual signed data, but there are other pitfalls with this
 format as well.  It is suggested to avoid cleartext signatures in
 favor of detached signatures.
 
+Note: With option @option{--batch} he verification of signatures stops
+at the first bad signature.  This is a safe default for unattended
+processing but sometimes a status for all signatures is needed.  To
+override this early bailout use the option @option{--proc-all-sigs}.
+
 Note: To check whether a file was signed by a certain key the option
 @option{--assert-signer} can be used.  As an alternative the
 @command{gpgv} tool can be used.  @command{gpgv} is designed to
@@ -779,7 +784,9 @@ the fingerprint @var{fpr}.  @var{adskfpr} is the fingerprint of
 another key's encryption subkey.  A subkey is commonly used here
 because by default a primary key has no encryption capability.  Use
 the option @option{--with-subkey-fingerprint} with a list command to
-display the subkey fingerprints.
+display the subkey fingerprints.  If the string "default" is used for
+@var{adskfpr} all missing ADSKs configured with
+@option{--default-new-key-adsk} are added.
 
 @item --generate-key
 @opindex generate-key
@@ -1223,11 +1230,18 @@ all affected self-signatures is set one second ahead.
 This command updates the preference list of the key to the current
 default value (either built-in or set via
 @option{--default-preference-list}).  This is the unattended version
-of of using "setpref" in the @option{--key-edit} menu without giving a
+of using "setpref" in the @option{--key-edit} menu without giving a
 list.  Note that you can show the preferences in a key listing by
 using @option{--list-options show-pref} or @option{--list-options
 show-pref-verbose}.  You should also re-distribute updated keys to
 your peers.
+
+@item --quick-set-ownertrust  @var{user-id} @var{value}
+@opindex quick-set-ownertrust
+This command sets the ownertrust of a key and can also be used to set
+the disable flag of a key.  This is the unattended version of using
+"trust", "disable", or "enable" in the @option{--key-edit} menu.
+
 
 @item --change-passphrase @var{user-id}
 @opindex change-passphrase
@@ -1362,6 +1376,12 @@ Assume "yes" on most questions.  Should not be used in an option file.
 Assume "no" on most questions.  Should not be used in an option file.
 
 
+@item --proc-all-sigs
+@opindex proc-all-sigs
+This option overrides the behaviour of the @option{--batch} option to
+stop signature verification at the first bad signatures.
+
+
 @item --list-filter @{select=@var{expr}@}
 @opindex list-filter
 A list filter can be used to output only certain keys during key
@@ -1395,6 +1415,11 @@ give the opposite meaning.  The options are:
   listing.  This is a list of letters indicating the allowed usage for a
   key (@code{E}=encryption, @code{S}=signing, @code{C}=certification,
   @code{A}=authentication).  Defaults to yes.
+
+  @item show-ownertrust
+  @opindex list-options:show-ownertrust
+  Show the ownertrust value for keys also in the standard key
+  listing.  Defaults to no.
 
   @item show-policy-urls
   @opindex list-options:show-policy-urls
@@ -1457,10 +1482,11 @@ give the opposite meaning.  The options are:
 
   @item sort-sigs
   @opindex list-options:sort-sigs
-  With --list-sigs and --check-sigs sort the signatures by keyID and
-  creation time to make it easier to view the history of these
-  signatures.  The self-signature is also listed before other
-  signatures. Defaults to yes.
+  With @option{--list-sigs} and @option{--check-sigs} sort the
+  signatures by keyID and creation time to make it easier to view the
+  history of these signatures.  The self-signature is also listed
+  before other signatures. Defaults to yes.  This option has no effect
+  in @option{-with-colons} mode.
 
 @end table
 
@@ -1784,13 +1810,26 @@ this option at all (e.g. due to the @option{--no-options} option).
 @opindex add-desig-revoker
 Add the key specified by @var{fingerprint} as a designated revoker to
 newly created keys.  If the fingerprint is prefixed with the keyword
-``sensitive:'' that info is normally not exported wit the key.  This
-option may be given several time to add more than one designated
+``sensitive:'' that info is normally not exported with the key.  This
+option may be given several times to add more than one designated
 revoker.  If the keyword ``clear'' is used instead of a fingerprint,
-all designated options previously encountered are discarded.
-Designated revokers are marked on the key as non-revocable.  Note that
-a designated revoker specified using a parameter file will also be
-added to the key.
+all previously fiven fingerprints are discarded.  Designated revokers
+are marked on the key as non-revocable.  Note that a designated
+revoker specified using a parameter file will also be added to the
+key.
+
+@item --default-new-key-adsk @var{fingerprint}
+@opindex default-new-key-adsk
+Add the subkey specified by @var{fingerprint} as an Additional
+Decryption Subkey (ADSK) to newly created keys.  This option may be
+given several time to add more than one ADSK.  It is also possible to
+give several fingerprints delimited by space or comma as value to this
+option.  If the keyword ``clear'' is used instead of a fingerprint,
+all previously specified fingerprints are discarded (useful to
+override options given in a config file).  The fingerprint is expected
+to specify a subkey and it does not need an exclamation mark as
+suffix; it must be given in cmpact format (40 or 64 hex-digits without
+any spaces).
 
 
 @item --trust-model @{pgp|classic|tofu|tofu+pgp|direct|always|auto@}
@@ -1969,15 +2008,15 @@ list.  The default is "local,wkd".
   Locate a key using the Web Key Directory protocol.
 
   @item ldap
-  Using DNS Service Discovery, check the domain in question for any LDAP
-  keyservers to use.  If this fails, attempt to locate the key using the
-  PGP Universal method of checking @samp{ldap://keys.(thedomain)}.
+  Locate the key using the configured LDAP servers.  This method is
+  similar to the @code{keyserver} mechanism but always uses only LDAP
+  servers.
 
   @item ntds
   Locate the key using the Active Directory (Windows only).  This
   method also allows one to search by fingerprint using the command
   @option{--locate-external-key}.  Note that this mechanism is
-  actually a shortcut for the mechanism @samp{keyserver} but using
+  actually a shortcut for the mechanism @samp{ldap} using only
   "ldap:///" as the keyserver.
 
   @item keyserver
@@ -2134,6 +2173,9 @@ are available for all keyserver types, some common options are:
   When receiving a key, include subkeys as potential targets. Note that
   this option is not used with HKP keyservers, as they do not support
   retrieving keys by subkey id.
+
+  @item only-pubkeys
+  Do now allow to import secret keys.
 
   @item timeout
   @itemx http-proxy=@var{value}
@@ -4009,7 +4051,7 @@ current home directory (@pxref{option --homedir}).
   startup.  It may contain options pertaining to all components of
   GnuPG.  Its current main use is for the "use-keyboxd" option.  If
   the default home directory @file{~/.gnupg} does not exist, GnuPG creates
-  this directory and a @file{common.conf} file with "use_keyboxd".
+  this directory and a @file{common.conf} file with "use-keyboxd".
 
 @end table
 

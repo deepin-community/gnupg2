@@ -1,4 +1,3 @@
-From 57125d3f5a3fcef1b7730bd5685162f485e4e95d Mon Sep 17 00:00:00 2001
 From: NIIBE Yutaka <gniibe@fsij.org>
 Date: Fri, 1 Sep 2023 11:00:44 +0900
 Subject: [PATCH 7/9] agent: Fix the previous commit.
@@ -14,7 +13,7 @@ Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
  1 file changed, 3 deletions(-)
 
 diff --git a/agent/cache.c b/agent/cache.c
-index 9ed3cb195..16a21bd77 100644
+index 9ed3cb1..16a21bd 100644
 --- a/agent/cache.c
 +++ b/agent/cache.c
 @@ -296,9 +296,6 @@ remove_from_timer_list_new (ITEM entry)
@@ -27,6 +26,3 @@ index 9ed3cb195..16a21bd77 100644
          if (eprev)
            eprev->t.next = e->t.next;
          else
--- 
-2.39.2
-

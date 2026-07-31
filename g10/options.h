@@ -41,6 +41,26 @@ struct keyserver_spec
 };
 typedef struct keyserver_spec *keyserver_spec_t;
 
+/* The --auto-key-locate mechanisms object.  */
+struct akl
+{
+  enum {
+    AKL_NODEFAULT,
+    AKL_LOCAL,
+    AKL_CERT,
+    AKL_PKA,
+    AKL_DANE,
+    AKL_WKD,
+    AKL_LDAP,
+    AKL_NTDS,
+    AKL_KEYSERVER,
+    AKL_SPEC
+  } type;
+  keyserver_spec_t spec;
+  struct akl *next;
+};
+
+
 
 /* Global options for GPG.  */
 EXTERN_UNLESS_MAIN_MODULE
@@ -132,6 +152,8 @@ struct
   int disable_dirmngr;
 
   const char *def_new_key_algo;
+
+  strlist_t def_new_key_adsks;  /* Option --default-new-key-adsk.  */
 
   /* Options to be passed to the gpg-agent */
   session_env_t session_env;
@@ -283,27 +305,13 @@ struct
     /* Fail if an operation can't be done in the requested compliance
      * mode.  */
     unsigned int require_compliance:1;
+    /* Process all signatures even in batch mode.  */
+    unsigned int proc_all_sigs:1;
   } flags;
 
   /* Linked list of ways to find a key if the key isn't on the local
      keyring. */
-  struct akl
-  {
-    enum {
-      AKL_NODEFAULT,
-      AKL_LOCAL,
-      AKL_CERT,
-      AKL_PKA,
-      AKL_DANE,
-      AKL_WKD,
-      AKL_LDAP,
-      AKL_NTDS,
-      AKL_KEYSERVER,
-      AKL_SPEC
-    } type;
-    keyserver_spec_t spec;
-    struct akl *next;
-  } *auto_key_locate;
+  struct akl *auto_key_locate;
 
   /* The value of --key-origin.  See parse_key_origin().  */
   int key_origin;
@@ -323,6 +331,7 @@ struct
   /* Compatibility flags (COMPAT_FLAG_xxxx).  */
   unsigned int compat_flags;
 } opt;
+
 
 /* CTRL is used to keep some global variables we currently can't
    avoid.  Future concurrent versions of gpg will put it into a per
@@ -400,7 +409,7 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define IMPORT_MERGE_ONLY                (1<<4)
 #define IMPORT_MINIMAL                   (1<<5)
 #define IMPORT_CLEAN                     (1<<6)
-#define IMPORT_NO_SECKEY                 (1<<7)
+#define IMPORT_ONLY_PUBKEYS              (1<<7)
 #define IMPORT_KEEP_OWNERTTRUST          (1<<8)
 #define IMPORT_EXPORT                    (1<<9)
 #define IMPORT_RESTORE                   (1<<10)
@@ -442,6 +451,7 @@ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
 #define LIST_SHOW_PREF                   (1<<14)
 #define LIST_SHOW_PREF_VERBOSE           (1<<15)
 #define LIST_SHOW_UNUSABLE_SIGS          (1<<16)
+#define LIST_SHOW_OWNERTRUST             (1<<19)
 
 #define VERIFY_SHOW_PHOTOS               (1<<0)
 #define VERIFY_SHOW_POLICY_URLS          (1<<1)

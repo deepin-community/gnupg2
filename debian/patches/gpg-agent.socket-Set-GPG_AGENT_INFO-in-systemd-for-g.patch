@@ -1,0 +1,29 @@
+From: Richard Hansen <rhansen@rhansen.org>
+Date: Wed, 26 Feb 2025 16:49:55 -0500
+Subject: gpg-agent.socket: Set GPG_AGENT_INFO in systemd for gnupg1
+
+ GPG_AGENT_INFO is already set in debian/Xsession.d/90gpg-agent, but
+ that only affects sessions that run Xsession.  This change affects any
+ session that imports systemd environment variables.  See:
+ https://gitlab.gnome.org/GNOME/gdm/-/commit/448134d3cdbc54e5359ea33d387993b0defdaefa
+ https://github.com/sddm/sddm/issues/1276
+Forwarded: not-needed
+---
+ doc/examples/systemd-user/gpg-agent.socket | 4 ++++
+ 1 file changed, 4 insertions(+)
+
+diff --git a/doc/examples/systemd-user/gpg-agent.socket b/doc/examples/systemd-user/gpg-agent.socket
+index 4257c2c..59ad871 100644
+--- a/doc/examples/systemd-user/gpg-agent.socket
++++ b/doc/examples/systemd-user/gpg-agent.socket
+@@ -3,6 +3,10 @@ Description=GnuPG cryptographic agent and passphrase cache
+ Documentation=man:gpg-agent(1)
+ 
+ [Socket]
++# gnupg2 doesn't use the GPG_AGENT_INFO environment variable since
++# v2.1.0, but gnupg1 still does so set it in case gnupg1 is installed.
++ExecStartPost=systemctl --user set-environment GPG_AGENT_INFO=%t/gnupg/S.gpg-agent:0:1
++ExecStopPre=systemctl --user unset-environment GPG_AGENT_INFO
+ ListenStream=%t/gnupg/S.gpg-agent
+ FileDescriptorName=std
+ SocketMode=0600

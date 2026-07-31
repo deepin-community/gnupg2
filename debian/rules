@@ -16,7 +16,7 @@ export DEB_BUILD_MAINT_OPTIONS = hardening=+all
 
 # avoid -pie for gpgv-static on kfreebsd-amd64, and x32
 # platforms, which cannot support it by default:
-ifeq (,$(filter $(DEB_HOST_ARCH), kfreebsd-amd64 x32 sw64 loong64))
+ifeq (,$(filter $(DEB_HOST_ARCH), kfreebsd-amd64 x32))
 GPGV_STATIC_HARDENING = "-pie"
 else
 GPGV_STATIC_HARDENING = ""
@@ -26,7 +26,8 @@ endif
 # Parallel tests generates high load on machine which causes timeouts and thus
 # triggers unexpected failures.
 ifeq (,$(filter $(DEB_HOST_ARCH), hppa riscv64))
-AUTOTEST_FLAGS = "--parallel"
+# And also, avoid parallel tests due to swtpm failures (see https://dev.gnupg.org/T7494)
+AUTOTEST_FLAGS = "--no-parallel"
 else
 AUTOTEST_FLAGS = "--no-parallel"
 endif
@@ -38,9 +39,12 @@ endif
 %:
 	dh $@ --with=autoreconf --builddirectory=build
 
-GPGV_UDEB_UNNEEDED = gpgtar bzip2 gpgsm scdaemon dirmngr doc tofu exec ldap gnutls sqlite libdns keyboxd
+GPGV_UNNEEDED = gpgtar gpgsm scdaemon dirmngr tofu exec ldap gnutls sqlite libdns keyboxd tpm2d npth
+GPGV_UDEB_UNNEEDED = $(GPGV_UNNEEDED) bzip2 doc
 
 WIN32_FLAGS=LDFLAGS="-Xlinker --no-insert-timestamp -static" CFLAGS="-g -Os" CPPFLAGS=
+
+ifeq ($(filter pkg.gnupg2.gpgvonly,$(DEB_BUILD_PROFILES)),)
 
 execute_after_dh_auto_configure:
 	dh_auto_configure --builddirectory=build --verbose -- \
@@ -79,10 +83,9 @@ override_dh_auto_build-arch:
 
 override_dh_auto_build-indep:
 	mkdir -p build-gpgv-win32
-ifeq (,$(filter $(DEB_HOST_ARCH), sw64 loong64))
 	cd build-gpgv-win32 && $(WIN32_FLAGS) ../configure \
 	   	$(foreach x, $(GPGV_UDEB_UNNEEDED), --disable-$(x)) \
-		$(foreach x, libgpg-error libgcrypt libassuan ksba npth, --with-$x-prefix=/usr/i686-w64-mingw32) \
+		$(foreach x, libgpg-error libgcrypt libassuan ksba, --with-$x-prefix=/usr/i686-w64-mingw32) \
 		$(NODOC) \
 		--enable-gpg2-is-gpg \
 		--with-zlib=/usr/i686-w64-mingw \
@@ -91,15 +94,18 @@ ifeq (,$(filter $(DEB_HOST_ARCH), sw64 loong64))
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) status-codes.h audit-events.h
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libgpgrl.a
 	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libsimple-pwquery.a
-	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libcommonpth.a
+	cd build-gpgv-win32/common && $(WIN32_FLAGS) $(MAKE) libcommon.a
 	cd build-gpgv-win32/kbx && $(WIN32_FLAGS) $(MAKE) libkeybox.a
 	cd build-gpgv-win32/regexp && $(WIN32_FLAGS) $(MAKE) _unicode_mapping.c
 	cd build-gpgv-win32/regexp && $(WIN32_FLAGS) $(MAKE) libregexp.a
 	cd build-gpgv-win32/g10 && $(WIN32_FLAGS) $(MAKE) gpgv.exe
 	strip build-gpgv-win32/g10/gpgv.exe
-else
-	: > debian/gpgv-win32.install
-endif
+
+execute_after_dh_installdocs:
+	# These are already shipped in the respective packages
+	rm -vf \
+		debian/gnupg/usr/share/doc/gnupg/examples/systemd-user/*.service \
+		debian/gnupg/usr/share/doc/gnupg/examples/systemd-user/*.socket
 
 override_dh_auto_test:
 	dh_auto_test --builddirectory=build -- verbose=3 TESTFLAGS=$(AUTOTEST_FLAGS)
@@ -109,11 +115,19 @@ override_dh_shlibdeps:
 	dpkg-shlibdeps -Tdebian/dirmngr.substvars -dRecommends debian/dirmngr/usr/lib/gnupg/dirmngr_ldap -dDepends debian/dirmngr/usr/bin/dirmngr*
 	dh_shlibdeps -Ndirmngr
 
-override_dh_installsystemduser:
-	dh_installsystemduser
-	dh_installsystemduser --name=gpg-agent-ssh
-	dh_installsystemduser --name=gpg-agent-extra
-	dh_installsystemduser --name=gpg-agent-browser
+else # ifeq ($(filter pkg.gnupg2.gpgvonly,$(DEB_BUILD_PROFILES)),)
+override_dh_auto_configure:
+	dh_auto_configure --builddirectory=build --verbose -- \
+		--libexecdir=\$${prefix}/lib/gnupg \
+		--enable-maintainer-mode \
+		$(NODOC) \
+		$(foreach x, $(GPGV_UNNEEDED), --disable-$(x))
+
+override_dh_auto_test:
+	# stripped down build fails on make check
+
+endif  # ifeq ($(filter pkg.gnupg2.gpgvonly,$(DEB_BUILD_PROFILES)),
+
 
 execute_before_dh_autoreconf:
 	echo "Developer change history can be found in the source tarball. See NEWS for high-level changes." > ChangeLog

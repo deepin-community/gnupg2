@@ -1,0 +1,45 @@
+From: Werner Koch <wk@gnupg.org>
+Date: Fri, 2 May 2025 11:11:05 +0200
+Subject: gpg: Fix another regression due to the T7547 fix.
+
+* g10/getkey.c (get_pubkey_for_sig): Keep a requested
+PUBKEY_USAGE_CERT.
+(finish_lookup): For correctness in future use cases allow
+PUBKEY_USAGE_CERT to also trigger verify mode.
+--
+
+The case here was that a cert-only primary key was removed with
+export-clean.
+
+GnuPG-bug-id: 7583
+(cherry picked from commit 9b7c067717d815e16f9ea3cec88bca09a6cce7cb)
+---
+ g10/getkey.c | 8 +++++---
+ 1 file changed, 5 insertions(+), 3 deletions(-)
+
+diff --git a/g10/getkey.c b/g10/getkey.c
+index e326406..ae0e002 100644
+--- a/g10/getkey.c
++++ b/g10/getkey.c
+@@ -341,8 +341,10 @@ get_pubkey_for_sig (ctrl_t ctrl, PKT_public_key *pk, PKT_signature *sig,
+   /* Make sure to request only keys cabable of signing.  This makes
+    * sure that a subkey w/o a valid backsig or with bad usage flags
+    * will be skipped.  We also request the verification mode so that
+-   * expired and reoked keys are returned.  */
+-  pk->req_usage = (PUBKEY_USAGE_SIG | PUBKEY_USAGE_VERIFY);
++   * expired and revoked keys are returned.  We keep only a requested
++   * CERT usage in PK for the sake of key signatures.  */
++  pk->req_usage = (PUBKEY_USAGE_SIG | PUBKEY_USAGE_VERIFY
++                   | (pk->req_usage & PUBKEY_USAGE_CERT));
+ 
+   /* First try the ISSUER_FPR info.  */
+   fpr = issuer_fpr_raw (sig, &fprlen);
+@@ -3736,7 +3738,7 @@ finish_lookup (kbnode_t keyblock, unsigned int req_usage, int want_exact,
+   /* The verify mode is used to change the behaviour so that we can
+    * return an expired or revoked key for signature verification.  */
+   verify_mode = ((req_usage & PUBKEY_USAGE_VERIFY)
+-                 && (req_usage & PUBKEY_USAGE_SIG));
++                 && (req_usage & (PUBKEY_USAGE_CERT|PUBKEY_USAGE_SIG)));
+ 
+ #define USAGE_MASK  (PUBKEY_USAGE_SIG|PUBKEY_USAGE_ENC|PUBKEY_USAGE_CERT)
+   req_usage &= USAGE_MASK;
