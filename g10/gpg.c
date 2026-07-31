@@ -136,6 +136,7 @@ enum cmd_and_opt_values
     aQuickSetExpire,
     aQuickSetPrimaryUid,
     aQuickUpdatePref,
+    aQuickSetOwnertrust,
     aListConfig,
     aListGcryptConfig,
     aGPGConfList,
@@ -432,6 +433,7 @@ enum cmd_and_opt_values
     oTOFUDefaultPolicy,
     oTOFUDBFormat,
     oDefaultNewKeyAlgo,
+    oDefaultNewKeyADSK,
     oWeakDigest,
     oUnwrap,
     oOnlySignTextIDs,
@@ -453,6 +455,7 @@ enum cmd_and_opt_values
     oAssertSigner,
     oAssertPubkeyAlgo,
     oKbxBufferSize,
+    oProcAllSigs,
 
     oNoop
   };
@@ -502,6 +505,7 @@ static gpgrt_opt_t opts[] = {
               N_("quickly set a new expiration date")),
   ARGPARSE_c (aQuickSetPrimaryUid,  "quick-set-primary-uid", "@"),
   ARGPARSE_c (aQuickUpdatePref,  "quick-update-pref", "@"),
+  ARGPARSE_c (aQuickSetOwnertrust,  "quick-set-ownertrust", "@"),
   ARGPARSE_c (aFullKeygen,  "full-generate-key" ,
               N_("full featured key pair generation")),
   ARGPARSE_c (aFullKeygen,  "full-gen-key", "@"),
@@ -645,6 +649,7 @@ static gpgrt_opt_t opts[] = {
   ARGPARSE_s_n (oPGP7, "pgp7", "@"),
   ARGPARSE_s_n (oPGP8, "pgp8", "@"),
   ARGPARSE_s_s (oDefaultNewKeyAlgo, "default-new-key-algo", "@"),
+  ARGPARSE_s_s (oDefaultNewKeyADSK, "default-new-key-adsk", "@"),
   ARGPARSE_p_u (oMinRSALength, "min-rsa-length", "@"),
 #ifndef NO_TRUST_MODELS
   ARGPARSE_s_n (oAlwaysTrust, "always-trust", "@"),
@@ -898,6 +903,7 @@ static gpgrt_opt_t opts[] = {
 
   ARGPARSE_s_n (oBatch, "batch", "@"),
   ARGPARSE_s_n (oNoBatch, "no-batch", "@"),
+  ARGPARSE_s_n (oProcAllSigs, "proc-all-sigs", "@"),
   ARGPARSE_s_n (oAnswerYes, "yes", "@"),
   ARGPARSE_s_n (oAnswerNo, "no", "@"),
   ARGPARSE_s_i (oStatusFD, "status-fd", "@"),
@@ -2107,6 +2113,8 @@ parse_list_options(char *str)
        N_("show preferences")},
       {"show-pref-verbose", LIST_SHOW_PREF_VERBOSE, NULL,
        N_("show preferences")},
+      {"show-ownertrust", LIST_SHOW_OWNERTRUST, NULL,
+       N_("show ownertrust")},
       {"show-only-fpr-mbox",LIST_SHOW_ONLY_FPR_MBOX, NULL,
        NULL},
       {"sort-sigs", LIST_SORT_SIGS, NULL,
@@ -2363,6 +2371,7 @@ main (int argc, char **argv)
     const char *fname;
     char *username;
     int may_coredump;
+    gpg_error_t tmperr;
     strlist_t sl;
     strlist_t remusr = NULL;
     strlist_t locusr = NULL;
@@ -2717,6 +2726,7 @@ main (int argc, char **argv)
 	  case aQuickSetExpire:
 	  case aQuickSetPrimaryUid:
 	  case aQuickUpdatePref:
+	  case aQuickSetOwnertrust:
 	  case aExportOwnerTrust:
 	  case aImportOwnerTrust:
           case aRebuildKeydbCaches:
@@ -2792,6 +2802,10 @@ main (int argc, char **argv)
 	  case oBatch:
             opt.batch = 1;
             nogreeting = 1;
+            break;
+
+          case oProcAllSigs:
+            opt.flags.proc_all_sigs = 1;
             break;
 
           case oUseAgent: /* Dummy. */
@@ -3757,6 +3771,16 @@ main (int argc, char **argv)
             opt.def_new_key_algo = pargs.r.ret_str;
             break;
 
+          case oDefaultNewKeyADSK:
+            if (!strcmp (pargs.r.ret_str, "clear"))
+              FREE_STRLIST (opt.def_new_key_adsks);
+            else if (!tokenize_to_strlist (&opt.def_new_key_adsks,
+                                           pargs.r.ret_str, " \t,")
+                && (tmperr = gpg_err_code_from_syserror()) != GPG_ERR_ENOENT)
+              log_info (_("error parsing value for option '%s': %s\n"),
+                        "--default-new-key-algo", gpg_strerror (tmperr));
+            break;
+
           case oUseOnlyOpenPGPCard:
             opt.flags.use_only_openpgp_card = 1;
             break;
@@ -3853,6 +3877,9 @@ main (int argc, char **argv)
         opt.keyboxd_program = comopt.keyboxd_program;
         comopt.keyboxd_program = NULL;
       }
+    if (opt.use_keyboxd && nrings)
+      log_info ("Note: Specified keyrings are ignored due to option \"%s\"\n",
+                "use-keyboxd");
 
     if (comopt.no_autostart)
       opt.autostart = 0;
@@ -4270,8 +4297,7 @@ main (int argc, char **argv)
         && (ALWAYS_ADD_KEYRINGS
             || (cmd != aDeArmor && cmd != aEnArmor && cmd != aGPGConfTest)))
       {
-        gpg_error_t tmperr = 0;
-
+        tmperr = 0;
 	if (!nrings || default_keyring > 0)  /* Add default ring. */
           tmperr = keydb_add_resource ("pubring" EXTSEP_S GPGEXT_GPG,
                                        KEYDB_RESOURCE_FLAG_DEFAULT);
@@ -4393,6 +4419,7 @@ main (int argc, char **argv)
       case aQuickRevUid:
       case aQuickSetPrimaryUid:
       case aQuickUpdatePref:
+      case aQuickSetOwnertrust:
       case aFullKeygen:
       case aKeygen:
       case aImport:
@@ -4737,8 +4764,6 @@ main (int argc, char **argv)
             parse_auto_key_locate (DEFAULT_AKL_LIST);
           }
 	public_key_list (ctrl, sl, 1, cmd == aLocateExtKeys);
-
-
 	free_strlist (sl);
 	break;
 
@@ -4909,6 +4934,15 @@ main (int argc, char **argv)
           if (argc != 1)
             wrong_args ("--quick-update-pref USER-ID");
           keyedit_quick_update_pref (ctrl, *argv);
+        }
+	break;
+
+      case aQuickSetOwnertrust:
+        {
+          if (argc != 2)
+            wrong_args ("--quick-set-ownertrust USER-ID"
+                        " [enable|disable|full|...]");
+          keyedit_quick_set_ownertrust (ctrl, argv[0], argv[1]);
         }
 	break;
 

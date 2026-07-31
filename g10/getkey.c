@@ -1,7 +1,7 @@
 /* getkey.c -  Get a key from the database
  * Copyright (C) 1998, 1999, 2000, 2001, 2002, 2003, 2004, 2005, 2006,
  *               2007, 2008, 2010  Free Software Foundation, Inc.
- * Copyright (C) 2015, 2016 g10 Code GmbH
+ * Copyright (C) 2015, 2016, 2024 g10 Code GmbH
  *
  * This file is part of GnuPG.
  *
@@ -17,6 +17,7 @@
  *
  * You should have received a copy of the GNU General Public License
  * along with this program; if not, see <https://www.gnu.org/licenses/>.
+ * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
 #include <config.h>
@@ -67,6 +68,9 @@ struct getkey_ctx_s
      details.  */
   int exact;
 
+  /* Allow returning an ADSK key.  */
+  int allow_adsk;
+
   /* Part of the search criteria: Whether the caller only wants keys
      with an available secret key.  This is used by getkey_next to get
      the next result with the same initial criteria.  */
@@ -75,7 +79,8 @@ struct getkey_ctx_s
   /* Part of the search criteria: The type of the requested key.  A
      mask of PUBKEY_USAGE_SIG, PUBKEY_USAGE_ENC and PUBKEY_USAGE_CERT.
      If non-zero, then for a key to match, it must implement one of
-     the required uses.  */
+     the required uses.  FWIW: the req_usage field in PKT_public_key
+     used to be an u8 but meanwhile is an u16.  */
   int req_usage;
 
   /* The database handle.  */
@@ -140,7 +145,8 @@ static int lookup (ctrl_t ctrl, getkey_ctx_t ctx, int want_secret,
 		   kbnode_t *ret_keyblock, kbnode_t *ret_found_key);
 static kbnode_t finish_lookup (kbnode_t keyblock,
                                unsigned int req_usage, int want_exact,
-                               int want_secret, unsigned int *r_flags);
+                               int want_secret, int allow_adsk,
+                               unsigned int *r_flags);
 static void print_status_key_considered (kbnode_t keyblock, unsigned int flags);
 
 
@@ -585,7 +591,7 @@ get_pubkeyblock_for_sig (ctrl_t ctrl, PKT_signature *sig)
  * The self-signed data has already been merged into the public key
  * using merge_selfsigs.  */
 kbnode_t
-get_pubkeyblock (ctrl_t ctrl, u32 * keyid)
+get_pubkeyblock_ext (ctrl_t ctrl, u32 * keyid, unsigned int flags)
 {
   struct getkey_ctx_s ctx;
   int rc = 0;
@@ -601,12 +607,19 @@ get_pubkeyblock (ctrl_t ctrl, u32 * keyid)
   ctx.items[0].mode = KEYDB_SEARCH_MODE_LONG_KID;
   ctx.items[0].u.kid[0] = keyid[0];
   ctx.items[0].u.kid[1] = keyid[1];
+  ctx.allow_adsk = !!(flags & GET_PUBKEYBLOCK_FLAG_ADSK);
   rc = lookup (ctrl, &ctx, 0, &keyblock, NULL);
   getkey_end (ctrl, &ctx);
 
   return rc ? NULL : keyblock;
 }
 
+
+kbnode_t
+get_pubkeyblock (ctrl_t ctrl, u32 * keyid)
+{
+  return get_pubkeyblock_ext (ctrl, keyid, 0);
+}
 
 /* Return the public key with the key id KEYID iff the secret key is
  * available and store it at PK.  The resources should be released
@@ -858,7 +871,12 @@ key_byname (ctrl_t ctrl, GETKEY_CTX *retctx, strlist_t namelist,
 
   if (pk)
     {
+      /* It is a bit tricky to allow returning an ADSK key: lookup
+       * masks the req_usage flags using the standard usage maps and
+       * only if ctx->allow_adsk is set, sets the RENC flag again.  */
       ctx->req_usage = pk->req_usage;
+      if ((pk->req_usage & PUBKEY_USAGE_RENC))
+        ctx->allow_adsk = 1;
     }
 
   rc = lookup (ctrl, ctx, want_secret, ret_kb, &found_key);
@@ -915,6 +933,7 @@ key_byname (ctrl_t ctrl, GETKEY_CTX *retctx, strlist_t namelist,
  *                          auto-key-locate option list!
  *    GET_PUBKEY_NO_LOCAL - Only the auto key locate functionality is
  *                          used and no local search is done.
+ *    GET_PUBKEY_TRY_LDAP - If the key was not found locally try LDAP.
  *
  * If RETCTX is not NULL, then the constructed context is returned in
  * *RETCTX so that getpubkey_next can be used to get subsequent
@@ -967,7 +986,7 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
   int nodefault = 0;
   int anylocalfirst = 0;
   int mechanism_type = AKL_NODEFAULT;
-
+  struct akl *used_akl = opt.auto_key_locate;
 
   /* If RETCTX is not NULL, then RET_KDBHD must be NULL.  */
   log_assert (retctx == NULL || ret_kdbhd == NULL);
@@ -989,12 +1008,12 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
       is_mbox = 1;
     }
 
-  /* If we are called due to --locate-external-key Check whether NAME
+  /* If we are called due to --locate-external-key check whether NAME
    * is a fingerprint and then try to lookup that key by configured
    * method which support lookup by fingerprint.  FPRBUF carries the
    * parsed fingerpint iff IS_FPR is true.  */
   is_fpr = 0;
-  if (!is_mbox && mode == GET_PUBKEY_NO_LOCAL)
+  if (!is_mbox && (mode == GET_PUBKEY_NO_LOCAL || mode == GET_PUBKEY_TRY_LDAP))
     {
       if (!classify_user_id (name, &fprbuf, 1)
           && fprbuf.mode == KEYDB_SEARCH_MODE_FPR)
@@ -1020,12 +1039,20 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
    * implicitly).  */
   if (mode == GET_PUBKEY_NO_LOCAL)
     nodefault = 1;  /* Auto-key-locate but ignore "local".  */
-  else if (mode != GET_PUBKEY_NO_AKL)
+  else if (mode == GET_PUBKEY_NO_AKL)
+    ;
+  else if (mode == GET_PUBKEY_TRY_LDAP)
+    {
+      static struct akl ldap_only_akl = { AKL_LDAP, NULL, NULL };
+
+      used_akl = &ldap_only_akl;
+    }
+  else
     {
       /* auto-key-locate is enabled.  */
 
       /* nodefault is true if "nodefault" or "local" appear.  */
-      for (akl = opt.auto_key_locate; akl; akl = akl->next)
+      for (akl = used_akl; akl; akl = akl->next)
 	if (akl->type == AKL_NODEFAULT || akl->type == AKL_LOCAL)
 	  {
 	    nodefault = 1;
@@ -1033,7 +1060,7 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
 	  }
       /* anylocalfirst is true if "local" appears before any other
 	 search methods (except "nodefault").  */
-      for (akl = opt.auto_key_locate; akl; akl = akl->next)
+      for (akl = used_akl; akl; akl = akl->next)
 	if (akl->type != AKL_NODEFAULT)
 	  {
 	    if (akl->type == AKL_LOCAL)
@@ -1084,7 +1111,7 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
        * the local keyring).  Since the auto key locate feature is
        * enabled and NAME appears to be an email address, try the auto
        * locate feature.  */
-      for (akl = opt.auto_key_locate; akl; akl = akl->next)
+      for (akl = used_akl; akl; akl = akl->next)
 	{
 	  unsigned char *fpr = NULL;
 	  size_t fpr_len;
@@ -1176,16 +1203,31 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
 	      break;
 
 	    case AKL_LDAP:
-              if (is_fpr)
+	      if (!keyserver_any_configured (ctrl))
                 {
                   mechanism_string = "";
                   rc = GPG_ERR_NO_PUBKEY;
                 }
               else
                 {
-                  mechanism_string = "LDAP";
+                  mechanism_string = is_fpr? "ldap/fpr":"ldap/mbox";
                   glo_ctrl.in_auto_key_retrieve++;
-                  rc = keyserver_import_ldap (ctrl, name, &fpr, &fpr_len);
+                  if (is_fpr)
+                    rc = keyserver_import_fprint (ctrl,
+                                               fprbuf.u.fpr, fprbuf.fprlen,
+                                               opt.keyserver,
+                                               KEYSERVER_IMPORT_FLAG_LDAP);
+                  else
+                    rc = keyserver_import_mbox (ctrl, name, &fpr, &fpr_len,
+                                                opt.keyserver,
+                                                KEYSERVER_IMPORT_FLAG_LDAP);
+                  /* Map error codes because Dirmngr returns NO DATA
+                   * if the keyserver does not have the requested key.
+                   * It returns NO KEYSERVER if no LDAP keyservers are
+                   * configured.  */
+                  if (gpg_err_code (rc) == GPG_ERR_NO_DATA
+                      || gpg_err_code (rc) == GPG_ERR_NO_KEYSERVER)
+                    rc = gpg_error (GPG_ERR_NO_PUBKEY);
                   glo_ctrl.in_auto_key_retrieve--;
                 }
               break;
@@ -1227,7 +1269,7 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
                   else
                     {
                       rc = keyserver_import_mbox (ctrl, name, &fpr, &fpr_len,
-                                                  opt.keyserver);
+                                                  opt.keyserver, 0);
                     }
 		  glo_ctrl.in_auto_key_retrieve--;
 		}
@@ -1258,7 +1300,7 @@ get_pubkey_byname (ctrl_t ctrl, enum get_pubkey_modes mode,
                 else
                   {
                     rc = keyserver_import_mbox (ctrl, name,
-                                                &fpr, &fpr_len, keyserver);
+                                                &fpr, &fpr_len, keyserver, 0);
                   }
 		glo_ctrl.in_auto_key_retrieve--;
 	      }
@@ -1745,7 +1787,7 @@ get_pubkey_fromfile (ctrl_t ctrl, PKT_public_key *pk, const char *fname,
       /* Warning: node flag bits 0 and 1 should be preserved by
        * merge_selfsigs.  FIXME: Check whether this still holds. */
       merge_selfsigs (ctrl, keyblock);
-      found_key = finish_lookup (keyblock, pk->req_usage, 0, 0, &infoflags);
+      found_key = finish_lookup (keyblock, pk->req_usage, 0, 0, 0, &infoflags);
       print_status_key_considered (keyblock, infoflags);
       if (found_key)
         pk_from_block (pk, keyblock, found_key);
@@ -3090,7 +3132,8 @@ merge_selfsigs_main (ctrl_t ctrl, kbnode_t keyblock, int *r_revoked,
   if (!key_usage)
     {
       /* No key flags at all: get it from the algo.  */
-      key_usage = openpgp_pk_algo_usage (pk->pubkey_algo);
+      key_usage = (openpgp_pk_algo_usage (pk->pubkey_algo)
+                   & PUBKEY_USAGE_BASIC_MASK);
     }
   else
     {
@@ -3364,7 +3407,8 @@ merge_selfsigs_subkey (ctrl_t ctrl, kbnode_t keyblock, kbnode_t subnode)
   if (!key_usage)
     {
       /* No key flags at all: get it from the algo.  */
-      key_usage = openpgp_pk_algo_usage (subpk->pubkey_algo);
+      key_usage = (openpgp_pk_algo_usage (subpk->pubkey_algo)
+                   & PUBKEY_USAGE_BASIC_MASK);
     }
   else
     {
@@ -3626,7 +3670,7 @@ merge_selfsigs (ctrl_t ctrl, kbnode_t keyblock)
  */
 static kbnode_t
 finish_lookup (kbnode_t keyblock, unsigned int req_usage, int want_exact,
-               int want_secret, unsigned int *r_flags)
+               int want_secret, int allow_adsk, unsigned int *r_flags)
 {
   kbnode_t k;
 
@@ -3647,6 +3691,9 @@ finish_lookup (kbnode_t keyblock, unsigned int req_usage, int want_exact,
 
 #define USAGE_MASK  (PUBKEY_USAGE_SIG|PUBKEY_USAGE_ENC|PUBKEY_USAGE_CERT)
   req_usage &= USAGE_MASK;
+  /* In allow ADSK mode make sure both encryption bits are set.  */
+  if (allow_adsk && (req_usage & PUBKEY_USAGE_XENC_MASK))
+    req_usage |= PUBKEY_USAGE_XENC_MASK;
 
   /* Request the primary if we're certifying another key, and also if
    * signing data while --pgp7 is on since pgp 7 do
@@ -3674,7 +3721,8 @@ finish_lookup (kbnode_t keyblock, unsigned int req_usage, int want_exact,
               pk->flags.exact = 1;
               break;
             }
-          else if ((k->pkt->pkt.public_key->pubkey_usage == PUBKEY_USAGE_RENC))
+          else if (!allow_adsk && (k->pkt->pkt.public_key->pubkey_usage
+                                   == PUBKEY_USAGE_RENC))
             {
               if (DBG_LOOKUP)
                 log_debug ("finish_lookup: found via ADSK - not selected\n");
@@ -3749,7 +3797,8 @@ finish_lookup (kbnode_t keyblock, unsigned int req_usage, int want_exact,
 		log_debug ("\tsubkey not valid\n");
 	      continue;
 	    }
-	  if (!((pk->pubkey_usage & USAGE_MASK) & req_usage))
+	  if (!((pk->pubkey_usage & (USAGE_MASK | PUBKEY_USAGE_RENC))
+                & req_usage))
 	    {
 	      if (DBG_LOOKUP)
 		log_debug ("\tusage does not match: want=%x have=%x\n",
@@ -3984,6 +4033,8 @@ lookup (ctrl_t ctrl, getkey_ctx_t ctx, int want_secret,
 	  rc = agent_probe_any_secret_key (ctrl, keyblock);
 	  if (gpg_err_code(rc) == GPG_ERR_NO_SECKEY)
 	    goto skip; /* No secret key available.  */
+	  if (gpg_err_code (rc) == GPG_ERR_PUBKEY_ALGO)
+	    goto skip; /* Not implemented algo - skip.  */
 	  if (rc)
 	    goto found; /* Unexpected error.  */
 	}
@@ -3992,7 +4043,8 @@ lookup (ctrl_t ctrl, getkey_ctx_t ctx, int want_secret,
        * merge_selfsigs.  */
       merge_selfsigs (ctrl, keyblock);
       found_key = finish_lookup (keyblock, ctx->req_usage, ctx->exact,
-                                 want_secret, &infoflags);
+                                 want_secret, ctx->allow_adsk,
+                                 &infoflags);
       print_status_key_considered (keyblock, infoflags);
       if (found_key)
 	{
@@ -4544,4 +4596,31 @@ have_secret_key_with_kid (ctrl_t ctrl, u32 *keyid)
 
   keydb_release (kdbhd);
   return result;
+}
+
+
+/* Return an error if KEYBLOCK has a primary or subkey with the given
+ * fingerprint (FPR,FPRLEN).  */
+gpg_error_t
+has_key_with_fingerprint (kbnode_t keyblock, const byte *fpr, size_t fprlen)
+{
+  kbnode_t node;
+  PKT_public_key *pk;
+  byte pkfpr[MAX_FINGERPRINT_LEN];
+  size_t pkfprlen;
+
+  for (node = keyblock; node; node = node->next)
+    {
+      if (node->pkt->pkttype == PKT_PUBLIC_KEY
+          || node->pkt->pkttype == PKT_PUBLIC_SUBKEY
+          || node->pkt->pkttype == PKT_SECRET_KEY
+          || node->pkt->pkttype == PKT_SECRET_SUBKEY)
+        {
+          pk = node->pkt->pkt.public_key;
+          fingerprint_from_pk (pk, pkfpr, &pkfprlen);
+          if (pkfprlen == fprlen && !memcmp (pkfpr, fpr, fprlen))
+            return gpg_error (GPG_ERR_DUP_KEY);
+        }
+    }
+  return 0;
 }

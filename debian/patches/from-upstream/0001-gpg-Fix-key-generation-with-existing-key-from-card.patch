@@ -1,0 +1,30 @@
+From: NIIBE Yutaka <gniibe@fsij.org>
+Date: Mon, 16 Dec 2024 09:56:24 +0900
+Subject: [PATCH 01/10] gpg: Fix key generation with existing key from card.
+
+* g10/keygen.c (ask_algo): Fix condition.  Continue the loop when
+failure.
+
+--
+
+Fixes-commit: 6022f10da39e512b5b3fed3869fd6579d954090c
+GnuPG-bug-id: 7309, 7457
+Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
+(cherry picked from commit cc3efe9a7312b1ca2c2398e439178e0b23e857df)
+---
+ g10/keygen.c | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/g10/keygen.c b/g10/keygen.c
+index 9b689a9..b301db9 100644
+--- a/g10/keygen.c
++++ b/g10/keygen.c
+@@ -2483,7 +2483,7 @@ ask_algo (ctrl_t ctrl, int addmode, int *r_subkey_algo, unsigned int *r_usage,
+                   if (!keyref)
+                     continue;
+ 
+-                  if (!agent_scd_readkey (ctrl, keyref, &s_pkey, NULL))
++                  if (agent_scd_readkey (ctrl, keyref, &s_pkey, NULL))
+                     continue;
+ 
+                   algostr = pubkey_algo_string (s_pkey, &algoid);

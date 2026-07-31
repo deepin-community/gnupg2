@@ -1,0 +1,83 @@
+From ad0c6c33c3d6fe7ff7cc8c2e73d02ead5788e5b3 Mon Sep 17 00:00:00 2001
+From: Werner Koch <wk@gnupg.org>
+Date: Mon, 27 Oct 2025 12:43:27 +0100
+Subject: [PATCH] gpg: Do not use a default when asking for another output
+ filename.
+Bug: https://dev.gnupg.org/T7908
+
+* g10/options.h (COMPAT_SUGGEST_EMBEDDED_NAME): New.
+* g10/gpg.c (compatibility_flags): New flags "suggest-embedded-name".
+* g10/openfile.c (ask_outfile_name): Do not show a default unless the
+compatibiliy flag is used.
+---
+ g10/gpg.c      |  1 +
+ g10/openfile.c | 12 +++++++++---
+ g10/options.h  |  5 +++++
+ 3 files changed, 15 insertions(+), 3 deletions(-)
+
+--- a/g10/gpg.c
++++ b/g10/gpg.c
+@@ -1035,10 +1035,11 @@ static struct debug_flags_s debug_flags
+ 
+ 
+ /* The list of compatibility flags.  */
+ static struct compatibility_flags_s compatibility_flags [] =
+   {
++    { COMPAT_SUGGEST_EMBEDDED_NAME, "suggest-embedded-name" },
+     { 0, NULL }
+   };
+ 
+ 
+ #ifdef ENABLE_SELINUX_HACKS
+--- a/g10/openfile.c
++++ b/g10/openfile.c
+@@ -123,23 +123,29 @@ make_outfile_name (const char *iname)
+    NULL if no file has been given or if it is not possible to ask the
+    user.  NAME is the template len which might contain enbedded Nuls.
+    NAMELEN is its actual length.
+  */
+ char *
+-ask_outfile_name( const char *name, size_t namelen )
++ask_outfile_name (const char *name, size_t namelen)
+ {
+   size_t n;
+   const char *s;
+   char *prompt;
+   char *fname;
+   char *defname;
+ 
+   if ( opt.batch )
+     return NULL;
+ 
+-  defname = name && namelen? make_printable_string (name, namelen, 0) : NULL;
+-
++  /* To avoid tricking the user into using the embedded filename we do
++   * not anymore include that name in the prompt as default.  For
++   * modern v5 signature this might make sense as they are now covered
++   * by the signature but we better leave such a decision to a GUI.  */
++  if (name && namelen && (opt.compat_flags & COMPAT_SUGGEST_EMBEDDED_NAME))
++    defname = make_printable_string (name, namelen, 0);
++  else
++    defname = NULL;
+   s = _("Enter new filename");
+   n = strlen(s) + (defname?strlen (defname):0) + 10;
+   prompt = xmalloc (n);
+   if (defname)
+     snprintf (prompt, n, "%s [%s]: ", s, defname );
+--- a/g10/options.h
++++ b/g10/options.h
+@@ -386,11 +386,13 @@ struct {
+ EXTERN_UNLESS_MAIN_MODULE int memory_debug_mode;
+ EXTERN_UNLESS_MAIN_MODULE int memory_stat_debug_mode;
+ 
+ /* Compatibility flags */
+ /* #define COMPAT_FOO   1 */
+-
++#define COMPAT_SUGGEST_EMBEDDED_NAME 16 /* Show the non-signed
++                                         * embedded filename as
++                                         * suggestion.  */
+ 
+ /* Compliance test macors.  */
+ #define GNUPG   (opt.compliance==CO_GNUPG || opt.compliance==CO_DE_VS)
+ #define OPENPGP (opt.compliance==CO_OPENPGP)
+ #define RFC2440 (opt.compliance==CO_RFC2440)

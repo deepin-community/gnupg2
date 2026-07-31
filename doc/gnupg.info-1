@@ -1,6 +1,7 @@
 This is gnupg.info, produced by makeinfo version 6.7 from gnupg.texi.
 
-This is the 'The GNU Privacy Guard Manual' (version 2.4.5, March 2024).
+This is the 'The GNU Privacy Guard Manual' (version 2.4.7, November
+2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -26,7 +27,8 @@ File: gnupg.info,  Node: Top,  Next: Installation,  Up: (dir)
 Using the GNU Privacy Guard
 ***************************
 
-This is the 'The GNU Privacy Guard Manual' (version 2.4.5, March 2024).
+This is the 'The GNU Privacy Guard Manual' (version 2.4.7, November
+2024).
 
    (C) 2002, 2004, 2005, 2006, 2007, 2010 Free Software Foundation, Inc.
 (C) 2013, 2014, 2015 Werner Koch.
@@ -2639,6 +2641,11 @@ File: gnupg.info,  Node: Operational GPG Commands,  Next: OpenPGP Key Management
      with this format as well.  It is suggested to avoid cleartext
      signatures in favor of detached signatures.
 
+     Note: With option '--batch' he verification of signatures stops at
+     the first bad signature.  This is a safe default for unattended
+     processing but sometimes a status for all signatures is needed.  To
+     override this early bailout use the option '--proc-all-sigs'.
+
      Note: To check whether a file was signed by a certain key the
      option '--assert-signer' can be used.  As an alternative the 'gpgv'
      tool can be used.  'gpgv' is designed to compare signed data
@@ -3079,7 +3086,9 @@ This section explains the main commands for key management.
      key's encryption subkey.  A subkey is commonly used here because by
      default a primary key has no encryption capability.  Use the option
      '--with-subkey-fingerprint' with a list command to display the
-     subkey fingerprints.
+     subkey fingerprints.  If the string "default" is used for ADSKFPR
+     all missing ADSKs configured with '--default-new-key-adsk' are
+     added.
 
 '--generate-key'
 '--gen-key'
@@ -3465,11 +3474,16 @@ This section explains the main commands for key management.
 '--quick-update-pref USER-ID'
      This command updates the preference list of the key to the current
      default value (either built-in or set via
-     '--default-preference-list').  This is the unattended version of of
+     '--default-preference-list').  This is the unattended version of
      using "setpref" in the '--key-edit' menu without giving a list.
      Note that you can show the preferences in a key listing by using
      '--list-options show-pref' or '--list-options show-pref-verbose'.
      You should also re-distribute updated keys to your peers.
+
+'--quick-set-ownertrust USER-ID VALUE'
+     This command sets the ownertrust of a key and can also be used to
+     set the disable flag of a key.  This is the unattended version of
+     using "trust", "disable", or "enable" in the '--key-edit' menu.
 
 '--change-passphrase USER-ID'
 '--passwd USER-ID'
@@ -3584,6 +3598,10 @@ usually found in the option file.
      Assume "no" on most questions.  Should not be used in an option
      file.
 
+'--proc-all-sigs'
+     This option overrides the behaviour of the '--batch' option to stop
+     signature verification at the first bad signatures.
+
 '--list-filter {select=EXPR}'
      A list filter can be used to output only certain keys during key
      listing commands.  For the available property names, see the
@@ -3610,6 +3628,10 @@ usually found in the option file.
           key listing.  This is a list of letters indicating the allowed
           usage for a key ('E'=encryption, 'S'=signing,
           'C'=certification, 'A'=authentication).  Defaults to yes.
+
+     show-ownertrust
+          Show the ownertrust value for keys also in the standard key
+          listing.  Defaults to no.
 
      show-policy-urls
           Show policy URLs in the '--check-signatures' listings.
@@ -3660,10 +3682,11 @@ usually found in the option file.
           fingerprint followed by the mail address.
 
      sort-sigs
-          With -list-sigs and -check-sigs sort the signatures by keyID
-          and creation time to make it easier to view the history of
-          these signatures.  The self-signature is also listed before
-          other signatures.  Defaults to yes.
+          With '--list-sigs' and '--check-sigs' sort the signatures by
+          keyID and creation time to make it easier to view the history
+          of these signatures.  The self-signature is also listed before
+          other signatures.  Defaults to yes.  This option has no effect
+          in '-with-colons' mode.
 
 '--verify-options PARAMETERS'
      This is a space or comma delimited string that gives options used
@@ -3940,13 +3963,25 @@ usually found in the option file.
 '--add-desig-revoker [sensitive:]FINGERPRINT'
      Add the key specified by FINGERPRINT as a designated revoker to
      newly created keys.  If the fingerprint is prefixed with the
-     keyword "sensitive:" that info is normally not exported wit the
-     key.  This option may be given several time to add more than one
+     keyword "sensitive:" that info is normally not exported with the
+     key.  This option may be given several times to add more than one
      designated revoker.  If the keyword "clear" is used instead of a
-     fingerprint, all designated options previously encountered are
-     discarded.  Designated revokers are marked on the key as
-     non-revocable.  Note that a designated revoker specified using a
-     parameter file will also be added to the key.
+     fingerprint, all previously fiven fingerprints are discarded.
+     Designated revokers are marked on the key as non-revocable.  Note
+     that a designated revoker specified using a parameter file will
+     also be added to the key.
+
+'--default-new-key-adsk FINGERPRINT'
+     Add the subkey specified by FINGERPRINT as an Additional Decryption
+     Subkey (ADSK) to newly created keys.  This option may be given
+     several time to add more than one ADSK. It is also possible to give
+     several fingerprints delimited by space or comma as value to this
+     option.  If the keyword "clear" is used instead of a fingerprint,
+     all previously specified fingerprints are discarded (useful to
+     override options given in a config file).  The fingerprint is
+     expected to specify a subkey and it does not need an exclamation
+     mark as suffix; it must be given in cmpact format (40 or 64
+     hex-digits without any spaces).
 
 '--trust-model {pgp|classic|tofu|tofu+pgp|direct|always|auto}'
      Set what trust model GnuPG should follow.  The models are:
@@ -4105,16 +4140,15 @@ usually found in the option file.
           Locate a key using the Web Key Directory protocol.
 
      ldap
-          Using DNS Service Discovery, check the domain in question for
-          any LDAP keyservers to use.  If this fails, attempt to locate
-          the key using the PGP Universal method of checking
-          'ldap://keys.(thedomain)'.
+          Locate the key using the configured LDAP servers.  This method
+          is similar to the 'keyserver' mechanism but always uses only
+          LDAP servers.
 
      ntds
           Locate the key using the Active Directory (Windows only).
           This method also allows one to search by fingerprint using the
           command '--locate-external-key'.  Note that this mechanism is
-          actually a shortcut for the mechanism 'keyserver' but using
+          actually a shortcut for the mechanism 'ldap' using only
           "ldap:///" as the keyserver.
 
      keyserver
@@ -4264,6 +4298,9 @@ usually found in the option file.
           When receiving a key, include subkeys as potential targets.
           Note that this option is not used with HKP keyservers, as they
           do not support retrieving keys by subkey id.
+
+     only-pubkeys
+          Do now allow to import secret keys.
 
      timeout
      http-proxy=VALUE
@@ -5891,7 +5928,7 @@ directory (*note option --homedir::).
      It may contain options pertaining to all components of GnuPG. Its
      current main use is for the "use-keyboxd" option.  If the default
      home directory '~/.gnupg' does not exist, GnuPG creates this
-     directory and a 'common.conf' file with "use_keyboxd".
+     directory and a 'common.conf' file with "use-keyboxd".
 
    Note that on larger installations, it is useful to put predefined
 files into the directory '/usr/local/etc/skel/.gnupg' so that newly
@@ -6971,99 +7008,4 @@ File: gnupg.info,  Node: Certificate Options,  Next: Input and Output,  Prev: Co
      rejected due to an unknown critical extension.  Use this option
      with care because extensions are usually flagged as critical for a
      reason.
-
-
-File: gnupg.info,  Node: Input and Output,  Next: CMS Options,  Prev: Certificate Options,  Up: GPGSM Options
-
-5.2.3 Input and Output
-----------------------
-
-'--armor'
-'-a'
-     Create PEM encoded output.  Default is binary output.
-
-'--base64'
-     Create Base-64 encoded output; i.e.  PEM without the header lines.
-
-'--assume-armor'
-     Assume the input data is PEM encoded.  Default is to autodetect the
-     encoding but this is may fail.
-
-'--assume-base64'
-     Assume the input data is plain base-64 encoded.
-
-'--assume-binary'
-     Assume the input data is binary encoded.
-
-'--input-size-hint N'
-     This option can be used to tell GPGSM the size of the input data in
-     bytes.  N must be a positive base-10 number.  It is used by the
-     '--status-fd' line "PROGRESS" to provide a value for "total" if
-     that is not available by other means.
-
-'--p12-charset NAME'
-     'gpgsm' uses the UTF-8 encoding when encoding passphrases for
-     PKCS#12 files.  This option may be used to force the passphrase to
-     be encoded in the specified encoding NAME.  This is useful if the
-     application used to import the key uses a different encoding and
-     thus will not be able to import a file generated by 'gpgsm'.
-     Commonly used values for NAME are 'Latin1' and 'CP850'.  Note that
-     'gpgsm' itself automagically imports any file with a passphrase
-     encoded to the most commonly used encodings.
-
-'--default-key USER_ID'
-     Use USER_ID as the standard key for signing.  This key is used if
-     no other key has been defined as a signing key.  Note, that the
-     first '--local-users' option also sets this key if it has not yet
-     been set; however '--default-key' always overrides this.
-
-'--local-user USER_ID'
-'-u USER_ID'
-     Set the user(s) to be used for signing.  The default is the first
-     secret key found in the database.
-
-'--recipient NAME'
-'-r'
-     Encrypt to the user id NAME.  There are several ways a user id may
-     be given (*note how-to-specify-a-user-id::).
-
-'--output FILE'
-'-o FILE'
-     Write output to FILE.  The default is to write it to stdout.
-
-'--with-key-data'
-     Displays extra information with the '--list-keys' commands.
-     Especially a line tagged 'grp' is printed which tells you the
-     keygrip of a key.  This string is for example used as the file name
-     of the secret key.  Implies '--with-colons'.
-
-'--with-validation'
-     When doing a key listing, do a full validation check for each key
-     and print the result.  This is usually a slow operation because it
-     requires a CRL lookup and other operations.
-
-     When used along with '--import', a validation of the certificate to
-     import is done and only imported if it succeeds the test.  Note
-     that this does not affect an already available certificate in the
-     DB. This option is therefore useful to simply verify a certificate.
-
-'--with-md5-fingerprint'
-     For standard key listings, also print the MD5 fingerprint of the
-     certificate.
-
-'--with-keygrip'
-     Include the keygrip in standard key listings.  Note that the
-     keygrip is always listed in '--with-colons' mode.
-
-'--with-secret'
-     Include info about the presence of a secret key in public key
-     listings done with '--with-colons'.
-
-'--no-pretty-dn'
-     By default gpgsm prints distinguished names (DNs) like the Issuer
-     or Subject in a more readable format (e.g.  using a well defined
-     order of the parts).  However, this format can't be used as input
-     strings.  This option reverts printing to standard RFC-2253 format
-     and thus avoids the need to use -dump-cert or -with-colons to get
-     the "real" name.
 

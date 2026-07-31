@@ -5,11 +5,15 @@ Maintainer: Debian GnuPG Maintainers <pkg-gnupg-maint@lists.alioth.debian.org>
 Uploaders:
  Eric Dorland <eric@debian.org>,
  Daniel Kahn Gillmor <dkg@fifthhorseman.net>,
-Standards-Version: 4.7.0
+ Andreas Metzler <ametzler@debian.org>,
+Standards-Version: 4.7.2
+# update swptm arch list with
+# rmadison -s sid swtpm | sed -e 's/.* source, //' -e 's/,//g'
 Build-Depends:
+ debhelper-compat (= 13),
+ dh-sequence-builtusing,
  automake,
  autopoint,
- debhelper-compat (= 13),
  fig2dev <!nodoc>,
  file,
  gettext,
@@ -22,26 +26,28 @@ Build-Depends:
  libgnutls28-dev (>= 3.2),
  libgpg-error-dev (>= 1.46),
  libksba-dev (>= 1.6.3),
- libldap2-dev,
+ libldap2-dev <!pkg.gnupg2.gpgvonly>,
  libnpth0-dev (>= 1.2),
- libreadline-dev,
+ libreadline-dev <!pkg.gnupg2.gpgvonly>,
  librsvg2-bin <!nodoc>,
- libsqlite3-dev,
- libusb-1.0-0-dev [!hurd-any],
- openssh-client <!nocheck>,
+ libsqlite3-dev <!pkg.gnupg2.gpgvonly>,
+ libtss2-dev <!pkg.gnupg2.gpgvonly>,
+ libusb-1.0-0-dev [!hurd-any] <!pkg.gnupg2.gpgvonly>,
+ openssh-client <!nocheck !pkg.gnupg2.gpgvonly>,
  pkgconf,
+ swtpm [amd64 arm64 armel armhf i386 mips64el ppc64el riscv64 s390x] <!nocheck !pkg.gnupg2.gpgvonly>,
  texinfo <!nodoc>,
  unicode-data,
  zlib1g-dev | libz-dev,
 Build-Depends-Indep:
- binutils-multiarch [!sw64 !loong64 !amd64 !i386],
- libassuan-mingw-w64-dev (>= 2.5.0) [!sw64 !loong64],
- libgcrypt-mingw-w64-dev (>= 1.9.1) [!sw64 !loong64],
- libgpg-error-mingw-w64-dev (>= 1.46) [!sw64 !loong64],
- libksba-mingw-w64-dev (>= 1.6.3) [!sw64 !loong64],
- libnpth-mingw-w64-dev (>= 1.2) [!sw64 !loong64],
- libz-mingw-w64-dev [!sw64 !loong64],
- mingw-w64 [!sw64 !loong64],
+ binutils-multiarch [!amd64 !i386] <!pkg.gnupg2.gpgvonly>,
+ libassuan-mingw-w64-dev (>= 2.5.0) <!pkg.gnupg2.gpgvonly>,
+ libgcrypt-mingw-w64-dev (>= 1.9.1) <!pkg.gnupg2.gpgvonly>,
+ libgpg-error-mingw-w64-dev (>= 1.50-4~) <!pkg.gnupg2.gpgvonly>,
+ libksba-mingw-w64-dev (>= 1.6.3) <!pkg.gnupg2.gpgvonly>,
+ libnpth-mingw-w64-dev (>= 1.2) <!pkg.gnupg2.gpgvonly>,
+ libz-mingw-w64-dev <!pkg.gnupg2.gpgvonly>,
+ mingw-w64 <!pkg.gnupg2.gpgvonly>,
 Vcs-Git: https://salsa.debian.org/debian/gnupg2.git
 Vcs-Browser: https://salsa.debian.org/debian/gnupg2
 Homepage: https://www.gnupg.org/
@@ -50,6 +56,7 @@ Rules-Requires-Root: no
 Package: gpgconf
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
@@ -71,6 +78,7 @@ Package: gnupg-agent
 Architecture: all
 Section: oldlibs
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  gpg-agent (>= ${source:Version}),
  ${misc:Depends},
@@ -85,6 +93,7 @@ Description: GNU privacy guard - cryptographic agent (dummy transitional package
 Package: gpg-agent
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  gpgconf (= ${binary:Version}),
  pinentry-curses | pinentry,
@@ -98,6 +107,7 @@ Suggests:
  libpam-systemd,
  pinentry-gnome3,
  scdaemon,
+ tpm2daemon,
 Replaces:
  gnupg-agent (<< 2.1.21-4),
 Breaks:
@@ -120,6 +130,7 @@ Description: GNU privacy guard - cryptographic agent
 Package: gpg-wks-server
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  default-mta | mail-transport-agent,
  gpg (= ${binary:Version}),
@@ -147,6 +158,7 @@ Description: GNU privacy guard - Web Key Service server
 Package: gpg-wks-client
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  dirmngr (= ${binary:Version}),
  gpg (= ${binary:Version}),
@@ -174,6 +186,7 @@ Description: GNU privacy guard - Web Key Service client
 Package: scdaemon
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  gpg-agent (= ${binary:Version}),
  ${misc:Depends},
@@ -192,6 +205,7 @@ Description: GNU privacy guard - smart card support
 Package: gpgsm
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  gpgconf (= ${binary:Version}),
  ${misc:Depends},
@@ -212,6 +226,7 @@ Description: GNU privacy guard - S/MIME version
 Package: gpg
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  gpgconf (= ${binary:Version}),
  ${misc:Depends},
@@ -221,8 +236,12 @@ Recommends:
  ${shlibs:Recommends},
 Breaks:
  gnupg (<< 2.1.21-4),
+ keyboxd (<< 2.4.7-4),
 Replaces:
  gnupg (<< 2.1.21-4),
+ keyboxd (<< 2.4.7-4),
+Provides:
+ keyboxd (= ${binary:Version}),
 Description: GNU Privacy Guard -- minimalist public key operations
  GnuPG is GNU's tool for secure communication and data storage.
  It can be used to encrypt data and to create digital signatures.
@@ -239,6 +258,7 @@ Package: gnupg
 Architecture: all
 Section: metapackages
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  dirmngr (<< ${source:Version}.1~),
  dirmngr (>= ${source:Version}),
@@ -249,8 +269,6 @@ Depends:
  gpg-agent (>= ${source:Version}),
  gpgsm (<< ${source:Version}.1~),
  gpgsm (>= ${source:Version}),
- keyboxd (<< ${source:Version}.1~),
- keyboxd (>= ${source:Version}),
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
@@ -290,6 +308,7 @@ Package: gnupg2
 Architecture: all
 Section: oldlibs
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  gnupg (>= ${source:Version}),
  ${misc:Depends},
@@ -325,6 +344,7 @@ Description: GNU privacy guard - signature verification tool
 Package: dirmngr
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  adduser,
  gpgconf (= ${binary:Version}),
@@ -355,31 +375,34 @@ Description: GNU privacy guard - network certificate management service
  among other tools.  Unless this package is installed, the parts of
  the GnuPG suite that try to interact with the network will fail.
 
-Package: keyboxd
+Package: tpm2daemon
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  gpgconf (= ${binary:Version}),
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
- gnupg (= ${source:Version}),
+ gnupg (= ${binary:Version}),
  ${shlibs:Recommends},
 Suggests:
  dbus-user-session,
  libpam-systemd,
-Description: GNU privacy guard - public key material service
+Enhances:
+ gpg-agent,
+Description: GNU privacy guard - TPM2 support
  GnuPG is GNU's tool for secure communication and data storage.
  It can be used to encrypt data and to create digital signatures.
  It includes an advanced key management facility and is compliant
  with the proposed OpenPGP Internet standard as described in RFC4880.
  .
- keyboxd is a server for managing public key material of OpenPGP and
- S/MIME.
+ tpm2daemon is a server allowing the use of a TPM2 device to provide
+ hardware backed OpenPGP keys.
 
 Package: gpgv-udeb
 Package-Type: udeb
-Build-Profiles: <!noudeb>
+Build-Profiles: <!noudeb !pkg.gnupg2.gpgvonly>
 Section: debian-installer
 Architecture: any
 Depends:
@@ -397,12 +420,18 @@ Description: minimal signature verification tool
 Package: gpgv-static
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  ${misc:Depends},
  ${shlibs:Depends},
 Recommends:
  debian-archive-keyring,
  debootstrap,
+Built-Using:
+ ${dh-builtusing:libc-dev-bin},
+ ${dh-builtusing:libgcryptS-dev},
+ ${dh-builtusing:libgpg-error-dev},
+Static-Built-Using: ${dh-builtusing:zlib1g-dev}
 Description: minimal signature verification tool (static build)
  GnuPG is GNU's tool for secure communication and data storage.
  It can be used to encrypt data and to create digital signatures.
@@ -421,6 +450,15 @@ Description: minimal signature verification tool (static build)
 Package: gpgv-win32
 Architecture: all
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
+Built-Using:
+ ${dh-builtusing:libassuan-mingw-w64-dev},
+ ${dh-builtusing:libgcrypt-mingw-w64-dev},
+ ${dh-builtusing:libgpg-error-mingw-w64-dev},
+ ${dh-builtusing:libksba-mingw-w64-dev},
+ ${dh-builtusing:libnpth-mingw-w64-dev},
+ ${dh-builtusing:mingw-w64},
+Static-Built-Using: ${dh-builtusing:libz-mingw-w64-dev}
 Depends:
  ${misc:Depends},
 Suggests:
@@ -440,6 +478,7 @@ Package: gnupg-l10n
 Section: localization
 Architecture: all
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Depends:
  ${misc:Depends},
 Enhances:
@@ -458,6 +497,7 @@ Description: GNU privacy guard - localization files
 Package: gnupg-utils
 Architecture: any
 Multi-Arch: foreign
+Build-Profiles: <!pkg.gnupg2.gpgvonly>
 Replaces:
  gnupg (<< 2.1.21-4),
  gnupg-agent (<< 2.1.21-4),

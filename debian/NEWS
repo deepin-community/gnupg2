@@ -1,3 +1,38 @@
+gnupg2 (2.4.7-15) unstable; urgency=medium
+
+  GnuPG 2.4 will not automatically fallback to the PC/SC driver for smartcard
+  access if direct access fails. Users using pcscd for hardware access will
+  need to explicitly disable the gnupg CCID driver. See --disable-ccid in
+  scdaemon.1 and #1102717
+
+ -- Andreas Metzler <ametzler@debian.org>  Sun, 13 Apr 2025 13:50:29 +0200
+
+gnupg2 (2.4.7-4) experimental; urgency=medium
+
+  The upstream GnuPG project now explicitly and deliberately diverges from
+  the OpenPGP standard.  Debian's own workflows rely heavily on OpenPGP,
+  and we ship several different OpenPGP implementations, so
+  interoperability via standardization is a priority for the project.
+
+  While Debian still has significant dependencies on GnuPG, the version of
+  GnuPG shipped in Debian will default to emitting only OpenPGP-compatible
+  artifacts if at all possible.  As of 2.4.7-4, the default
+  is --compliance=openpgp, and we apply several patches to ensure that
+  this mode is respected.
+
+  If you observe GnuPG in Debian emitting a non-OpenPGP artifact in a
+  scenario where a standard OpenPGP artifact is intended or expected,
+  please open a critical bug report in the Debian BTS.
+
+  If you want Debian's GnuPG to emit non-standardized artifacts, in line
+  with upstream's deliberate divergence, you can explicitly pass
+  --compliance=gnupg (or set the corresponding option in
+  ~/.gnupg/gpg.conf).  If you revert to compliance with upstream defaults,
+  do not expect the material you produce to be interoperable with other
+  OpenPGP implementations.
+
+ -- Daniel Kahn Gillmor <dkg@fifthhorseman.net>  Fri, 07 Feb 2025 23:35:29 -0500
+
 gnupg2 (2.2.27-2) unstable; urgency=medium
 
   Starting with version 2.2.27-1, per-user configuration of the GnuPG

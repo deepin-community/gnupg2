@@ -1,0 +1,47 @@
+From: Andreas Metzler <ametzler@debian.org>
+Date: Sat, 2 Nov 2024 14:49:42 +0100
+Subject: Do not install gnupg.7.html into usr/share/man/manh/
+
+Origin: vendor
+Bug: https://lists.gnupg.org/pipermail/gnupg-devel/2024-October/035661.html
+Last-Update: 2024-11-02
+Forwarded: https://dev.gnupg.org/T7520
+---
+ doc/Makefile.am | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/doc/Makefile.am b/doc/Makefile.am
+index e7d96e5..d9ad93b 100644
+--- a/doc/Makefile.am
++++ b/doc/Makefile.am
+@@ -101,9 +101,10 @@ myhtmlman_pages = \
+                 gpgtar.1.html gpg-mail-tube.1.html \
+ 		applygnupgdefaults.8.html gpg-wks-client.1.html \
+                 gpg-wks-server.1.html \
+-		dirmngr-client.1.html gpg-card.1.html gpg-check-pattern.1.html
++		dirmngr-client.1.html gpg-card.1.html gpg-check-pattern.1.html \
++		gnupg.7.html
+ 
+-man_MANS = $(myman_pages) gnupg.7 gnupg.7.html
++man_MANS = $(myman_pages) gnupg.7
+ 
+ watchgnupg_SOURCE = gnupg.texi
+ 
+@@ -111,7 +112,7 @@ watchgnupg_SOURCE = gnupg.texi
+ CLEANFILES = yat2m mkdefsinc defs.inc
+ 
+ DISTCLEANFILES = gnupg.tmp gnupg.ops yat2m-stamp.tmp yat2m-stamp \
+-		 $(myman_pages) gnupg.7 gnupg.7.html $(myhtmlman_pages)
++		 $(myman_pages) gnupg.7 $(myhtmlman_pages)
+ 
+ yat2m: yat2m.c
+ 	$(CC_FOR_BUILD) -o $@ $(srcdir)/yat2m.c
+@@ -160,7 +161,7 @@ yat2m-stamp: $(myman_sources) defs.inc
+ 
+ yat2m-stamp: $(YAT2M)
+ 
+-$(myman_pages) $(myhtmlman_pages) gnupg.7 gnupg.7.html : yat2m-stamp defs.inc
++$(myman_pages) $(myhtmlman_pages) gnupg.7 : yat2m-stamp defs.inc
+ 	@if test -f $@; then :; else \
+             trap 'rm -rf yat2m-stamp yat2m-lock' 1 2 13 15; \
+                if mkdir yat2m-lock 2>/dev/null; then \

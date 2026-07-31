@@ -1,0 +1,228 @@
+From: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
+Date: Fri, 11 Apr 2025 16:59:20 -0400
+Subject: gpgv: Avoid Assuan and NPth dependencies
+
+* g10/internal-keydb.c: (new file) stub functions for basic keydb
+parsing without talking to keyboxd.
+* g10/Makefile.am: gpgv depend on internal-keydb instead of
+call-keyboxd; gpgv links to libcommon, not libcommonpth
+
+--
+
+This avoids unnecessary dependencies on libassuan and libnpth in gpgv.
+Since gpgv is targeted toward minimal environments, keeping a reduced
+set of dependencies is beneficial.
+
+GnuPG-Bug-Id: T7603
+Signed-off-by: Daniel Kahn Gillmor <dkg@fifthhorseman.net>
+---
+ g10/Makefile.am      |  27 ++++++------
+ g10/internal-keydb.c | 118 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ 2 files changed, 132 insertions(+), 13 deletions(-)
+ create mode 100644 g10/internal-keydb.c
+
+diff --git a/g10/Makefile.am b/g10/Makefile.am
+index e8d8e90..a74c38a 100644
+--- a/g10/Makefile.am
++++ b/g10/Makefile.am
+@@ -33,7 +33,7 @@ include $(top_srcdir)/am/cmacros.am
+ AM_CFLAGS = $(SQLITE3_CFLAGS) $(LIBGCRYPT_CFLAGS) \
+             $(LIBASSUAN_CFLAGS) $(NPTH_CFLAGS) $(GPG_ERROR_CFLAGS)
+ 
+-needed_libs = ../kbx/libkeybox.a $(libcommonpth) ../regexp/libregexp.a
++needed_libs = ../kbx/libkeybox.a ../regexp/libregexp.a
+ 
+ # Because there are no program specific transform macros we need to
+ # work around that to allow installing gpg as gpg2.
+@@ -104,7 +104,6 @@ common_source =  \
+ 	      expand-group.c	\
+ 	      keydb.h           \
+ 	      keydb-private.h   \
+-              call-keyboxd.c    \
+ 	      keydb.c           \
+ 	      keyring.c keyring.h \
+ 	      seskey.c		\
+@@ -132,6 +131,7 @@ common_source =  \
+ 
+ gpg_sources = server.c          \
+ 	      $(common_source)	\
++              call-keyboxd.c    \
+ 	      pkclist.c 	\
+ 	      skclist.c 	\
+ 	      pubkey-enc.c	\
+@@ -168,16 +168,17 @@ gpg_SOURCES  = gpg.c \
+ 
+ gpgv_SOURCES = gpgv.c           \
+ 	      $(common_source)  \
++	      internal-keydb.c  \
+ 	      verify.c
+ 
+ LDADD =  $(needed_libs) ../common/libgpgrl.a \
+          $(ZLIBS) $(LIBINTL) $(CAPLIBS)
+-gpg_LDADD = $(LDADD) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
++gpg_LDADD = $(LDADD) $(libcommonpth) $(SQLITE3_LIBS) $(LIBGCRYPT_LIBS) $(LIBREADLINE) \
+              $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+ 	     $(LIBICONV) $(gpg_rc_objs)
+ gpg_LDFLAGS =
+-gpgv_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
+-	      $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
++gpgv_LDADD = $(LDADD) $(libcommon) $(LIBGCRYPT_LIBS) \
++	      $(GPG_ERROR_LIBS) $(NETLIBS) \
+ 	      $(LIBICONV) $(gpgv_rc_objs)
+ gpgv_LDFLAGS =
+ 
+@@ -186,22 +187,22 @@ t_common_ldadd =
+ module_tests = t-rmd160 t-keydb t-keydb-get-keyblock t-stutter t-keyid
+ t_rmd160_SOURCES = t-rmd160.c rmd160.c
+ t_rmd160_LDADD = $(t_common_ldadd)
+-t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source)
+-t_keydb_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
++t_keydb_SOURCES = t-keydb.c test-stubs.c $(common_source) call-keyboxd.c
++t_keydb_LDADD = $(LDADD) $(libcommonpth) $(LIBGCRYPT_LIBS) \
+               $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+ 	      $(LIBICONV) $(t_common_ldadd)
+ t_keydb_get_keyblock_SOURCES = t-keydb-get-keyblock.c test-stubs.c \
+-	      $(common_source)
+-t_keydb_get_keyblock_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
++	      $(common_source) call-keyboxd.c
++t_keydb_get_keyblock_LDADD = $(LDADD) $(libcommonpth) $(LIBGCRYPT_LIBS) \
+               $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+ 	      $(LIBICONV) $(t_common_ldadd)
+ t_stutter_SOURCES = t-stutter.c test-stubs.c \
+-	      $(common_source)
+-t_stutter_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
++	      $(common_source) call-keyboxd.c
++t_stutter_LDADD = $(LDADD) $(libcommonpth) $(LIBGCRYPT_LIBS) \
+ 	      $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+ 	      $(LIBICONV) $(t_common_ldadd)
+-t_keyid_SOURCES = t-keyid.c test-stubs.c $(common_source)
+-t_keyid_LDADD = $(LDADD) $(LIBGCRYPT_LIBS) \
++t_keyid_SOURCES = t-keyid.c test-stubs.c $(common_source) call-keyboxd.c
++t_keyid_LDADD = $(LDADD) $(libcommonpth) $(LIBGCRYPT_LIBS) \
+               $(LIBASSUAN_LIBS) $(NPTH_LIBS) $(GPG_ERROR_LIBS) $(NETLIBS) \
+ 	      $(LIBICONV) $(t_common_ldadd)
+ 
+diff --git a/g10/internal-keydb.c b/g10/internal-keydb.c
+new file mode 100644
+index 0000000..a7ffeae
+--- /dev/null
++++ b/g10/internal-keydb.c
+@@ -0,0 +1,118 @@
++/* internal-keydb.c - Access a keydb directly, without keyboxd
++ * Copyright (C) 2025  g10 Code GmbH
++ *
++ * This file is part of GnuPG.
++ *
++ * GnuPG is free software; you can redistribute it and/or modify
++ * it under the terms of the GNU General Public License as published by
++ * the Free Software Foundation; either version 3 of the License, or
++ * (at your option) any later version.
++ *
++ * GnuPG is distributed in the hope that it will be useful,
++ * but WITHOUT ANY WARRANTY; without even the implied warranty of
++ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
++ * GNU General Public License for more details.
++ *
++ * You should have received a copy of the GNU General Public License
++ * along with this program; if not, see <https://www.gnu.org/licenses/>.
++ * SPDX-License-Identifier: GPL-3.0-or-later
++ */
++
++/* This is extracted from call-keyboxd.h with all references to
++ * keyboxd stripped.  The goal is to be able to use it in gpgv, since
++ * that tool never talks to the keybox daemon */
++
++#include <config.h>
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <errno.h>
++#include <unistd.h>
++#include <time.h>
++#ifdef HAVE_LOCALE_H
++# include <locale.h>
++#endif
++#include "gpg.h"
++#include "../common/util.h"
++#include "../common/membuf.h"
++#include "options.h"
++#include "../common/i18n.h"
++#include "keydb.h"
++#include "keydb-private.h"  /* For struct keydb_handle_s */
++
++KEYDB_HANDLE
++keydb_new (ctrl_t ctrl)
++{
++  gpg_error_t err;
++  KEYDB_HANDLE hd;
++
++  if (DBG_CLOCK)
++    log_clock ("keydb_new");
++
++  hd = xtrycalloc (1, sizeof *hd);
++  if (!hd)
++    {
++      err = gpg_error_from_syserror ();
++      goto leave;
++    }
++
++  err = internal_keydb_init (hd);
++
++ leave:
++  if (err)
++    {
++      int rc;
++      log_error (_("error opening key DB: %s\n"), gpg_strerror (err));
++      xfree (hd);
++      hd = NULL;
++      if (!(rc = gpg_err_code_to_errno (err)))
++        rc = gpg_err_code_to_errno (GPG_ERR_EIO);
++      gpg_err_set_errno (rc);
++    }
++  return hd;
++}
++
++void
++keydb_release (KEYDB_HANDLE hd)
++{
++  if (!hd)
++    return;
++  internal_keydb_deinit (hd);
++  xfree (hd);
++}
++
++gpg_error_t
++keydb_lock (KEYDB_HANDLE hd)
++{
++  return internal_keydb_lock (hd);
++}
++
++gpg_error_t
++keydb_get_keyblock (KEYDB_HANDLE hd, kbnode_t *ret_kb)
++{
++  if (!hd)
++    return gpg_error (GPG_ERR_INV_ARG);
++  return internal_keydb_get_keyblock (hd, ret_kb);
++}
++
++gpg_error_t
++keydb_search (KEYDB_HANDLE hd, KEYDB_SEARCH_DESC *desc,
++              size_t ndesc, size_t *descindex)
++{
++  if (!hd)
++    return gpg_error (GPG_ERR_INV_ARG);
++
++  if (descindex)
++    *descindex = 0; /* Make sure it is always set on return.  */
++
++  return internal_keydb_search (hd, desc, ndesc, descindex);
++}
++
++gpg_error_t
++keydb_search_reset (KEYDB_HANDLE hd)
++{
++  if (!hd)
++    return gpg_error (GPG_ERR_INV_ARG);
++
++  return internal_keydb_search_reset (hd);
++}

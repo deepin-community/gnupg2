@@ -1,0 +1,2 @@
+# this the distribution signature for gpg itself; no point in changing the file extension:
+gpgconf: openpgp-file-has-implementation-specific-extension [usr/share/gnupg/distsigkey.gpg]

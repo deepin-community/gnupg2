@@ -1,0 +1,36 @@
+Description: Do not use keyboxd as a default for new installs
+ Do not initialize a common.conf with `use-keyboxd` in it on new installs,
+ keyboxd completely breaks all --keyring arguments, silently...
+Author: Julian Andres Klode <julian.klode@canonical.com>
+Forwarded: https://dev.gnupg.org/T7598
+--- a/common/homedir.c
++++ b/common/homedir.c
+@@ -166,11 +166,11 @@ w32_shgetfolderpath (HWND a, int b, HAND
+  * enable the keyboxd.  This should only be called for the standard
+  * home directory and only if that directory has just been created.  */
+ static void
+ create_common_conf (const char *dname)
+ {
+-#ifdef BUILD_WITH_KEYBOXD
++#if 0
+   estream_t fp;
+   char *fcommon;
+ 
+   fcommon = make_filename (dname, "common.conf", NULL);
+   fp = es_fopen (fcommon, "wx,mode=-rw-r");
+--- a/README
++++ b/README
+@@ -135,13 +135,10 @@
+   "use-keyboxd" into the configuration file ~/.gnupg/common.conf or the
+   global /etc/gnupg/common.conf.  See also doc/examples/common.conf.
+   Only public keys and X.509 certificates are managed by the keyboxd;
+   private keys are still stored as separate files.
+ 
+-  Since version 2.4.1 the keyboxd will be used by default for a fresh
+-  install; i.e. if a ~/.gnupg directory did not yet exist.
+-
+   Note that there is no automatic migration; if the use-keyboxd option
+   is enabled keys are not taken from pubring.kbx.  To migrate existing
+   keys to the keyboxd do this:
+ 
+   1. Disable the keyboxd (remove use-keyboxd from common.conf)

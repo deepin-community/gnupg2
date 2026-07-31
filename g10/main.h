@@ -327,6 +327,8 @@ gpg_error_t make_backsig (ctrl_t ctrl,
                           PKT_signature *sig, PKT_public_key *pk,
                           PKT_public_key *sub_pk, PKT_public_key *sub_psk,
                           u32 timestamp, const char *cache_nonce);
+void keygen_prepare_new_key_adsks (void);
+gpg_error_t append_all_default_adsks (ctrl_t ctrl, kbnode_t pub_root);
 gpg_error_t generate_subkeypair (ctrl_t ctrl, kbnode_t keyblock,
                                  const char *algostr,
                                  const char *usagestr,
@@ -475,7 +477,7 @@ void list_keyblock_direct (ctrl_t ctrl, kbnode_t keyblock, int secret,
 int  cmp_signodes (const void *av, const void *bv);
 void print_fingerprint (ctrl_t ctrl, estream_t fp,
                         PKT_public_key *pk, int mode);
-void print_revokers (estream_t fp, PKT_public_key *pk);
+void print_revokers (estream_t fp, int colon_mode, PKT_public_key *pk);
 void show_preferences (PKT_user_id *uid, int indent, int mode, int verbose);
 void show_policy_url(PKT_signature *sig,int indent,int mode);
 void show_keyserver_url(PKT_signature *sig,int indent,int mode);

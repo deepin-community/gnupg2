@@ -1,6 +1,7 @@
 From: NIIBE Yutaka <gniibe@fsij.org>
 Date: Wed, 30 Aug 2023 10:57:36 +0900
 Subject: [PATCH 1/9] agent: Use a thread to monitor socket takeover.
+
 Applied-Upstream: commit 95186ae92f923df6240f1b677cbaf130c4f64fae
 Last-Update: 2023-09-04
 
@@ -18,13 +19,13 @@ Check socket_takeover_detected to handle the event.
 GnuPG-bug-id: 6692
 Signed-off-by: NIIBE Yutaka <gniibe@fsij.org>
 ---
- agent/gpg-agent.c | 107 +++++++++++++++++++---------------------------
+ agent/gpg-agent.c | 107 +++++++++++++++++++++++-------------------------------
  1 file changed, 45 insertions(+), 62 deletions(-)
 
-Index: gnupg2/agent/gpg-agent.c
-===================================================================
---- gnupg2.orig/agent/gpg-agent.c
-+++ gnupg2/agent/gpg-agent.c
+diff --git a/agent/gpg-agent.c b/agent/gpg-agent.c
+index 6cb67c1..67a5c02 100644
+--- a/agent/gpg-agent.c
++++ b/agent/gpg-agent.c
 @@ -387,9 +387,6 @@ static int startup_signal_mask_valid;
  /* Flag to indicate that a shutdown was requested.  */
  static int shutdown_pending;
@@ -45,7 +46,7 @@ Index: gnupg2/agent/gpg-agent.c
  /* Flag to inhibit socket removal in cleanup.  */
  static int inhibit_socket_removal;
  
-@@ -531,8 +531,8 @@ static void handle_connections (gnupg_fd
+@@ -531,8 +531,8 @@ static void handle_connections (gnupg_fd_t listen_fd,
                                  gnupg_fd_t listen_fd_extra,
                                  gnupg_fd_t listen_fd_browser,
                                  gnupg_fd_t listen_fd_ssh);
@@ -55,7 +56,7 @@ Index: gnupg2/agent/gpg-agent.c
  
  /* Pth wrapper function definitions. */
  ASSUAN_SYSTEM_NPTH_IMPL;
-@@ -2451,12 +2451,8 @@ create_directories (void)
+@@ -2457,12 +2457,8 @@ create_directories (void)
  static void
  handle_tick (void)
  {
@@ -68,7 +69,7 @@ Index: gnupg2/agent/gpg-agent.c
    /* If we are running as a child of another process, check whether
       the parent is still alive and shutdown if not. */
  #ifndef HAVE_W32_SYSTEM
-@@ -2473,15 +2469,6 @@ handle_tick (void)
+@@ -2479,15 +2475,6 @@ handle_tick (void)
      }
  #endif /*HAVE_W32_SYSTEM*/
  
@@ -84,7 +85,7 @@ Index: gnupg2/agent/gpg-agent.c
    /* Need to check for expired cache entries.  */
    agent_cache_housekeeping ();
  
-@@ -3108,6 +3095,15 @@ handle_connections (gnupg_fd_t listen_fd
+@@ -3114,6 +3101,15 @@ handle_connections (gnupg_fd_t listen_fd,
    else
      have_homedir_inotify = 1;
  
@@ -100,7 +101,7 @@ Index: gnupg2/agent/gpg-agent.c
    /* On Windows we need to fire up a separate thread to listen for
       requests from Putty (an SSH client), so we can replace Putty's
       Pageant (its ssh-agent implementation). */
-@@ -3287,6 +3283,15 @@ handle_connections (gnupg_fd_t listen_fd
+@@ -3293,6 +3289,15 @@ handle_connections (gnupg_fd_t listen_fd,
            log_info ("homedir has been removed - shutting down\n");
          }
  
@@ -116,7 +117,7 @@ Index: gnupg2/agent/gpg-agent.c
        if (!shutdown_pending)
          {
            int idx;
-@@ -3367,20 +3372,18 @@ check_own_socket_pid_cb (void *opaque, c
+@@ -3373,20 +3378,18 @@ check_own_socket_pid_cb (void *opaque, const void *buffer, size_t length)
  }
  
  
@@ -143,7 +144,7 @@ Index: gnupg2/agent/gpg-agent.c
    rc = assuan_new (&ctx);
    if (rc)
      {
-@@ -3418,57 +3421,37 @@ check_own_socket_thread (void *arg)
+@@ -3424,57 +3427,37 @@ check_own_socket_thread (void *arg)
    xfree (buffer);
  
   leave:

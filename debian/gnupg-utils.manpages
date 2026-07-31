@@ -2,6 +2,7 @@ debian/gpgsplit.1
 debian/kbxutil.1
 debian/lspgpot.1
 debian/migrate-pubring-from-classic-gpg.1
+debian/tmp/usr/share/man/man1/gpg-mail-tube.1
 debian/tmp/usr/share/man/man1/gpgparsemail.1
 debian/tmp/usr/share/man/man1/gpgtar.1
 debian/tmp/usr/share/man/man1/watchgnupg.1

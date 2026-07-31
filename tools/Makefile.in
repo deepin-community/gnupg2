@@ -146,7 +146,9 @@ host_triplet = @host@
 bin_PROGRAMS = gpgconf$(EXEEXT) gpg-connect-agent$(EXEEXT) \
 	gpg-card$(EXEEXT) gpg-wks-client$(EXEEXT) $(am__EXEEXT_2) \
 	$(am__EXEEXT_3) $(am__EXEEXT_4)
-@HAVE_W32_SYSTEM_FALSE@am__append_9 = watchgnupg gpgparsemail ${gpg_wks_server} gpgsplit
+@HAVE_W32_SYSTEM_FALSE@am__append_9 = watchgnupg gpgparsemail ${gpg_wks_server} gpgsplit \
+@HAVE_W32_SYSTEM_FALSE@                gpg-mail-tube
+
 @HAVE_W32_SYSTEM_TRUE@am__append_10 = gpgconf-w32
 libexec_PROGRAMS = gpg-check-pattern$(EXEEXT) gpg-pair-tool$(EXEEXT) \
 	$(am__EXEEXT_5)
@@ -182,7 +184,8 @@ CONFIG_CLEAN_VPATH_FILES =
 @BUILD_WKS_TOOLS_TRUE@am__EXEEXT_1 = gpg-wks-server$(EXEEXT)
 @HAVE_W32_SYSTEM_FALSE@am__EXEEXT_2 = watchgnupg$(EXEEXT) \
 @HAVE_W32_SYSTEM_FALSE@	gpgparsemail$(EXEEXT) $(am__EXEEXT_1) \
-@HAVE_W32_SYSTEM_FALSE@	gpgsplit$(EXEEXT)
+@HAVE_W32_SYSTEM_FALSE@	gpgsplit$(EXEEXT) \
+@HAVE_W32_SYSTEM_FALSE@	gpg-mail-tube$(EXEEXT)
 @HAVE_W32_SYSTEM_TRUE@am__EXEEXT_3 = gpgconf-w32$(EXEEXT)
 @BUILD_GPGTAR_TRUE@am__EXEEXT_4 = gpgtar$(EXEEXT)
 am__installdirs = "$(DESTDIR)$(bindir)" "$(DESTDIR)$(libexecdir)" \
@@ -225,6 +228,15 @@ gpg_connect_agent_DEPENDENCIES = ../common/libgpgrl.a $(common_libs) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
 	$(am__DEPENDENCIES_1) $(gpg_connect_agent_rc_objs)
+am_gpg_mail_tube_OBJECTS = gpg_mail_tube-gpg-mail-tube.$(OBJEXT) \
+	gpg_mail_tube-rfc822parse.$(OBJEXT) \
+	gpg_mail_tube-mime-maker.$(OBJEXT)
+gpg_mail_tube_OBJECTS = $(am_gpg_mail_tube_OBJECTS)
+gpg_mail_tube_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1) $(am__DEPENDENCIES_1) \
+	$(am__DEPENDENCIES_1)
+gpg_mail_tube_LINK = $(CCLD) $(gpg_mail_tube_CFLAGS) $(CFLAGS) \
+	$(AM_LDFLAGS) $(LDFLAGS) -o $@
 am_gpg_pair_tool_OBJECTS = gpg_pair_tool-gpg-pair-tool.$(OBJEXT)
 gpg_pair_tool_OBJECTS = $(am_gpg_pair_tool_OBJECTS)
 gpg_pair_tool_DEPENDENCIES = $(libcommon) $(am__DEPENDENCIES_1) \
@@ -352,6 +364,9 @@ am__depfiles_remade = ./$(DEPDIR)/card-call-scd.Po \
 	./$(DEPDIR)/gpg-auth.Po ./$(DEPDIR)/gpg-card.Po \
 	./$(DEPDIR)/gpg-connect-agent.Po \
 	./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po \
+	./$(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Po \
+	./$(DEPDIR)/gpg_mail_tube-mime-maker.Po \
+	./$(DEPDIR)/gpg_mail_tube-rfc822parse.Po \
 	./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po \
 	./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po \
 	./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po \
@@ -394,16 +409,18 @@ am__v_CCLD_0 = @echo "  CCLD    " $@;
 am__v_CCLD_1 = 
 SOURCES = clean-sat.c $(gpg_auth_SOURCES) $(gpg_card_SOURCES) \
 	$(gpg_check_pattern_SOURCES) $(gpg_connect_agent_SOURCES) \
-	$(gpg_pair_tool_SOURCES) $(gpg_wks_client_SOURCES) \
-	$(gpg_wks_server_SOURCES) $(gpgconf_SOURCES) \
-	$(gpgconf_w32_SOURCES) $(gpgparsemail_SOURCES) gpgsplit.c \
-	$(gpgtar_SOURCES) make-dns-cert.c $(watchgnupg_SOURCES)
+	$(gpg_mail_tube_SOURCES) $(gpg_pair_tool_SOURCES) \
+	$(gpg_wks_client_SOURCES) $(gpg_wks_server_SOURCES) \
+	$(gpgconf_SOURCES) $(gpgconf_w32_SOURCES) \
+	$(gpgparsemail_SOURCES) gpgsplit.c $(gpgtar_SOURCES) \
+	make-dns-cert.c $(watchgnupg_SOURCES)
 DIST_SOURCES = clean-sat.c $(gpg_auth_SOURCES) $(gpg_card_SOURCES) \
 	$(gpg_check_pattern_SOURCES) $(gpg_connect_agent_SOURCES) \
-	$(gpg_pair_tool_SOURCES) $(gpg_wks_client_SOURCES) \
-	$(gpg_wks_server_SOURCES) $(gpgconf_SOURCES) \
-	$(gpgconf_w32_SOURCES) $(gpgparsemail_SOURCES) gpgsplit.c \
-	$(gpgtar_SOURCES) make-dns-cert.c $(watchgnupg_SOURCES)
+	$(gpg_mail_tube_SOURCES) $(gpg_pair_tool_SOURCES) \
+	$(gpg_wks_client_SOURCES) $(gpg_wks_server_SOURCES) \
+	$(gpgconf_SOURCES) $(gpgconf_w32_SOURCES) \
+	$(gpgparsemail_SOURCES) gpgsplit.c $(gpgtar_SOURCES) \
+	make-dns-cert.c $(watchgnupg_SOURCES)
 am__can_run_installinfo = \
   case $$AM_UPDATE_INFO_DIR in \
     n|no|NO) false;; \
@@ -763,6 +780,16 @@ gpg_wks_client_LDADD = $(libcommon) \
 		       $(LIBINTL) $(LIBICONV) $(NETLIBS) \
 	               $(gpg_wks_client_rc_objs)
 
+gpg_mail_tube_SOURCES = \
+        gpg-mail-tube.c \
+        rfc822parse.c rfc822parse.h \
+	mime-maker.c  mime-maker.h
+
+gpg_mail_tube_CFLAGS = $(LIBGCRYPT_CFLAGS) $(GPG_ERROR_CFLAGS) $(INCICONV)
+gpg_mail_tube_LDADD = $(libcommon) \
+		       $(LIBGCRYPT_LIBS) $(GPG_ERROR_LIBS) \
+                       $(LIBINTL) $(LIBICONV)
+
 gpg_pair_tool_SOURCES = \
 	gpg-pair-tool.c
 
@@ -931,6 +958,10 @@ gpg-connect-agent$(EXEEXT): $(gpg_connect_agent_OBJECTS) $(gpg_connect_agent_DEP
 	@rm -f gpg-connect-agent$(EXEEXT)
 	$(AM_V_CCLD)$(LINK) $(gpg_connect_agent_OBJECTS) $(gpg_connect_agent_LDADD) $(LIBS)
 
+gpg-mail-tube$(EXEEXT): $(gpg_mail_tube_OBJECTS) $(gpg_mail_tube_DEPENDENCIES) $(EXTRA_gpg_mail_tube_DEPENDENCIES) 
+	@rm -f gpg-mail-tube$(EXEEXT)
+	$(AM_V_CCLD)$(gpg_mail_tube_LINK) $(gpg_mail_tube_OBJECTS) $(gpg_mail_tube_LDADD) $(LIBS)
+
 gpg-pair-tool$(EXEEXT): $(gpg_pair_tool_OBJECTS) $(gpg_pair_tool_DEPENDENCIES) $(EXTRA_gpg_pair_tool_DEPENDENCIES) 
 	@rm -f gpg-pair-tool$(EXEEXT)
 	$(AM_V_CCLD)$(gpg_pair_tool_LINK) $(gpg_pair_tool_OBJECTS) $(gpg_pair_tool_LDADD) $(LIBS)
@@ -1021,6 +1052,9 @@ distclean-compile:
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg-card.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg-connect-agent.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_mail_tube-mime-maker.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_mail_tube-rfc822parse.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po@am__quote@ # am--include-marker
@@ -1082,6 +1116,48 @@ gpg_check_pattern-gpg-check-pattern.obj: gpg-check-pattern.c
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpg-check-pattern.c' object='gpg_check_pattern-gpg-check-pattern.obj' libtool=no @AMDEPBACKSLASH@
 @AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
 @am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_check_pattern_CFLAGS) $(CFLAGS) -c -o gpg_check_pattern-gpg-check-pattern.obj `if test -f 'gpg-check-pattern.c'; then $(CYGPATH_W) 'gpg-check-pattern.c'; else $(CYGPATH_W) '$(srcdir)/gpg-check-pattern.c'; fi`
+
+gpg_mail_tube-gpg-mail-tube.o: gpg-mail-tube.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -MT gpg_mail_tube-gpg-mail-tube.o -MD -MP -MF $(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Tpo -c -o gpg_mail_tube-gpg-mail-tube.o `test -f 'gpg-mail-tube.c' || echo '$(srcdir)/'`gpg-mail-tube.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Tpo $(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpg-mail-tube.c' object='gpg_mail_tube-gpg-mail-tube.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -c -o gpg_mail_tube-gpg-mail-tube.o `test -f 'gpg-mail-tube.c' || echo '$(srcdir)/'`gpg-mail-tube.c
+
+gpg_mail_tube-gpg-mail-tube.obj: gpg-mail-tube.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -MT gpg_mail_tube-gpg-mail-tube.obj -MD -MP -MF $(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Tpo -c -o gpg_mail_tube-gpg-mail-tube.obj `if test -f 'gpg-mail-tube.c'; then $(CYGPATH_W) 'gpg-mail-tube.c'; else $(CYGPATH_W) '$(srcdir)/gpg-mail-tube.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Tpo $(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='gpg-mail-tube.c' object='gpg_mail_tube-gpg-mail-tube.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -c -o gpg_mail_tube-gpg-mail-tube.obj `if test -f 'gpg-mail-tube.c'; then $(CYGPATH_W) 'gpg-mail-tube.c'; else $(CYGPATH_W) '$(srcdir)/gpg-mail-tube.c'; fi`
+
+gpg_mail_tube-rfc822parse.o: rfc822parse.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -MT gpg_mail_tube-rfc822parse.o -MD -MP -MF $(DEPDIR)/gpg_mail_tube-rfc822parse.Tpo -c -o gpg_mail_tube-rfc822parse.o `test -f 'rfc822parse.c' || echo '$(srcdir)/'`rfc822parse.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_mail_tube-rfc822parse.Tpo $(DEPDIR)/gpg_mail_tube-rfc822parse.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='rfc822parse.c' object='gpg_mail_tube-rfc822parse.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -c -o gpg_mail_tube-rfc822parse.o `test -f 'rfc822parse.c' || echo '$(srcdir)/'`rfc822parse.c
+
+gpg_mail_tube-rfc822parse.obj: rfc822parse.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -MT gpg_mail_tube-rfc822parse.obj -MD -MP -MF $(DEPDIR)/gpg_mail_tube-rfc822parse.Tpo -c -o gpg_mail_tube-rfc822parse.obj `if test -f 'rfc822parse.c'; then $(CYGPATH_W) 'rfc822parse.c'; else $(CYGPATH_W) '$(srcdir)/rfc822parse.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_mail_tube-rfc822parse.Tpo $(DEPDIR)/gpg_mail_tube-rfc822parse.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='rfc822parse.c' object='gpg_mail_tube-rfc822parse.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -c -o gpg_mail_tube-rfc822parse.obj `if test -f 'rfc822parse.c'; then $(CYGPATH_W) 'rfc822parse.c'; else $(CYGPATH_W) '$(srcdir)/rfc822parse.c'; fi`
+
+gpg_mail_tube-mime-maker.o: mime-maker.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -MT gpg_mail_tube-mime-maker.o -MD -MP -MF $(DEPDIR)/gpg_mail_tube-mime-maker.Tpo -c -o gpg_mail_tube-mime-maker.o `test -f 'mime-maker.c' || echo '$(srcdir)/'`mime-maker.c
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_mail_tube-mime-maker.Tpo $(DEPDIR)/gpg_mail_tube-mime-maker.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mime-maker.c' object='gpg_mail_tube-mime-maker.o' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -c -o gpg_mail_tube-mime-maker.o `test -f 'mime-maker.c' || echo '$(srcdir)/'`mime-maker.c
+
+gpg_mail_tube-mime-maker.obj: mime-maker.c
+@am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -MT gpg_mail_tube-mime-maker.obj -MD -MP -MF $(DEPDIR)/gpg_mail_tube-mime-maker.Tpo -c -o gpg_mail_tube-mime-maker.obj `if test -f 'mime-maker.c'; then $(CYGPATH_W) 'mime-maker.c'; else $(CYGPATH_W) '$(srcdir)/mime-maker.c'; fi`
+@am__fastdepCC_TRUE@	$(AM_V_at)$(am__mv) $(DEPDIR)/gpg_mail_tube-mime-maker.Tpo $(DEPDIR)/gpg_mail_tube-mime-maker.Po
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	$(AM_V_CC)source='mime-maker.c' object='gpg_mail_tube-mime-maker.obj' libtool=no @AMDEPBACKSLASH@
+@AMDEP_TRUE@@am__fastdepCC_FALSE@	DEPDIR=$(DEPDIR) $(CCDEPMODE) $(depcomp) @AMDEPBACKSLASH@
+@am__fastdepCC_FALSE@	$(AM_V_CC@am__nodep@)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_mail_tube_CFLAGS) $(CFLAGS) -c -o gpg_mail_tube-mime-maker.obj `if test -f 'mime-maker.c'; then $(CYGPATH_W) 'mime-maker.c'; else $(CYGPATH_W) '$(srcdir)/mime-maker.c'; fi`
 
 gpg_pair_tool-gpg-pair-tool.o: gpg-pair-tool.c
 @am__fastdepCC_TRUE@	$(AM_V_CC)$(CC) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) $(AM_CPPFLAGS) $(CPPFLAGS) $(gpg_pair_tool_CFLAGS) $(CFLAGS) -MT gpg_pair_tool-gpg-pair-tool.o -MD -MP -MF $(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Tpo -c -o gpg_pair_tool-gpg-pair-tool.o `test -f 'gpg-pair-tool.c' || echo '$(srcdir)/'`gpg-pair-tool.c
@@ -1500,6 +1576,9 @@ distclean: distclean-am
 	-rm -f ./$(DEPDIR)/gpg-card.Po
 	-rm -f ./$(DEPDIR)/gpg-connect-agent.Po
 	-rm -f ./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po
+	-rm -f ./$(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Po
+	-rm -f ./$(DEPDIR)/gpg_mail_tube-mime-maker.Po
+	-rm -f ./$(DEPDIR)/gpg_mail_tube-rfc822parse.Po
 	-rm -f ./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po
@@ -1582,6 +1661,9 @@ maintainer-clean: maintainer-clean-am
 	-rm -f ./$(DEPDIR)/gpg-card.Po
 	-rm -f ./$(DEPDIR)/gpg-connect-agent.Po
 	-rm -f ./$(DEPDIR)/gpg_check_pattern-gpg-check-pattern.Po
+	-rm -f ./$(DEPDIR)/gpg_mail_tube-gpg-mail-tube.Po
+	-rm -f ./$(DEPDIR)/gpg_mail_tube-mime-maker.Po
+	-rm -f ./$(DEPDIR)/gpg_mail_tube-rfc822parse.Po
 	-rm -f ./$(DEPDIR)/gpg_pair_tool-gpg-pair-tool.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-call-dirmngr.Po
 	-rm -f ./$(DEPDIR)/gpg_wks_client-gpg-wks-client.Po

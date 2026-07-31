@@ -249,9 +249,6 @@ static int shutdown_pending;
 /* It is possible that we are currently running under setuid permissions */
 static int maybe_setuid = 1;
 
-/* Flag telling whether we are running as a pipe server.  */
-static int pipe_server;
-
 /* Name of the communication socket */
 static char *socket_name;
 /* Name of the redirected socket or NULL.  */
@@ -460,6 +457,7 @@ main (int argc, char **argv )
   int greeting = 0;
   int nogreeting = 0;
   int multi_server = 0;
+  int pipe_server = 0;
   int is_daemon = 0;
   int nodetach = 0;
   int csh_style = 0;
@@ -470,7 +468,6 @@ main (int argc, char **argv )
   int allow_coredump = 0;
   struct assuan_malloc_hooks malloc_hooks;
   int res;
-  npth_t pipecon_handler;
   const char *application_priority = NULL;
 
   early_system_init ();
@@ -767,6 +764,7 @@ main (int argc, char **argv )
       ctrl_t ctrl;
       npth_attr_t tattr;
       gnupg_fd_t fd = GNUPG_INVALID_FD;
+      npth_t pipecon_handler;
 
 #ifndef HAVE_W32_SYSTEM
       {
@@ -1030,7 +1028,36 @@ scd_get_socket_name (void)
 }
 
 
-#ifndef HAVE_W32_SYSTEM
+#ifdef HAVE_W32_SYSTEM
+/* Creat an event into E_P and sets EVENTS to watch by npth_eselect.  */
+void
+scd_init_event (HANDLE *e_p, HANDLE events[2])
+{
+  HANDLE h, h2;
+  SECURITY_ATTRIBUTES sa = { sizeof (SECURITY_ATTRIBUTES), NULL, TRUE};
+
+  events[0] = *e_p = INVALID_HANDLE_VALUE;
+  events[1] = INVALID_HANDLE_VALUE;
+  /* Create event for manual reset, initially non-signaled.  Make it
+   * waitable and inheritable.  */
+  h = CreateEvent (&sa, TRUE, FALSE, NULL);
+  if (!h)
+    log_error ("can't create scd event: %s\n", w32_strerror (-1) );
+  else if (!DuplicateHandle (GetCurrentProcess(), h,
+                             GetCurrentProcess(), &h2,
+                             EVENT_MODIFY_STATE|SYNCHRONIZE, TRUE, 0))
+    {
+      log_error ("setting synchronize for scd_kick_the_loop failed: %s\n",
+                 w32_strerror (-1) );
+      CloseHandle (h);
+    }
+  else
+    {
+      CloseHandle (h);
+      events[0] = *e_p = h2;
+    }
+}
+#else
 static void
 handle_signal (int signo)
 {
@@ -1220,12 +1247,13 @@ start_connection_thread (void *arg)
     log_info (_("handler for fd %d started\n"),
               FD2INT(ctrl->thread_startup.fd));
 
-  /* If this is a pipe server, we request a shutdown if the command
-     handler asked for it.  With the next ticker event and given that
+  scd_command_handler (ctrl, ctrl->thread_startup.fd);
+
+  /* If this thread is the pipe connection thread, flag that a
+     shutdown is required.  With the next ticker event and given that
      no other connections are running the shutdown will then
      happen.  */
-  if (scd_command_handler (ctrl, ctrl->thread_startup.fd)
-      && pipe_server)
+  if (ctrl->thread_startup.fd == GNUPG_INVALID_FD)
     shutdown_pending = 1;
 
   if (opt.verbose)
@@ -1305,31 +1333,7 @@ handle_connections (gnupg_fd_t listen_fd)
   npth_attr_setdetachstate (&tattr, NPTH_CREATE_DETACHED);
 
 #ifdef HAVE_W32_SYSTEM
-  {
-    HANDLE h, h2;
-    SECURITY_ATTRIBUTES sa = { sizeof (SECURITY_ATTRIBUTES), NULL, TRUE};
-
-    events[0] = the_event = INVALID_HANDLE_VALUE;
-    events[1] = INVALID_HANDLE_VALUE;
-    /* Create event for manual reset, initially non-signaled.  Make it
-     * waitable and inheritable.  */
-    h = CreateEvent (&sa, TRUE, FALSE, NULL);
-    if (!h)
-      log_error ("can't create scd event: %s\n", w32_strerror (-1) );
-    else if (!DuplicateHandle (GetCurrentProcess(), h,
-                               GetCurrentProcess(), &h2,
-                               EVENT_MODIFY_STATE|SYNCHRONIZE, TRUE, 0))
-      {
-        log_error ("setting synchronize for scd_kick_the_loop failed: %s\n",
-                   w32_strerror (-1) );
-        CloseHandle (h);
-      }
-    else
-      {
-        CloseHandle (h);
-        events[0] = the_event = h2;
-      }
-  }
+  scd_init_event (&the_event, events);
 #endif
 
   FD_ZERO (&fdset);
