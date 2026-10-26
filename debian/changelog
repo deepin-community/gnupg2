@@ -1,3 +1,15 @@
+gnupg2 (2.4.5-2deepin6) unstable; urgency=medium
+
+  * fix(cve): CVE-2026-105712 (low) - tool:gpgtar: Check the output
+    directory with --directory   Upstream:
+    https://github.com/gpg/gnupg/commit/268e435f921a834909429063ea656186
+    266a0f85,https://github.com/gpg/gnupg/commit/7a2692fe5e580ae3bbb2a47
+    abc4baaf1af65aa88,https://github.com/gpg/gnupg/commit/86020945ce1564
+    a7f6cfa6a18ea8dcdca5e19baf,https://github.com/gpg/gnupg/commit/1bdd1
+    f5bb4d192d9700dd6ab2540b0a940c23dd5
+
+ -- deepin-ci-robot <packages@deepin.org>  Mon, 26 Oct 2026 13:36:48 +0800
+
 gnupg2 (2.4.5-2deepin5) unstable; urgency=medium
 
   * fix: correct loong64 win32 build guard in debian/rules.
