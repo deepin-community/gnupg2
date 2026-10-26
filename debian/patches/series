@@ -33,3 +33,4 @@ debian-packaging/Always-build-common-status-codes.h-and-common-audit-event.patch
 restore-nl.po.patch
 CVE-2025-68973.patch
 CVE-2026-57062.patch
+CVE-2026-105712.patch
